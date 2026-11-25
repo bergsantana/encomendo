@@ -8,11 +8,13 @@ import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
+import br.com.encomendo.feature.auth.AccountViewModel
 import br.com.encomendo.feature.auth.LoginViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondOk
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -49,10 +51,12 @@ class ModulesTest {
 
             koin.get<RootViewModel>()
             koin.get<LoginViewModel>()
+            koin.get<AccountViewModel>()
             koin.get<SessionRepository>()
             koin.get<AuthRepository>()
             assertSame(koin.get<TokenStore>(), koin.get<TokenStore>(), "one TokenStore per process")
             assertSame(koin.get<HttpClient>(), koin.get<HttpClient>(), "one API client, so refreshes never race")
+            assertSame(koin.get<CoroutineScope>(AppScope), koin.get<CoroutineScope>(AppScope), "one app scope")
             assertEquals("https://api.test", koin.get<ApiClientConfig>().baseUrl)
         }
 }

@@ -64,5 +64,7 @@ class LogInTest {
             failure?.let { throw it }
             return session
         }
+
+        override suspend fun logOut() = error("LogIn never logs out")
     }
 }

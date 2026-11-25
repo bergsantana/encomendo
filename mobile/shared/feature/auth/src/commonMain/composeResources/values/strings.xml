@@ -23,4 +23,10 @@
         <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
     </plurals>
     <string name="login_error_unexpected">Não foi possível entrar agora. Tente de novo em instantes.</string>
+
+    <!-- The account bar; Sair and its error as on the web admin (layouts/DashboardLayout.vue, features/auth/store.ts). -->
+    <string name="account_menu_description">Conta de %1$s</string>
+    <string name="account_log_out">Sair</string>
+    <string name="account_logging_out">Saindo…</string>
+    <string name="account_log_out_failed">Não foi possível sair. Tente de novo.</string>
 </resources>

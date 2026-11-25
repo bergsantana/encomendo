@@ -20,21 +20,31 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
+import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
 class ApiAuthRepositoryTest {
     @Test
     fun aLoginKeepsTheWholeSessionWithItsTokens() =
@@ -204,6 +214,126 @@ class ApiAuthRepositoryTest {
             listOf("ana@altarpm.com.br", "segredo-forte").forEach { assertEquals(false, printed.contains(it), printed) }
         }
 
+    @Test
+    fun aLogoutForgetsTheSessionAtOnce() =
+        runTest {
+            // In the workshop the signal may be gone: leaving must never wait on the server (ADR 0016).
+            val store = tokenStore().apply { write(signedIn) }
+            val server = CompletableDeferred<Unit>()
+            val auth = repository(store) { server.await().let { respond("", HttpStatusCode.NoContent) } }
+
+            auth.logOut()
+
+            assertNull(store.read())
+        }
+
+    @Test
+    fun aLogoutAsksTheServerToRevokeTheTokensItForgot() =
+        runTest {
+            val store = tokenStore().apply { write(signedIn) }
+            val seen = CompletableDeferred<HttpRequestData>()
+            val auth =
+                repository(store) { request ->
+                    seen.complete(request)
+                    respond("", HttpStatusCode.NoContent)
+                }
+
+            auth.logOut()
+
+            val request = seen.await()
+            assertEquals("/auth/logout", request.url.encodedPath)
+            assertEquals("Bearer access-old", request.headers[HttpHeaders.Authorization])
+            assertEquals("""{"refreshToken":"refresh-old"}""", request.body.toByteArray().decodeToString())
+        }
+
+    @Test
+    fun aLogoutFinishesWhenTheScreenThatAskedIsGone() =
+        runTest {
+            // The root clears the signed-in screens, and so cancels the account bar that asked, as soon
+            // as it sees the session end: while the clear is still on its way back to the caller.
+            val disk = CancelsOnWrite(temporaryPreferencesDataStore(backgroundScope))
+            val store =
+                TokenStore(
+                    dataStore = disk,
+                    cipher = FakeSecretCipher(),
+                    cryptoDispatcher = StandardTestDispatcher(testScheduler),
+                )
+            store.write(signedIn)
+            val seen = CompletableDeferred<HttpRequestData>()
+            val auth =
+                repository(store) { request ->
+                    seen.complete(request)
+                    respond("", HttpStatusCode.NoContent)
+                }
+            lateinit var screen: Job
+            disk.onWrite = { screen.cancel() }
+
+            screen = launch { auth.logOut() }
+            screen.join() // DataStore writes its file on a real IO thread, beyond the test scheduler
+
+            assertTrue(screen.isCancelled, "the caller was cancelled before logOut returned")
+            assertEquals("/auth/logout", seen.await().url.encodedPath)
+            assertNull(store.read())
+        }
+
+    @Test
+    fun anOfflineLogoutStillSignsOut() =
+        runTest {
+            val store = tokenStore().apply { write(signedIn) }
+            val auth = repository(store) { throw IOException("no signal") }
+
+            auth.logOut()
+            advanceUntilIdle()
+
+            assertNull(store.read())
+        }
+
+    @Test
+    fun loggingOutWhenSignedOutCallsNobody() =
+        runTest {
+            val calls = mutableListOf<String>()
+            val auth =
+                repository(tokenStore()) { request ->
+                    calls += request.url.encodedPath
+                    respond("", HttpStatusCode.NoContent)
+                }
+
+            auth.logOut()
+            advanceUntilIdle()
+
+            assertEquals(emptyList(), calls)
+        }
+
+    @Test
+    fun aLogoutTheDeviceCannotSaveIsAFailureAndCallsNobody() =
+        runTest {
+            // Telling the server first would revoke a session the device still shows as signed in.
+            val disk = WriteFailing(temporaryPreferencesDataStore(backgroundScope))
+            val store =
+                TokenStore(
+                    dataStore = disk,
+                    cipher = FakeSecretCipher(),
+                    cryptoDispatcher = StandardTestDispatcher(testScheduler),
+                )
+            store.write(signedIn)
+            disk.failing = true
+            val calls = mutableListOf<String>()
+            val auth =
+                repository(store) { request ->
+                    calls += request.url.encodedPath
+                    respond("", HttpStatusCode.NoContent)
+                }
+
+            val failure = assertFailsWith<Failure.Unexpected> { auth.logOut() }
+            advanceUntilIdle()
+
+            assertEquals(0, failure.status)
+            assertEquals(emptyList(), calls)
+            assertEquals(signedIn, store.read(), "the session on screen still works")
+        }
+
+    private val signedIn = StoredSession(SessionTokens("access-old", "refresh-old"), testSession())
+
     private fun TestScope.tokenStore(): TokenStore =
         TokenStore(
             dataStore = temporaryPreferencesDataStore(backgroundScope),
@@ -211,7 +341,7 @@ class ApiAuthRepositoryTest {
             cryptoDispatcher = StandardTestDispatcher(testScheduler),
         )
 
-    private fun repository(
+    private fun TestScope.repository(
         store: TokenStore,
         handler: MockRequestHandler,
     ): ApiAuthRepository =
@@ -221,6 +351,7 @@ class ApiAuthRepositoryTest {
                     createSessionApiClient(MockEngine(handler), ApiClientConfig(baseUrl = "https://api.test"), store),
                 ),
             store = store,
+            appScope = backgroundScope,
         )
 
     private fun MockRequestHandleScope.respondJson(body: String): HttpResponseData =
@@ -236,6 +367,36 @@ class ApiAuthRepositoryTest {
         override fun seal(plain: ByteArray): ByteArray = throw IOException("the Keystore could not seal the session")
 
         override fun open(sealed: ByteArray): ByteArray? = null
+    }
+
+    /** Passes everything to [delegate] until [failing] is set; then every write fails, as on a full disk. */
+    private class WriteFailing(
+        private val delegate: DataStore<Preferences>,
+    ) : DataStore<Preferences> {
+        var failing = false
+
+        override val data: Flow<Preferences> = delegate.data
+
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            if (failing) throw IOException("no space left on device") else delegate.updateData(transform)
+    }
+
+    /**
+     * Passes everything to [delegate]; after each write it runs [onWrite], then suspends before
+     * returning, as the root's session collector runs before the writer resumes on a device.
+     */
+    private class CancelsOnWrite(
+        private val delegate: DataStore<Preferences>,
+    ) : DataStore<Preferences> {
+        var onWrite: () -> Unit = {}
+
+        override val data: Flow<Preferences> = delegate.data
+
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            delegate.updateData(transform).also {
+                onWrite()
+                yield()
+            }
     }
 
     /** A DataStore whose every write fails, as on a full disk. */

@@ -6,6 +6,7 @@ import br.com.encomendo.core.network.withoutBearer
 import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -17,8 +18,9 @@ import kotlinx.serialization.Serializable
 /**
  * AuthApi calls the `/auth` endpoints (docs/api/openapi.yaml, ADR 0010).
  * Android always uses the `body` refresh transport: refresh tokens travel in
- * JSON bodies, never in cookies. Every call carries no access token and never
- * triggers a refresh; an answer that isn't 2xx throws ApiError.
+ * JSON bodies, never in cookies. No call carries the stored access token or
+ * triggers a refresh; logOut sends only the tokens it is given. An answer that
+ * isn't 2xx throws ApiError.
  */
 class AuthApi(
     private val client: HttpClient,
@@ -38,6 +40,24 @@ class AuthApi(
                 contentType(ContentType.Application.Json)
                 setBody(LoginRequest(email = email, password = password, refreshTransport = BODY_TRANSPORT))
             }.session()
+
+    /**
+     * Asks the server to end the login: [refreshToken] names its family, which
+     * is revoked, and [accessToken] stops working at once (ADR 0010). Both are
+     * passed in because the device has already forgotten them (ADR 0016), and
+     * the stored ones, if any, belong to whoever logged in since.
+     */
+    suspend fun logOut(
+        accessToken: String,
+        refreshToken: String,
+    ) {
+        client.post("/auth/logout") {
+            withoutBearer()
+            bearerAuth(accessToken)
+            contentType(ContentType.Application.Json)
+            setBody(LogoutRequest(refreshToken))
+        }
+    }
 
     /**
      * Trades [refreshToken] for a new session. The token is spent once the
@@ -88,6 +108,12 @@ private class LoginRequest(
     val password: String,
     // No default: ApiJson leaves defaults out, and the server would fall back to the cookie.
     val refreshTransport: String,
+)
+
+/** Not a data class, so the token never reaches a log through toString. */
+@Serializable
+private class LogoutRequest(
+    val refreshToken: String,
 )
 
 @Serializable

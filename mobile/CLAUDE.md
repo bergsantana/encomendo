@@ -58,6 +58,7 @@ Shared modules use the Android-KMP library plugin (`com.android.kotlin.multiplat
 
 - Tokens go through `core:security`'s `TokenStore` (Keystore + DataStore). Never put a token in plain DataStore, a log or a crash report.
 - `TokenStore` keeps the whole session (user, store, role, permissions) sealed with its tokens and replaces them together, so offline cold starts still know what the user may do (`docs/adr/0015-android-keeps-the-session-with-its-tokens.md`).
+- Sair clears `TokenStore` first and tells the server without waiting, so leaving works offline (`docs/adr/0016-android-logout-clears-the-device-first.md`).
 - The Ktor Auth bearer plugin refreshes once on a 401. It logs out only when the server refuses the refresh (400, 401, 403); offline, 429 and 5xx keep the session (`docs/adr/0012-refresh-failure-keeps-offline-sessions.md`).
 - After login the app opens the management graph, filtered by permissions.
 - Offline: recent orders, the receiving checklist and the production board are cached in Room. Writes made offline, including receiving photos, queue and retry with WorkManager, always with an `Idempotency-Key`.

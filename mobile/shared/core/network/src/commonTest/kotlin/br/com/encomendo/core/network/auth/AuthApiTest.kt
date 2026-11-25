@@ -12,6 +12,7 @@ import br.com.encomendo.core.network.respondJson
 import br.com.encomendo.core.network.respondProblem
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandler
+import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.ContentType
@@ -190,6 +191,39 @@ class AuthApiTest {
                 assertFalse(printed.contains("access-new"), printed)
                 assertFalse(printed.contains("refresh-new"), printed)
             }
+        }
+
+    @Test
+    fun logOutSendsTheGivenTokensNotTheStoredOnes() =
+        runTest {
+            // The device has already forgotten its session, so the tokens to revoke are passed in. The
+            // refresh token names the family to revoke (LogoutRequest, Android only); the access token
+            // stops at once.
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                authApi { request ->
+                    requests += request
+                    respond("", HttpStatusCode.NoContent)
+                }
+
+            api.logOut(accessToken = "access-leaving", refreshToken = "refresh-leaving")
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/auth/logout", request.url.encodedPath)
+            assertEquals("Bearer access-leaving", request.headers[HttpHeaders.Authorization])
+            assertEquals(ContentType.Application.Json, request.body.contentType?.withoutParameters())
+            assertEquals("""{"refreshToken":"refresh-leaving"}""", request.body.toByteArray().decodeToString())
+        }
+
+    @Test
+    fun aRefusedLogoutNeverRefreshes() =
+        runTest {
+            // The contract promises 204, but a 401 here must not spend the refresh token.
+            val api =
+                authApi { respondProblem(HttpStatusCode.Unauthorized, """{"status":401,"code":"unauthenticated"}""") }
+
+            assertFailsWith<ApiError> { api.logOut(accessToken = "access-leaving", refreshToken = "refresh-leaving") }
         }
 
     private fun authApi(handler: MockRequestHandler): AuthApi =

@@ -1,9 +1,9 @@
 package br.com.encomendo.core.domain.session
 
 /**
- * AuthRepository starts sessions on this device. A session it returns is
- * already stored, so [SessionRepository.session] emits it and the app opens
- * the management graph on its own.
+ * AuthRepository starts and ends sessions on this device. A session it
+ * returns is already stored, so [SessionRepository.session] emits it and the
+ * app opens the management graph on its own; after a logout it emits null.
  */
 interface AuthRepository {
     /**
@@ -15,4 +15,11 @@ interface AuthRepository {
         email: String,
         password: String,
     ): Session
+
+    /**
+     * Forgets the session on this device at once, then asks the server to end
+     * it, without waiting: leaving works offline. Throws `Failure` only when
+     * the device cannot forget it; the session then stays as it was.
+     */
+    suspend fun logOut()
 }
