@@ -104,8 +104,8 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 
 ### Web
 
-- [ ] `packages/api` auth client with refresh once on 401; session store (token in memory, refresh from cookie)
-- [ ] Login, sign-up, tenant picker, forgot password, accept invitation, route guards (`requiresAuth`, `permission`), `usePermission`
+- [x] `packages/api` auth client with refresh once on 401; session store (token in memory, refresh from cookie)
+- [ ] Login, sign-up, tenant picker, forgot password, accept invitation, route guards (`requiresAuth`, `permission`), `usePermission` (partial: login, logout, route guards and `usePermission` done. Still to do: sign-up, tenant picker, forgot password, accept invitation)
 - [ ] Members (`features/members`): list, invite, change role, remove
 
 ### Mobile

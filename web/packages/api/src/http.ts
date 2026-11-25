@@ -31,8 +31,10 @@ export class ApiError extends Error {
   readonly title: string
   readonly detail: string | undefined
   readonly fieldIssues: FieldIssue[]
+  /** retryAfterSeconds is the wait a 429 asks for, from its Retry-After header. */
+  readonly retryAfterSeconds: number | undefined
 
-  constructor(status: number, body: ProblemBody) {
+  constructor(status: number, body: ProblemBody, retryAfterSeconds?: number) {
     super(body.title ?? `HTTP ${status}`)
     this.name = 'ApiError'
     this.status = status
@@ -40,6 +42,7 @@ export class ApiError extends Error {
     this.title = body.title ?? 'Erro inesperado'
     this.detail = body.detail
     this.fieldIssues = body.errors ?? []
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
@@ -52,10 +55,10 @@ export interface SessionHooks {
   /** accessToken returns the bearer token to send, or null when signed out. */
   accessToken(): string | null
   /**
-   * refresh trades the refresh cookie for a new access token. It resolves
-   * false only when /auth/refresh refuses with 400, 401 or 403 and the
-   * session is over; offline, 429 and 5xx reject with their own error and
-   * keep the session (ADR 0012). Concurrent calls must share one refresh:
+   * refresh trades the refresh cookie for a new access token and resolves
+   * whether there is a token to retry with: false once the session is over,
+   * e.g. when /auth/refresh refuses with 400, 401 or 403. Offline, 429 and
+   * 5xx must reject with their own error and keep the session (ADR 0012). Concurrent calls must share one refresh:
    * the refresh token rotates on every use, and two refreshes in flight
    * revoke the whole session family (ADR 0010, ADR 0013).
    */
@@ -74,7 +77,13 @@ export interface HttpClientOptions {
    * mark the individual calls that must not carry the token as `anonymous`.
    */
   session?: SessionHooks
+  /** timeoutMs is how long a call may take before it fails like a lost connection. Defaults to 30 s. */
+  timeoutMs?: number
 }
+
+// The same timeout as Android. ADR 0013 sizes its 2-minute refresh retry
+// window on it, and without it a hung refresh would hold the cross-tab lock.
+const defaultTimeoutMs = 30_000
 
 /** RequestOptions are fetch options plus the client's own flags. */
 export interface RequestOptions extends Omit<RequestInit, 'method' | 'body'> {
@@ -116,6 +125,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   // Looked up on every call, not captured once, so test mocks and polyfills
   // installed after the client is created still apply.
   const doFetch: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
 
   async function send(call: Call, token: string | null): Promise<Response> {
     const headers = new Headers(call.init.headers)
@@ -130,6 +140,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
         headers,
         credentials: 'include', // the refresh cookie is httpOnly
         body: call.body === undefined ? null : JSON.stringify(call.body),
+        signal: withTimeout(call.init.signal, timeoutMs),
       })
     } catch {
       throw new ApiError(0, { title: 'Sem conexão com o servidor' })
@@ -137,6 +148,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   }
 
   async function request<T>(method: string, path: string, body: unknown, requestOptions: RequestOptions = {}): Promise<T> {
+    assertPath(path)
     const { anonymous = false, ...init } = requestOptions
     const call: Call = { method, path, body, init }
     const session = anonymous ? undefined : options.session
@@ -147,9 +159,9 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
       response = await send(call, session.accessToken())
     }
 
-    if (!response.ok) throw new ApiError(response.status, await readProblem(response))
+    if (!response.ok) throw new ApiError(response.status, await readProblem(response), retryAfter(response))
     if (response.status === 204) return undefined as T
-    return (await response.json()) as T
+    return readBody<T>(response)
   }
 
   return {
@@ -167,6 +179,41 @@ async function renew(session: SessionHooks, sent: string | null): Promise<boolea
   const current = session.accessToken()
   if (current !== null && current !== sent) return true
   return session.refresh()
+}
+
+/**
+ * assertPath refuses a path that does not start with a single "/": glued to
+ * the base URL, ".evil.example/x" or "//evil.example" would name another host
+ * and hand it the bearer token.
+ */
+function assertPath(path: string): void {
+  if (!path.startsWith('/') || path.startsWith('//')) throw new Error(`path must start with a single /: ${path}`)
+}
+
+/** withTimeout aborts the call after `ms`, or earlier if the caller's own signal aborts. */
+function withTimeout(callerSignal: AbortSignal | null | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms)
+  return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout
+}
+
+/** retryAfter reads Retry-After as whole seconds, at least 1, the only form the API sends (ADR 0013). */
+function retryAfter(response: Response): number | undefined {
+  const seconds = Number(response.headers.get('Retry-After') ?? Number.NaN)
+  return Number.isInteger(seconds) && seconds >= 1 ? seconds : undefined
+}
+
+/**
+ * readBody parses a success body. A body that stops arriving (the timeout
+ * also covers it) or is not JSON, such as a web page from a server without
+ * the API, is an answer the app cannot use: it fails like a lost connection,
+ * so callers only ever see ApiError.
+ */
+async function readBody<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T
+  } catch {
+    throw new ApiError(0, { title: 'Sem conexão com o servidor' })
+  }
 }
 
 async function readProblem(response: Response): Promise<ProblemBody> {

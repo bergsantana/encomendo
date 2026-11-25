@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 
 import { useSessionStore } from '../stores/session'
+import { authSession } from '../testing/fixtures'
 import { usePermission } from './usePermission'
 
 beforeEach(() => setActivePinia(createPinia()))
@@ -24,7 +25,7 @@ describe('usePermission', () => {
   })
 
   it('hides the action when the role lacks the permission', () => {
-    useSessionStore().start({ accessToken: 't', permissions: ['order:read'] })
+    useSessionStore().start(authSession({ permissions: ['order:read'] }))
 
     const wrapper = mount(OrderActions)
 
@@ -32,7 +33,7 @@ describe('usePermission', () => {
   })
 
   it('shows the action when the session holds the permission', () => {
-    useSessionStore().start({ accessToken: 't', permissions: ['order:read', 'order:write'] })
+    useSessionStore().start(authSession({ permissions: ['order:read', 'order:write'] }))
 
     const wrapper = mount(OrderActions)
 
@@ -43,11 +44,11 @@ describe('usePermission', () => {
     const session = useSessionStore()
     const wrapper = mount(OrderActions)
 
-    session.start({ accessToken: 't', permissions: ['order:write'] })
+    session.start(authSession({ permissions: ['order:write'] }))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('button').exists()).toBe(true)
 
-    session.end()
+    session.end('logged_out')
     await wrapper.vm.$nextTick()
     expect(wrapper.find('button').exists()).toBe(false)
   })

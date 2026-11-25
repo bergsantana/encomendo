@@ -4,8 +4,15 @@
  * right. Menu order follows the product: Hoje · Pedidos · Compras · Produção ·
  * Estoque · Catálogo · Clientes · Financeiro. Each feature adds its entry
  * when it ships; Produção and Estoque show only when the tenant turns them on.
+ * The foot of the menu shows who is signed in, in which store, and logs out;
+ * App leaves for login once the session has ended.
  */
+import { BaseButton } from '@encomendo/ui'
+import { storeToRefs } from 'pinia'
 import { RouterLink, RouterView } from 'vue-router'
+
+import { useAuthStore } from '../features/auth/store'
+import { useSessionStore } from '../stores/session'
 
 interface MenuItem {
   label: string
@@ -13,6 +20,10 @@ interface MenuItem {
 }
 
 const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
+
+const { user, tenant } = storeToRefs(useSessionStore())
+const auth = useAuthStore()
+const { loggingOut, logOutError } = storeToRefs(auth)
 </script>
 
 <template>
@@ -28,6 +39,12 @@ const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
         />
         Encomendo
       </div>
+      <p
+        v-if="tenant"
+        class="store"
+      >
+        {{ tenant.name }}
+      </p>
       <RouterLink
         v-for="item in menu"
         :key="item.label"
@@ -37,6 +54,22 @@ const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
       >
         {{ item.label }}
       </RouterLink>
+      <div class="account">
+        <span class="account-name">{{ user?.name }}</span>
+        <BaseButton
+          :disabled="loggingOut"
+          @click="auth.logOut()"
+        >
+          Sair
+        </BaseButton>
+        <p
+          v-if="logOutError"
+          role="alert"
+          class="account-error"
+        >
+          {{ logOutError }}
+        </p>
+      </div>
     </nav>
     <main class="page">
       <RouterView />
@@ -62,7 +95,7 @@ const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 4px;
   font-weight: 600;
 }
 .mark {
@@ -70,6 +103,10 @@ const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
   height: 20px;
   border-radius: 6px;
   background: var(--enc-accent);
+}
+.store {
+  margin: 0 0 12px;
+  color: var(--enc-ink-secondary);
 }
 .menu-link {
   padding: 8px 10px;
@@ -81,6 +118,20 @@ const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
   box-shadow: inset 3px 0 0 var(--enc-accent);
   background: var(--enc-ground);
   font-weight: 600;
+}
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--enc-hairline);
+}
+.account-name {
+  font-weight: 600;
+}
+.account-error {
+  margin: 0;
 }
 .page {
   padding: 24px 32px;
