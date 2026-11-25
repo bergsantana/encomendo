@@ -1,0 +1,47 @@
+package sharedports
+
+import (
+	"testing"
+	"time"
+
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
+)
+
+// RunClockContract checks that a Clock reports a real, UTC time that never
+// goes backwards between two calls.
+func RunClockContract(t *testing.T, newClock func(t *testing.T) appshared.Clock) {
+	c := newClock(t)
+	first, second := c.Now(), c.Now()
+	if first.IsZero() {
+		t.Error("Now() is the zero time")
+	}
+	if first.Location() != time.UTC {
+		t.Errorf("Now() location = %v, want UTC", first.Location())
+	}
+	if second.Before(first) {
+		t.Errorf("Now() went backwards: %v then %v", first, second)
+	}
+}
+
+// RunIDGeneratorContract checks that an IDGenerator issues unique UUIDv7s
+// in non-decreasing order.
+func RunIDGeneratorContract(t *testing.T, newGenerator func(t *testing.T) appshared.IDGenerator) {
+	g := newGenerator(t)
+	const n = 1000
+	seen := make(map[string]bool, n)
+	prev := ""
+	for range n {
+		id := g.NewID()
+		s := id.String()
+		if id.IsZero() || id.Version() != 7 {
+			t.Fatalf("NewID() = %s (version %d), want a non-nil UUIDv7", s, id.Version())
+		}
+		if seen[s] {
+			t.Fatalf("NewID() repeated %s", s)
+		}
+		if s < prev {
+			t.Fatalf("NewID() went backwards: %s after %s", s, prev)
+		}
+		seen[s], prev = true, s
+	}
+}

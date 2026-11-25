@@ -41,6 +41,366 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a staff account and log in.
+         * @description The new session has no store. Create one with `POST /api/v1/admin/tenants`,
+         *     or join one through an invitation. Rate-limited per IP.
+         */
+        post: operations["signUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in with email and password.
+         * @description The session selects `tenantId` when given and the user belongs to it;
+         *     otherwise the user's only store, if there is exactly one; otherwise
+         *     no store, and the app shows the store picker. A wrong password and an
+         *     unknown email give the same answer. Rate-limited per IP and per email.
+         */
+        post: operations["logIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trade a refresh token for a new session.
+         * @description Rotates the refresh token and keeps the store it was issued for. If
+         *     the user no longer belongs to that store, the new session has no
+         *     store. The web app calls this on load and once after any 401.
+         */
+        post: operations["refreshSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/switch-tenant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move the session to another store the user belongs to.
+         * @description Rotates the refresh token like `/auth/refresh` and returns a session
+         *     for `tenantId`. Also used right after creating a store.
+         */
+        post: operations["switchTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End this login on every device that shares it.
+         * @description Revokes the refresh token's whole family and clears the cookie. When
+         *     an access token is sent too, it stops working at once instead of at
+         *     its expiry. Always answers 204, even for an unknown or missing token.
+         */
+        post: operations["logOut"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Email a 6-digit code to reset a forgotten password ("Esqueci a senha").
+         * @description Always answers 202, whether or not the email has an account, so the
+         *     answer never tells who is registered. A new request replaces any
+         *     earlier code. The code lasts 10 minutes and allows 5 attempts.
+         *     Rate-limited per IP and per email.
+         */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a new password with the emailed code.
+         * @description Revokes every refresh token of the account, so every device must log
+         *     in again with the new password. Rate-limited per IP and per email.
+         */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invitations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show what an invitation link offers before accepting it.
+         * @description The token comes from the link in the invitation email
+         *     (`…/convite#token=…`; a fragment, so it never reaches a server log).
+         *     `accountExists` tells the app whether to ask for a name and a new
+         *     password, or for the existing password. Rate-limited per IP.
+         */
+        post: operations["previewInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join the store and log in.
+         * @description Without an account for the invited email, `name` and `password`
+         *     create one. With an account, `password` must be that account's
+         *     password. Either way the user becomes a member with the invited role,
+         *     the invitation is used up, and the session selects that store.
+         *     Rate-limited per IP.
+         */
+        post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a store; the caller becomes its owner.
+         * @description Works with or without a store selected. The store starts with the
+         *     default settings (deposit 50%, assembly 3 days, safety margin 2
+         *     days, BRL) and the default status workflow (ADR 0006). The current
+         *     session does not change: call `/auth/switch-tenant` with the new id.
+         */
+        post: operations["createTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The selected store's settings.
+         * @description Needs `settings:read` (every role: the apps hide Produção and Estoque when they are off).
+         */
+        get: operations["getSettings"];
+        /**
+         * Replace the editable settings.
+         * @description Needs `settings:write` (owner). Send every field, with the `version`
+         *     you read. The status workflow is chosen elsewhere (milestone 4) and
+         *     the currency is fixed.
+         */
+        put: operations["updateSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The store's team, oldest member first.
+         * @description Needs `members:manage` (owner, admin).
+         */
+        get: operations["listMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove someone from the team.
+         * @description Needs `members:manage`. The person keeps their account but loses
+         *     access to this store; their open sessions in it end at the next
+         *     refresh, at most 15 minutes later. The owner can never be removed.
+         */
+        delete: operations["removeMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/members/{userId}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change a member's role.
+         * @description Needs `members:manage`. The owner's role never changes and no one can
+         *     be made owner here. Takes effect at the member's next refresh, at
+         *     most 15 minutes later.
+         */
+        put: operations["changeMemberRole"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invitations not yet accepted, revoked or expired, newest first.
+         * @description Needs `members:manage`.
+         */
+        get: operations["listInvitations"];
+        put?: never;
+        /**
+         * Invite someone to the team by email.
+         * @description Needs `members:manage`. Emails a link that is valid for 7 days and
+         *     works once. Inviting an email that already has a pending invitation
+         *     replaces it (new link, new expiry), which is how "Reenviar convite"
+         *     works. The link is only in the email, never in this response.
+         */
+        post: operations["inviteMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invitations/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel a pending invitation; its link stops working.
+         * @description Needs `members:manage`.
+         */
+        delete: operations["revokeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -63,7 +423,7 @@ export interface components {
              * @description Stable machine-readable code. New codes may be added; existing ones never change.
              * @enum {string}
              */
-            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready";
+            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable";
             detail?: string;
             instance?: string;
             errors?: components["schemas"]["FieldIssue"][];
@@ -73,11 +433,322 @@ export interface components {
             /** @description pt-BR text the client may show next to the field. */
             message: string;
         };
+        /**
+         * Format: uuid
+         * @example 0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d9e
+         */
+        Uuid: string;
+        /**
+         * Format: email
+         * @description Compared without regard to case.
+         * @example dono@altarpm.com.br
+         */
+        Email: string;
+        /** @example Ana Souza */
+        PersonName: string;
+        /** @description 8 to 128 characters. Stored only as an argon2id hash. */
+        Password: string;
+        /**
+         * @description The store's address label: `{slug}.encomendo.com.br`. Lower-case
+         *     letters, digits and single hyphens. Some words (www, api, admin,
+         *     conta …) are reserved and answer `invalid`.
+         * @example altarpm
+         */
+        Slug: string;
+        /**
+         * @description A staff member's role in one store (docs/architecture.md section 5.4).
+         * @enum {string}
+         */
+        Role: "owner" | "admin" | "staff" | "viewer";
+        /**
+         * @description Any role but owner; a store has one owner.
+         * @enum {string}
+         */
+        InvitableRole: "admin" | "staff" | "viewer";
+        /**
+         * @description New permissions are added as features land; existing ones never change.
+         * @enum {string}
+         */
+        Permission: "catalog:write" | "finance:read" | "inventory:adjust" | "members:manage" | "order:read" | "order:write" | "portal:write" | "production:write" | "purchase:write" | "receiving:write" | "settings:read" | "settings:write";
+        /**
+         * @description How the refresh token travels; see "Sessions" above. Android sends `body`.
+         * @default cookie
+         * @enum {string}
+         */
+        RefreshTransport: "cookie" | "body";
+        User: {
+            id: components["schemas"]["Uuid"];
+            name: components["schemas"]["PersonName"];
+            email: components["schemas"]["Email"];
+        };
+        TenantSummary: {
+            id: components["schemas"]["Uuid"];
+            /** @example Alta RPM */
+            name: string;
+            slug: components["schemas"]["Slug"];
+        };
+        Tenant: components["schemas"]["TenantSummary"] & {
+            /** Format: date-time */
+            createdAt: string;
+        };
+        Membership: {
+            tenant: components["schemas"]["TenantSummary"];
+            role: components["schemas"]["Role"];
+        };
+        Session: {
+            user: components["schemas"]["User"];
+            /** @description The selected store. Absent when none is selected. */
+            tenant?: components["schemas"]["TenantSummary"];
+            /** @description The role in the selected store. Absent when none is selected. */
+            role?: components["schemas"]["Role"];
+            /** @description What the role allows in the selected store; empty when none is selected. */
+            permissions: components["schemas"]["Permission"][];
+            /** @description Every store the user belongs to, for the store picker. */
+            memberships: components["schemas"]["Membership"][];
+        };
+        AuthSession: components["schemas"]["Session"] & {
+            /** @description JWT (EdDSA). Do not parse it; read the session fields instead. */
+            accessToken: string;
+            /** @enum {string} */
+            tokenType: "Bearer";
+            /**
+             * @description Seconds until the access token expires (900).
+             * @example 900
+             */
+            expiresIn: number;
+            /** @description Only with the `body` refresh transport. */
+            refreshToken?: string;
+        };
+        SignUpRequest: {
+            name: components["schemas"]["PersonName"];
+            email: components["schemas"]["Email"];
+            password: components["schemas"]["Password"];
+            refreshTransport?: components["schemas"]["RefreshTransport"];
+        };
+        LoginRequest: {
+            email: components["schemas"]["Email"];
+            password: string;
+            /** @description The store to select, such as the one used last on this device. */
+            tenantId?: components["schemas"]["Uuid"];
+            refreshTransport?: components["schemas"]["RefreshTransport"];
+        };
+        RefreshRequest: {
+            /** @description Android only. The web app sends `{}` and the cookie. */
+            refreshToken?: string;
+        };
+        SwitchTenantRequest: {
+            tenantId: components["schemas"]["Uuid"];
+            /** @description Android only. */
+            refreshToken?: string;
+        };
+        LogoutRequest: {
+            /** @description Android only. */
+            refreshToken?: string;
+        };
+        PasswordResetRequest: {
+            email: components["schemas"]["Email"];
+        };
+        PasswordResetConfirmRequest: {
+            email: components["schemas"]["Email"];
+            /** @example 482913 */
+            code: string;
+            password: components["schemas"]["Password"];
+        };
+        InvitationTokenRequest: {
+            /** @description From the invitation link. */
+            token: string;
+        };
+        InvitationPreview: {
+            tenant: components["schemas"]["TenantSummary"];
+            email: components["schemas"]["Email"];
+            role: components["schemas"]["InvitableRole"];
+            /** @description True when the email already has an account; ask for its password instead of a name and a new one. */
+            accountExists: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        AcceptInvitationRequest: {
+            token: string;
+            /** @description Required when the email has no account yet; ignored otherwise. */
+            name?: components["schemas"]["PersonName"];
+            /** @description The new password (8 to 128 characters) for a new account, or the existing account's password. */
+            password: string;
+            refreshTransport?: components["schemas"]["RefreshTransport"];
+        };
+        CreateTenantRequest: {
+            /**
+             * @description The store's name as clients see it.
+             * @example Alta RPM
+             */
+            name: string;
+            slug: components["schemas"]["Slug"];
+        };
+        /** @description The status workflow new orders take (ADR 0004). Chosen in settings from milestone 4. */
+        StatusWorkflowRef: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+            /**
+             * @description pt-BR name of the preset.
+             * @example Encomenda com montagem
+             */
+            name: string;
+        };
+        /**
+         * @description The store's WhatsApp number, digits only with country and area code
+         *     (55 + DDD + number), as wa.me links need it. Null when not set.
+         * @example 5592991234567
+         */
+        WhatsappPhone: string | null;
+        EditableSettings: {
+            /** @description Estoque menu and the `stock` sourcing mode. */
+            stockEnabled: boolean;
+            /** @description Produção menu and the `in_house` sourcing mode. */
+            productionEnabled: boolean;
+            /** @description Generate purchases before the deposit ("Sinal") is paid. Off by default. */
+            purchaseBeforeDeposit: boolean;
+            /** @example 50 */
+            depositPercent: number;
+            /** @example 3 */
+            assemblyDays: number;
+            /**
+             * @description Margem de segurança.
+             * @example 2
+             */
+            safetyMarginDays: number;
+            whatsappPhone: components["schemas"]["WhatsappPhone"];
+        };
+        TenantSettings: components["schemas"]["EditableSettings"] & {
+            /** @example BRL */
+            readonly currency: string;
+            statusWorkflow: components["schemas"]["StatusWorkflowRef"];
+            /** @description Send it back on update; a stale one answers `version_conflict`. */
+            version: number;
+        };
+        UpdateSettingsRequest: components["schemas"]["EditableSettings"] & {
+            version: number;
+        };
+        Member: {
+            userId: components["schemas"]["Uuid"];
+            name: components["schemas"]["PersonName"];
+            email: components["schemas"]["Email"];
+            role: components["schemas"]["Role"];
+            /** Format: date-time */
+            joinedAt: string;
+        };
+        MemberPage: {
+            items: components["schemas"]["Member"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        ChangeRoleRequest: {
+            role: components["schemas"]["InvitableRole"];
+        };
+        InviteMemberRequest: {
+            email: components["schemas"]["Email"];
+            role: components["schemas"]["InvitableRole"];
+        };
+        Invitation: {
+            id: components["schemas"]["Uuid"];
+            email: components["schemas"]["Email"];
+            role: components["schemas"]["InvitableRole"];
+            /** Format: date-time */
+            invitedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        InvitationPage: {
+            items: components["schemas"]["Invitation"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
     };
-    responses: never;
-    parameters: never;
+    responses: {
+        /** @description A new session. */
+        AuthSession: {
+            headers: {
+                "Set-Cookie": components["headers"]["SetRefreshCookie"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AuthSession"];
+            };
+        };
+        /** @description `invalid`: the input breaks a rule; `errors` lists the fields. */
+        Invalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `unauthenticated`: no token, or an expired, tampered or wrong-audience one. Refresh once, then log in. */
+        Unauthenticated: {
+            headers: {
+                "WWW-Authenticate": components["headers"]["WWWAuthenticate"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `forbidden`: the role lacks the permission. `tenant_required`: the
+         *     session has no store selected; open the store picker.
+         */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `not_found`: no such thing in this store. */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `version_conflict`: someone saved first. Reload and apply the change again. */
+        VersionConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `rate_limited`: too many attempts. Wait `Retry-After` seconds. */
+        RateLimited: {
+            headers: {
+                "Retry-After": components["headers"]["RetryAfter"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+    };
+    parameters: {
+        /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+        Cursor: string;
+        Limit: number;
+        UserId: components["schemas"]["Uuid"];
+        InvitationId: components["schemas"]["Uuid"];
+    };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description `encomendo_refresh` with the new refresh token, when the refresh transport is `cookie`. */
+        SetRefreshCookie: string;
+        /** @description Seconds until the limit resets. */
+        RetryAfter: number;
+        /** @description Always `Bearer`. */
+        WWWAuthenticate: string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -129,6 +800,558 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+        };
+    };
+    signUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignUpRequest"];
+            };
+        };
+        responses: {
+            201: components["responses"]["AuthSession"];
+            400: components["responses"]["Invalid"];
+            /** @description `email_taken`: an account with this email already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    logIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AuthSession"];
+            400: components["responses"]["Invalid"];
+            /** @description `invalid_credentials`: wrong email or password. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    refreshSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AuthSession"];
+            /**
+             * @description `unauthenticated`: the refresh token is missing, unknown, expired,
+             *     revoked or already used. A reused token also revokes its family.
+             *     Send the user to the login screen.
+             */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    switchTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchTenantRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AuthSession"];
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            /** @description `forbidden`: the user does not belong to that store (or it does not exist). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logOut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Logged out. Sets an expired `encomendo_refresh` cookie. */
+            204: {
+                headers: {
+                    "Set-Cookie": components["headers"]["SetRefreshCookie"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description If the account exists, the code is on its way. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Invalid"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed. Log in with it. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /**
+             * @description `invalid_code`: the code is wrong, expired, used up or was never
+             *     sent (the same answer for each). `invalid`: the new password breaks
+             *     the password rules, with field issues.
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    previewInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The invitation is valid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPreview"];
+                };
+            };
+            /** @description `not_found`: unknown, expired, revoked or already used (the same answer for each). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInvitationRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AuthSession"];
+            400: components["responses"]["Invalid"];
+            /** @description `invalid_credentials`: the account exists and the password is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `not_found`: unknown, expired, revoked or already used. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `already_member`: the account already belongs to this store. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    createTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTenantRequest"];
+            };
+        };
+        responses: {
+            /** @description The store exists. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenant"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            /** @description `slug_taken`: another store uses this address. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved settings, with the new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettings"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["VersionConflict"];
+        };
+    };
+    listMembers: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of members. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description `forbidden`: no `members:manage`, or the target is the owner. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    changeMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description The member with the new role. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            /** @description `forbidden`: no `members:manage`, or the target is the owner. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listInvitations: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of pending invitations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    inviteMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation sent. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description `already_member`: someone with this email is already on the team. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description `email_unavailable`: the invitation was saved but the email could
+             *     not be sent. Invite again; it replaces the link.
+             */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

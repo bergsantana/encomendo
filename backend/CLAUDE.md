@@ -5,11 +5,11 @@ Modular monolith, ports and adapters. Module `github.com/bergsantana/encomendo/b
 ## Commands
 
 ```bash
-go test -race -shuffle=on -count=1 ./internal/...   # unit: domain, app, http
-go test ./internal/domain/order/... -run TestOrder   # one package while iterating
-make test-integration                                # testcontainers: postgres, rls, redis
-make lint                                            # gofmt, go vet, golangci-lint
-go run ./cmd/migrate up                              # apply migrations locally
+go test -race -shuffle=on -count=1 ./internal/... ./test/contract/...  # unit, plus port contracts against the fakes
+go test ./internal/domain/order/... -run TestOrder                       # one package while iterating
+make test-integration                                                    # testcontainers: postgres, rls, redis
+make lint                                                                # gofmt, go vet, golangci-lint
+go run ./cmd/migrate up                                                  # apply migrations locally
 ```
 
 ## Layers and what each may import
@@ -35,16 +35,17 @@ Every write follows these steps, in this order:
 // Advance moves the order to status to, a later status in the order's own
 // workflow. The domain checks the guard of every phase it enters.
 func (s *Service) Advance(ctx context.Context, id shared.OrderID, to workflow.StatusKey) (OrderView, error) {
-	if err := authz.Require(ctx, identity.PermOrderWrite); err != nil { // 1. authorize
+	by, err := authz.Require(ctx, identity.PermOrderWrite) // 1. authorize; returns the caller
+	if err != nil {
 		return OrderView{}, err
 	}
 	var out *order.Order
-	err := s.tx.WithinTx(ctx, func(ctx context.Context) error { // 2. one transaction; sets app.tenant_id for RLS
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error { // 2. one transaction; sets app.tenant_id for RLS
 		o, err := s.repo.ByID(ctx, id)
 		if err != nil {
 			return fmt.Errorf("load order %s: %w", id, err)
 		}
-		if err := o.Advance(to, principal(ctx), s.clock.Now()); err != nil { // 3. the domain decides
+		if err := o.Advance(to, by, s.clock.Now()); err != nil { // 3. the domain decides
 			return err
 		}
 		if err := s.repo.Update(ctx, o); err != nil { // optimistic lock on version
@@ -62,7 +63,7 @@ func (s *Service) Advance(ctx context.Context, id shared.OrderID, to workflow.St
 }
 ```
 
-`principal(ctx)` stands for the `app/shared` helper that reads the caller from the context. The shape is the rule; the names come from `docs/architecture.md`.
+`authz` is `internal/app/shared/authz`. The ports come from `internal/app/shared`, always imported as `appshared` (its fakes as `sharedfake`), because `internal/domain/shared` is imported next to it; golangci-lint enforces both aliases (ADR 0009). The transaction's RLS scope comes from the context: the authn middleware sets it through `authz.WithPrincipal`, and a use case sets one itself only when it creates a tenant.
 
 ## Errors
 
@@ -77,7 +78,7 @@ func (s *Service) Advance(ctx context.Context, id shared.OrderID, to workflow.St
 
 - Packages: short, lowercase, singular (`order`, `catalog`). Avoid stutter in what you export: `order.New`, `order.Status`, not `order.NewOrder`.
 - No `Get` prefix on getters: `o.Total()`. Short receiver names (`o *Order`, `s *Service`).
-- Constructors: `NewService(repo Repository, tx shared.TxManager, …) *Service`. Required dependencies are arguments, never setters.
+- Constructors: `NewService(repo Repository, tx appshared.TxManager, …) *Service`. Required dependencies are arguments, never setters.
 - `context.Context` is the first parameter of every port method and use case. Never store it in a struct.
 - No `init()`, no package-level mutable state, no naked returns.
 - Goroutines only where a use case needs them, always with `errgroup` and context cancellation.
@@ -107,7 +108,7 @@ func (o *Order) Advance(to workflow.StatusKey, by shared.Principal, now time.Tim
 - `SkipDefaultTransaction: true`. The TxManager owns transactions.
 - No `gorm.Model` embed and no `DeletedAt`, so there is no hidden soft-delete filter.
 - `Updates(struct)` skips zero values. Use `Select("*")` or a map when a field must become 0, "" or false.
-- Optimistic locking: `Where("version = ?", v)`, and return `shared.ErrConflict` when `RowsAffected == 0`.
+- Optimistic locking: `Where("version = ?", v)`, and return `shared.ErrVersionConflict` (it matches `shared.ErrConflict`) when `RowsAffected == 0`. The API answers `409 version_conflict`.
 - `Preload` only what the use case returns. Use `Raw` only where the builder gets unclear (reports, stock sums), with bound parameters, never `fmt.Sprintf` into SQL.
 - Map Postgres errors in `errors.go`: 23505 → conflict, 23503 → invalid reference, 40001 → retryable conflict.
 
