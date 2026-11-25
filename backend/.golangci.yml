@@ -15,6 +15,7 @@ linters:
     - gocognit
     - gocritic
     - gosec
+    - importas
     - misspell
     - noctx
     - nolintlint
@@ -28,6 +29,16 @@ linters:
       statements: 40
     gocognit:
       min-complexity: 20
+    importas:
+      # internal/app/shared and internal/domain/shared are both package
+      # "shared", and use cases import both; the app one always takes this
+      # alias so every file reads the same (ADR 0009).
+      no-unaliased: true
+      alias:
+        - pkg: github.com/bergsantana/encomendo/backend/internal/app/shared
+          alias: appshared
+        - pkg: github.com/bergsantana/encomendo/backend/internal/app/shared/fake
+          alias: sharedfake
     nolintlint:
       require-explanation: true
       require-specific: true

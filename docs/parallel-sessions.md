@@ -15,13 +15,13 @@ How to split the build plan across worktree sessions without collisions. `docs/b
 
 | Wave | Session | Owns | Scope |
 | --- | --- | --- | --- |
-| 1 | `m2-contract` | `docs/api/openapi.yaml` | `domain/shared` (typed IDs, `Money`, `Page`, `Principal`), `app/shared` ports (`TxManager`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`, `authz.Require`), OpenAPI for `/auth/*` and tenancy, `make api-types`. No adapters. |
-| 2 | `m2-db` | `migrations/` | `0002`, `0003` (ADR 0006), `0004`, `0005`, `0014`, `0015`; Postgres `TxManager` that sets `app.tenant_id`; RLS test suite. |
-| 2 | `m2-domain` | none | `domain/identity`, `domain/tenancy`, `app/identity`, `app/tenancy`, fakes, port contract suites run against the fakes. |
+| 1 | `m2-contract` | `docs/api/openapi.yaml` | `domain/shared` (typed IDs, `Money`, `Page`, `Principal`, `Role`), `domain/identity` permissions and role map, `app/shared` ports (`TxManager` + `Scope`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`), `authz`, fakes and their contract suites, OpenAPI for `/auth/*` and tenancy, `make api-types`. ADRs 0009–0011. No adapters. |
+| 2 | `m2-db` | `migrations/` | `0002` (with `password_reset_codes`), `0003` (ADR 0006), `0004` (with `invitations`, ADR 0011), `0005` (helpers that read `''` as NULL), `0014`, `0015` (with the user-scope `SELECT` policies on `memberships` and `tenants`, ADR 0010); Postgres `TxManager` that sets all three RLS settings from `appshared.Scope` on every transaction, uses savepoints and passes `RunTxManagerContract`; outbox publisher passing `RunEventPublisherContract`; RLS test suite. |
+| 2 | `m2-domain` | none | The rest of `domain/identity` (user, client account, email, password policy, password reset code), `domain/tenancy` (tenant, slug, membership, invitation, settings, plan), `app/identity`, `app/tenancy` (including RemoveMember, invitations and password reset, ADR 0011), fakes, port contract suites run against the fakes. |
 | 2 | `m2-auth` | none | `adapter/auth`: EdDSA JWT with `kid` rotation, refresh rotation with reuse detection, Argon2id; the security tests. |
-| 2 | `m2-web-auth` | none | `packages/api` auth client, session store, login, sign-up, tenant picker, route guards. Uses the merged OpenAPI. |
-| 2 | `m2-mobile-auth` | none | Ktor client, `TokenStore`, auth graph, login, sign-up, tenant picker, `PermissionGate`. |
-| 3 | `m2-integrate` | `main.go`, `router.go`, `openapi.yaml` | Postgres repositories for identity and tenancy, `authn` middleware, CORS, rate limit, handlers, wiring, contract suites against real adapters, end-to-end "Done when" checks. |
+| 2 | `m2-web-auth` | none | `packages/api` auth client, session store, login, sign-up, tenant picker, forgot password, accept invitation, route guards, members (list, invite, change role, remove). Uses the merged OpenAPI. |
+| 2 | `m2-mobile-auth` | none | Ktor client, `TokenStore`, auth graph, login, sign-up, tenant picker, forgot password, `PermissionGate`, members (list, invite, change role, remove). Refresh transport `body` (ADR 0010). |
+| 3 | `m2-integrate` | `main.go`, `router.go`, `openapi.yaml` | Postgres repositories for identity and tenancy, `authn` middleware, no CORS but a cross-origin refusal on `/auth/*` (ADR 0010), store page middleware before authn and client tokens only on store routes (ADR 0009), rate limits, handlers, the new problem codes in `respond/problem.go`, `adapter/notify/smtp.go` and Mailpit in the dev stack (ADR 0011), wiring, contract suites against real adapters, end-to-end "Done when" checks. |
 
 ## Later milestones (plan, refine when you get there)
 

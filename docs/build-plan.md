@@ -21,23 +21,23 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 0 | 20 | Not started |
+| 2 | Identity and tenancy | 3 | 23 | In progress: contract done (step 1 of 7) |
 | 3 | Catalog and suppliers | 0 | 13 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **22** | **114** | **about 19%** |
+|   | **All milestones** | **25** | **117** | **about 21%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
 ### What exists today
 
-- **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM open with the pgx driver, Redis client, goose migration runner, the first migration (`0001_roles_and_extensions.sql`), and the `domain/shared` sentinel errors. No domain contexts, no `internal/app`, no `testkit`.
+- **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM open with the pgx driver, Redis client, goose migration runner, the first migration (`0001_roles_and_extensions.sql`), `domain/shared` (typed UUIDv7 IDs, `Money`, `Page`, `Principal`, `Role`, sentinel errors), the `identity` permission map, `app/shared` ports with fakes and `authz`, and their contract suites in `test/contract/sharedports`. No bounded context yet, no `testkit`.
 - **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, health call, generated types) and `packages/ui` (tokens, `BaseButton`, `StatusBadge`, phase colours). Admin shows a Hoje placeholder behind a dashboard layout. The store app resolves the tenant from the subdomain and renders a shell.
 - **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:navigation` (root and management graph), `core:di` (Koin) and a Hoje placeholder screen.
-- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, five ADRs, an OpenAPI file with the two health endpoints.
+- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0011, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
 
 ---
 
@@ -89,34 +89,37 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 
 ### Backend
 
-- [ ] `domain/shared`: typed IDs (UUIDv7), `Money`, `Page`, `Principal`
-- [ ] `domain/identity` (user, client account, email, password policy, role, permission) and `domain/tenancy` (tenant, membership, settings, plan), with tests
-- [ ] `app/shared`: `TxManager`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`, `authz.Require`
-- [ ] `app/identity` and `app/tenancy` services with fakes: Register, Login, Refresh, Logout, SwitchTenant, CreateTenant, InviteMember, ChangeRole, UpdateSettings
+- [x] `domain/shared`: typed IDs (UUIDv7), `Money`, `Page`, `Principal`, `Role`
+- [ ] `domain/identity` (user, client account, email, password policy, password reset code, role, permission) and `domain/tenancy` (tenant, membership, invitation, settings, plan), with tests (partial: `identity` permissions and the role map landed with the contract)
+- [x] `app/shared`: `TxManager` and `Scope`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`, `authz.Require`; fakes and their contract suites (ADR 0009)
+- [ ] `app/identity` and `app/tenancy` services with fakes: Register, Login, Refresh, Logout, SwitchTenant, password reset, accept invitation, CreateTenant, InviteMember, RevokeInvitation, ChangeRole, RemoveMember, UpdateSettings
 - [ ] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id
-- [ ] Migrations `0002_identity`, `0004_tenancy`, `0005_rls_helpers`, `0014_platform`, `0015_rls_policies` (the workflow migration `0003` lands in milestone 4 but `0004` references it; see "Order of migrations")
+- [ ] Migrations `0002_identity` (with `password_reset_codes`), `0003_workflows` (ADR 0006), `0004_tenancy` (with `invitations`, ADR 0011), `0005_rls_helpers`, `0014_platform`, `0015_rls_policies`
 - [ ] `adapter/postgres`: `TxManager` that sets `app.tenant_id`, `errors.go` mapping, identity and tenancy repositories
-- [ ] HTTP: `authn` middleware, CORS, rate limit on `/auth`, auth and tenancy handlers
-- [ ] OpenAPI: `/auth/*` and tenancy endpoints
+- [ ] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes
+- [ ] `adapter/notify/smtp.go` for invitations and password reset codes; Mailpit in the dev stack (ADR 0011)
+- [x] OpenAPI: `/auth/*`, tenancy and members endpoints (ADRs 0010, 0011)
 - [ ] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse)
 - [ ] Contract suites for the identity and tenancy ports, run against fakes and real adapters
 
 ### Web
 
 - [ ] `packages/api` auth client with refresh once on 401; session store (token in memory, refresh from cookie)
-- [ ] Login, sign-up, tenant picker, route guards (`requiresAuth`, `permission`), `usePermission`
+- [ ] Login, sign-up, tenant picker, forgot password, accept invitation, route guards (`requiresAuth`, `permission`), `usePermission`
+- [ ] Members (`features/members`): list, invite, change role, remove
 
 ### Mobile
 
 - [ ] Ktor client with bearer-and-refresh plugin and problem+json mapping
 - [ ] `TokenStore` (Keystore + DataStore) and auth graph before the management graph
 - [ ] Login, sign-up, tenant picker, forgot password screens, `PermissionGate`
+- [ ] `feature/members`: list, invite, change role, remove
 
 ### Done when
 
 - [ ] A staff token cannot read another tenant's rows through the API or the database; an expired or tampered token is rejected on every route
 - [ ] Sign-up → create tenant → log in works on web and Android against the same endpoints
-- [ ] Members: invite and change role on web and Android
+- [ ] Members: invite, change role and remove on web and Android
 - [ ] Coverage gate (90% domain + app, 80% overall) passes with real code behind it
 
 ---
@@ -300,13 +303,13 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | Track | Status |
 | --- | --- |
 | Backend coverage gate (≥ 90% domain + app, ≥ 80% overall) | Script and CI job exist; there is almost no domain or app code to measure yet |
-| Port contract suites (`test/contract/`) | Directory does not exist yet; arrives with the first port in milestone 2 |
+| Port contract suites (`test/contract/`) | Shared ports (`Cache`, `TxManager`, `EventPublisher`, `Clock`, `IDGenerator`) run against the fakes in `make test`; real adapters join as they land |
 | RLS suite | Not started; arrives with the first tenant table in milestone 2 |
-| `docs/api/openapi.yaml` kept in sync | In sync; covers only `/healthz` and `/readyz` |
+| `docs/api/openapi.yaml` kept in sync | Ahead of the server: milestone 2 `/auth/*`, tenancy and members are specified; only `/healthz` and `/readyz` are served until `m2-integrate` |
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
 | Parity: every management feature on web and Android | Only Hoje, a placeholder on both |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | Nothing to leak yet; the test lands with the first store response |
-| ADRs | 0001–0005 written |
+| ADRs | 0001–0011 written |
 
 ## Order of migrations
 
@@ -340,3 +343,6 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-24 | Workflow tables and preset seed land in milestone 2 | ADR 0006 |
 | 2026-11-24 | Docker Compose for development and deployment, all in `deploy/` | ADR 0007 |
 | 2026-11-24 | Drop CodeQL and dependency review (they need GHAS on a private repo) | ADR 0008 |
+| 2026-11-25 | `app/shared` imported as `appshared`; RLS scope in the context, derived from the principal | ADR 0009 |
+| 2026-11-25 | Staff sessions may have no store; switching is a refresh; refresh token by cookie (web) or body (Android) | ADR 0010 |
+| 2026-11-25 | Email in milestone 2: invitations by link, password reset by code; members can be removed | ADR 0011 |

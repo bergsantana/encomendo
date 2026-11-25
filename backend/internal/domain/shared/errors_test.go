@@ -42,12 +42,24 @@ func TestValidationError_ErrorListsFields(t *testing.T) {
 func TestSentinels_AreDistinct(t *testing.T) {
 	t.Parallel()
 
-	all := []error{ErrNotFound, ErrConflict, ErrForbidden, ErrInvalid}
+	all := []error{ErrNotFound, ErrConflict, ErrForbidden, ErrInvalid, ErrUnauthenticated}
 	for i, a := range all {
 		for j, b := range all {
 			if i != j && errors.Is(a, b) {
 				t.Errorf("%v matches %v", a, b)
 			}
 		}
+	}
+}
+
+func TestErrVersionConflict_IsAConflict(t *testing.T) {
+	t.Parallel()
+
+	err := fmt.Errorf("save settings: %w", ErrVersionConflict)
+	if !errors.Is(err, ErrVersionConflict) || !errors.Is(err, ErrConflict) {
+		t.Errorf("%v should match ErrVersionConflict and ErrConflict", err)
+	}
+	if errors.Is(ErrConflict, ErrVersionConflict) {
+		t.Error("a plain conflict must not read as a version conflict")
 	}
 }

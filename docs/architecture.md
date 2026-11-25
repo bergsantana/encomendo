@@ -415,18 +415,21 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 1. Migrations run as `encomendo_owner` (table owner). The API connects as `encomendo_app`: `NOSUPERUSER NOBYPASSRLS`, not the owner, only `SELECT/INSERT/UPDATE/DELETE` grants.
 2. Every tenant table: `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`.
 3. `TxManager.WithinTx` opens a GORM transaction and runs `SELECT set_config('app.tenant_id', $1, true)` (transaction-local, safe with pooling). It also sets `app.user_id` for audit triggers.
-4. No tenant set → `current_setting('app.tenant_id', true)` is NULL → zero rows (fail closed).
+4. No tenant set → zero rows (fail closed). The TxManager sets every setting on every transaction, to `''` when unset, and policies read them through the `0005_rls_helpers` functions that turn `''` into NULL: on a pooled connection, `current_setting(…, true)` returns `''` rather than NULL once any earlier transaction set it (ADR 0009).
 5. Store page routes resolve the tenant from the Host subdomain, then set the same variable; public reads expose only published data.
 6. Cross-tenant platform jobs (the deadline check) use a separate `encomendo_platform` role from `cmd/worker`, never from the API.
-7. Client area requests set `app.client_account_id` instead of `app.tenant_id`. The tables a client reads (`orders`, `order_items`, `payments`, `tenants` name only, and the global `status_workflows` / `workflow_statuses` for step names) get a second, `SELECT`-only policy: `client_account_id = current_setting('app.client_account_id', true)::uuid` (the global workflow tables need no tenant policy). No write policy uses it, and supplier, cost and purchasing tables have no client policy at all.
+7. Client area requests set `app.client_account_id` instead of `app.tenant_id`. The tables a client reads (`orders`, `order_items`, `payments`, `tenants` name only, and the global `status_workflows` / `workflow_statuses` for step names) get a second, `SELECT`-only policy: `client_account_id = current_client_account_id()` (the global workflow tables need no tenant policy). No write policy uses it, and supplier, cost and purchasing tables have no client policy at all.
 
 ```sql
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders FORCE ROW LEVEL SECURITY;
 
+-- current_tenant_id() comes from 0005_rls_helpers: it reads app.tenant_id
+-- and turns '' into NULL. Never cast current_setting(…) to uuid directly in a
+-- policy: on a pooled connection it can be '' (ADR 0009).
 CREATE POLICY tenant_isolation ON orders
-  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  USING (tenant_id = current_tenant_id())
+  WITH CHECK (tenant_id = current_tenant_id());
 ```
 
 ---

@@ -1,13 +1,67 @@
 openapi: 3.1.0
 info:
   title: Encomendo API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     The contract between the Go backend and the web and Android clients.
     Written by hand; backend HTTP tests validate responses against it, and the
     web types in web/packages/api/src/types are generated from it.
 
-    Errors are RFC 9457 problem details with a stable `code`.
+    Errors are RFC 9457 problem details with a stable `code`. Branch on
+    `code`, never on `title` or `detail`.
+
+    ## Sessions (ADR 0010)
+
+    Staff log in with email and password. Every successful sign-up, login,
+    refresh, tenant switch and invitation acceptance returns an
+    `AuthSession`: a 15-minute access token, the user, the selected store
+    (if any), the role and permissions there, and every store the user
+    belongs to. Send the access token as `Authorization: Bearer …`.
+
+    A session may have **no store selected**: right after sign-up, or when
+    the user belongs to several stores and none was chosen. Store routes then
+    answer `403 tenant_required`; create a store or call
+    `/auth/switch-tenant`.
+
+    The refresh token (30 days, rotated on every use) travels one of two
+    ways, chosen by `refreshTransport` on the calls that start a session:
+
+    - `cookie` (default, web): an httpOnly cookie
+      `__Host-encomendo_refresh` (`Secure; SameSite=Strict; Path=/`, no
+      `Domain`, so no store subdomain can set or read it), never readable by
+      JavaScript and never returned in the body. A local stack on plain
+      HTTP is configured to use `encomendo_refresh` without `Secure`; the
+      server reads only the configured name.
+    - `body` (Android): `refreshToken` in the response body; send it back in
+      the request body.
+
+    A call that presents a refresh token gets the new one back the same way
+    it came, whatever `refreshTransport` says, so a script on the web page
+    can never trade the cookie for a token it can read. Sending both the
+    cookie and a body token is `400 invalid`; more than one refresh cookie is
+    `401 unauthenticated`.
+
+    The web apps call the API on their own origin (the admin host routes
+    `/api` and `/auth`), so the API sends no CORS headers at all. Every
+    `/auth/*` call must send `Content-Type: application/json` with a JSON
+    body (`{}` is fine), and a browser request whose `Origin` is another
+    origin, or whose `Sec-Fetch-Site` is `same-site` or `cross-site`, is
+    `403 forbidden`. Store pages share the registrable domain, so SameSite
+    alone would not stop them.
+
+    Using a refresh token that was already used revokes every token of its
+    family: all devices of that login must sign in again. So clients never
+    refresh twice at once: the web app holds a Web Lock
+    (`navigator.locks`, name `encomendo-refresh`) around `/auth/refresh` so
+    tabs take turns, and Android holds a mutex. There is no grace window.
+
+    Permissions in the session only drive what the apps show. The backend
+    checks every call. A role change takes effect at the next refresh, at
+    most 15 minutes later, except for team management, which re-reads the
+    caller's role on every call (ADR 0011).
+
+    Limits keyed on an email use the email trimmed and lower-cased, so
+    changing its case never buys more attempts.
 servers:
   - url: http://localhost:8081
     description: Local stack (make dev-up)
@@ -15,12 +69,19 @@ servers:
 tags:
   - name: health
     description: Probes for the orchestrator and the load balancer.
+  - name: auth
+    description: Staff sign-up, login, sessions, password reset and joining a store by invitation.
+  - name: tenancy
+    description: Creating a store and its settings.
+  - name: members
+    description: The store's team ("Equipe"), its roles and invitations ("Convites").
 
 paths:
   /healthz:
     get:
       tags: [health]
       operationId: getLiveness
+      security: [] # public
       summary: The process is up and serving HTTP.
       description: Never checks dependencies, so a database outage does not restart the process.
       responses:
@@ -34,6 +95,7 @@ paths:
     get:
       tags: [health]
       operationId: getReadiness
+      security: [] # public
       summary: Every dependency (Postgres, Redis) answers.
       responses:
         "200":
@@ -49,7 +111,692 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
 
+  /auth/signup:
+    post:
+      tags: [auth]
+      operationId: signUp
+      security: [] # public
+      summary: Create a staff account and log in.
+      description: |
+        The new session has no store. Create one with `POST /api/v1/admin/tenants`,
+        or join one through an invitation. Rate-limited per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignUpRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/AuthSession"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "409":
+          description: "`email_taken`: an account with this email already exists."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: logIn
+      security: [] # public
+      summary: Log in with email and password.
+      description: |
+        The session selects `tenantId` when given and the user belongs to it;
+        otherwise the user's only store, if there is exactly one; otherwise
+        no store, and the app shows the store picker. A wrong password and an
+        unknown email give the same answer. Rate-limited per IP and per email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthSession"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          description: "`invalid_credentials`: wrong email or password."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshSession
+      summary: Trade a refresh token for a new session.
+      description: |
+        Rotates the refresh token and keeps the store it was issued for. If
+        the user no longer belongs to that store, the new session has no
+        store. The web app calls this on load and once after any 401, one
+        call at a time (see "Sessions").
+      security:
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthSession"
+        "400":
+          description: "`invalid`: both the cookie and a body `refreshToken` were sent."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: |
+            `unauthenticated`: the refresh token is missing, unknown, expired,
+            revoked or already used. A reused token also revokes its family.
+            Send the user to the login screen.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/switch-tenant:
+    post:
+      tags: [auth]
+      operationId: switchTenant
+      summary: Move the session to another store the user belongs to.
+      description: |
+        Rotates the refresh token like `/auth/refresh` and returns a session
+        for `tenantId`. Also used right after creating a store.
+      security:
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwitchTenantRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthSession"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: "`forbidden`: the user does not belong to that store (or it does not exist)."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logOut
+      summary: End this login on every device that shares it.
+      description: |
+        Revokes the refresh token's whole family and clears the cookie. When
+        an access token is sent too, it stops working at once instead of at
+        its expiry. Always answers 204, even for an unknown or missing token.
+      security:
+        - refreshCookie: []
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Logged out. Sets an expired refresh cookie.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetRefreshCookie"
+
+  /auth/password-reset:
+    post:
+      tags: [auth]
+      operationId: requestPasswordReset
+      security: [] # public
+      summary: Email a 6-digit code to reset a forgotten password ("Esqueci a senha").
+      description: |
+        Always answers 202, whether or not the email has an account, so the
+        answer never tells who is registered. The answer never waits for the
+        email to go out, so its timing does not tell either. A new request
+        replaces any earlier code. The code lasts 10 minutes and allows 5
+        wrong attempts; an account allows 10 wrong codes a day, however many
+        codes are requested (ADR 0011). Rate-limited per IP and per email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "202":
+          description: If the account exists, the code is on its way.
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/password-reset/confirm:
+    post:
+      tags: [auth]
+      operationId: confirmPasswordReset
+      security: [] # public
+      summary: Set a new password with the emailed code.
+      description: |
+        Revokes every refresh token of the account, so every device must log
+        in again with the new password. Rate-limited per IP and per email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+      responses:
+        "204":
+          description: Password changed. Log in with it.
+        "400":
+          description: |
+            `invalid_code`: the code is wrong, expired, used up or was never
+            sent (the same answer for each). `invalid`: the new password breaks
+            the password rules, with field issues.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/invitations/preview:
+    post:
+      tags: [auth]
+      operationId: previewInvitation
+      security: [] # public
+      summary: Show what an invitation link offers before accepting it.
+      description: |
+        The token comes from the link in the invitation email
+        (`…/convite#token=…`; a fragment, so it never reaches a server log).
+        `accountExists` tells the app whether to ask for a name and a new
+        password, or for the existing password. Rate-limited per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTokenRequest"
+      responses:
+        "200":
+          description: The invitation is valid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationPreview"
+        "404":
+          description: "`not_found`: unknown, expired, revoked or already used (the same answer for each)."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /auth/invitations/accept:
+    post:
+      tags: [auth]
+      operationId: acceptInvitation
+      security: [] # public
+      summary: Join the store and log in.
+      description: |
+        Without an account for the invited email, `name` and `password`
+        create one. With an account, `password` must be that account's
+        password. Either way the user becomes a member with the invited role,
+        the invitation is used up, and the session selects that store.
+        Rate-limited per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInvitationRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthSession"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          description: "`invalid_credentials`: the account exists and the password is wrong."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: |
+            `not_found`: unknown, expired, revoked or already used, or its
+            sender can no longer manage the team (the same answer for each).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`already_member`: the account already belongs to this store."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/admin/tenants:
+    post:
+      tags: [tenancy]
+      operationId: createTenant
+      summary: Create a store; the caller becomes its owner.
+      description: |
+        Works with or without a store selected. The store starts with the
+        default settings (deposit 50%, assembly 3 days, safety margin 2
+        days, BRL) and the default status workflow (ADR 0006). The current
+        session does not change: call `/auth/switch-tenant` with the new id.
+        Limited to 5 stores per user per day.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "201":
+          description: The store exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "409":
+          description: "`slug_taken`: another store uses this address."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/admin/settings:
+    get:
+      tags: [tenancy]
+      operationId: getSettings
+      summary: The selected store's settings.
+      description: "Needs `settings:read` (every role: the apps hide Produção and Estoque when they are off)."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSettings"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [tenancy]
+      operationId: updateSettings
+      summary: Replace the editable settings.
+      description: |
+        Needs `settings:write` (owner). Send every field, with the `version`
+        you read. The status workflow is chosen elsewhere (milestone 4) and
+        the currency is fixed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsRequest"
+      responses:
+        "200":
+          description: The saved settings, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSettings"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+
+  /api/v1/admin/members:
+    get:
+      tags: [members]
+      operationId: listMembers
+      summary: The store's team, oldest member first.
+      description: Needs `members:manage` (owner, admin).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of members.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/admin/members/{userId}:
+    delete:
+      tags: [members]
+      operationId: removeMember
+      summary: Remove someone from the team.
+      description: |
+        Needs `members:manage`. The person keeps their account but loses
+        access to this store; their open sessions in it end at the next
+        refresh, at most 15 minutes later. The owner can never be removed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: "`forbidden`: no `members:manage`, or the target is the owner."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/members/{userId}/role:
+    put:
+      tags: [members]
+      operationId: changeMemberRole
+      summary: Change a member's role.
+      description: |
+        Needs `members:manage`. The owner's role never changes and no one can
+        be made owner here. Takes effect at the member's next refresh, at
+        most 15 minutes later.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeRoleRequest"
+      responses:
+        "200":
+          description: The member with the new role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: "`forbidden`: no `members:manage`, or the target is the owner."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/invitations:
+    get:
+      tags: [members]
+      operationId: listInvitations
+      summary: Invitations not yet accepted, revoked or expired, newest first.
+      description: Needs `members:manage`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of pending invitations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [members]
+      operationId: inviteMember
+      summary: Invite someone to the team by email.
+      description: |
+        Needs `members:manage`, checked against the caller's current role, not
+        the one in the token. Emails a link that is valid for 7 days and works
+        once, and only while the person who sent it can still manage the team.
+        Inviting an email that already has a pending invitation replaces it
+        (new link, new expiry), which is how "Reenviar convite" works. The
+        link is only in the email, never in this response. Limited per day
+        to 20 invitations per store, 50 per inviting user and 3 per email in
+        the same store.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteMemberRequest"
+      responses:
+        "201":
+          description: Invitation sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "`already_member`: someone with this email is already on the team."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: |
+            `email_unavailable`: the invitation was saved but the email could
+            not be sent. Invite again; it replaces the link.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /api/v1/admin/invitations/{invitationId}:
+    delete:
+      tags: [members]
+      operationId: revokeInvitation
+      summary: Cancel a pending invitation; its link stops working.
+      description: Needs `members:manage`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/InvitationId"
+      responses:
+        "204":
+          description: Revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token from an `AuthSession`, audience `backoffice`. Client
+        account tokens are rejected on these routes with 401.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-encomendo_refresh
+      description: |
+        Web only. HttpOnly; Secure; SameSite=Strict; Path=/; host-only; 30
+        days. Named `encomendo_refresh`, without Secure, on a local stack over
+        plain HTTP.
+
+  headers:
+    SetRefreshCookie:
+      description: The refresh cookie with the new token, when the refresh transport is `cookie`.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds until the limit resets.
+      schema:
+        type: integer
+        minimum: 1
+    WWWAuthenticate:
+      description: Always `Bearer`.
+      schema:
+        type: string
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque position from the previous page's `nextCursor`. Omit for the first page.
+      schema:
+        type: string
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+
+  responses:
+    AuthSession:
+      description: A new session.
+      headers:
+        Set-Cookie:
+          $ref: "#/components/headers/SetRefreshCookie"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AuthSession"
+    Invalid:
+      description: "`invalid`: the input breaks a rule; `errors` lists the fields."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthenticated:
+      description: "`unauthenticated`: no token, or an expired, tampered or wrong-audience one. Refresh once, then log in."
+      headers:
+        WWW-Authenticate:
+          $ref: "#/components/headers/WWWAuthenticate"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: |
+        `forbidden`: the role lacks the permission. `tenant_required`: the
+        session has no store selected; open the store picker.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: "`not_found`: no such thing in this store."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    VersionConflict:
+      description: "`version_conflict`: someone saved first. Reload and apply the change again."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: "`rate_limited`: too many attempts. Wait `Retry-After` seconds."
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
   schemas:
     Status:
       type: object
@@ -79,7 +826,24 @@ components:
         code:
           type: string
           description: Stable machine-readable code. New codes may be added; existing ones never change.
-          enum: [invalid, not_found, method_not_allowed, conflict, forbidden, internal, not_ready]
+          enum:
+            - invalid
+            - not_found
+            - method_not_allowed
+            - conflict
+            - forbidden
+            - internal
+            - not_ready
+            - unauthenticated
+            - invalid_credentials
+            - tenant_required
+            - version_conflict
+            - rate_limited
+            - email_taken
+            - slug_taken
+            - already_member
+            - invalid_code
+            - email_unavailable
         detail:
           type: string
         instance:
@@ -97,3 +861,433 @@ components:
         message:
           type: string
           description: pt-BR text the client may show next to the field.
+
+    Uuid:
+      type: string
+      format: uuid
+      example: 0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d9e
+    Email:
+      type: string
+      format: email
+      maxLength: 254
+      description: Compared without regard to case.
+      example: dono@altarpm.com.br
+    PersonName:
+      type: string
+      minLength: 1
+      maxLength: 100
+      example: Ana Souza
+    Password:
+      type: string
+      writeOnly: true
+      minLength: 8
+      maxLength: 128
+      description: 8 to 128 characters. Stored only as an argon2id hash.
+    Slug:
+      type: string
+      minLength: 3
+      maxLength: 40
+      pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+      description: |
+        The store's address label: `{slug}.encomendo.com.br`. Lower-case
+        letters, digits and single hyphens. Reserved, and answered with
+        `invalid`: the labels of the configured admin and API hosts, plus
+        www, api, admin, app, conta, mail and static (the list the store app
+        uses in web/apps/store/src/site.ts).
+      example: altarpm
+    Role:
+      type: string
+      enum: [owner, admin, staff, viewer]
+      description: A staff member's role in one store (docs/architecture.md section 5.4).
+    InvitableRole:
+      type: string
+      enum: [admin, staff, viewer]
+      description: Any role but owner; a store has one owner.
+    Permission:
+      type: string
+      enum:
+        - catalog:write
+        - finance:read
+        - inventory:adjust
+        - members:manage
+        - order:read
+        - order:write
+        - portal:write
+        - production:write
+        - purchase:write
+        - receiving:write
+        - settings:read
+        - settings:write
+      description: New permissions are added as features land; existing ones never change.
+    RefreshTransport:
+      type: string
+      enum: [cookie, body]
+      default: cookie
+      description: How the refresh token travels; see "Sessions" above. Android sends `body`.
+
+    User:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          $ref: "#/components/schemas/PersonName"
+        email:
+          $ref: "#/components/schemas/Email"
+    TenantSummary:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Alta RPM
+        slug:
+          $ref: "#/components/schemas/Slug"
+    Tenant:
+      allOf:
+        - $ref: "#/components/schemas/TenantSummary"
+        - type: object
+          required: [createdAt]
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+    Membership:
+      type: object
+      required: [tenant, role]
+      properties:
+        tenant:
+          $ref: "#/components/schemas/TenantSummary"
+        role:
+          $ref: "#/components/schemas/Role"
+    Session:
+      type: object
+      required: [user, permissions, memberships]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        tenant:
+          $ref: "#/components/schemas/TenantSummary"
+          description: The selected store. Absent when none is selected.
+        role:
+          $ref: "#/components/schemas/Role"
+          description: The role in the selected store. Absent when none is selected.
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+          description: What the role allows in the selected store; empty when none is selected.
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/Membership"
+          description: Every store the user belongs to, for the store picker.
+    AuthSession:
+      allOf:
+        - $ref: "#/components/schemas/Session"
+        - type: object
+          required: [accessToken, tokenType, expiresIn]
+          properties:
+            accessToken:
+              type: string
+              description: JWT (EdDSA). Do not parse it; read the session fields instead.
+            tokenType:
+              type: string
+              enum: [Bearer]
+            expiresIn:
+              type: integer
+              description: Seconds until the access token expires (900).
+              example: 900
+            refreshToken:
+              type: string
+              description: Only with the `body` refresh transport.
+
+    SignUpRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email, password]
+      properties:
+        name:
+          $ref: "#/components/schemas/PersonName"
+        email:
+          $ref: "#/components/schemas/Email"
+        password:
+          $ref: "#/components/schemas/Password"
+        refreshTransport:
+          $ref: "#/components/schemas/RefreshTransport"
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+        tenantId:
+          $ref: "#/components/schemas/Uuid"
+          description: The store to select, such as the one used last on this device.
+        refreshTransport:
+          $ref: "#/components/schemas/RefreshTransport"
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        refreshToken:
+          type: string
+          description: Android only. The web app sends `{}` and the cookie.
+    SwitchTenantRequest:
+      type: object
+      additionalProperties: false
+      required: [tenantId]
+      properties:
+        tenantId:
+          $ref: "#/components/schemas/Uuid"
+        refreshToken:
+          type: string
+          description: Android only.
+    LogoutRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        refreshToken:
+          type: string
+          description: Android only.
+    PasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+    PasswordResetConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [email, code, password]
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          example: "482913"
+        password:
+          $ref: "#/components/schemas/Password"
+
+    InvitationTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          maxLength: 128
+          description: From the invitation link.
+    InvitationPreview:
+      type: object
+      required: [tenant, email, role, accountExists, expiresAt]
+      properties:
+        tenant:
+          $ref: "#/components/schemas/TenantSummary"
+        email:
+          $ref: "#/components/schemas/Email"
+        role:
+          $ref: "#/components/schemas/InvitableRole"
+        accountExists:
+          type: boolean
+          description: True when the email already has an account; ask for its password instead of a name and a new one.
+        expiresAt:
+          type: string
+          format: date-time
+    AcceptInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          maxLength: 128
+        name:
+          $ref: "#/components/schemas/PersonName"
+          description: Required when the email has no account yet; ignored otherwise.
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+          description: The new password (8 to 128 characters) for a new account, or the existing account's password.
+        refreshTransport:
+          $ref: "#/components/schemas/RefreshTransport"
+
+    CreateTenantRequest:
+      type: object
+      additionalProperties: false
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: The store's name as clients see it.
+          example: Alta RPM
+        slug:
+          $ref: "#/components/schemas/Slug"
+    StatusWorkflowRef:
+      type: object
+      required: [id, version, name]
+      description: The status workflow new orders take (ADR 0004). Chosen in settings from milestone 4.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          description: pt-BR name of the preset.
+          example: Encomenda com montagem
+    WhatsappPhone:
+      type: [string, "null"]
+      pattern: "^55[1-9]{2}[0-9]{8,9}$"
+      description: |
+        The store's WhatsApp number, digits only with country and area code
+        (55 + DDD + number), as wa.me links need it. Null when not set.
+      example: "5592991234567"
+    EditableSettings:
+      type: object
+      required:
+        - stockEnabled
+        - productionEnabled
+        - purchaseBeforeDeposit
+        - depositPercent
+        - assemblyDays
+        - safetyMarginDays
+        - whatsappPhone
+      properties:
+        stockEnabled:
+          type: boolean
+          description: Estoque menu and the `stock` sourcing mode.
+        productionEnabled:
+          type: boolean
+          description: Produção menu and the `in_house` sourcing mode.
+        purchaseBeforeDeposit:
+          type: boolean
+          description: Generate purchases before the deposit ("Sinal") is paid. Off by default.
+        depositPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 50
+        assemblyDays:
+          type: integer
+          minimum: 0
+          maximum: 365
+          example: 3
+        safetyMarginDays:
+          type: integer
+          minimum: 0
+          maximum: 365
+          description: Margem de segurança.
+          example: 2
+        whatsappPhone:
+          $ref: "#/components/schemas/WhatsappPhone"
+    TenantSettings:
+      allOf:
+        - $ref: "#/components/schemas/EditableSettings"
+        - type: object
+          required: [currency, statusWorkflow, version]
+          properties:
+            currency:
+              type: string
+              pattern: "^[A-Z]{3}$"
+              readOnly: true
+              example: BRL
+            statusWorkflow:
+              $ref: "#/components/schemas/StatusWorkflowRef"
+            version:
+              type: integer
+              minimum: 1
+              description: Send it back on update; a stale one answers `version_conflict`.
+    UpdateSettingsRequest:
+      allOf:
+        - $ref: "#/components/schemas/EditableSettings"
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+              minimum: 1
+
+    Member:
+      type: object
+      required: [userId, name, email, role, joinedAt]
+      properties:
+        userId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          $ref: "#/components/schemas/PersonName"
+        email:
+          $ref: "#/components/schemas/Email"
+        role:
+          $ref: "#/components/schemas/Role"
+        joinedAt:
+          type: string
+          format: date-time
+    MemberPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    ChangeRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/InvitableRole"
+    InviteMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        role:
+          $ref: "#/components/schemas/InvitableRole"
+    Invitation:
+      type: object
+      required: [id, email, role, invitedAt, expiresAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        email:
+          $ref: "#/components/schemas/Email"
+        role:
+          $ref: "#/components/schemas/InvitableRole"
+        invitedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    InvitationPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invitation"
+        nextCursor:
+          type: string
+          description: Absent on the last page.

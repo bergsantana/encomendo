@@ -2,6 +2,7 @@ package shared
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -20,7 +21,15 @@ var (
 	// ErrInvalid means the input breaks a rule. Prefer *ValidationError when
 	// the problem can be pinned to fields.
 	ErrInvalid = errors.New("invalid")
+	// ErrUnauthenticated means the caller could not be identified: no token,
+	// a bad or expired token, or wrong credentials. Adapters answer 401.
+	ErrUnauthenticated = errors.New("unauthenticated")
 )
+
+// ErrVersionConflict means an optimistic lock failed: the row changed since
+// the caller read it. It matches ErrConflict, and the API reports it with its
+// own code, version_conflict (docs/architecture.md section 6).
+var ErrVersionConflict = fmt.Errorf("version conflict: %w", ErrConflict)
 
 // FieldError describes one invalid input field. Message is pt-BR text that
 // clients may show next to the field.

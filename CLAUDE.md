@@ -70,6 +70,9 @@ The full table is in `docs/architecture.md` section 4.2. The names you will use 
 | Entrega / Retirada | `Handover`: `delivery` / `pickup` |
 | Cliente (of one store) / conta do cliente | `customer.Customer` / `identity.ClientAccount` |
 | Página da loja, Minhas encomendas | `storefront`, `clientarea` |
+| Equipe, membro, papel | `tenancy.Membership`, `shared.Role` (`owner` / `admin` / `staff` / `viewer`) |
+| Convite (para a equipe) | `tenancy.Invitation` (ADR 0011) |
+| Esqueci a senha, código | password reset code in `identity` (ADR 0011) |
 
 For a term that isn't listed, don't invent a context or a name on your own. Ask, record the decision as an ADR, and add the term here.
 
