@@ -2,6 +2,7 @@ package br.com.encomendo.core.security
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.ProviderException
@@ -12,14 +13,22 @@ import javax.crypto.SecretKey
  * KeystoreCipher seals secrets with an AES-256-GCM key that lives in the
  * Android Keystore and never leaves it (framing in AesGcm.android.kt).
  * [open] never throws: a key the Keystore can't load means an unreadable
- * session, never a crash on every launch.
+ * session, never a crash on every launch. [seal] turns the Keystore's own
+ * failures into IOException, so a login that can't be saved is reported, not a crash.
  */
 class KeystoreCipher(
     private val alias: String = DEFAULT_ALIAS,
 ) : SecretCipher {
     private val keyLock = Any()
 
-    override fun seal(plain: ByteArray): ByteArray = sealWith(key(), plain)
+    override fun seal(plain: ByteArray): ByteArray =
+        try {
+            sealWith(key(), plain)
+        } catch (error: GeneralSecurityException) {
+            throw IOException("the Keystore could not seal the session", error)
+        } catch (error: ProviderException) {
+            throw IOException("the Keystore could not seal the session", error)
+        }
 
     override fun open(sealed: ByteArray): ByteArray? =
         try {

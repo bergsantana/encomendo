@@ -23,6 +23,16 @@ internal fun MockRequestHandleScope.respondProblem(
     body: String,
 ): HttpResponseData = respond(body, status, headersOf(HttpHeaders.ContentType, "application/problem+json"))
 
+internal fun MockRequestHandleScope.respondRateLimited(retryAfter: String): HttpResponseData =
+    respond(
+        """{"title":"Muitas tentativas","status":429,"code":"rate_limited"}""",
+        HttpStatusCode.TooManyRequests,
+        headersOf(
+            HttpHeaders.ContentType to listOf("application/problem+json"),
+            HttpHeaders.RetryAfter to listOf(retryAfter),
+        ),
+    )
+
 internal fun MockRequestHandleScope.respondUnauthorized(): HttpResponseData =
     respondProblem(HttpStatusCode.Unauthorized, """{"title":"Sessão expirada","status":401,"code":"unauthenticated"}""")
 

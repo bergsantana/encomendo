@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only; replaces src/main/res/xml/network_security_config.xml.
+    The local stack serves the API on plain HTTP: 10.0.2.2 is the host machine
+    as the emulator sees it, and localhost works on a phone after
+    `adb reverse tcp:8081 tcp:8081`. Every other host stays HTTPS only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

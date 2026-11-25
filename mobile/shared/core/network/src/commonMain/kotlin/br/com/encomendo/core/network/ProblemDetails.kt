@@ -2,6 +2,7 @@ package br.com.encomendo.core.network
 
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -33,8 +34,15 @@ internal suspend fun HttpResponse.toApiError(json: Json): ApiError {
         title = problem?.title,
         detail = problem?.detail,
         fieldIssues = problem?.errors.orEmpty().map { FieldIssue(field = it.field, message = it.message) },
+        retryAfterSeconds = headers[HttpHeaders.RetryAfter]?.let(::wholeSeconds),
     )
 }
+
+/**
+ * Reads `Retry-After` as the contract sends it: whole seconds, at least 1.
+ * HTTP also allows a date there; the app shows no number rather than a wrong one.
+ */
+private fun wholeSeconds(header: String): Int? = header.trim().toIntOrNull()?.takeIf { it >= 1 }
 
 private fun decodeProblem(
     json: Json,

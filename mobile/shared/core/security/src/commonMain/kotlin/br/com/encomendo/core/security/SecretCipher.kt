@@ -6,7 +6,11 @@ package br.com.encomendo.core.security
  * Calls may block, so callers run them on an IO dispatcher.
  */
 interface SecretCipher {
-    /** Returns [plain] encrypted and authenticated, with everything needed to open it. */
+    /**
+     * Returns [plain] encrypted and authenticated, with everything needed to
+     * open it. Throws `IOException` when the platform cannot seal, as storage
+     * would, so callers handle one kind of failure.
+     */
     fun seal(plain: ByteArray): ByteArray
 
     /** Returns the plain bytes, or null when they cannot be decrypted (key gone, data tampered). */

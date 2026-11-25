@@ -91,13 +91,48 @@ class ApiClientTest {
                 client {
                     respondProblem(
                         HttpStatusCode.Conflict,
-                        """{"title":"Mudou","status":409,"code":"version_conflict"}""",
+                        """{"title":"Limite do plano","status":409,"code":"plan_limit_reached"}""",
                     )
                 }
 
             val error = assertFailsWith<ApiError> { client.get("/orders/1") }
 
-            assertEquals(ApiErrorCode("version_conflict"), error.code)
+            assertEquals(ApiErrorCode("plan_limit_reached"), error.code)
+        }
+
+    @Test
+    fun readsTheWaitARateLimitAsksFor() =
+        runTest {
+            // Android shows the wait from Retry-After, which every 429 carries (ADR 0013).
+            val client = client { respondRateLimited(retryAfter = "42") }
+
+            val error = assertFailsWith<ApiError> { client.post("/auth/login") }
+
+            assertEquals(429, error.status)
+            assertEquals(ApiErrorCode.RateLimited, error.code)
+            assertEquals(42, error.retryAfterSeconds)
+        }
+
+    @Test
+    fun aWaitThatIsNotWholeSecondsIsUnknown() =
+        runTest {
+            // The contract promises whole seconds, at least 1. An HTTP date or a broken
+            // value reads as "no wait given" rather than a wrong number on screen.
+            for (header in listOf("Wed, 25 Nov 2026 10:00:00 GMT", "0", "-5", "1.5", "")) {
+                val client = client { respondRateLimited(retryAfter = header) }
+
+                val error = assertFailsWith<ApiError> { client.post("/auth/login") }
+
+                assertNull(error.retryAfterSeconds, "Retry-After: '$header'")
+            }
+        }
+
+    @Test
+    fun anErrorWithoutAWaitHasNone() =
+        runTest {
+            val client = client { respond("Bad Gateway", HttpStatusCode.BadGateway) }
+
+            assertNull(assertFailsWith<ApiError> { client.get("/broken") }.retryAfterSeconds)
         }
 
     @Test
