@@ -114,6 +114,8 @@ export interface RequestOptions extends Omit<RequestInit, 'method' | 'body'> {
 export interface HttpClient {
   get<T>(path: string, options?: RequestOptions): Promise<T>
   post<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>
+  put<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>
+  delete<T>(path: string, options?: RequestOptions): Promise<T>
 }
 
 /** Call is one request as the caller asked for it; a retry sends it again unchanged. */
@@ -175,6 +177,8 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   return {
     get: (path, requestOptions) => request('GET', path, undefined, requestOptions),
     post: (path, body, requestOptions) => request('POST', path, body, requestOptions),
+    put: (path, body, requestOptions) => request('PUT', path, body, requestOptions),
+    delete: (path, requestOptions) => request('DELETE', path, undefined, requestOptions),
   }
 }
 

@@ -21,6 +21,22 @@ describe('createHttpClient', () => {
     await expect(getReadiness(client)).resolves.toEqual({ status: 'ok', checks: { postgres: 'ok' } })
   })
 
+  it('sends PUT with a JSON body and DELETE without one', async () => {
+    const seen: { method: string; type: string | null; body: string }[] = []
+    const record = async ({ request }: { request: Request }) => {
+      seen.push({ method: request.method, type: request.headers.get('Content-Type'), body: await request.text() })
+      return request.method === 'PUT' ? HttpResponse.json({ role: 'admin' }) : new HttpResponse(null, { status: 204 })
+    }
+    server.use(http.put(`${base}/members/1/role`, record), http.delete(`${base}/members/1`, record))
+
+    await expect(client.put('/members/1/role', { role: 'admin' })).resolves.toEqual({ role: 'admin' })
+    await expect(client.delete('/members/1')).resolves.toBeUndefined()
+    expect(seen).toEqual([
+      { method: 'PUT', type: 'application/json', body: '{"role":"admin"}' },
+      { method: 'DELETE', type: null, body: '' },
+    ])
+  })
+
   it('sends JSON bodies with the right headers', async () => {
     let seen: { type: string | null; body: unknown } | undefined
     server.use(

@@ -47,6 +47,12 @@ export const routes: RouteRecordRaw[] = [
     children: [
       { path: '', redirect: { name: 'hoje' } },
       { path: 'hoje', name: 'hoje', component: () => import('../features/hoje/views/HojeView.vue') },
+      {
+        path: 'equipe',
+        name: 'members',
+        component: () => import('../features/members/views/MembersView.vue'),
+        meta: { permission: 'members:manage' },
+      },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: { name: 'hoje' } },

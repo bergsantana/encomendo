@@ -1,4 +1,4 @@
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory } from 'vue-router'
 
@@ -30,22 +30,25 @@ export async function openApp(path: string) {
   return { wrapper, router }
 }
 
+/** Scope is where a helper looks: the whole app, or one part of it such as a table row. */
+type Scope = VueWrapper | DOMWrapper<Element>
+
 /** field finds an input by its visible label, as a user does. */
-export function field(wrapper: VueWrapper, label: string) {
+export function field(wrapper: Scope, label: string) {
   const id = wrapper.findAll('label').find((l) => l.text() === label)?.attributes('for')
   if (id === undefined) throw new Error(`no field labelled ${label}`)
   return wrapper.get(`#${id}`)
 }
 
 /** button finds a button by its visible text. */
-export function button(wrapper: VueWrapper, name: string) {
+export function button(wrapper: Scope, name: string) {
   const found = wrapper.findAll('button').find((b) => b.text() === name)
   if (found === undefined) throw new Error(`no button ${name}`)
   return found
 }
 
 /** link finds a link by its visible text. */
-export function link(wrapper: VueWrapper, name: string) {
+export function link(wrapper: Scope, name: string) {
   const found = wrapper.findAll('a').find((a) => a.text() === name)
   if (found === undefined) throw new Error(`no link ${name}`)
   return found

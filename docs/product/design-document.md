@@ -199,6 +199,28 @@ The exact wording of the screens that start, move and end a staff session. Web a
 - The store's name under the logo; the member's name and "Sair" at the foot.
 - When the server cannot be reached: "Não foi possível sair. {the connection or server message}"
 
+### Equipe (the team)
+
+Only for roles with `members:manage` (Dono, Admin): the menu entry "Equipe" is hidden from the others. Role names are in "Roles" above.
+
+- **Title** "Equipe". Table "Nome", "E-mail", "Papel", and an "Ações" column read only by screen readers. The signed-in member's row says "(você)" after the name.
+  - The owner's row shows "Dono" and nothing to change: the owner's role never changes and the owner is never removed.
+  - Other rows: the role as a choice of Admin, Funcionário, Visualizador (read aloud as "Papel de {nome}"), and "Remover".
+  - Picking a role only drafts it. "Alterar papel" appears once it differs, and saves it. On the member's own row it asks first: "Você deixará de gerenciar a equipe.", buttons "Cancelar" and "Confirmar".
+  - "Remover" asks first: "Remover {nome} da equipe?" (own row: "Você sairá da equipe e perderá o acesso a esta loja."), buttons "Cancelar" and "Confirmar remoção".
+  - Screen readers hear each row's buttons with the person: "Alterar papel de {nome}", "Remover {nome}".
+  - "Carregar mais" when the team runs past one page. While loading: "Carregando a equipe…"
+- **After a change:** "{nome} agora é {papel}.", "{nome} saiu da equipe."
+- **When a change fails:** the message shows in that row, such as "Você não tem mais permissão para gerenciar a equipe.", after which the screen leaves for Hoje once the session catches up, or a message from the table above. "Esta pessoa não faz mais parte da equipe." shows at the top instead, since that row goes when the list is read again. If the team could not be read at all: the message and "Tentar de novo".
+- "Cancelar" puts things back as they were: a role question restores the role the member has.
+- **Invite form** "Convidar para a equipe": fields "E-mail" and "Papel" (Funcionário unless another is chosen), button "Enviar convite".
+  - "Informe o e-mail." Already on the team, next to the email: "Esta pessoa já faz parte da equipe."
+  - Sent: "Convite enviado para {e-mail}." Saved but the email did not go out: 'O convite foi salvo, mas o e-mail não saiu. Use "Reenviar" para tentar de novo.'
+- **"Convites pendentes"**: table "E-mail", "Papel", "Vale até" (dd/mm/aaaa), buttons "Reenviar" and "Cancelar convite" (read aloud with the email: "Reenviar convite para {e-mail}", "Cancelar convite para {e-mail}"); "Carregar mais convites".
+  - After them: "Convite reenviado para {e-mail}.", "Convite para {e-mail} cancelado."
+  - "Reenviar" whose email did not go out, in the row: 'O convite foi salvo, mas o e-mail não saiu. Use "Reenviar" para tentar de novo.' (the list is read again for the new expiry).
+  - At the top, with the lists read again: "Este convite não está mais pendente.", or "Esta pessoa já faz parte da equipe." when the person joined meanwhile.
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.

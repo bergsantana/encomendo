@@ -1,5 +1,7 @@
 export { default as BaseButton } from './components/BaseButton.vue'
 export { default as BaseInput } from './components/BaseInput.vue'
+export { default as BaseSelect } from './components/BaseSelect.vue'
+export type { SelectOption } from './components/BaseSelect.vue'
 export { default as StatusBadge } from './components/StatusBadge.vue'
 export { isPhase, phases, toneForPhase } from './phase'
 export type { Phase, StatusTone } from './phase'

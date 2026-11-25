@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 
 import BaseButton from './components/BaseButton.vue'
 import BaseInput from './components/BaseInput.vue'
+import BaseSelect from './components/BaseSelect.vue'
 import StatusBadge from './components/StatusBadge.vue'
 import { isPhase, phases, toneForPhase } from './phase'
 
@@ -60,6 +61,44 @@ describe('BaseButton', () => {
     await wrapper.trigger('click')
 
     expect(wrapper.emitted('click')).toBeUndefined()
+  })
+})
+
+describe('BaseSelect', () => {
+  const roles = [
+    { value: 'admin', label: 'Admin' },
+    { value: 'staff', label: 'Funcionário' },
+  ]
+  const select = (props: Record<string, unknown> = {}) =>
+    mount(BaseSelect, { props: { label: 'Papel', modelValue: 'staff', options: roles, ...props } })
+
+  it('labels the choice and shows every option, with the current one selected', () => {
+    const wrapper = select()
+    const element = wrapper.get('select')
+
+    expect(wrapper.get(`label[for="${element.attributes('id')}"]`).text()).toBe('Papel')
+    expect(wrapper.findAll('option').map((o) => o.text())).toEqual(['Admin', 'Funcionário'])
+    expect((element.element as HTMLSelectElement).value).toBe('staff')
+  })
+
+  it('emits the value the user picks', async () => {
+    const wrapper = select()
+
+    await wrapper.get('select').setValue('admin')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([['admin']])
+  })
+
+  it('shows the error next to the choice and links it', () => {
+    const wrapper = select({ error: 'Escolha um papel.' })
+    const element = wrapper.get('select')
+
+    expect(element.attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get(`#${element.attributes('aria-describedby')}`).text()).toBe('Escolha um papel.')
+  })
+
+  it('can be turned off while a change is saved', () => {
+    expect(select({ disabled: true }).get('select').attributes('disabled')).toBeDefined()
   })
 })
 

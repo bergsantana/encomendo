@@ -25,6 +25,8 @@ export type {
   TenantSummary,
   User,
 } from './auth'
+export { changeMemberRole, inviteMember, listInvitations, listMembers, removeMember, revokeInvitation } from './members'
+export type { Invitation, InvitationPage, InvitableRole, InviteMemberRequest, Member, MemberPage, PageRequest } from './members'
 export { createTenant } from './tenancy'
 export type { CreateTenantRequest, Tenant } from './tenancy'
 export { getReadiness } from './health'
