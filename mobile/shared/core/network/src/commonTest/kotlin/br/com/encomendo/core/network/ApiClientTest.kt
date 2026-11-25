@@ -151,6 +151,6 @@ class ApiClientTest {
             engine = MockEngine(handler),
             config = ApiClientConfig(baseUrl = API_URL),
             tokens = InMemoryTokenStorage(),
-            refresher = { _, _ -> error("no refresh expected") },
+            refresher = TokenRefresher<TestTokens> { _, _ -> error("no refresh expected") },
         )
 }

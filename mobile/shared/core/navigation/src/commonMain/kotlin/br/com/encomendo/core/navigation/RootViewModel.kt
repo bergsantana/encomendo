@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewModelScope
-import br.com.encomendo.core.domain.session.ObserveSignedIn
+import br.com.encomendo.core.domain.session.GrantedPermissions
+import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.Session
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -12,7 +14,7 @@ import kotlinx.coroutines.flow.stateIn
 
 /**
  * RootUiState says which graph the app shows. A signed-in or signed-out state
- * carries [Session.screens], where that session's screen ViewModels live; a
+ * carries [RootUiState.Ready.screens], where that session's screen ViewModels live; a
  * new session always comes with a new owner, so the two can never disagree.
  */
 sealed interface RootUiState {
@@ -20,20 +22,22 @@ sealed interface RootUiState {
     data object Loading : RootUiState
 
     /** A known session state, signed in or out. */
-    sealed interface Session : RootUiState {
-        /** The ViewModels of this session's screens; cleared when the session ends. */
+    sealed interface Ready : RootUiState {
+        /** The ViewModels of this session's screens; cleared when the session ends or changes user or store. */
         val screens: ViewModelStoreOwner
     }
 
     /** Nobody is signed in: the auth graph. */
     data class SignedOut(
         override val screens: ViewModelStoreOwner,
-    ) : Session
+    ) : Ready
 
-    /** A business user is signed in: the management graph. */
+    /** A business user is signed in: the management graph, showing what [permissions] allow. */
     data class SignedIn(
         override val screens: ViewModelStoreOwner,
-    ) : Session
+        /** What the session's role allows in the selected store; nothing while no store is selected. */
+        val permissions: GrantedPermissions,
+    ) : Ready
 }
 
 /**
@@ -42,40 +46,52 @@ sealed interface RootUiState {
  * refresh the server refused).
  *
  * It also owns each session's screen ViewModels. They survive rotation and
- * are cleared when the session starts or ends, so the login form never
- * outlives the login and no management screen keeps running under the next
- * user's token.
+ * are cleared when the session starts or ends, or moves to another store, so
+ * the login form never outlives the login, no management screen keeps running
+ * under the next user's token, and none keeps showing the previous store. A
+ * refresh of the same user and store keeps them.
  */
 class RootViewModel(
-    observeSignedIn: ObserveSignedIn,
+    observeSession: ObserveSession,
 ) : ViewModel() {
     // Read and replaced on the main thread only, by the session flow below.
-    private var session: SessionScreens? = null
+    private var current: SessionScreens? = null
 
     /** The graph to show. */
     val uiState: StateFlow<RootUiState> =
-        observeSignedIn()
+        observeSession()
             .map(::stateFor)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), RootUiState.Loading)
 
     override fun onCleared() {
-        session?.viewModelStore?.clear()
+        current?.viewModelStore?.clear()
     }
 
-    // The flow restarts after the app sat in the background, re-emitting the same value;
-    // only a real change of session may clear the screens.
-    private fun stateFor(signedIn: Boolean): RootUiState.Session {
-        val screens = session?.takeIf { it.signedIn == signedIn } ?: startSession(signedIn)
-        return if (signedIn) RootUiState.SignedIn(screens) else RootUiState.SignedOut(screens)
+    // The flow restarts after the app sat in the background, re-emitting the same value,
+    // and a refresh re-emits the same user and store; only a new user or store clears the screens.
+    private fun stateFor(session: Session?): RootUiState.Ready {
+        val identity = session?.let { Identity(userId = it.user.id, tenantId = it.tenant?.id) }
+        val screens = current?.takeIf { it.identity == identity } ?: startSession(identity)
+        return if (session == null) {
+            RootUiState.SignedOut(screens)
+        } else {
+            RootUiState.SignedIn(screens, session.permissions)
+        }
     }
 
-    private fun startSession(signedIn: Boolean): SessionScreens {
-        session?.viewModelStore?.clear()
-        return SessionScreens(signedIn).also { session = it }
+    private fun startSession(identity: Identity?): SessionScreens {
+        current?.viewModelStore?.clear()
+        return SessionScreens(identity).also { current = it }
     }
+
+    /** Who the screens work for: a user in a store, or nobody (null) while signed out. */
+    private data class Identity(
+        val userId: String,
+        val tenantId: String?,
+    )
 
     private class SessionScreens(
-        val signedIn: Boolean,
+        val identity: Identity?,
     ) : ViewModelStoreOwner {
         override val viewModelStore = ViewModelStore()
     }

@@ -22,6 +22,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(project(":shared:core:domain"))
             api(libs.datastore.preferences.core)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)

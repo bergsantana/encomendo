@@ -2,18 +2,20 @@ package br.com.encomendo.core.data.session
 
 import app.cash.turbine.test
 import br.com.encomendo.core.security.SessionTokens
+import br.com.encomendo.core.security.StoredSession
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
+import br.com.encomendo.core.testing.testSession
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class TokenSessionRepositoryTest {
     @Test
-    fun signedInFollowsTheTokenStore() =
+    fun sessionFollowsTheTokenStore() =
         runTest {
             val store =
                 TokenStore(
@@ -22,13 +24,14 @@ class TokenSessionRepositoryTest {
                     cryptoDispatcher = StandardTestDispatcher(testScheduler),
                 )
             val sessions = TokenSessionRepository(store)
+            val session = testSession(permissions = setOf("order:read"))
 
-            sessions.signedIn.test {
-                assertFalse(awaitItem())
-                store.write(SessionTokens(accessToken = "access", refreshToken = "refresh"))
-                assertTrue(awaitItem())
+            sessions.session.test {
+                assertNull(awaitItem())
+                store.write(StoredSession(SessionTokens(accessToken = "access", refreshToken = "refresh"), session))
+                assertEquals(session, awaitItem())
                 store.clear()
-                assertFalse(awaitItem())
+                assertNull(awaitItem())
             }
         }
 }

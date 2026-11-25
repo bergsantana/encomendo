@@ -24,7 +24,8 @@ value class Permission(
 class GrantedPermissions(
     keys: Collection<Permission>,
 ) {
-    private val keys: Set<Permission> = keys.toSet()
+    /** The granted permissions, in the order the API listed them. */
+    val keys: Set<Permission> = keys.toSet()
 
     /** Returns true only when [required] was granted. */
     fun allows(required: Permission): Boolean = required in keys

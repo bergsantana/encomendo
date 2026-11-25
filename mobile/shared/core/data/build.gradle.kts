@@ -22,7 +22,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":shared:core:domain"))
-            implementation(project(":shared:core:security"))
+            // The client factory takes Ktor's engine and returns its client.
+            api(project(":shared:core:network"))
+            api(project(":shared:core:security"))
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
@@ -30,6 +32,7 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.turbine)
+            implementation(libs.ktor.client.mock)
         }
     }
 }
