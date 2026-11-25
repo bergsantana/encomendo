@@ -1,9 +1,9 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { getReadiness } from './health'
-import { ApiError, createHttpClient } from './http'
+import { ApiError, createHttpClient, type SessionHooks } from './http'
 
 const base = 'http://api.test'
 const server = setupServer()
@@ -66,5 +66,164 @@ describe('createHttpClient', () => {
     server.use(http.get(`${base}/readyz`, () => HttpResponse.error()))
 
     await expect(getReadiness(client)).rejects.toMatchObject({ status: 0, code: 'network' })
+  })
+})
+
+describe('createHttpClient with a session', () => {
+  const problem = { 'Content-Type': 'application/problem+json' }
+  const unauthorized = () =>
+    HttpResponse.json({ type: 'about:blank', title: 'Sessão expirada', status: 401, code: 'unauthenticated' }, { status: 401, headers: problem })
+
+  /** A session that holds `token` and, when refreshed, moves to `renewed` (null: the session is over). */
+  function fakeSession(token: string | null, renewed: string | null) {
+    let current = token
+    const refresh = vi.fn(async () => {
+      current = renewed
+      return renewed !== null
+    })
+    const hooks: SessionHooks = { accessToken: () => current, refresh }
+    return { hooks, refresh }
+  }
+
+  /** An admin endpoint that only accepts the token "fresh". */
+  const orders = () =>
+    http.get(`${base}/api/v1/admin/orders`, ({ request }) =>
+      request.headers.get('Authorization') === 'Bearer fresh' ? HttpResponse.json({ items: [] }) : unauthorized(),
+    )
+
+  it('sends the access token as a bearer token', async () => {
+    server.use(orders())
+    const { hooks, refresh } = fakeSession('fresh', null)
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/orders')).resolves.toEqual({ items: [] })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('sends no Authorization header when signed out', async () => {
+    let authorization: string | null = 'unset'
+    server.use(
+      http.get(`${base}/readyz`, ({ request }) => {
+        authorization = request.headers.get('Authorization')
+        return HttpResponse.json({ status: 'ok' })
+      }),
+    )
+
+    await getReadiness(createHttpClient({ baseUrl: base, session: fakeSession(null, null).hooks }))
+    expect(authorization).toBeNull()
+  })
+
+  it('refreshes once on a 401 and retries with the new token', async () => {
+    server.use(orders())
+    const { hooks, refresh } = fakeSession('expired', 'fresh')
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/orders')).resolves.toEqual({ items: [] })
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the same body and Idempotency-Key again on the retry', async () => {
+    const attempts: { body: unknown; key: string | null }[] = []
+    server.use(
+      http.post(`${base}/api/v1/admin/orders`, async ({ request }) => {
+        attempts.push({ body: await request.json(), key: request.headers.get('Idempotency-Key') })
+        return request.headers.get('Authorization') === 'Bearer fresh' ? HttpResponse.json({ id: 'P-0231' }, { status: 201 }) : unauthorized()
+      }),
+    )
+
+    const client = createHttpClient({ baseUrl: base, session: fakeSession('expired', 'fresh').hooks })
+
+    await expect(
+      client.post('/api/v1/admin/orders', { qty: 2 }, { headers: { 'Idempotency-Key': 'k-1' } }),
+    ).resolves.toEqual({ id: 'P-0231' })
+    expect(attempts).toEqual([
+      { body: { qty: 2 }, key: 'k-1' },
+      { body: { qty: 2 }, key: 'k-1' },
+    ])
+  })
+
+  it('reuses a token another request already refreshed instead of refreshing again', async () => {
+    let refreshed = () => {}
+    const refreshDone = new Promise<void>((resolve) => (refreshed = resolve))
+    let rejected = 0
+    server.use(
+      http.get(`${base}/api/v1/admin/orders`, async ({ request }) => {
+        if (request.headers.get('Authorization') === 'Bearer fresh') return HttpResponse.json({ items: [] })
+        rejected += 1
+        // The second rejection arrives only after the first request refreshed.
+        if (rejected === 2) await refreshDone
+        return unauthorized()
+      }),
+    )
+    let current = 'expired'
+    const refresh = vi.fn(async () => {
+      current = 'fresh'
+      refreshed()
+      return true
+    })
+    const client = createHttpClient({ baseUrl: base, session: { accessToken: () => current, refresh } })
+
+    await expect(Promise.all([client.get('/api/v1/admin/orders'), client.get('/api/v1/admin/orders')])).resolves.toEqual([
+      { items: [] },
+      { items: [] },
+    ])
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws the 401 when the session cannot be refreshed', async () => {
+    server.use(orders())
+    const { hooks, refresh } = fakeSession('expired', null)
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/orders')).rejects.toMatchObject({
+      status: 401,
+      code: 'unauthenticated',
+    })
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes only once when the retry is rejected too', async () => {
+    server.use(orders())
+    const { hooks, refresh } = fakeSession('expired', 'also-rejected')
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/orders')).rejects.toMatchObject({ status: 401 })
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('never sends the token or refreshes on anonymous requests', async () => {
+    let authorization: string | null = 'unset'
+    server.use(
+      http.post(`${base}/auth/login`, ({ request }) => {
+        authorization = request.headers.get('Authorization')
+        return HttpResponse.json(
+          { type: 'about:blank', title: 'E-mail ou senha incorretos', status: 401, code: 'invalid_credentials' },
+          { status: 401, headers: problem },
+        )
+      }),
+    )
+    const { hooks, refresh } = fakeSession('fresh', 'fresh')
+
+    await expect(
+      createHttpClient({ baseUrl: base, session: hooks }).post('/auth/login', { email: 'dono@loja.com.br' }, { anonymous: true }),
+    ).rejects.toMatchObject({ status: 401, code: 'invalid_credentials' })
+    expect(authorization).toBeNull()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('does not refresh on other errors', async () => {
+    server.use(
+      http.get(`${base}/api/v1/admin/finance`, () =>
+        HttpResponse.json({ type: 'about:blank', title: 'Sem permissão', status: 403, code: 'forbidden' }, { status: 403, headers: problem }),
+      ),
+    )
+    const { hooks, refresh } = fakeSession('fresh', 'fresh')
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/finance')).rejects.toMatchObject({ status: 403 })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('passes a failed refresh on to the caller', async () => {
+    server.use(orders())
+    const offline = new ApiError(0, { title: 'Sem conexão com o servidor' })
+    const hooks: SessionHooks = { accessToken: () => 'expired', refresh: () => Promise.reject(offline) }
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/orders')).rejects.toBe(offline)
   })
 })

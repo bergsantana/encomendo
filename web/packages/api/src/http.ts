@@ -43,40 +43,108 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * SessionHooks connect the client to the app's session. The client never
+ * stores a token itself: it asks for the current one on every request, so a
+ * refresh or a tenant switch applies to the next call without rebuilding it.
+ */
+export interface SessionHooks {
+  /** accessToken returns the bearer token to send, or null when signed out. */
+  accessToken(): string | null
+  /**
+   * refresh trades the refresh cookie for a new access token. It resolves
+   * false only when /auth/refresh refuses with 400, 401 or 403 and the
+   * session is over; offline, 429 and 5xx reject with their own error and
+   * keep the session (ADR 0012). Concurrent calls must share one refresh:
+   * the refresh token rotates on every use, and two refreshes in flight
+   * revoke the whole session family (ADR 0010, ADR 0013).
+   */
+  refresh(): Promise<boolean>
+}
+
+/** HttpClientOptions configure one client; the admin and store apps each build their own. */
 export interface HttpClientOptions {
   /** Prefix for every path, e.g. "" for same-origin or "https://api.encomendo.com.br". */
   baseUrl: string
   /** Injected for tests; defaults to the global fetch. */
   fetch?: typeof fetch
+  /**
+   * session makes the client send the access token and refresh it once on a
+   * 401. Leave it out for a client that only calls public routes; otherwise
+   * mark the individual calls that must not carry the token as `anonymous`.
+   */
+  session?: SessionHooks
 }
 
+/** RequestOptions are fetch options plus the client's own flags. */
+export interface RequestOptions extends Omit<RequestInit, 'method' | 'body'> {
+  /**
+   * anonymous sends no bearer token and never refreshes on a 401. Use it for
+   * every /auth call: sign-up and login authenticate with a password, and
+   * refresh, switch-tenant and logout with the refresh cookie (ADR 0010).
+   * A 401 from those means a wrong password or a dead refresh token, so
+   * refreshing would loop or present a rotated token. Logout may still pass
+   * the access token in `headers` so the API revokes it at once.
+   */
+  anonymous?: boolean
+}
+
+/**
+ * HttpClient is what every packages/api function takes. Each method resolves
+ * with the parsed JSON body (undefined for 204) and throws ApiError for any
+ * non-2xx response or network failure.
+ */
 export interface HttpClient {
-  get<T>(path: string, init?: RequestInit): Promise<T>
-  post<T>(path: string, body: unknown, init?: RequestInit): Promise<T>
+  get<T>(path: string, options?: RequestOptions): Promise<T>
+  post<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>
 }
 
-/** createHttpClient returns a JSON client that turns problem+json into ApiError. */
+/** Call is one request as the caller asked for it; a retry sends it again unchanged. */
+interface Call {
+  method: string
+  path: string
+  body: unknown
+  init: RequestInit
+}
+
+/**
+ * createHttpClient returns a JSON client that turns problem+json into
+ * ApiError. With session hooks it sends the access token and, on a 401,
+ * renews it once and retries once; a second 401 is thrown to the caller.
+ */
 export function createHttpClient(options: HttpClientOptions): HttpClient {
   // Looked up on every call, not captured once, so test mocks and polyfills
   // installed after the client is created still apply.
   const doFetch: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
 
-  async function request<T>(method: string, path: string, body: unknown, init: RequestInit = {}): Promise<T> {
-    const headers = new Headers(init.headers)
+  async function send(call: Call, token: string | null): Promise<Response> {
+    const headers = new Headers(call.init.headers)
     headers.set('Accept', 'application/json, application/problem+json')
-    if (body !== undefined) headers.set('Content-Type', 'application/json')
+    if (call.body !== undefined) headers.set('Content-Type', 'application/json')
+    if (token !== null) headers.set('Authorization', `Bearer ${token}`)
 
-    let response: Response
     try {
-      response = await doFetch(options.baseUrl + path, {
-        ...init,
-        method,
+      return await doFetch(options.baseUrl + call.path, {
+        ...call.init,
+        method: call.method,
         headers,
         credentials: 'include', // the refresh cookie is httpOnly
-        body: body === undefined ? null : JSON.stringify(body),
+        body: call.body === undefined ? null : JSON.stringify(call.body),
       })
     } catch {
       throw new ApiError(0, { title: 'Sem conexão com o servidor' })
+    }
+  }
+
+  async function request<T>(method: string, path: string, body: unknown, requestOptions: RequestOptions = {}): Promise<T> {
+    const { anonymous = false, ...init } = requestOptions
+    const call: Call = { method, path, body, init }
+    const session = anonymous ? undefined : options.session
+
+    const sent = session?.accessToken() ?? null
+    let response = await send(call, sent)
+    if (response.status === 401 && session !== undefined && (await renew(session, sent))) {
+      response = await send(call, session.accessToken())
     }
 
     if (!response.ok) throw new ApiError(response.status, await readProblem(response))
@@ -85,9 +153,20 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   }
 
   return {
-    get: (path, init) => request('GET', path, undefined, init),
-    post: (path, body, init) => request('POST', path, body, init),
+    get: (path, requestOptions) => request('GET', path, undefined, requestOptions),
+    post: (path, body, requestOptions) => request('POST', path, body, requestOptions),
   }
+}
+
+/**
+ * renew gets a token to retry with after a 401. When another request already
+ * refreshed while this one was in flight, its new token is reused: refreshing
+ * again would rotate the refresh cookie for nothing (ADR 0012).
+ */
+async function renew(session: SessionHooks, sent: string | null): Promise<boolean> {
+  const current = session.accessToken()
+  if (current !== null && current !== sent) return true
+  return session.refresh()
 }
 
 async function readProblem(response: Response): Promise<ProblemBody> {
