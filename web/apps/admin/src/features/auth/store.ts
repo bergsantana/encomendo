@@ -63,6 +63,7 @@ const fixTheFields = 'Confira os campos destacados.'
 export const invitationGone = 'Este convite não vale mais. Peça um novo a quem convidou você.'
 
 const loginMessages: FormMessages = { byCode: { invalid_credentials: 'E-mail ou senha incorretos.', invalid: fixTheFields } }
+const resetRequestMessages: FormMessages = { byCode: { invalid: fixTheFields } }
 const signUpMessages: FormMessages = {
   byCode: { invalid: fixTheFields, email_taken: fixTheFields },
   fieldByCode: { email_taken: ['email', 'Já existe uma conta com este e-mail.'] },
@@ -163,7 +164,7 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function requestReset(email: string): Promise<boolean> {
     const address = email.trim()
-    const sent = await form.attempt([['email', address, 'Informe seu e-mail.']], {}, () => requestPasswordReset(authClient, address))
+    const sent = await form.attempt([['email', address, 'Informe seu e-mail.']], resetRequestMessages, () => requestPasswordReset(authClient, address))
     if (sent) {
       resetEmail.value = address
       resetNotice.value = `Se houver uma conta com ${address}, enviamos um código de 6 dígitos. Ele vale por 10 minutos.`
@@ -175,7 +176,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function resendReset(): Promise<void> {
     const address = resetEmail.value
     if (address === null) return
-    if (await form.attempt([], {}, () => requestPasswordReset(authClient, address))) {
+    if (await form.attempt([], resetRequestMessages, () => requestPasswordReset(authClient, address))) {
       resetNotice.value = `Se houver uma conta com ${address}, enviamos um novo código. O anterior deixou de valer.`
     }
   }
