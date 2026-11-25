@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(go:*)",
+      "Bash(gofmt:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(pnpm:*)",
+      "Bash(./gradlew:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker ps:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git switch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rebase origin/main)",
+      "Bash(git worktree list)"
+    ]
+  }
+}
