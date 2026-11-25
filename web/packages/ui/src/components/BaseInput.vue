@@ -23,6 +23,10 @@ const props = withDefaults(
   { type: 'text', autocomplete: 'off', error: null, hint: null, required: false },
 )
 
+// Attributes such as inputmode, and class and style too, go to the input,
+// not the wrapper. They are bound first, so the field's own id and links win.
+defineOptions({ inheritAttrs: false })
+
 const model = defineModel<string>({ required: true })
 
 const id = useId()
@@ -46,6 +50,7 @@ defineExpose({
       class="enc-field__label"
     >{{ label }}</label>
     <input
+      v-bind="$attrs"
       :id="id"
       ref="input"
       v-model="model"

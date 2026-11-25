@@ -109,6 +109,22 @@ describe('BaseInput', () => {
     expect(ids.map((id) => wrapper.get(`#${id}`).text())).toEqual(['Informe uma senha.', 'Pelo menos 8 caracteres.'])
   })
 
+  it('passes other attributes on to the input, such as a numeric keyboard', () => {
+    const wrapper = mount(BaseInput, { props: { label: 'Código', modelValue: '' }, attrs: { inputmode: 'numeric', maxlength: '6' } })
+
+    expect(wrapper.get('input').attributes()).toMatchObject({ inputmode: 'numeric', maxlength: '6' })
+    expect(wrapper.attributes('inputmode')).toBeUndefined()
+  })
+
+  it('keeps its own id and links even when a parent passes others', () => {
+    const wrapper = mount(BaseInput, { props: { label: 'E-mail', modelValue: '', error: 'Informe seu e-mail.' }, attrs: { id: 'x', 'aria-describedby': 'y' } })
+    const input = wrapper.get('input')
+
+    expect(wrapper.get('label').attributes('for')).toBe(input.attributes('id'))
+    expect(input.attributes('id')).not.toBe('x')
+    expect(wrapper.get(`#${input.attributes('aria-describedby')}`).text()).toBe('Informe seu e-mail.')
+  })
+
   it('marks a required field for the browser and for screen readers', () => {
     const input = field({ required: true }).get('input')
 

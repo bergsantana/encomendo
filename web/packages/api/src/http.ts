@@ -108,7 +108,7 @@ export interface RequestOptions extends Omit<RequestInit, 'method' | 'body'> {
 
 /**
  * HttpClient is what every packages/api function takes. Each method resolves
- * with the parsed JSON body (undefined for 204) and throws ApiError for any
+ * with the parsed JSON body (undefined for a bodiless 202 or 204) and throws ApiError for any
  * non-2xx response or network failure.
  */
 export interface HttpClient {
@@ -169,7 +169,6 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     }
 
     if (!response.ok) throw new ApiError(response.status, await readProblem(response), retryAfter(response))
-    if (response.status === 204) return undefined as T
     return readBody<T>(response)
   }
 
@@ -212,14 +211,18 @@ function retryAfter(response: Response): number | undefined {
 }
 
 /**
- * readBody parses a success body. A body that stops arriving (the timeout
- * also covers it) or is not JSON, such as a web page from a server without
- * the API, is an answer the app cannot use: it fails like a lost connection,
- * so callers only ever see ApiError.
+ * readBody parses a success body. Only 202 and 204, the answers the contract
+ * gives without a body, may be empty, and resolve undefined. Anything else
+ * that is empty, stops arriving (the timeout also covers it) or is not JSON,
+ * such as a web page from a server without the API, is an answer the app
+ * cannot use: it fails like a lost connection, so callers only ever see
+ * ApiError and never an undefined session.
  */
 async function readBody<T>(response: Response): Promise<T> {
   try {
-    return (await response.json()) as T
+    const text = await response.text()
+    if (text === '' && (response.status === 202 || response.status === 204)) return undefined as T
+    return JSON.parse(text) as T
   } catch {
     throw new ApiError(0, { title: 'Sem conexão com o servidor' })
   }

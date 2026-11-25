@@ -23,6 +23,18 @@ export const routes: RouteRecordRaw[] = [
     meta: { guestOnly: true },
   },
   {
+    path: '/esqueci-a-senha',
+    name: 'forgot-password',
+    component: () => import('../features/auth/views/ForgotPasswordView.vue'),
+    meta: { guestOnly: true },
+  },
+  {
+    // Public: a member who is signed in can accept an invitation to another store.
+    path: '/convite',
+    name: 'invitation',
+    component: () => import('../features/auth/views/InvitationView.vue'),
+  },
+  {
     path: '/lojas',
     name: 'stores',
     component: () => import('../features/auth/views/StorePickerView.vue'),

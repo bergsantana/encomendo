@@ -224,6 +224,15 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   /**
+   * announceAllEnded tells the other tabs that every login of an account has
+   * ended, as a password reset does (ADR 0011), so they stop showing what
+   * they loaded: each reloads and restores from the cookie, or lands on login.
+   */
+  function announceAllEnded(): void {
+    otherTabs.announce({ userId: null, tenantId: null })
+  }
+
+  /**
    * logOut revokes the session on the server, in its turn with refreshes so
    * it presents the newest cookie and access token, then forgets it here. If
    * the server cannot be reached the session stays and the error is thrown:
@@ -253,6 +262,7 @@ export const useSessionStore = defineStore('session', () => {
     scope,
     begin,
     switchTo,
+    announceAllEnded,
     refresh,
     restore,
     logOut,
