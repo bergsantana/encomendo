@@ -70,6 +70,10 @@ func (s *Service) readInvitation(ctx context.Context, tok tenancy.InvitationToke
 // tenancy.ErrAlreadyMember when the account is already in the store (the
 // invitation stays pending), and identity.ErrEmailTaken when someone signed
 // up with the invited email in the meantime.
+//
+// The membership commits before the session is built. If the last
+// transaction fails, the call fails, the link is used up, and the person is
+// a member: they log in normally.
 func (s *Service) AcceptInvitation(ctx context.Context, in AcceptInvitationInput) (AuthResult, error) {
 	tok, err := tenancy.ParseInvitationToken(in.Token)
 	if err != nil {

@@ -16,11 +16,12 @@ import (
 // but their membership, read inside the transaction, no longer does.
 var errNoLongerManages = fmt.Errorf("tenancy: the caller no longer manages the team: %w", shared.ErrForbidden)
 
-// manager re-reads the caller's membership inside the transaction. Team
-// management never trusts the role in the token, which can be 15 minutes
-// old, so a demoted or removed admin loses it at once (ADR 0011).
+// manager re-reads the caller's membership inside the transaction, FOR
+// SHARE. Team management never trusts the role in the token, which can be
+// 15 minutes old, so a demoted or removed admin loses it at once; the lock
+// makes a concurrent demotion wait for this call to commit (ADR 0011).
 func (s *Service) manager(ctx context.Context, by shared.Principal) error {
-	m, err := s.members.MembershipOf(ctx, by.TenantID(), by.UserID())
+	m, err := s.members.LockMembershipOf(ctx, by.TenantID(), by.UserID())
 	if errors.Is(err, shared.ErrNotFound) {
 		return errNoLongerManages
 	}
@@ -34,7 +35,8 @@ func (s *Service) manager(ctx context.Context, by shared.Principal) error {
 }
 
 // Members returns one page of the store's team, oldest member first, with
-// names and emails (members:manage).
+// names and emails (members:manage, checked against the caller's current
+// membership).
 func (s *Service) Members(ctx context.Context, page shared.PageRequest) (shared.Page[MemberView], error) {
 	by, err := authz.Require(ctx, identity.PermMembersManage)
 	if err != nil {
@@ -42,6 +44,9 @@ func (s *Service) Members(ctx context.Context, page shared.PageRequest) (shared.
 	}
 	var out shared.Page[MemberView]
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.manager(ctx, by); err != nil {
+			return err
+		}
 		ms, err := s.members.Memberships(ctx, by.TenantID(), page)
 		if err != nil {
 			return fmt.Errorf("list members: %w", err)

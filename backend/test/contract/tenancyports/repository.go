@@ -111,6 +111,7 @@ func RunRepositoryContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 	t.Run("invitations read back and keep one open per email", func(t *testing.T) { invitationsReadBack(t, newHarness(t)) })
 	t.Run("pending invitations page newest first", func(t *testing.T) { invitationsPending(t, newHarness(t)) })
 	t.Run("invitation updates are conditional", func(t *testing.T) { invitationsConditional(t, newHarness(t)) })
+	t.Run("a sender's open invitations are revoked together", func(t *testing.T) { invitationsRevokeBySender(t, newHarness(t)) })
 	t.Run("needs a transaction", func(t *testing.T) { needsTx(t, newHarness(t)) })
 }
 
@@ -203,13 +204,28 @@ func membersKeys(t *testing.T, h Harness) {
 	if err := h.try(storeScope(tn.ID()), func(ctx context.Context) error { return h.Members.InsertMembership(ctx, second) }); !errors.Is(err, shared.ErrConflict) {
 		t.Errorf("a second owner: %v, want ErrConflict", err)
 	}
+	outsider := h.NewUser(t)
 	h.in(t, storeScope(tn.ID()), func(ctx context.Context) error {
-		m, err := h.Members.MembershipOf(ctx, tn.ID(), owner)
-		if err != nil || m.Role() != shared.RoleOwner || m.Version() != 1 || !m.JoinedAt().Equal(h.Now) {
-			t.Errorf("MembershipOf(owner) = %+v, %v", m, err)
+		for name, read := range map[string]func(context.Context, shared.TenantID, shared.UserID) (*tenancy.Membership, error){
+			"MembershipOf": h.Members.MembershipOf, "LockMembershipOf": h.Members.LockMembershipOf,
+		} {
+			m, err := read(ctx, tn.ID(), owner)
+			if err != nil || m.Role() != shared.RoleOwner || m.Version() != 1 || !m.JoinedAt().Equal(h.Now) {
+				t.Errorf("%s(owner) = %+v, %v", name, m, err)
+			}
+			if _, err := read(ctx, tn.ID(), outsider); !errors.Is(err, shared.ErrNotFound) {
+				t.Errorf("%s of someone outside: %v, want ErrNotFound", name, err)
+			}
 		}
-		if _, err := h.Members.MembershipOf(ctx, tn.ID(), h.NewUser(t)); !errors.Is(err, shared.ErrNotFound) {
-			t.Errorf("not a member: %v, want ErrNotFound", err)
+		return nil
+	})
+	// A user's own scope shows their memberships (ADR 0010).
+	h.in(t, appshared.Scope{UserID: user}, func(ctx context.Context) error {
+		if m, err := h.Members.MembershipOf(ctx, tn.ID(), user); err != nil || m.Role() != shared.RoleStaff {
+			t.Errorf("in the user's own scope: %+v, %v", m, err)
+		}
+		if _, err := h.Members.MembershipOf(ctx, tn.ID(), owner); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("someone else's, in a user's scope: %v, want ErrNotFound", err)
 		}
 		return nil
 	})
@@ -387,11 +403,9 @@ func invitationsPending(t *testing.T, h Harness) {
 
 func invitationsConditional(t *testing.T, h Harness) {
 	tn, owner := h.store(t, "Alta")
-	admin := h.member(t, tn.ID(), shared.RoleAdmin, h.Now)
 	fresh := h.invitation(t, tn.ID(), owner, "a@ex.com", h.Now)
 	expired := h.invitation(t, tn.ID(), owner, "b@ex.com", h.Now.Add(-8*24*time.Hour))
-	byAdmin1 := h.invitation(t, tn.ID(), admin, "c@ex.com", h.Now)
-	byAdmin2 := h.invitation(t, tn.ID(), admin, "d@ex.com", h.Now.Add(-8*24*time.Hour))
+	stale := h.invitation(t, tn.ID(), owner, "e@ex.com", h.Now.Add(-8*24*time.Hour))
 	at := h.Now.Add(time.Minute)
 	h.in(t, storeScope(tn.ID()), func(ctx context.Context) error {
 		if ok, err := h.Invitations.MarkInvitationAccepted(ctx, tn.ID(), expired.ID(), at); err != nil || ok {
@@ -405,14 +419,30 @@ func invitationsConditional(t *testing.T, h Harness) {
 		if ok, err := h.Invitations.MarkInvitationRevoked(ctx, tn.ID(), fresh.ID(), at); err != nil || ok {
 			t.Errorf("revoking an accepted invitation = %v, %v; want false", ok, err)
 		}
-		ids, err := h.Invitations.RevokeInvitationsBy(ctx, tn.ID(), admin, at)
+		// An expired invitation is still open and holds the email's one
+		// open slot, so re-inviting must be able to revoke it.
+		if ok, err := h.Invitations.MarkInvitationRevoked(ctx, tn.ID(), stale.ID(), at); err != nil || !ok {
+			t.Errorf("revoking an open, expired invitation = %v, %v; want true", ok, err)
+		}
+		return nil
+	})
+}
+
+func invitationsRevokeBySender(t *testing.T, h Harness) {
+	tn, owner := h.store(t, "Alta")
+	admin := h.member(t, tn.ID(), shared.RoleAdmin, h.Now)
+	owners := h.invitation(t, tn.ID(), owner, "b@ex.com", h.Now.Add(-8*24*time.Hour))
+	byAdmin1 := h.invitation(t, tn.ID(), admin, "c@ex.com", h.Now)
+	byAdmin2 := h.invitation(t, tn.ID(), admin, "d@ex.com", h.Now.Add(-8*24*time.Hour))
+	h.in(t, storeScope(tn.ID()), func(ctx context.Context) error {
+		ids, err := h.Invitations.RevokeInvitationsBy(ctx, tn.ID(), admin, h.Now.Add(time.Minute))
 		want := []shared.InvitationID{byAdmin1.ID(), byAdmin2.ID()}
 		slices.SortFunc(ids, func(a, b shared.InvitationID) int { return compare(a.String(), b.String()) })
 		slices.SortFunc(want, func(a, b shared.InvitationID) int { return compare(a.String(), b.String()) })
 		if err != nil || !slices.Equal(ids, want) {
 			t.Errorf("RevokeInvitationsBy = %v, %v; want both of the admin's, expired included", ids, err)
 		}
-		if still, _ := h.Invitations.InvitationByID(ctx, tn.ID(), expired.ID()); still == nil || !still.RevokedAt().IsZero() {
+		if still, _ := h.Invitations.InvitationByID(ctx, tn.ID(), owners.ID()); still == nil || !still.RevokedAt().IsZero() {
 			t.Error("the owner's invitation was revoked too")
 		}
 		return nil

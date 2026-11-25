@@ -258,16 +258,24 @@ func assertRevoked(t *testing.T, h *harness, err error, sessions ...appidentity.
 	if want := h.clock.Now().Add(identity.DenylistWindow); !last.Until.Equal(want) {
 		t.Errorf("denied until %v, want %v", last.Until, want)
 	}
+	if last.CtxErr != nil {
+		t.Errorf("the denylist write ran on a finished context: %v", last.CtxErr)
+	}
 }
 
-func TestRefresh_TwoPresentationsAtOnceGiveOneRotationAndOneRetry(t *testing.T) {
+// TestRefresh_ALostConditionalUpdateReadsAgainAndRetries covers the
+// defensive half of ADR 0013's protocol. Under the family lock a second
+// presentation waits and then reads the first one's rotation, which the
+// retry-window cases already cover; here the other rotation lands between
+// this call's read and its conditional update, as if something bypassed
+// the lock. The update changes nothing, the call reads again and takes the
+// retry path, and one token stays live. The real interleaving is tested
+// against Postgres in m2-integrate.
+func TestRefresh_ALostConditionalUpdateReadsAgainAndRetries(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	login, _ := h.session(t)
 	var other appidentity.AuthResult
-	// The other presentation's rotation commits between this call's first
-	// read and its conditional update; the update changes nothing and the
-	// call reads again (ADR 0013).
 	h.store.OnCall("MarkRefreshTokenUsed", func() {
 		h.store.OnCall("MarkRefreshTokenUsed", nil)
 		var err error
@@ -307,8 +315,9 @@ func TestRefresh_GivesUpAfterLosingTwice(t *testing.T) {
 
 	_, err := h.refresh(login.RefreshToken)
 
-	if !errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrUnauthenticated) {
-		t.Errorf("err = %v, want a retryable conflict, never a 401", err)
+	// A bug, not a refusal: a 500, so the client keeps its session.
+	if err == nil || errors.Is(err, shared.ErrUnauthenticated) || errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("err = %v, want an unmatched error", err)
 	}
 }
 
@@ -317,7 +326,7 @@ func TestRefresh_RefusesWithoutRevoking(t *testing.T) {
 
 	cases := map[string]func(t *testing.T, h *harness, token string) string{
 		"malformed": func(*testing.T, *harness, string) string { return "not-a-token" },
-		"unknown":   func(*testing.T, *harness, string) string { return shared.Secret{42}.String() },
+		"unknown":   func(*testing.T, *harness, string) string { return shared.Secret{42}.Reveal() },
 		"expired": func(_ *testing.T, h *harness, token string) string {
 			h.clock.Advance(identity.RefreshTokenLifetime)
 			return token
@@ -335,6 +344,27 @@ func TestRefresh_RefusesWithoutRevoking(t *testing.T) {
 			fam, _ := h.store.Family(h.storedToken(t, login.RefreshToken).Family)
 			if fam.Revoked() || len(h.deny.Denied()) != 0 {
 				t.Error("a refused token revoked its family")
+			}
+		})
+	}
+}
+
+// TestRefresh_RowsGoneUnderTheLockAreUnauthenticated: a family or account
+// that disappeared between the first read and the lock is a refused token
+// (401), so the client ends the session instead of retrying a dead token
+// forever (ADR 0012); never a 404.
+func TestRefresh_RowsGoneUnderTheLockAreUnauthenticated(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{"LockFamily", "UserByID"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			login, _ := h.session(t)
+			h.store.Fail(method, shared.ErrNotFound)
+			_, err := h.refresh(login.RefreshToken)
+			if !errors.Is(err, shared.ErrUnauthenticated) || errors.Is(err, shared.ErrNotFound) {
+				t.Errorf("err = %v, want ErrUnauthenticated, not ErrNotFound", err)
 			}
 		})
 	}
@@ -481,12 +511,51 @@ func TestLogout_RevokesTheFamilyAndDeniesTheAccessTokens(t *testing.T) {
 	}
 }
 
+func TestLogout_LocksTheFamilyBeforeRevoking(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	login, _ := h.session(t)
+	before := len(h.store.Calls())
+
+	if err := h.svc.Logout(context.Background(), appidentity.LogoutInput{RefreshToken: login.RefreshToken}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The lock waits for a rotation in flight, so its new token's jti is
+	// denylisted too (ADR 0013).
+	if got := h.store.Calls()[before:]; !slices.Equal(got, []string{"RefreshTokenByHash", "LockFamily", "RevokeFamily"}) {
+		t.Errorf("calls = %v", got)
+	}
+}
+
+// TestLogout_FinishesWhenTheClientHasGone: a dropped connection must not
+// leave a thief's session alive while the user believes they logged out.
+func TestLogout_FinishesWhenTheClientHasGone(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	login, _ := h.session(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := h.svc.Logout(ctx, appidentity.LogoutInput{RefreshToken: login.RefreshToken, AccessJTI: shared.NewV7(1, [10]byte{1})})
+
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(h.live(t)) != 0 {
+		t.Error("the family survived a logout whose client had gone")
+	}
+	if d := h.deny.Denied(); len(d) != 1 || d[0].CtxErr != nil {
+		t.Errorf("denylist calls = %+v; want one, on a live context", d)
+	}
+}
+
 func TestLogout_AlwaysSucceedsForBadTokens(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	presented := shared.NewV7(1, [10]byte{0xbb})
 
-	for _, token := range []string{"", "garbage", shared.Secret{7}.String()} {
+	for _, token := range []string{"", "garbage", shared.Secret{7}.Reveal()} {
 		if err := h.svc.Logout(context.Background(), appidentity.LogoutInput{RefreshToken: token, AccessJTI: presented}); err != nil {
 			t.Errorf("Logout(%q) = %v, want nil", token, err)
 		}

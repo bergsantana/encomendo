@@ -3,7 +3,9 @@ package identity_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,17 +47,51 @@ func newHarness(t *testing.T) *harness {
 		mailer: fake.NewMailer(), members: members, invites: fake.NewInvitations(members),
 		tx: sharedfake.NewTxManager(), clock: clock, ids: sharedfake.NewIDs(clock), secrets: sharedfake.NewSecrets(),
 	}
-	h.svc = appidentity.NewService(appidentity.Deps{
+	svc, err := appidentity.NewService(h.deps(resetKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.svc = svc
+	return h
+}
+
+func (h *harness) deps(key []byte) appidentity.Deps {
+	return appidentity.Deps{
 		Users: h.store, Refresh: h.store, ResetCodes: h.store,
 		Memberships: h.members, Invitations: h.invites,
 		Hasher: h.hasher, Tokens: h.tokens, Denylist: h.deny, Mailer: h.mailer,
 		Tx: h.tx, Clock: h.clock, IDs: h.ids, Secrets: h.secrets,
-		ResetCodeKey: resetKey,
-	})
-	return h
+		ResetCodeKey: key,
+	}
 }
 
 var _ appidentity.UseCases = (*appidentity.Service)(nil)
+
+// TestNewService_RefusesAWeakResetKey: with a short or missing key the HMAC
+// is a public function, and a leaked table of six-digit codes falls to a
+// million guesses (ADR 0011).
+func TestNewService_RefusesAWeakResetKey(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	for _, key := range [][]byte{nil, {}, make([]byte, appidentity.MinResetCodeKeyLength-1)} {
+		if svc, err := appidentity.NewService(h.deps(key)); err == nil || svc != nil {
+			t.Errorf("a %d-byte key: %v, %v; want an error", len(key), svc, err)
+		}
+	}
+}
+
+func TestAuthResult_NeverPrintsItsTokens(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	res := h.signUp(t, "ana@ex.com", "segredo-forte")
+
+	for _, out := range []string{fmt.Sprint(res), fmt.Sprintf("%v %+v %#v %s", res, res, res, res)} {
+		if strings.Contains(out, res.RefreshToken) || strings.Contains(out, res.AccessToken) {
+			t.Errorf("printed a token: %s", out)
+		}
+	}
+}
 
 // signUp creates an account through the use case and returns its session.
 func (h *harness) signUp(t *testing.T, email, password string) appidentity.AuthResult {

@@ -26,11 +26,22 @@ type SecretHash [32]byte
 // Hash returns the SHA-256 of the secret's bytes.
 func (s Secret) Hash() SecretHash { return sha256.Sum256(s[:]) }
 
-// String returns the secret as 43 characters of unpadded URL-safe base64,
-// fit for a cookie, a JSON body or a URL fragment.
-func (s Secret) String() string { return base64.RawURLEncoding.EncodeToString(s[:]) }
+// Reveal returns the secret as 43 characters of unpadded URL-safe base64,
+// fit for a cookie, a JSON body or a URL fragment. Call it only where the
+// secret is handed to its owner.
+func (s Secret) Reveal() string { return base64.RawURLEncoding.EncodeToString(s[:]) }
 
-// ParseSecret reads what String writes, and only that: it returns
+// Redacted is what every secret type prints as through fmt, so no %v, %s
+// or log line ever shows one (backend/CLAUDE.md, Logging).
+const Redacted = "[redacted]"
+
+// String hides the secret; Reveal gives the value.
+func (Secret) String() string { return Redacted }
+
+// GoString hides the secret from %#v too.
+func (Secret) GoString() string { return "shared.Secret(" + Redacted + ")" }
+
+// ParseSecret reads what Reveal writes, and only that: it returns
 // ErrMalformedSecret for any other length, alphabet or padding, and for a
 // non-canonical last character, so every secret has exactly one spelling.
 func ParseSecret(text string) (Secret, error) {

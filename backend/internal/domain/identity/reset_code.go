@@ -64,8 +64,14 @@ func ResetCodeFrom(s shared.Secret) ResetCode {
 	return ResetCode(fmt.Sprintf("%06d", binary.BigEndian.Uint64(s[:8])%1_000_000))
 }
 
-// String returns the six digits.
-func (c ResetCode) String() string { return string(c) }
+// Reveal returns the six digits, for the email. Only the mailer calls it.
+func (c ResetCode) Reveal() string { return string(c) }
+
+// String hides the code, so no %v, %s or log line prints it.
+func (ResetCode) String() string { return shared.Redacted }
+
+// GoString hides the code from %#v too.
+func (ResetCode) GoString() string { return "identity.ResetCode(" + shared.Redacted + ")" }
 
 // CodeHash is how a reset code is stored.
 type CodeHash [32]byte

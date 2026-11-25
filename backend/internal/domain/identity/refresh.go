@@ -178,10 +178,3 @@ func (t RefreshToken) UseAt(successor *RefreshToken, now time.Time) Use {
 func unusedSuccessor(s *RefreshToken, t RefreshToken) bool {
 	return s != nil && s.ID == t.ReplacedBy && !t.ReplacedBy.IsZero() && s.UsedAt.IsZero() && s.SupersededAt.IsZero()
 }
-
-// RetriedTo returns t pointing at next, its new successor after a retry.
-// UsedAt keeps the first use.
-func (t RefreshToken) RetriedTo(next RefreshTokenID) RefreshToken {
-	t.ReplacedBy = next
-	return t
-}

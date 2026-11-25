@@ -37,7 +37,7 @@
   - tenant creation, after `RequireUser`, for the new tenant;
   - login, refresh and tenant switch, for the user they just authenticated;
   - invitation preview, for the tenant inside the token;
-  - invitation acceptance, in two transactions: first the tenant inside the token (use up the invitation, add the membership), then the user (read the store list for the session). A nested call cannot change the scope, and the user policies apply only without a tenant, so one transaction cannot do both.
+  - invitation acceptance, in separate transactions: first the tenant inside the token (read the invitation; then use it up and add the membership), then the user (read the store list for the session). ADR 0011 has the three transactions this became in `m2-domain`. A nested call cannot change the scope, and the user policies apply only without a tenant, so one transaction cannot do both.
 
   The list is in the `Scope` doc comment; adding to it needs a review by `tenancy-security-reviewer`.
 - Every transaction sets all three settings with `set_config(…, true)`, to `''` when unset. On a pooled connection that once had a value, `current_setting(…, true)` returns `''`, not NULL, and `''::uuid` raises an error. The helpers in `0005_rls_helpers` (`current_tenant_id()` and friends) turn `''` into NULL, and every policy uses them. The zero scope then sees no tenant rows, as architecture 5.5 item 4 intends. The RLS suite checks a zero-scope transaction right after a scoped one on the same connection.

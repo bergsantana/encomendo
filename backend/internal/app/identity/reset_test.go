@@ -27,7 +27,7 @@ func (h *harness) requestReset(t *testing.T, email string) identity.ResetCode {
 
 func (h *harness) confirm(email string, code identity.ResetCode, password string) error {
 	return h.svc.ConfirmPasswordReset(context.Background(), appidentity.ConfirmPasswordResetInput{
-		Email: email, Code: code.String(), Password: password,
+		Email: email, Code: code.Reveal(), Password: password,
 	})
 }
 
@@ -112,6 +112,9 @@ func TestConfirmPasswordReset_SetsThePasswordAndEndsEverySession(t *testing.T) {
 
 	if len(h.live(t)) != 0 {
 		t.Error("sessions survived the reset")
+	}
+	if d := h.deny.Denied(); len(d) == 0 || d[len(d)-1].CtxErr != nil {
+		t.Errorf("denylist calls = %+v; want the reset's, on a live context", d)
 	}
 	for _, s := range []appidentity.AuthResult{login, other} {
 		if jti := h.storedToken(t, s.RefreshToken).AccessJTI; !slices.Contains(h.deny.JTIs(), jti) {
@@ -199,7 +202,7 @@ func TestConfirmPasswordReset_RefusesAlike(t *testing.T) {
 			old := h.requestReset(t, "ana@ex.com")
 			h.clock.Advance(time.Second)
 			if newer := h.requestReset(t, "ana@ex.com"); newer == old {
-				t.Skip("the two codes happen to match")
+				t.Fatal("the fake secrets gave two equal codes; pick other secrets")
 			}
 			return "ana@ex.com", old
 		},

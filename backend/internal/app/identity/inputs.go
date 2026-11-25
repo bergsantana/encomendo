@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
@@ -101,6 +102,16 @@ type AuthResult struct {
 	RefreshToken     string
 	RefreshExpiresAt time.Time
 }
+
+// String hides both tokens, so a log line of the result never carries a
+// working session (backend/CLAUDE.md, Logging).
+func (r AuthResult) String() string {
+	return fmt.Sprintf("AuthResult{User:%v Tenant:%v Role:%q AccessToken:%s RefreshToken:%s}",
+		r.Session.User.ID, r.Session.Tenant.ID, r.Session.Role, shared.Redacted, shared.Redacted)
+}
+
+// GoString hides the tokens from %#v too.
+func (r AuthResult) GoString() string { return r.String() }
 
 // InvitationPreview is what an invitation link offers (POST
 // /auth/invitations/preview).

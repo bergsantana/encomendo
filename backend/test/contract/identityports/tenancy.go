@@ -3,6 +3,7 @@ package identityports
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,8 +32,21 @@ type TenancyHarness struct {
 	// owner and expiring at expires, and returns the hash of its link's
 	// secret.
 	Invite func(t *testing.T, store shared.TenantID, email string, role shared.Role, expires time.Time) shared.SecretHash
-	// Now is the time the invitations are judged at.
+	// NewEmail returns an address no account or invitation uses yet, in
+	// lower case, so the suites can run twice against one database.
+	NewEmail func(t *testing.T) string
+	// Now is the time the invitations are judged at, at the store's
+	// precision (microseconds for Postgres).
 	Now time.Time
+}
+
+func mustEmail(t *testing.T, s string) identity.Email {
+	t.Helper()
+	e, err := identity.ParseEmail(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
 }
 
 func scoped(t *testing.T, tx appshared.TxManager, s appshared.Scope, fn func(ctx context.Context) error) {
@@ -47,7 +61,7 @@ func scoped(t *testing.T, tx appshared.TxManager, s appshared.Scope, fn func(ctx
 // scope or another user's shows no more than RLS allows (ADR 0010).
 func RunMembershipsContract(t *testing.T, newHarness func(t *testing.T) TenancyHarness) {
 	h := newHarness(t)
-	user := h.NewUser(t, "membro@ex.com")
+	user := h.NewUser(t, h.NewEmail(t))
 	beta, alfa, gama := h.NewStore(t, "Beta"), h.NewStore(t, "Alfa"), h.NewStore(t, "Gama")
 	h.AddMember(t, beta.ID, user, shared.RoleStaff)
 	h.AddMember(t, alfa.ID, user, shared.RoleAdmin)
@@ -67,7 +81,7 @@ func RunMembershipsContract(t *testing.T, newHarness func(t *testing.T) TenancyH
 		}
 		return nil
 	})
-	stranger := h.NewUser(t, "estranho@ex.com")
+	stranger := h.NewUser(t, h.NewEmail(t))
 	scoped(t, h.Tx, appshared.Scope{UserID: stranger}, func(ctx context.Context) error {
 		ms, err := h.Memberships.MembershipsOf(ctx, user)
 		if err != nil || ms == nil || len(ms) != 0 {
@@ -94,12 +108,13 @@ func RunInvitationsContract(t *testing.T, newHarness func(t *testing.T) TenancyH
 
 func invitationsJoin(t *testing.T, h TenancyHarness) {
 	store := h.NewStore(t, "Alta")
-	hash := h.Invite(t, store.ID, "novo@ex.com", shared.RoleViewer, h.Now.Add(time.Hour))
-	user := h.NewUser(t, "novo@ex.com")
-	email, _ := identity.ParseEmail("NOVO@ex.com")
+	invited := h.NewEmail(t)
+	hash := h.Invite(t, store.ID, invited, shared.RoleViewer, h.Now.Add(time.Hour))
+	user := h.NewUser(t, invited)
+	email := mustEmail(t, strings.ToUpper(invited))
 	scoped(t, h.Tx, appshared.Scope{TenantID: store.ID}, func(ctx context.Context) error {
 		p, err := h.Invitations.PendingInvitation(ctx, store.ID, hash, h.Now)
-		if err != nil || p.Tenant != store || p.Role != shared.RoleViewer || p.Email.Key() != "novo@ex.com" || p.ID.IsZero() {
+		if err != nil || p.Tenant != store || p.Role != shared.RoleViewer || p.Email.Key() != invited || p.ID.IsZero() {
 			t.Errorf("PendingInvitation = %+v, %v", p, err)
 		}
 		return h.Invitations.JoinByInvitation(ctx, appidentity.Join{Tenant: store.ID, Hash: hash, User: user, Email: email, At: h.Now})
@@ -121,7 +136,7 @@ func invitationsJoin(t *testing.T, h TenancyHarness) {
 
 func invitationsOtherScope(t *testing.T, h TenancyHarness) {
 	store, other := h.NewStore(t, "Alta"), h.NewStore(t, "Beta")
-	hash := h.Invite(t, store.ID, "novo@ex.com", shared.RoleStaff, h.Now.Add(time.Hour))
+	hash := h.Invite(t, store.ID, h.NewEmail(t), shared.RoleStaff, h.Now.Add(time.Hour))
 	scoped(t, h.Tx, appshared.Scope{TenantID: other.ID}, func(ctx context.Context) error {
 		if _, err := h.Invitations.PendingInvitation(ctx, store.ID, hash, h.Now); !errors.Is(err, tenancy.ErrInvitationNotPending) {
 			t.Errorf("from another store's scope: %v, want ErrInvitationNotPending", err)
@@ -132,7 +147,7 @@ func invitationsOtherScope(t *testing.T, h TenancyHarness) {
 
 func invitationsExpired(t *testing.T, h TenancyHarness) {
 	store := h.NewStore(t, "Alta")
-	hash := h.Invite(t, store.ID, "novo@ex.com", shared.RoleStaff, h.Now.Add(time.Minute))
+	hash := h.Invite(t, store.ID, h.NewEmail(t), shared.RoleStaff, h.Now.Add(time.Minute))
 	scoped(t, h.Tx, appshared.Scope{TenantID: store.ID}, func(ctx context.Context) error {
 		if _, err := h.Invitations.PendingInvitation(ctx, store.ID, hash, h.Now.Add(time.Minute)); !errors.Is(err, tenancy.ErrInvitationNotPending) {
 			t.Errorf("at expiry: %v, want ErrInvitationNotPending", err)
@@ -143,13 +158,15 @@ func invitationsExpired(t *testing.T, h TenancyHarness) {
 
 func invitationsRefused(t *testing.T, h TenancyHarness) {
 	store := h.NewStore(t, "Alta")
-	hash := h.Invite(t, store.ID, "novo@ex.com", shared.RoleStaff, h.Now.Add(time.Hour))
-	member := h.NewUser(t, "membro@ex.com")
+	invitedAddr := h.NewEmail(t)
+	hash := h.Invite(t, store.ID, invitedAddr, shared.RoleStaff, h.Now.Add(time.Hour))
+	member := h.NewUser(t, h.NewEmail(t))
 	h.AddMember(t, store.ID, member, shared.RoleViewer)
-	wrong, _ := identity.ParseEmail("outro@ex.com")
-	invited, _ := identity.ParseEmail("novo@ex.com")
+	wrongAddr := h.NewEmail(t)
+	outsider := h.NewUser(t, wrongAddr)
+	wrong, invited := mustEmail(t, wrongAddr), mustEmail(t, invitedAddr)
 	scoped(t, h.Tx, appshared.Scope{TenantID: store.ID}, func(ctx context.Context) error {
-		err := h.Invitations.JoinByInvitation(ctx, appidentity.Join{Tenant: store.ID, Hash: hash, User: h.NewUser(t, "outro@ex.com"), Email: wrong, At: h.Now})
+		err := h.Invitations.JoinByInvitation(ctx, appidentity.Join{Tenant: store.ID, Hash: hash, User: outsider, Email: wrong, At: h.Now})
 		if !errors.Is(err, tenancy.ErrInvitationNotPending) {
 			t.Errorf("another email: %v, want ErrInvitationNotPending", err)
 		}

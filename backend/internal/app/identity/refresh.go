@@ -11,10 +11,10 @@ import (
 )
 
 // errRotationRace means the presented token changed under its family's
-// lock on every attempt, which the lock protocol should make impossible. It
-// matches shared.ErrConflict, a 409 the client may retry, and never a 401:
-// nothing was refused (ADR 0013).
-var errRotationRace = fmt.Errorf("identity: refresh token kept changing under its family's lock: %w", shared.ErrConflict)
+// lock on every attempt, which the lock protocol makes impossible. It is a
+// bug, so it matches no sentinel: a 500, never a 401, and the client keeps
+// its session (ADR 0013).
+var errRotationRace = errors.New("identity: refresh token kept changing under its family's lock")
 
 // maxRotationAttempts bounds how often a rotation reads the token again
 // after a conditional update changed nothing.
@@ -92,7 +92,7 @@ func (s *Service) rotate(ctx context.Context, presented string, pick pickStore) 
 		return AuthResult{}, err
 	}
 	if r.reused {
-		s.denylist.Deny(ctx, r.jtis, now.Add(identity.DenylistWindow))
+		s.deny(ctx, r.jtis, now)
 		return AuthResult{}, fmt.Errorf("refresh token reused; family revoked: %w", shared.ErrUnauthenticated)
 	}
 	return s.issue(ctx, r.sess, fresh, now)
@@ -127,6 +127,9 @@ func (s *Service) findRefreshToken(ctx context.Context, presented string) (ident
 // returns nil with reused set, so the revoke commits.
 func (s *Service) rotateLocked(ctx context.Context, id identity.RefreshTokenID, famID identity.FamilyID, pick pickStore, fresh freshToken, now time.Time) (rotation, error) {
 	fam, err := s.refresh.LockFamily(ctx, famID)
+	if errors.Is(err, shared.ErrNotFound) {
+		return rotation{}, fmt.Errorf("refresh family gone: %w", shared.ErrUnauthenticated)
+	}
 	if err != nil {
 		return rotation{}, fmt.Errorf("lock refresh family: %w", err)
 	}
@@ -224,6 +227,9 @@ func (s *Service) sessionOf(ctx context.Context, user shared.UserID, issued shar
 		return session{}, err
 	}
 	u, err := s.users.UserByID(ctx, user)
+	if errors.Is(err, shared.ErrNotFound) {
+		return session{}, fmt.Errorf("account of the refresh family gone: %w", shared.ErrUnauthenticated)
+	}
 	if err != nil {
 		return session{}, fmt.Errorf("read user: %w", err)
 	}
@@ -267,26 +273,18 @@ func (s *Service) replace(ctx context.Context, tok identity.RefreshToken, fresh 
 // Logout revokes the family of the presented refresh token and denylists
 // its recent access tokens and the one sent with the call. It succeeds for a
 // missing, malformed or unknown token (the endpoint always answers 204) and
-// returns only store failures.
+// returns only store failures. It finishes even when the client drops the
+// connection: the user believes they are logged out.
 func (s *Service) Logout(ctx context.Context, in LogoutInput) error {
+	ctx, cancel := detached(ctx)
+	defer cancel()
 	now := s.clock.Now()
 	var jtis []shared.ID
 	if secret, err := shared.ParseSecret(in.RefreshToken); err == nil {
 		err := s.tx.WithinTx(publicScope(ctx), func(ctx context.Context) error {
-			_, fam, err := s.refresh.RefreshTokenByHash(ctx, secret.Hash())
-			if errors.Is(err, shared.ErrNotFound) {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("find refresh token: %w", err)
-			}
-			// The update waits for a rotation in flight, then revokes the
-			// token it made too (ADR 0013).
-			jtis, err = s.refresh.RevokeFamily(ctx, fam.ID, now, now.Add(-identity.DenylistWindow))
-			if err != nil {
-				return fmt.Errorf("revoke refresh family: %w", err)
-			}
-			return nil
+			var err error
+			jtis, err = s.revokeFamilyOf(ctx, secret.Hash(), now)
+			return err
 		})
 		if err != nil {
 			return err
@@ -295,8 +293,30 @@ func (s *Service) Logout(ctx context.Context, in LogoutInput) error {
 	if !in.AccessJTI.IsZero() {
 		jtis = append(jtis, in.AccessJTI)
 	}
-	if len(jtis) > 0 {
-		s.denylist.Deny(ctx, jtis, now.Add(identity.DenylistWindow))
-	}
+	s.deny(ctx, jtis, now)
 	return nil
+}
+
+// revokeFamilyOf locks the family of the token with hash, then revokes it.
+// The lock waits for a rotation in flight, so the token it made is revoked
+// and its access jti is among those returned (ADR 0013). An unknown token
+// revokes nothing.
+func (s *Service) revokeFamilyOf(ctx context.Context, hash shared.SecretHash, now time.Time) ([]shared.ID, error) {
+	_, fam, err := s.refresh.RefreshTokenByHash(ctx, hash)
+	if errors.Is(err, shared.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find refresh token: %w", err)
+	}
+	if _, err := s.refresh.LockFamily(ctx, fam.ID); errors.Is(err, shared.ErrNotFound) {
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("lock refresh family: %w", err)
+	}
+	jtis, err := s.refresh.RevokeFamily(ctx, fam.ID, now, now.Add(-identity.DenylistWindow))
+	if err != nil {
+		return nil, fmt.Errorf("revoke refresh family: %w", err)
+	}
+	return jtis, nil
 }

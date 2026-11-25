@@ -44,6 +44,7 @@ The project owner decided on 2026-11-25:
 ### Password reset ("Esqueci a senha")
 
 - **Requesting.** `POST /auth/password-reset {email}` always answers 202, so it never reveals who has an account. The answer never waits for SMTP: the code is stored in the transaction, and the notify adapter sends it off the request path, so timing does not reveal it either. A failure to send is logged and still answers 202.
+  - *Accepted in `m2-domain`:* a known email stores a code, an unknown one stores nothing, and a careful prober can time that write. It tells no more than sign-up's `409 email_taken` already does (ADR 0010), and the limits of 5 requests per email per hour and per IP bound it. Hiding it would need a write for every unknown email.
 - **The code** has 6 digits, lasts 10 minutes and allows 5 wrong attempts. A new request replaces the old code. Each account also allows 10 wrong codes per 24 hours across all its codes, so requesting new codes does not buy more guesses. Requests are limited to 5 per email per hour.
 - **Counting** is one atomic statement: `UPDATE … SET attempts = attempts + 1 WHERE … AND attempts < 5 RETURNING …`.
 - **Storage.** The code is stored as an HMAC-SHA256 under a server key, not a plain hash, because six digits are cheap to brute-force from a leaked table.

@@ -77,4 +77,8 @@ Both apps end the session only when `/auth/refresh` answers 400, 401 or 403 (ADR
   - a revoke during a rotation in flight leaves no live token;
   - a password reset during a login or an invitation acceptance leaves no live family.
 - `m2-integrate` adds the HTTP tests above, plus a 5xx (not 401) on `/auth/refresh` when the store behind it fails.
+- Added in `m2-domain`, from its security review:
+  - Logout and password reset lock the families before they revoke them, and the repository reads the access jtis in a statement after the revoke, never in the same one. The Postgres test: a revoke that meets a rotation in flight also denylists that rotation's access token.
+  - A logout's transaction and every denylist write run on a context the request's end does not cancel, with a timeout, so a dropped connection never leaves a thief's session or access token alive.
+  - A family or account that disappears between the first read and the lock is a refused token (401), not a 404, so the apps end the session (ADR 0012).
 - `docs/architecture.md` 5.1, 7, 8.1 and 8.2 point here and at ADR 0012.

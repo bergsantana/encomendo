@@ -16,9 +16,9 @@ import (
 // Store is an in-memory Users, RefreshTokens and ResetCodes, with the
 // database's keys: unique emails (any case) and token hashes, tokens only in
 // existing families, successors only in the token's own family. Like
-// adapter/postgres it refuses calls outside a fake transaction. It does not
-// roll back on a failed transaction (ADR 0009); use case tests check
-// rollback against Postgres.
+// adapter/postgres it refuses calls outside a fake transaction, and a
+// failed transaction undoes its writes (sharedfake.KeepOnRollback; ADR
+// 0009).
 //
 // Fail and OnCall let a test break one method or slip a change in before
 // it, which is how the conditional updates of ADR 0013 are exercised.

@@ -3,6 +3,7 @@ package shared
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,7 @@ func TestSecret_StringRoundTrips(t *testing.T) {
 	for i := range s {
 		s[i] = byte(i * 7)
 	}
-	text := s.String()
+	text := s.Reveal()
 	if len(text) != 43 || strings.ContainsAny(text, "+/=") {
 		t.Fatalf("String() = %q, want 43 URL-safe characters without padding", text)
 	}
@@ -42,7 +43,7 @@ func TestSecret_HashIsSHA256OfTheBytes(t *testing.T) {
 func TestParseSecret_RefusesAnythingElse(t *testing.T) {
 	t.Parallel()
 
-	valid := Secret{9}.String()
+	valid := Secret{9}.Reveal()
 	for name, in := range map[string]string{
 		"empty":             "",
 		"too short":         valid[:42],
@@ -61,6 +62,21 @@ func TestParseSecret_RefusesAnythingElse(t *testing.T) {
 	}
 }
 
+func TestSecret_NeverPrintsItsValue(t *testing.T) {
+	t.Parallel()
+
+	s := Secret{1, 2, 3}
+	type carrier struct{ Token Secret }
+	for _, out := range []string{
+		fmt.Sprint(s), fmt.Sprintf("%s %v %+v %#v %q %x", s, s, s, s, s, s),
+		fmt.Sprintf("%v %+v %#v", carrier{s}, carrier{s}, carrier{s}),
+	} {
+		if strings.Contains(out, s.Reveal()) || strings.Contains(out, "1 2 3") || !strings.Contains(out, "redacted") {
+			t.Errorf("printed %q", out)
+		}
+	}
+}
+
 func TestErrMalformedSecret_MatchesNoSentinel(t *testing.T) {
 	t.Parallel()
 
@@ -74,16 +90,16 @@ func TestErrMalformedSecret_MatchesNoSentinel(t *testing.T) {
 }
 
 func FuzzParseSecret(f *testing.F) {
-	f.Add(Secret{}.String())
-	f.Add(Secret{0xff, 0xee}.String())
+	f.Add(Secret{}.Reveal())
+	f.Add(Secret{0xff, 0xee}.Reveal())
 	f.Add("not a secret")
 	f.Fuzz(func(t *testing.T, in string) {
 		s, err := ParseSecret(in)
 		if err != nil {
 			return
 		}
-		if s.String() != in {
-			t.Errorf("ParseSecret accepted %q, which does not round-trip (%q)", in, s.String())
+		if s.Reveal() != in {
+			t.Errorf("ParseSecret accepted %q, which does not round-trip (%q)", in, s.Reveal())
 		}
 	})
 }

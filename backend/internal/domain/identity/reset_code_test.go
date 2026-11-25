@@ -4,6 +4,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 func TestParseResetCode(t *testing.T) {
 	t.Parallel()
 
-	if c, err := ParseResetCode("048213"); err != nil || c.String() != "048213" {
+	if c, err := ParseResetCode("048213"); err != nil || c.Reveal() != "048213" {
 		t.Errorf("ParseResetCode(048213) = %q, %v", c, err)
 	}
 	for _, bad := range []string{"", "12345", "1234567", "12a456", " 123456", "١٢٣٤٥٦"} {
@@ -33,7 +35,7 @@ func TestResetCodeFrom_IsSixDigitsAndSpreads(t *testing.T) {
 		var s shared.Secret
 		s[0], s[1], s[7] = byte(i), byte(i*31), byte(i*17)
 		code := ResetCodeFrom(s)
-		if _, err := ParseResetCode(code.String()); err != nil {
+		if _, err := ParseResetCode(code.Reveal()); err != nil {
 			t.Fatalf("ResetCodeFrom gave %q: %v", code, err)
 		}
 		seen[code] = true
@@ -115,6 +117,16 @@ func TestPasswordResetCode_UsableAt(t *testing.T) {
 		if got := tc.code.UsableAt(tc.now); got != tc.want {
 			t.Errorf("%s: UsableAt = %v, want %v", name, got, tc.want)
 		}
+	}
+}
+
+func TestResetCode_NeverPrintsItsValue(t *testing.T) {
+	t.Parallel()
+
+	c := ResetCode("482913")
+	out := fmt.Sprintf("%s %v %+v %#v %q", c, c, struct{ Code ResetCode }{c}, c, c)
+	if strings.Contains(out, "482913") || !strings.Contains(out, shared.Redacted) {
+		t.Errorf("printed %q", out)
 	}
 }
 

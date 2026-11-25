@@ -30,7 +30,7 @@ func fakeRefresh(t *testing.T) RefreshHarness {
 	h := fakeUsers(t)
 	store := fake.NewStore()
 	h.Users = store
-	return RefreshHarness{UsersHarness: h, Refresh: store, ResetCodes: store, Now: start}
+	return RefreshHarness{UsersHarness: h, Refresh: store, ResetCodes: store, Now: start, Tenant: shared.TenantID(h.NewID())}
 }
 
 func TestFakeUsers_Contract(t *testing.T) { RunUsersContract(t, fakeUsers) }
@@ -48,7 +48,9 @@ func fakeTenancy(*testing.T) TenancyHarness {
 	members := fake.NewMemberships()
 	invites := fake.NewInvitations(members)
 	stores := map[shared.TenantID]appidentity.TenantSummary{}
+	var n atomic.Int64
 	return TenancyHarness{
+		NewEmail:    func(*testing.T) string { return fmt.Sprintf("convidado%d@ex.com", n.Add(1)) },
 		Memberships: members, Invitations: invites, Tx: sharedfake.NewTxManager(), Now: start,
 		NewStore: func(_ *testing.T, name string) appidentity.TenantSummary {
 			s := appidentity.TenantSummary{ID: shared.TenantID(ids.NewID()), Name: name, Slug: "loja-" + ids.NewID().String()[30:]}

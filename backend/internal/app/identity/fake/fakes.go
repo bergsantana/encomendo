@@ -129,10 +129,12 @@ func (t *Tokens) Issued() []appidentity.AccessClaims {
 	return slices.Clone(t.issued)
 }
 
-// Denied is one Denylist.Deny call.
+// Denied is one Denylist.Deny call. CtxErr is the context's error at the
+// call, which must be nil: a revoke's denylist write outlives the request.
 type Denied struct {
-	JTIs  []shared.ID
-	Until time.Time
+	JTIs   []shared.ID
+	Until  time.Time
+	CtxErr error
 }
 
 // Denylist is a Denylist that records what it was told.
@@ -145,10 +147,10 @@ type Denylist struct {
 func NewDenylist() *Denylist { return &Denylist{} }
 
 // Deny implements Denylist.
-func (d *Denylist) Deny(_ context.Context, jtis []shared.ID, until time.Time) {
+func (d *Denylist) Deny(ctx context.Context, jtis []shared.ID, until time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.denied = append(d.denied, Denied{JTIs: slices.Clone(jtis), Until: until})
+	d.denied = append(d.denied, Denied{JTIs: slices.Clone(jtis), Until: until, CtxErr: ctx.Err()})
 }
 
 // Denied returns every Deny call, oldest first.
@@ -351,7 +353,8 @@ func (f *Invitations) JoinByInvitation(ctx context.Context, j appidentity.Join) 
 	if f.members[j.Tenant][j.User] {
 		return tenancy.ErrAlreadyMember
 	}
-	delete(f.pending, invitationKey{j.Tenant, j.Hash})
+	key := invitationKey{j.Tenant, j.Hash}
+	delete(f.pending, key)
 	if f.members[j.Tenant] == nil {
 		f.members[j.Tenant] = map[shared.UserID]bool{}
 	}
@@ -360,5 +363,15 @@ func (f *Invitations) JoinByInvitation(ctx context.Context, j appidentity.Join) 
 	if f.memberships != nil {
 		f.memberships.Add(j.User, appidentity.Membership{Tenant: p.Tenant, Role: p.Role})
 	}
+	sharedfake.OnRollback(ctx, func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.pending[key] = p
+		delete(f.members[j.Tenant], j.User)
+		f.joins = f.joins[:len(f.joins)-1]
+		if f.memberships != nil {
+			f.memberships.Remove(j.User, j.Tenant)
+		}
+	})
 	return nil
 }

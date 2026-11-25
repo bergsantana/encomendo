@@ -82,8 +82,15 @@ type RefreshTokens interface {
 	// RevokeFamily revokes the family at at, if it is still live, and
 	// returns the access jtis of its tokens created after issuedSince, for
 	// the denylist. Revoking a revoked family keeps its first revoke time.
+	// Callers lock the family first (LockFamily). The jtis are read in a
+	// statement that starts after the revoke, never in the same one: a
+	// single statement reads with the snapshot it took before waiting for
+	// the lock, and would miss the token of a rotation that committed
+	// meanwhile (ADR 0013).
 	RevokeFamily(ctx context.Context, id identity.FamilyID, at, issuedSince time.Time) ([]shared.ID, error)
-	// RevokeUserFamilies does RevokeFamily for every family of the user.
+	// RevokeUserFamilies does RevokeFamily for every family of the user:
+	// it locks them all FOR UPDATE first, then revokes them and reads the
+	// jtis in later statements, for the same reason.
 	RevokeUserFamilies(ctx context.Context, user shared.UserID, at, issuedSince time.Time) ([]shared.ID, error)
 }
 
@@ -139,7 +146,9 @@ type AccessTokenIssuer interface {
 type Denylist interface {
 	// Deny stops the access tokens with these jtis until until. It never
 	// fails the caller: the revoke in Postgres has committed by then, and
-	// the adapter logs a Redis failure (ADR 0013).
+	// the adapter logs a Redis failure (ADR 0013). The service calls it
+	// with a context the request's end does not cancel; the adapter must
+	// not add a cancellation of its own beyond a short timeout.
 	Deny(ctx context.Context, jtis []shared.ID, until time.Time)
 }
 

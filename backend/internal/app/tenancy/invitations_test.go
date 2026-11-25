@@ -43,7 +43,7 @@ func TestInviteMember_StoresOnlyTheHashAndEmailsTheLink(t *testing.T) {
 	}
 	// The link carries the store and the secret; only the hash is stored
 	// (ADR 0011).
-	tok, err := tenancy.ParseInvitationToken(e.Token.String())
+	tok, err := tenancy.ParseInvitationToken(e.Token.Reveal())
 	if err != nil || tok.TenantID() != tm.store {
 		t.Fatalf("the emailed token: %v, store %v", err, tok.TenantID())
 	}
@@ -68,6 +68,15 @@ func TestInviteMember_AgainReplacesThePendingInvitation(t *testing.T) {
 
 	if old, _ := h.store.Invitation(first.ID); old.RevokedAt.IsZero() {
 		t.Error("the first invitation still works")
+	}
+	var revoked []shared.InvitationID
+	for _, e := range h.events.Published() {
+		if ev, ok := e.(tenancy.InvitationRevoked); ok {
+			revoked = append(revoked, ev.InvitationID)
+		}
+	}
+	if !slices.Equal(revoked, []shared.InvitationID{first.ID}) {
+		t.Errorf("revoked events = %v, want the first invitation's only", revoked)
 	}
 	if second.ID == first.ID || second.Role != shared.RoleViewer || !second.ExpiresAt.Equal(h.clock.Now().Add(7*24*time.Hour)) {
 		t.Errorf("second = %+v; want a new link, role and expiry", second)

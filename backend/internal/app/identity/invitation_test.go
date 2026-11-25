@@ -30,7 +30,7 @@ func (h *harness) invite(t *testing.T, email string, role shared.Role) (string, 
 	h.invites.Add(secret.Hash(), appidentity.PendingInvitation{
 		ID: shared.InvitationID(h.ids.NewID()), Tenant: st, Email: addr, Role: role, ExpiresAt: start.Add(7 * 24 * time.Hour),
 	})
-	return tenancy.NewInvitationToken(st.ID, secret).String(), st
+	return tenancy.NewInvitationToken(st.ID, secret).Reveal(), st
 }
 
 func (h *harness) accept(token, name, password string) (appidentity.AuthResult, error) {
@@ -66,10 +66,10 @@ func TestPreviewInvitation_BadLinksAreNotFound(t *testing.T) {
 	h := newHarness(t)
 	token, st := h.invite(t, "novo@ex.com", shared.RoleStaff)
 
-	otherStore := tenancy.NewInvitationToken(shared.TenantID(h.ids.NewID()), shared.Secret{1}).String()
+	otherStore := tenancy.NewInvitationToken(shared.TenantID(h.ids.NewID()), shared.Secret{1}).Reveal()
 	for name, tok := range map[string]string{
 		"malformed":      "nope",
-		"unknown secret": tenancy.NewInvitationToken(st.ID, shared.Secret{1}).String(),
+		"unknown secret": tenancy.NewInvitationToken(st.ID, shared.Secret{1}).Reveal(),
 		"another store":  otherStore,
 	} {
 		if _, err := h.svc.PreviewInvitation(context.Background(), tok); !errors.Is(err, tenancy.ErrInvitationNotPending) {

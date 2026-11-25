@@ -86,9 +86,7 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, in ConfirmPasswordRe
 	if !done {
 		return identity.ErrInvalidCode
 	}
-	if len(jtis) > 0 {
-		s.denylist.Deny(ctx, jtis, now.Add(identity.DenylistWindow))
-	}
+	s.deny(ctx, jtis, now)
 	return nil
 }
 

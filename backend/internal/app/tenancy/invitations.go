@@ -13,7 +13,7 @@ import (
 )
 
 // Invitations returns one page of the invitations pending now, newest
-// first (members:manage).
+// first (members:manage, checked against the caller's current membership).
 func (s *Service) Invitations(ctx context.Context, page shared.PageRequest) (shared.Page[InvitationView], error) {
 	by, err := authz.Require(ctx, identity.PermMembersManage)
 	if err != nil {
@@ -22,6 +22,9 @@ func (s *Service) Invitations(ctx context.Context, page shared.PageRequest) (sha
 	now := s.clock.Now()
 	var out shared.Page[InvitationView]
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.manager(ctx, by); err != nil {
+			return err
+		}
 		p, err := s.invitations.PendingInvitations(ctx, by.TenantID(), now, page)
 		if err != nil {
 			return fmt.Errorf("list invitations: %w", err)
@@ -77,7 +80,9 @@ func (s *Service) InviteMember(ctx context.Context, in InviteMemberInput) (Invit
 	}
 	// The invitation stays when the email fails; inviting again replaces it.
 	if err := s.mailer.SendInvitation(ctx, mail); err != nil {
-		return InvitationView{}, fmt.Errorf("%w: %w", ErrEmailUnavailable, err)
+		// Only the sentinel is wrapped: nothing inside the mailer's error
+		// may turn the 503 into another answer.
+		return InvitationView{}, fmt.Errorf("%w: %s", ErrEmailUnavailable, err.Error())
 	}
 	return invitationView(inv), nil
 }
@@ -138,8 +143,12 @@ func (s *Service) closeOpenInvitation(ctx context.Context, by shared.Principal, 
 	if err != nil {
 		return fmt.Errorf("find open invitation: %w", err)
 	}
-	if _, err := s.invitations.MarkInvitationRevoked(ctx, by.TenantID(), old.ID(), now); err != nil {
+	revoked, err := s.invitations.MarkInvitationRevoked(ctx, by.TenantID(), old.ID(), now)
+	if err != nil {
 		return fmt.Errorf("replace invitation: %w", err)
+	}
+	if !revoked {
+		return nil // closed since it was read; the insert's key check decides
 	}
 	return s.events.Publish(ctx, tenancy.InvitationRevoked{InvitationID: old.ID(), By: by.UserID()})
 }
@@ -147,7 +156,7 @@ func (s *Service) closeOpenInvitation(ctx context.Context, by shared.Principal, 
 func (s *Service) invitationEmail(ctx context.Context, inv *tenancy.Invitation, token tenancy.InvitationToken) (InvitationEmail, error) {
 	store, err := s.tenants.TenantByID(ctx, inv.TenantID())
 	if err != nil {
-		return InvitationEmail{}, fmt.Errorf("read store: %w", err)
+		return InvitationEmail{}, mustExist("read store", err)
 	}
 	senders, err := s.users.UsersByID(ctx, []shared.UserID{inv.InvitedBy()})
 	if err != nil {

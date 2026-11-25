@@ -89,7 +89,7 @@ func (s *Service) issue(ctx context.Context, sess session, f freshToken, now tim
 	if err != nil {
 		// A membership without a valid role is a bug in tenancy, not a bad
 		// token: keep it a 500 rather than ErrInvalidPrincipal's 401.
-		return AuthResult{}, fmt.Errorf("session of %v: membership %+v does not make a principal", sess.user.ID(), sess.selected)
+		return AuthResult{}, fmt.Errorf("session of %v: membership %+v does not make a principal: %s", sess.user.ID(), sess.selected, err.Error())
 	}
 	expires := now.Add(identity.AccessTokenLifetime)
 	access, err := s.tokens.Issue(ctx, AccessClaims{Principal: p, JTI: f.jti, IssuedAt: now, ExpiresAt: expires})
@@ -98,7 +98,7 @@ func (s *Service) issue(ctx context.Context, sess session, f freshToken, now tim
 	}
 	return AuthResult{
 		Session: sess.view(), AccessToken: access, AccessExpiresAt: expires,
-		RefreshToken: f.secret.String(), RefreshExpiresAt: now.Add(identity.RefreshTokenLifetime),
+		RefreshToken: f.secret.Reveal(), RefreshExpiresAt: now.Add(identity.RefreshTokenLifetime),
 	}, nil
 }
 
@@ -242,6 +242,9 @@ func (s *Service) checkPassword(ctx context.Context, u *identity.User, password 
 // comes after waits and revokes the new family (ADR 0013).
 func (s *Service) recheckPassword(ctx context.Context, user shared.UserID, verified identity.PasswordHash) error {
 	current, err := s.users.PasswordHashForShare(ctx, user)
+	if errors.Is(err, shared.ErrNotFound) {
+		return identity.ErrInvalidCredentials
+	}
 	if err != nil {
 		return fmt.Errorf("read password hash again: %w", err)
 	}

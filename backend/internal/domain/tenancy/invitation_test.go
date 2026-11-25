@@ -2,6 +2,7 @@ package tenancy
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -155,7 +156,7 @@ func TestInvitationToken_RoundTrips(t *testing.T) {
 
 	secret := shared.Secret{1, 2, 3, 4}
 	tok := NewInvitationToken(tenantID, secret)
-	text := tok.String()
+	text := tok.Reveal()
 	if len(text) != 64 || strings.ContainsAny(text, "+/=.") {
 		t.Fatalf("token %q: want 64 URL-safe characters", text)
 	}
@@ -174,15 +175,15 @@ func TestInvitationToken_RoundTrips(t *testing.T) {
 func TestParseInvitationToken_RefusesAsNotFound(t *testing.T) {
 	t.Parallel()
 
-	valid := NewInvitationToken(tenantID, shared.Secret{9}).String()
-	zeroTenant := NewInvitationToken(shared.TenantID{}, shared.Secret{9}).String()
+	valid := NewInvitationToken(tenantID, shared.Secret{9}).Reveal()
+	zeroTenant := NewInvitationToken(shared.TenantID{}, shared.Secret{9}).Reveal()
 	for name, in := range map[string]string{
 		"empty":               "",
 		"too short":           valid[:63],
 		"too long":            valid + "A",
 		"bad alphabet":        strings.Repeat("*", 64),
 		"zero tenant":         zeroTenant,
-		"refresh token shape": shared.Secret{1}.String(),
+		"refresh token shape": shared.Secret{1}.Reveal(),
 	} {
 		if _, err := ParseInvitationToken(in); !errors.Is(err, ErrInvitationNotPending) {
 			t.Errorf("%s: %v, want ErrInvitationNotPending (the same 404 as any bad link)", name, err)
@@ -190,16 +191,26 @@ func TestParseInvitationToken_RefusesAsNotFound(t *testing.T) {
 	}
 }
 
+func TestInvitationToken_NeverPrintsItsValue(t *testing.T) {
+	t.Parallel()
+
+	tok := NewInvitationToken(tenantID, shared.Secret{4, 5})
+	out := fmt.Sprintf("%s %v %+v %#v", tok, tok, struct{ Link InvitationToken }{tok}, tok)
+	if strings.Contains(out, tok.Reveal()) || !strings.Contains(out, shared.Redacted) {
+		t.Errorf("printed %q", out)
+	}
+}
+
 func FuzzParseInvitationToken(f *testing.F) {
-	f.Add(NewInvitationToken(tenantID, shared.Secret{5}).String())
+	f.Add(NewInvitationToken(tenantID, shared.Secret{5}).Reveal())
 	f.Add("garbage")
 	f.Fuzz(func(t *testing.T, in string) {
 		tok, err := ParseInvitationToken(in)
 		if err != nil {
 			return
 		}
-		if tok.String() != in || tok.TenantID().IsZero() {
-			t.Errorf("accepted %q, which reads back as %q with tenant %v", in, tok.String(), tok.TenantID())
+		if tok.Reveal() != in || tok.TenantID().IsZero() {
+			t.Errorf("accepted %q, which reads back as %q with tenant %v", in, tok.Reveal(), tok.TenantID())
 		}
 	})
 }

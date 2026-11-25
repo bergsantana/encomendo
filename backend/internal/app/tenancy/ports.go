@@ -59,8 +59,15 @@ type Members interface {
 	// shared.ErrConflict when the user is already a member, or when a
 	// second owner would result.
 	InsertMembership(ctx context.Context, m *tenancy.Membership) error
-	// MembershipOf returns the user's membership in the store.
+	// MembershipOf returns the user's membership in the store. A scope of
+	// that user alone sees it too (ADR 0010).
 	MembershipOf(ctx context.Context, tenant shared.TenantID, user shared.UserID) (*tenancy.Membership, error)
+	// LockMembershipOf is MembershipOf with the row locked FOR SHARE until
+	// the transaction ends. Team management reads the caller's membership
+	// this way, so a concurrent demotion or removal of the caller waits for
+	// the change to commit, and the invitations it revokes include any this
+	// call sent (ADR 0011).
+	LockMembershipOf(ctx context.Context, tenant shared.TenantID, user shared.UserID) (*tenancy.Membership, error)
 	// Memberships returns one page of the store's team, oldest member
 	// first.
 	Memberships(ctx context.Context, tenant shared.TenantID, page shared.PageRequest) (shared.Page[*tenancy.Membership], error)
@@ -146,6 +153,7 @@ type InvitationEmail struct {
 // InvitationMailer sends invitations (adapter/notify/smtp.go).
 type InvitationMailer interface {
 	// SendInvitation sends the email before it returns, and returns an
-	// error when it could not be sent.
+	// error when it could not be sent. The error must not carry the
+	// recipient's address or the link: the API logs it with the 503.
 	SendInvitation(ctx context.Context, e InvitationEmail) error
 }

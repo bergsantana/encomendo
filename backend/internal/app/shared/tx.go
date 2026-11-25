@@ -59,8 +59,8 @@ type TxManager interface {
 // principal (ADR 0009): the store page middleware; tenant creation (the new
 // tenant); login, refresh and tenant switch (the user they authenticated);
 // invitation preview (the tenant inside the token); invitation acceptance
-// (first the tenant inside the token, then, in a second transaction, the
-// user it created or checked).
+// (the tenant inside the token for its first two transactions, then, in a
+// third, the user it created or checked; ADR 0011).
 type Scope struct {
 	TenantID        shared.TenantID
 	UserID          shared.UserID

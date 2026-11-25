@@ -19,9 +19,12 @@ type RefreshHarness struct {
 	UsersHarness
 	Refresh    appidentity.RefreshTokens
 	ResetCodes appidentity.ResetCodes
-	// Now is a recent time the store accepts as "now"; the suite builds
-	// every timestamp from it.
+	// Now is a recent time, at the store's precision (microseconds for
+	// Postgres); the suite builds every timestamp from it and compares
+	// them exactly.
 	Now time.Time
+	// Tenant is an existing store a staff token may be issued for.
+	Tenant shared.TenantID
 }
 
 func (h RefreshHarness) account(t *testing.T) shared.UserID {
@@ -56,7 +59,7 @@ func (h RefreshHarness) token(t *testing.T, fam identity.FamilyID, created time.
 	copy(secret[:], id[:])
 	copy(secret[16:], h.NewID().String())
 	tok, err := identity.NewRefreshToken(identity.RefreshTokenSpec{
-		ID: identity.RefreshTokenID(h.NewID()), Family: fam, Hash: secret.Hash(), AccessJTI: h.NewID(),
+		ID: identity.RefreshTokenID(h.NewID()), Family: fam, Tenant: h.Tenant, Hash: secret.Hash(), AccessJTI: h.NewID(),
 	}, created)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +93,7 @@ func refreshReadBack(t *testing.T, h RefreshHarness) {
 	fam, tok := h.login(t, user, h.Now)
 	in(t, h.Tx, func(ctx context.Context) error {
 		got, gotFam, err := h.Refresh.RefreshTokenByHash(ctx, tok.Hash)
-		if err != nil || got.ID != tok.ID || got.AccessJTI != tok.AccessJTI || !got.ExpiresAt.Equal(tok.ExpiresAt) || !got.CreatedAt.Equal(tok.CreatedAt) {
+		if err != nil || got.ID != tok.ID || got.Tenant != h.Tenant || got.AccessJTI != tok.AccessJTI || !got.ExpiresAt.Equal(tok.ExpiresAt) || !got.CreatedAt.Equal(tok.CreatedAt) {
 			t.Errorf("by hash = %+v, %v; want %+v", got, err, tok)
 		}
 		if gotFam.ID != fam.ID || gotFam.User != user || gotFam.Revoked() {
@@ -142,6 +145,12 @@ func refreshConditionalSupersede(t *testing.T, h RefreshHarness) {
 		}
 		if won, err := h.Refresh.MarkRefreshTokenUsed(ctx, other.ID, at); err != nil || won {
 			t.Errorf("using a superseded token = %v, %v; want false", won, err)
+		}
+		// UseAt reads SupersededAt; a store that drops it hides a retry's
+		// victim, and theft detection with it (ADR 0013).
+		got, err := h.Refresh.RefreshTokenByID(ctx, other.ID)
+		if err != nil || !got.SupersededAt.Equal(at) || !got.UsedAt.IsZero() {
+			t.Errorf("after superseding: %+v, %v; want SupersededAt %v and no use", got, err, at)
 		}
 		return nil
 	})
@@ -298,6 +307,7 @@ func resetNewest(t *testing.T, h RefreshHarness) {
 	h.code(t, user, h.Now.Add(-25*time.Hour), 5) // out of the window
 	h.code(t, user, h.Now.Add(-2*time.Hour), 3)
 	newest := h.code(t, user, h.Now.Add(-time.Minute), 1)
+	codeless := h.account(t)
 	in(t, h.Tx, func(ctx context.Context) error {
 		got, err := h.ResetCodes.NewestResetCode(ctx, user)
 		if err != nil || got.ID != newest.ID || got.Attempts != 1 || got.Hash != newest.Hash || !got.ExpiresAt.Equal(newest.ExpiresAt) {
@@ -307,7 +317,7 @@ func resetNewest(t *testing.T, h RefreshHarness) {
 		if err != nil || n != 4 {
 			t.Errorf("WrongResetAttemptsSince = %d, %v; want 4", n, err)
 		}
-		if _, err := h.ResetCodes.NewestResetCode(ctx, h.account(t)); !errors.Is(err, shared.ErrNotFound) {
+		if _, err := h.ResetCodes.NewestResetCode(ctx, codeless); !errors.Is(err, shared.ErrNotFound) {
 			t.Errorf("no code: %v, want ErrNotFound", err)
 		}
 		return nil

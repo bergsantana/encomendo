@@ -271,8 +271,27 @@ func TestUpdateSettings(t *testing.T) {
 	if got := fieldsOf(t, err); !slices.Equal(got, []string{"depositPercent"}) {
 		t.Errorf("invalid: fields %v", got)
 	}
-	if got := h.events.Names(); got[len(got)-1] != "tenancy.settings_updated" {
-		t.Errorf("events = %v", got)
+	if ev, ok := h.events.Published()[len(h.events.Published())-1].(tenancy.SettingsUpdated); !ok || ev.Version != 2 || ev.By != owner {
+		t.Errorf("last event = %+v; want settings_updated at version 2 by the owner", h.events.Published()[len(h.events.Published())-1])
+	}
+}
+
+// TestSettings_AMissingRowIsABug: every store has settings, so their
+// absence is a 500, never a 404 the apps would read as "no such store".
+func TestSettings_AMissingRowIsABug(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	h.store.Fail("SettingsOf", shared.ErrNotFound)
+	ctx := as(t, owner, store, shared.RoleOwner)
+
+	_, readErr := h.svc.Settings(ctx)
+	_, saveErr := h.svc.UpdateSettings(ctx, apptenancy.UpdateSettingsInput{Version: 1})
+
+	for name, err := range map[string]error{"read": readErr, "update": saveErr} {
+		if err == nil || errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s: %v, want an unmatched error", name, err)
+		}
 	}
 }
 

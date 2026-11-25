@@ -135,7 +135,7 @@ func TestRefreshToken_RepeatedRetriesNeverExtendTheWindow(t *testing.T) {
 		if got := tok.UseAt(successorOf(tok), now); got != UseRetry {
 			t.Fatalf("retry %v after first use = %v, want UseRetry", after, got)
 		}
-		tok = tok.RetriedTo(RefreshTokenID(shared.NewV7(now.UnixMilli(), [10]byte{9})))
+		tok.ReplacedBy = RefreshTokenID(shared.NewV7(now.UnixMilli(), [10]byte{9})) // as a retry repoints it
 		if !tok.UsedAt.Equal(first) {
 			t.Fatalf("a retry moved UsedAt to %v; the window must count from the first use", tok.UsedAt)
 		}

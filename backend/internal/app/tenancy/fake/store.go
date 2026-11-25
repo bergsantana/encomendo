@@ -36,8 +36,9 @@ type memberKey struct {
 // 0004_tenancy too: unique slugs, one membership per user and store, one
 // owner per store, one open invitation per email and store.
 //
-// Like adapter/postgres it refuses calls outside a fake transaction. It
-// does not roll back on a failed transaction (ADR 0009).
+// Like adapter/postgres it refuses calls outside a fake transaction, and a
+// failed transaction undoes its writes (sharedfake.KeepOnRollback; ADR
+// 0009).
 type Store struct {
 	mu          sync.Mutex
 	tenants     map[shared.TenantID]tenancy.TenantRecord
@@ -217,16 +218,31 @@ func (s *Store) InsertMembership(ctx context.Context, m *tenancy.Membership) err
 
 // MembershipOf implements Members.
 func (s *Store) MembershipOf(ctx context.Context, tenant shared.TenantID, user shared.UserID) (*tenancy.Membership, error) {
-	scope, err := s.enter(ctx, "MembershipOf")
+	return s.membershipOf(ctx, "MembershipOf", tenant, user)
+}
+
+// LockMembershipOf implements Members. The fake has nothing to lock.
+func (s *Store) LockMembershipOf(ctx context.Context, tenant shared.TenantID, user shared.UserID) (*tenancy.Membership, error) {
+	return s.membershipOf(ctx, "LockMembershipOf", tenant, user)
+}
+
+func (s *Store) membershipOf(ctx context.Context, method string, tenant shared.TenantID, user shared.UserID) (*tenancy.Membership, error) {
+	scope, err := s.enter(ctx, method)
 	if err != nil {
 		return nil, err
 	}
 	defer s.mu.Unlock()
 	r, ok := s.members[memberKey{tenant, user}]
-	if !ok || !sees(scope, tenant) {
+	if !ok || (!sees(scope, tenant) && !ownMembership(scope, user)) {
 		return nil, shared.ErrNotFound
 	}
 	return tenancy.RestoreMembership(r)
+}
+
+// ownMembership is the store picker policy on memberships: with no tenant
+// set, a user sees their own memberships (ADR 0010).
+func ownMembership(scope appshared.Scope, user shared.UserID) bool {
+	return scope.TenantID.IsZero() && scope.ClientAccountID.IsZero() && scope.UserID == user
 }
 
 // Memberships implements Members.
@@ -255,7 +271,7 @@ func (s *Store) MembershipsOfUser(ctx context.Context, user shared.UserID) ([]ap
 		return nil, err
 	}
 	defer s.mu.Unlock()
-	own := scope.TenantID.IsZero() && scope.UserID == user && scope.ClientAccountID.IsZero()
+	own := ownMembership(scope, user)
 	out := []apptenancy.StoreMembership{}
 	for k, r := range s.members {
 		if k.user != user || (!own && !sees(scope, k.tenant)) {

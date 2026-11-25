@@ -167,6 +167,14 @@ func TestTeamManagement_ReadsTheCallersRoleAgain(t *testing.T) {
 		"revoke invitation": func(h *harness, _ team, ctx context.Context) error {
 			return h.svc.RevokeInvitation(ctx, shared.InvitationID(h.ids.NewID()))
 		},
+		"list members": func(h *harness, _ team, ctx context.Context) error {
+			_, err := h.svc.Members(ctx, shared.PageRequest{})
+			return err
+		},
+		"list invitations": func(h *harness, _ team, ctx context.Context) error {
+			_, err := h.svc.Invitations(ctx, shared.PageRequest{})
+			return err
+		},
 	}
 	for name, call := range calls {
 		t.Run(name+", demoted", func(t *testing.T) {
@@ -283,19 +291,32 @@ func TestChangeRole_WithinTheSameRoleChangesNothing(t *testing.T) {
 func TestMembership_FailuresStayServerErrors(t *testing.T) {
 	t.Parallel()
 
-	for _, method := range []string{"MembershipOf", "UpdateRole", "DeleteMembership", "RevokeInvitationsBy"} {
-		t.Run(method, func(t *testing.T) {
-			t.Parallel()
-			h := newHarness(t)
-			tm := h.team(t)
-			h.store.Fail(method, errBoom)
-			ctx := tm.as(t, tm.owner, shared.RoleOwner)
-			_, changeErr := h.svc.ChangeRole(ctx, apptenancy.ChangeRoleInput{UserID: tm.admin, Role: "viewer"})
-			removeErr := h.svc.RemoveMember(ctx, tm.staff)
-			if !errors.Is(changeErr, errBoom) && !errors.Is(removeErr, errBoom) {
-				t.Errorf("change role: %v; remove: %v; want the failure", changeErr, removeErr)
+	// An outage on any read or write is the outage, never a 404 or a 403.
+	calls := map[string]func(t *testing.T, h *harness, tm team) error{
+		"change role": func(t *testing.T, h *harness, tm team) error {
+			_, err := h.svc.ChangeRole(tm.as(t, tm.owner, shared.RoleOwner), apptenancy.ChangeRoleInput{UserID: tm.admin, Role: "viewer"})
+			return err
+		},
+		"remove member": func(t *testing.T, h *harness, tm team) error {
+			return h.svc.RemoveMember(tm.as(t, tm.owner, shared.RoleOwner), tm.admin)
+		},
+	}
+	for name, call := range calls {
+		for _, method := range []string{"LockMembershipOf", "MembershipOf", "UpdateRole", "DeleteMembership", "RevokeInvitationsBy"} {
+			if (name == "change role" && method == "DeleteMembership") || (name == "remove member" && method == "UpdateRole") {
+				continue // not on this call's path
 			}
-		})
+			t.Run(name+", "+method, func(t *testing.T) {
+				t.Parallel()
+				h := newHarness(t)
+				tm := h.team(t)
+				h.store.Fail(method, errBoom)
+				err := call(t, h, tm)
+				if !errors.Is(err, errBoom) || errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrForbidden) {
+					t.Errorf("err = %v, want the failure itself", err)
+				}
+			})
+		}
 	}
 	t.Run("directory", func(t *testing.T) {
 		t.Parallel()

@@ -158,7 +158,7 @@ func NewInvitationToken(tenant shared.TenantID, secret shared.Secret) Invitation
 	return InvitationToken{tenant: tenant, secret: secret}
 }
 
-// ParseInvitationToken reads what String writes. It returns
+// ParseInvitationToken reads what Reveal writes. It returns
 // ErrInvitationNotPending for anything else, including a zero tenant, so a
 // malformed link gets the same 404 as an unknown one.
 func ParseInvitationToken(s string) (InvitationToken, error) {
@@ -184,9 +184,15 @@ func (t InvitationToken) TenantID() shared.TenantID { return t.tenant }
 // Hash returns the hash the invitation is stored under.
 func (t InvitationToken) Hash() shared.SecretHash { return t.secret.Hash() }
 
-// String returns the token as 64 characters of unpadded URL-safe base64, for
-// the link's fragment (…/convite#token=…).
-func (t InvitationToken) String() string {
+// String hides the token, so no %v, %s or log line prints a working link.
+func (InvitationToken) String() string { return shared.Redacted }
+
+// GoString hides the token from %#v too.
+func (InvitationToken) GoString() string { return "tenancy.InvitationToken(" + shared.Redacted + ")" }
+
+// Reveal returns the token as 64 characters of unpadded URL-safe base64,
+// for the link's fragment (…/convite#token=…). Only the mailer calls it.
+func (t InvitationToken) Reveal() string {
 	var raw [invitationTokenBytes]byte
 	copy(raw[:16], t.tenant[:])
 	copy(raw[16:], t.secret[:])

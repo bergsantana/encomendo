@@ -113,6 +113,17 @@ func (s *Service) createTenant(ctx context.Context, t *tenancy.Tenant, owner sha
 	return s.events.Publish(ctx, tenancy.TenantCreated{Owner: owner, Slug: t.Slug().String()})
 }
 
+// mustExist wraps err from reading a row that always exists for a store in
+// the caller's scope, such as its settings. Its absence is a bug, so a
+// missing row stays a 500 instead of becoming a 404; other errors pass
+// through wrapped.
+func mustExist(what string, err error) error {
+	if errors.Is(err, shared.ErrNotFound) {
+		return fmt.Errorf("tenancy: %s: the row is missing", what)
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 // Settings returns the selected store's settings. Every role may read them
 // (settings:read), because the apps hide Produção and Estoque when they are
 // off.
@@ -125,7 +136,7 @@ func (s *Service) Settings(ctx context.Context) (SettingsView, error) {
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		st, err = s.tenants.SettingsOf(ctx, by.TenantID())
 		if err != nil {
-			return fmt.Errorf("read settings: %w", err)
+			return mustExist("read settings", err)
 		}
 		return nil
 	})
@@ -150,7 +161,7 @@ func (s *Service) UpdateSettings(ctx context.Context, in UpdateSettingsInput) (S
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		st, err = s.tenants.SettingsOf(ctx, by.TenantID())
 		if err != nil {
-			return fmt.Errorf("read settings: %w", err)
+			return mustExist("read settings", err)
 		}
 		if err := st.Change(in.Settings, in.Version); err != nil {
 			return err
