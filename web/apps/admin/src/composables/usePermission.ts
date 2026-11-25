@@ -1,6 +1,7 @@
+import type { Permission } from '@encomendo/api'
 import { computed, type ComputedRef } from 'vue'
 
-import { type Permission, useSessionStore } from '../stores/session'
+import { useSessionStore } from '../stores/session'
 
 /**
  * usePermission reports, reactively, whether the signed-in member may use an

@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -67,6 +67,71 @@ describe('createHttpClient', () => {
 
     await expect(getReadiness(client)).rejects.toMatchObject({ status: 0, code: 'network' })
   })
+
+  it('gives up on a call the server never answers, like a network failure', async () => {
+    server.use(http.get(`${base}/slow`, () => delay('infinite')))
+
+    await expect(createHttpClient({ baseUrl: base, timeoutMs: 20 }).get('/slow')).rejects.toMatchObject({ status: 0, code: 'network' })
+  })
+
+  it('reports a body cut off midway like a network failure', async () => {
+    // A body that stalls until the timeout fails the same way: the read rejects.
+    const cutOff = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"items":'))
+        controller.error(new Error('connection reset'))
+      },
+    })
+    server.use(http.get(`${base}/cut-off`, () => new HttpResponse(cutOff, { headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(client.get('/cut-off')).rejects.toMatchObject({ status: 0, code: 'network' })
+  })
+
+  it('reports a success that is not JSON, such as a web page from a server without the API', async () => {
+    server.use(http.get(`${base}/page`, () => HttpResponse.html('<!doctype html><title>Encomendo</title>')))
+
+    await expect(client.get('/page')).rejects.toMatchObject({ name: 'ApiError', status: 0 })
+  })
+
+  it.each(['api/v1/admin/orders', '//evil.example/x', '.evil.example/x', '@evil.example/x'])(
+    'refuses the path %s, which could send the token to another host',
+    async (path) => {
+      await expect(client.get(path)).rejects.toThrow('path must start with a single /')
+    },
+  )
+
+  it.each([
+    ['30', 30],
+    ['0', undefined],
+    ['', undefined],
+    ['Wed, 25 Nov 2026 10:00:00 GMT', undefined],
+  ])('reads Retry-After %j as %s seconds', async (header, seconds) => {
+    server.use(
+      http.get(`${base}/limited`, () =>
+        HttpResponse.json(
+          { type: 'about:blank', title: 'Muitas tentativas', status: 429, code: 'rate_limited' },
+          { status: 429, headers: { 'Content-Type': 'application/problem+json', 'Retry-After': header } },
+        ),
+      ),
+    )
+
+    await expect(client.get('/limited')).rejects.toMatchObject({ code: 'rate_limited', retryAfterSeconds: seconds })
+  })
+
+  it('sends no token to the public readiness probe', async () => {
+    let authorization: string | null = 'unset'
+    server.use(
+      http.get(`${base}/readyz`, ({ request }) => {
+        authorization = request.headers.get('Authorization')
+        return HttpResponse.json({ status: 'ok' })
+      }),
+    )
+    const withSession = createHttpClient({ baseUrl: base, session: { accessToken: () => 'access-1', refresh: async () => true } })
+
+    await getReadiness(withSession)
+
+    expect(authorization).toBeNull()
+  })
 })
 
 describe('createHttpClient with a session', () => {
@@ -102,13 +167,13 @@ describe('createHttpClient with a session', () => {
   it('sends no Authorization header when signed out', async () => {
     let authorization: string | null = 'unset'
     server.use(
-      http.get(`${base}/readyz`, ({ request }) => {
+      http.get(`${base}/api/v1/admin/members`, ({ request }) => {
         authorization = request.headers.get('Authorization')
-        return HttpResponse.json({ status: 'ok' })
+        return HttpResponse.json({ items: [] })
       }),
     )
 
-    await getReadiness(createHttpClient({ baseUrl: base, session: fakeSession(null, null).hooks }))
+    await createHttpClient({ baseUrl: base, session: fakeSession(null, null).hooks }).get('/api/v1/admin/members')
     expect(authorization).toBeNull()
   })
 

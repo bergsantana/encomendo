@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { defineComponent, h } from 'vue'
 
 import BaseButton from './components/BaseButton.vue'
+import BaseInput from './components/BaseInput.vue'
 import StatusBadge from './components/StatusBadge.vue'
 import { isPhase, phases, toneForPhase } from './phase'
 
@@ -58,5 +60,69 @@ describe('BaseButton', () => {
     await wrapper.trigger('click')
 
     expect(wrapper.emitted('click')).toBeUndefined()
+  })
+})
+
+describe('BaseInput', () => {
+  const field = (props: Record<string, unknown> = {}) =>
+    mount(BaseInput, { props: { label: 'E-mail', modelValue: '', type: 'email', autocomplete: 'username', ...props } })
+
+  it('labels the field so it can be found by its name', () => {
+    const wrapper = field()
+    const input = wrapper.get('input')
+
+    expect(wrapper.get(`label[for="${input.attributes('id')}"]`).text()).toBe('E-mail')
+    expect(input.attributes()).toMatchObject({ type: 'email', autocomplete: 'username' })
+    expect(input.attributes('aria-invalid')).toBeUndefined()
+  })
+
+  it('emits what the user types', async () => {
+    const wrapper = field()
+
+    await wrapper.get('input').setValue('ana@altarpm.com.br')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([['ana@altarpm.com.br']])
+  })
+
+  it('shows the error next to the field and links it for screen readers', () => {
+    const wrapper = field({ error: 'Informe seu e-mail.' })
+    const input = wrapper.get('input')
+    const describedBy = input.attributes('aria-describedby')
+
+    expect(input.attributes('aria-invalid')).toBe('true')
+    expect(describedBy).toBeTruthy()
+    expect(wrapper.get(`#${describedBy}`).text()).toBe('Informe seu e-mail.')
+    expect(wrapper.find('svg').exists()).toBe(true) // an icon, so the error is not color alone
+  })
+
+  it('marks a required field for the browser and for screen readers', () => {
+    const input = field({ required: true }).get('input')
+
+    expect(input.attributes('required')).toBeDefined()
+    expect(input.attributes('aria-required')).toBe('true')
+  })
+
+  it('lets the form move focus to it, e.g. to the first field to fix', () => {
+    const wrapper = mount(BaseInput, { props: { label: 'E-mail', modelValue: '' }, attachTo: document.body })
+
+    ;(wrapper.vm as unknown as { focus: () => void }).focus()
+
+    expect(document.activeElement).toBe(wrapper.get('input').element)
+    wrapper.unmount()
+  })
+
+  it('gives each field in a form its own id', () => {
+    const form = defineComponent({
+      render: () =>
+        h('form', [
+          h(BaseInput, { label: 'E-mail', modelValue: '' }),
+          h(BaseInput, { label: 'Senha', modelValue: '', type: 'password' }),
+        ]),
+    })
+
+    const [email, password] = mount(form).findAll('input')
+
+    expect(email?.attributes('id')).toBeTruthy()
+    expect(email?.attributes('id')).not.toBe(password?.attributes('id'))
   })
 })
