@@ -1,5 +1,7 @@
 package br.com.encomendo.core.navigation
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -14,6 +16,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.ui.LocalGrantedPermissions
+import br.com.encomendo.feature.auth.AccountBarRoute
 import br.com.encomendo.feature.auth.LoginRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import org.koin.compose.viewmodel.koinViewModel
@@ -30,7 +33,7 @@ fun RootRoute(
 
 /**
  * RootNavHost hosts every graph of the management app: the auth graph while
- * signed out, the management graph while signed in. Screen ViewModels live in
+ * signed out, the management graph under the account bar while signed in. Screen ViewModels live in
  * the session's own store ([RootUiState.Ready.screens]), and every
  * `PermissionGate` below reads the session's permissions; signed out, nothing
  * is granted.
@@ -54,14 +57,28 @@ fun RootNavHost(
             LocalViewModelStoreOwner provides session.screens,
             LocalGrantedPermissions provides permissions,
         ) {
-            NavHost(
-                navController = rememberNavController(),
-                startDestination = if (signedIn) BackofficeGraph else AuthGraph,
-                modifier = modifier,
-            ) {
-                authNavGraph()
-                backofficeNavGraph()
-            }
+            if (signedIn) ManagementShell(modifier) else AuthHost(modifier)
+        }
+    }
+}
+
+@Composable
+private fun AuthHost(modifier: Modifier) {
+    NavHost(navController = rememberNavController(), startDestination = AuthGraph, modifier = modifier) {
+        authNavGraph()
+    }
+}
+
+/** The management screens under the account bar: the store's name, the person's, and Sair. */
+@Composable
+private fun ManagementShell(modifier: Modifier) {
+    Scaffold(topBar = { AccountBarRoute() }, modifier = modifier) { padding ->
+        NavHost(
+            navController = rememberNavController(),
+            startDestination = BackofficeGraph,
+            modifier = Modifier.padding(padding),
+        ) {
+            backofficeNavGraph()
         }
     }
 }

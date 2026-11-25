@@ -13,8 +13,10 @@ import br.com.encomendo.core.network.auth.AuthApi
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.feature.auth.di.authModule
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.SupervisorJob
 import org.koin.core.module.Module
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
@@ -53,11 +55,15 @@ val networkModule: Module =
         single { AuthApi(get()) }
     }
 
+/** Names the scope that lives as long as the app, for work that must outlive the screen that started it. */
+val AppScope = named("app-scope")
+
 /** Repository implementations, bound to the interfaces in core:domain. */
 val dataModule: Module =
     module {
+        single(AppScope) { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
         single<SessionRepository> { TokenSessionRepository(get()) }
-        single<AuthRepository> { ApiAuthRepository(api = get(), store = get()) }
+        single<AuthRepository> { ApiAuthRepository(api = get(), store = get(), appScope = get(AppScope)) }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */

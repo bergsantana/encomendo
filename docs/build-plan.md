@@ -36,8 +36,8 @@ Percentages count checkboxes, and milestones differ a lot in size (milestone 4 i
 
 - **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM open with the pgx driver, Redis client, goose migration runner, the first migration (`0001_roles_and_extensions.sql`), `domain/shared` (typed UUIDv7 IDs, `Money`, `Page`, `Principal`, `Role`, sentinel errors), the `identity` permission map, `app/shared` ports with fakes and `authz`, and their contract suites in `test/contract/sharedports`. No bounded context yet, no `testkit`.
 - **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, health call, generated types) and `packages/ui` (tokens, `BaseButton`, `StatusBadge`, phase colours). Admin shows a Hoje placeholder behind a dashboard layout. The store app resolves the tenant from the subdomain and renders a shell.
-- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:network` (Ktor client, problem+json → `ApiError`, bearer with one refresh on 401, `/auth/refresh`), `core:security` (`TokenStore`: the session's tokens, store, role and permissions, Keystore-sealed in DataStore), `core:data` (the session-backed API client, login, `ApiError` → `Failure`) and `core:testing`, `core:navigation` (auth graph while signed out, management graph while signed in, with the session's permissions), `core:di` (Koin, one API client: `https://api.encomendo.com.br` in release, the local stack in debug), the login screen and a Hoje placeholder.
-- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0015, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
+- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:network` (Ktor client, problem+json → `ApiError`, bearer with one refresh on 401, `/auth/refresh`), `core:security` (`TokenStore`: the session's tokens, store, role and permissions, Keystore-sealed in DataStore), `core:data` (the session-backed API client, login and logout, `ApiError` → `Failure`) and `core:testing`, `core:navigation` (auth graph while signed out, management graph under the account bar while signed in, with the session's permissions), `core:di` (Koin, one API client: `https://api.encomendo.com.br` in release, the local stack in debug), the login screen, the account bar (store, person, Sair) and a Hoje placeholder.
+- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0016, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
 
 ---
 
@@ -112,7 +112,7 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 
 - [x] Ktor client with bearer-and-refresh plugin and problem+json mapping (`core:network`; `/auth/refresh` is its `TokenRefresher`, in `core:data`)
 - [x] `TokenStore` (Keystore + DataStore) and auth graph before the management graph (`core:security`, `RootViewModel`)
-- [ ] Login, sign-up, tenant picker, forgot password screens, `PermissionGate` (partial: login and `PermissionGate` done, the gate fed with the stored session's permissions. Still to do: sign-up, tenant picker, forgot password, and filtering management destinations by permission (web's `meta.permission`))
+- [ ] Login, sign-up, tenant picker, forgot password screens, `PermissionGate` (partial: login, logout and `PermissionGate` done, the gate fed with the stored session's permissions. Still to do: sign-up, tenant picker, forgot password, and filtering management destinations by permission (web's `meta.permission`))
 - [ ] `feature/members`: list, invite, change role, remove
 
 ### Done when
@@ -310,7 +310,7 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
 | Parity: every management feature on web and Android | Only Hoje, a placeholder on both |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | Nothing to leak yet; the test lands with the first store response |
-| ADRs | 0001–0015 written |
+| ADRs | 0001–0016 written |
 
 ## Order of migrations
 
@@ -351,3 +351,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | A 2-minute retry window for lost refresh answers; server failures are never 401; Retry-After on every 429 | ADR 0013 |
 | 2026-11-25 | Migrations take the next free number when they land; M2 platform and policies are 0006 and 0007 | ADR 0014 |
 | 2026-11-25 | Android keeps the whole session (store, role, permissions) sealed with its tokens | ADR 0015 |
+| 2026-11-25 | Android logout clears the device first, then tells the server without waiting | ADR 0016 |
