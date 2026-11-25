@@ -24,8 +24,8 @@ type EventsHarness struct {
 	Publisher appshared.EventPublisher
 	// Committed returns the stored events of TenantID, oldest first.
 	Committed func(t *testing.T) []StoredEvent
-	// TenantID is a tenant the publisher may write events for. For Postgres
-	// it must exist.
+	// TenantID is a fresh tenant, one per harness, with no stored events:
+	// the cases expect exact lists. For Postgres it must exist.
 	TenantID shared.TenantID
 }
 

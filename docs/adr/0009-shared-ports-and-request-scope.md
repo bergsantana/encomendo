@@ -29,12 +29,15 @@
   - A staff principal replaces the scope with its own tenant and user.
   - A client principal on a store page keeps the store's tenant scope and adds nothing. Checkout writes the account id as a column value.
   - A client principal anywhere else gets a scope of its account only.
-- The store page middleware sets the subdomain's tenant with `WithScope` and runs **before** authn. Store page routes attach client principals only; a staff token there is rejected. `m2-integrate` adds a router test for the order and the audience.
+- The store page middleware sets the subdomain's tenant with `WithScope` and runs **before** authn. It is mounted on `/api/v1/store/*` only, never on `/api/v1/me/*`, even though nginx sends `/api` on every store host to the API. Store page routes attach client principals only; a staff token there is rejected. Linking an order from its tracking page (`LinkOrder`) is a store route, because it needs the store's tenant. `m2-integrate` adds router tests for the mounting, the order and the audience.
 - `authz.Require` and `authz.RequireUser` also check that the scope is still the one the staff caller's token gives, and return `authz.ErrScopeMismatch` (403) otherwise. A middleware that replaces the scope on a staff request therefore fails closed instead of letting RLS and authorization judge different tenants.
+- `authz.RequireClient` does the same for client area use cases (milestone 7): the scope must be the client's account alone. A client area call that picked up a store's tenant scope would let RLS show the whole store, so it fails closed. Store page use cases with a logged-in client (checkout, `LinkOrder`) instead take the principal from the context under the store's tenant-only scope and write the account id as a column; milestone 7 adds their check.
 - Only these set a scope themselves:
   - the store page middleware;
   - tenant creation, after `RequireUser`, for the new tenant;
-  - login, refresh, tenant switch and invitation acceptance, for the user they just authenticated, and for acceptance the invitation's tenant.
+  - login, refresh and tenant switch, for the user they just authenticated;
+  - invitation preview, for the tenant inside the token;
+  - invitation acceptance, in two transactions: first the tenant inside the token (use up the invitation, add the membership), then the user (read the store list for the session). A nested call cannot change the scope, and the user policies apply only without a tenant, so one transaction cannot do both.
 
   The list is in the `Scope` doc comment; adding to it needs a review by `tenancy-security-reviewer`.
 - Every transaction sets all three settings with `set_config(…, true)`, to `''` when unset. On a pooled connection that once had a value, `current_setting(…, true)` returns `''`, not NULL, and `''::uuid` raises an error. The helpers in `0005_rls_helpers` (`current_tenant_id()` and friends) turn `''` into NULL, and every policy uses them. The zero scope then sees no tenant rows, as architecture 5.5 item 4 intends. The RLS suite checks a zero-scope transaction right after a scoped one on the same connection.
@@ -64,4 +67,4 @@
 - Every app file imports `appshared` by that name, and the linter catches drift between parallel sessions.
 - The Postgres `TxManager` (`m2-db`) reads `appshared.ScopeFrom(ctx)`, sets all three settings on every transaction, uses savepoints for nested calls, and must pass `RunTxManagerContract`. The outbox publisher must pass `RunEventPublisherContract`.
 - The Redis cache (milestone 3) must pass `RunCacheContract`, including the prefix, glob and stale-entry rules.
-- `respond/problem.go` gains `ErrScopeMismatch` and `ErrTenantRequired` mappings in `m2-integrate`.
+- `respond/problem.go` gains `ErrScopeMismatch` and `ErrTenantRequired` mappings in `m2-integrate`. `ErrScopeMismatch` stays a 403, because a client can trigger it (a staff token sent to a store host), but the mapping logs it at warn level, since it can also mean a middleware runs in the wrong order.

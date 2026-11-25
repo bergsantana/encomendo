@@ -51,8 +51,8 @@ ALTER TABLE purchase_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_lines FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON purchase_lines
-  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  USING (tenant_id = current_tenant_id())
+  WITH CHECK (tenant_id = current_tenant_id());
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON purchase_lines TO encomendo_app;
 ```
@@ -64,7 +64,7 @@ Checklist:
 - [ ] `tenant_id uuid NOT NULL` and every index starts with `tenant_id`
 - [ ] `UNIQUE (tenant_id, id)` so other tables can reference this one with a composite key
 - [ ] Composite foreign keys `(tenant_id, x_id)` for every reference to another tenant table
-- [ ] The policy uses the same expression as the other tables (or the `current_tenant_id()` helper from `0005_rls_helpers.sql`, once it exists)
+- [ ] The policy reads the settings only through the `0005_rls_helpers.sql` functions (`current_tenant_id()`, `current_user_id()`, `current_client_account_id()`), never `current_setting(…)::uuid`: on a pooled connection the setting can be `''`, and the cast would raise an error instead of matching no rows (ADR 0009)
 - [ ] Money as `bigint` cents plus `char(3)` currency
 - [ ] `version int` if the aggregate uses optimistic locking
 - [ ] `created_at`, `updated_at`

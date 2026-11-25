@@ -259,6 +259,7 @@ export interface paths {
          *     default settings (deposit 50%, assembly 3 days, safety margin 2
          *     days, BRL) and the default status workflow (ADR 0006). The current
          *     session does not change: call `/auth/switch-tenant` with the new id.
+         *     Limited to 5 stores per user per day.
          */
         post: operations["createTenant"];
         delete?: never;
@@ -377,8 +378,9 @@ export interface paths {
          *     once, and only while the person who sent it can still manage the team.
          *     Inviting an email that already has a pending invitation replaces it
          *     (new link, new expiry), which is how "Reenviar convite" works. The
-         *     link is only in the email, never in this response. Limited to 20
-         *     invitations per store and 3 per email per day.
+         *     link is only in the email, never in this response. Limited per day
+         *     to 20 invitations per store, 50 per inviting user and 3 per email in
+         *     the same store.
          */
         post: operations["inviteMember"];
         delete?: never;
@@ -1128,6 +1130,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     getSettings: {

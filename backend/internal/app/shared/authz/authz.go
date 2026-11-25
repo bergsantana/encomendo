@@ -17,10 +17,10 @@ var (
 	// can open the store picker.
 	ErrTenantRequired = fmt.Errorf("authz: no store selected: %w", shared.ErrForbidden)
 	// ErrScopeMismatch means the RLS scope in the context is not the one the
-	// staff caller's token gives, so RLS and authorization would judge
-	// different tenants. It happens when something replaced the scope after
-	// WithPrincipal, such as a store page middleware running on a staff
-	// request (ADR 0009).
+	// caller's token gives, so RLS and authorization would judge different
+	// rows. It happens when something replaced the scope after WithPrincipal,
+	// such as a store page middleware running on a staff request or on a
+	// client area route (ADR 0009).
 	ErrScopeMismatch = fmt.Errorf("authz: request scope does not match the caller: %w", shared.ErrForbidden)
 )
 
@@ -77,6 +77,27 @@ func Require(ctx context.Context, perm identity.Permission) (shared.Principal, e
 	}
 	if !identity.Allows(p.Role(), perm) {
 		return shared.Principal{}, fmt.Errorf("authz: role %s lacks %s: %w", p.Role(), perm, shared.ErrForbidden)
+	}
+	return p, nil
+}
+
+// RequireClient returns the caller when it is a client account whose RLS
+// scope is its account alone. Client area use cases (Minhas encomendas)
+// call it first. A client-area call that picked up a store's tenant scope,
+// as it would behind the store page middleware, would let RLS show the whole
+// store, so it fails closed with ErrScopeMismatch. It returns
+// shared.ErrUnauthenticated without a caller and an error matching
+// shared.ErrForbidden for a staff token (docs/architecture.md section 5.1).
+func RequireClient(ctx context.Context) (shared.Principal, error) {
+	p, ok := PrincipalFrom(ctx)
+	if !ok {
+		return shared.Principal{}, shared.ErrUnauthenticated
+	}
+	if p.Audience() != shared.AudienceClient {
+		return shared.Principal{}, fmt.Errorf("authz: %s token on a client area use case: %w", p.Audience(), shared.ErrForbidden)
+	}
+	if appshared.ScopeFrom(ctx) != (appshared.Scope{ClientAccountID: p.ClientAccountID()}) {
+		return shared.Principal{}, ErrScopeMismatch
 	}
 	return p, nil
 }

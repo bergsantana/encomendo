@@ -79,14 +79,18 @@ func txCanceled(t *testing.T, tx appshared.TxManager) {
 }
 
 func txMixedScope(t *testing.T, tx appshared.TxManager) {
-	ctx := appshared.WithScope(context.Background(), appshared.Scope{TenantID: txTenant, ClientAccountID: txAccount})
-	called := false
-	err := tx.WithinTx(ctx, func(context.Context) error {
-		called = true
-		return nil
-	})
-	if !errors.Is(err, appshared.ErrInvalidScope) || called {
-		t.Errorf("WithinTx with tenant + client = %v, called %v; want ErrInvalidScope and no call", err, called)
+	for name, s := range map[string]appshared.Scope{
+		"tenant + client": {TenantID: txTenant, ClientAccountID: txAccount},
+		"user + client":   {UserID: txUser, ClientAccountID: txAccount},
+	} {
+		called := false
+		err := tx.WithinTx(appshared.WithScope(context.Background(), s), func(context.Context) error {
+			called = true
+			return nil
+		})
+		if !errors.Is(err, appshared.ErrInvalidScope) || called {
+			t.Errorf("WithinTx with %s = %v, called %v; want ErrInvalidScope and no call", name, err, called)
+		}
 	}
 }
 

@@ -184,6 +184,33 @@ func TestWithPrincipal_ClientAreaScopesTheAccountOnly(t *testing.T) {
 	}
 }
 
+func TestRequireClient(t *testing.T) {
+	t.Parallel()
+
+	ctx := WithPrincipal(context.Background(), client(t))
+	got, err := RequireClient(ctx)
+	if err != nil || got.ClientAccountID() != account {
+		t.Fatalf("RequireClient = %+v, %v; want the client", got, err)
+	}
+
+	denied := []struct {
+		name string
+		ctx  context.Context
+		want error
+	}{
+		{"no principal", context.Background(), shared.ErrUnauthenticated},
+		{"staff token", WithPrincipal(context.Background(), staff(t, shared.RoleOwner)), shared.ErrForbidden},
+		// A client-area call that went through the store page middleware: RLS
+		// would see the whole store, so the client area refuses to run.
+		{"client on a store scope", WithPrincipal(appshared.WithScope(context.Background(), appshared.Scope{TenantID: tenant}), client(t)), ErrScopeMismatch},
+	}
+	for _, d := range denied {
+		if _, err := RequireClient(d.ctx); !errors.Is(err, d.want) {
+			t.Errorf("%s: error = %v, want %v", d.name, err, d.want)
+		}
+	}
+}
+
 func TestRequire_RefusesAScopeThatDoesNotMatchTheCaller(t *testing.T) {
 	t.Parallel()
 

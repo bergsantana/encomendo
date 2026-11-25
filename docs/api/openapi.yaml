@@ -30,7 +30,8 @@ info:
       `__Host-encomendo_refresh` (`Secure; SameSite=Strict; Path=/`, no
       `Domain`, so no store subdomain can set or read it), never readable by
       JavaScript and never returned in the body. A local stack on plain
-      HTTP uses `encomendo_refresh` without `Secure`.
+      HTTP is configured to use `encomendo_refresh` without `Secure`; the
+      server reads only the configured name.
     - `body` (Android): `refreshToken` in the response body; send it back in
       the request body.
 
@@ -413,6 +414,7 @@ paths:
         default settings (deposit 50%, assembly 3 days, safety margin 2
         days, BRL) and the default status workflow (ADR 0006). The current
         session does not change: call `/auth/switch-tenant` with the new id.
+        Limited to 5 stores per user per day.
       security:
         - bearerAuth: []
       requestBody:
@@ -438,6 +440,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /api/v1/admin/settings:
     get:
@@ -615,8 +619,9 @@ paths:
         once, and only while the person who sent it can still manage the team.
         Inviting an email that already has a pending invitation replaces it
         (new link, new expiry), which is how "Reenviar convite" works. The
-        link is only in the email, never in this response. Limited to 20
-        invitations per store and 3 per email per day.
+        link is only in the email, never in this response. Limited per day
+        to 20 invitations per store, 50 per inviting user and 3 per email in
+        the same store.
       security:
         - bearerAuth: []
       requestBody:

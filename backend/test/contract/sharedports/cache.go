@@ -12,6 +12,9 @@ import (
 
 // CacheHarness is one Cache under test and a way to make time pass for it.
 type CacheHarness struct {
+	// Cache starts empty: the cases use fixed tenants and expect exact
+	// misses, so a Redis harness flushes its database (or uses a new one)
+	// for each harness.
 	Cache appshared.Cache
 	// Elapse lets d pass for the cache. A fake advances its clock; a real
 	// cache can return at once, because the TTL case polls with a deadline

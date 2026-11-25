@@ -24,10 +24,11 @@ The project owner decided on 2026-11-25:
 
 - **Who and what.** An owner or admin (`members:manage`) invites an email with any role but owner.
 - **The link** is `https://{admin host}/convite#token=…`. The token sits in the fragment, so it never reaches a server log. It lasts 7 days and works once. Re-inviting the same email replaces the pending invitation (new token, new expiry). Inviting someone already on the team answers `409 already_member`.
-- **Limits.** At most 20 invitations per store and 3 per email per day (`429 rate_limited`), so a new store cannot turn Encomendo into a mail relay.
+- **Limits.** Per day: at most 20 invitations per store, 50 per inviting user across all their stores, and 3 per (store, email), so neither a new store nor one account with many stores can turn Encomendo into a mail relay. The per-email limit is per store, so a hostile store cannot use up a person's quota and block a real store's invitation. Creating stores is limited too: 5 per user per day. All answer `429 rate_limited`.
 - **Invitation tokens carry their tenant.** The token is the tenant id plus 32 random bytes; only the SHA-256 of the random part is stored. Accepting reads the tenant id from the token, scopes the transaction to that tenant and looks up the hash under RLS. No policy and no `SECURITY DEFINER` function lets anyone read invitations across tenants. The tenant id is not a secret; the random part is. The accept transaction does only what accepting needs, because its scope comes from a token presented before login.
 - **Accepting** (`POST /auth/invitations/accept`) belongs to `identity`, because it creates or checks the account and returns an `AuthSession`.
   - A new email gives a name and a password. An existing account must give its password, so holding a link never logs anyone in as someone else.
+  - It runs as two transactions (ADR 0009): one scoped to the tenant inside the token uses up the invitation and adds the membership; one scoped to the user builds the session.
   - `POST /auth/invitations/preview` tells the app which form to show.
   - Wrong, expired, revoked and used tokens all answer `404 not_found`.
   - So does an invitation whose sender no longer holds `members:manage` in that store.
@@ -48,6 +49,7 @@ The project owner decided on 2026-11-25:
 - **Storage.** The code is stored as an HMAC-SHA256 under a server key, not a plain hash, because six digits are cheap to brute-force from a leaked table.
 - **Confirming.** `POST /auth/password-reset/confirm {email, code, password}` sets the password and revokes every refresh family of the account. A wrong, expired or used-up code answers `400 invalid_code`.
 - A code works the same on web and Android, with no deep links.
+- **Accepted trade-off:** anyone who knows an email can spend its 10 wrong codes and block password reset for that account for up to 24 hours. Logging in with the current password still works, and the budget is what stops guessing. Support can clear the counter by hand.
 
 ### Store addresses
 
