@@ -18,7 +18,7 @@ Start with `docs/architecture.md` and `CLAUDE.md`.
 
 - Go 1.27+, Docker with Compose
 - Node 22+ and pnpm 10 (`corepack enable`)
-- JDK 21 and the Android SDK (API 36) for `mobile/`
+- JDK 21 and the Android SDK (API 37) for `mobile/`, or Docker and `scripts/mobile-docker.sh`
 
 ## First time
 

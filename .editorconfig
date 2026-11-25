@@ -18,3 +18,11 @@ indent_style = tab
 indent_size = 4
 max_line_length = 120
 ktlint_code_style = ktlint_official
+# Compose names UI functions in PascalCase; the rule would reject every @Composable.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# Compose Multiplatform generates resource accessors under build/. They are
+# generated code: lint our sources, never the generator's output. (The ktlint
+# Gradle filter does not reach a source set rooted in the generated directory.)
+[**/build/generated/**]
+ktlint = disabled

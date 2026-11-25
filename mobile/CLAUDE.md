@@ -13,6 +13,8 @@ The **management** app for owners, admins and staff, with every feature of the w
 ./gradlew :androidApp:assembleDebug
 ```
 
+No Android SDK on the machine? Run any of these in a container: `scripts/mobile-docker.sh check` (same arguments as `./gradlew`). It is how Claude sessions verify mobile changes.
+
 Each module configures its own plugins (see `shared/core/ui/build.gradle.kts` for a Compose module, `shared/core/domain/build.gradle.kts` for a plain one). Copy the closest one when you add a module, and add it to `settings.gradle.kts`.
 
 ## Libraries
