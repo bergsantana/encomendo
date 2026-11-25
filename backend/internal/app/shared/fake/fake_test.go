@@ -3,7 +3,9 @@ package fake
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -113,6 +115,102 @@ func TestEvents_RefuseTypedNilAndUndecodableEvents(t *testing.T) {
 		if !errors.Is(e, appshared.ErrInvalidEvent) {
 			t.Errorf("case %d: error = %v, want ErrInvalidEvent", i, e)
 		}
+	}
+}
+
+func TestInTx_SeesOnlyTheFakeTransaction(t *testing.T) {
+	t.Parallel()
+
+	if InTx(context.Background()) {
+		t.Error("InTx is true outside a transaction")
+	}
+	var inside bool
+	err := NewTxManager().WithinTx(context.Background(), func(ctx context.Context) error {
+		inside = InTx(ctx)
+		return nil
+	})
+	if err != nil || !inside {
+		t.Errorf("InTx inside WithinTx = %v (err %v), want true", inside, err)
+	}
+}
+
+func TestOnRollback_UndoesOnlyWhatFailed(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	rows := map[string]int{"kept": 1}
+	write := func(ctx context.Context, k string, v int) {
+		mu.Lock()
+		defer mu.Unlock()
+		KeepOnRollback(ctx, &mu, rows, k)
+		rows[k] = v
+	}
+	boom := errors.New("boom")
+	tx := NewTxManager()
+
+	err := tx.WithinTx(context.Background(), func(ctx context.Context) error {
+		write(ctx, "kept", 2)
+		write(ctx, "committed", 3)
+		nested := tx.WithinTx(ctx, func(ctx context.Context) error {
+			write(ctx, "savepoint", 4)
+			write(ctx, "kept", 5)
+			return boom
+		})
+		if !errors.Is(nested, boom) {
+			t.Errorf("nested = %v", nested)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]int{"kept": 2, "committed": 3}; !maps.Equal(rows, want) {
+		t.Errorf("after a failed savepoint: %v, want %v", rows, want)
+	}
+
+	err = tx.WithinTx(context.Background(), func(ctx context.Context) error {
+		if err := tx.WithinTx(ctx, func(ctx context.Context) error { write(ctx, "released", 6); return nil }); err != nil {
+			return err
+		}
+		write(ctx, "kept", 7)
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatal(err)
+	}
+	if want := map[string]int{"kept": 2, "committed": 3}; !maps.Equal(rows, want) {
+		t.Errorf("after a failed transaction: %v, want %v; a released savepoint's writes go with it", rows, want)
+	}
+
+	OnRollback(context.Background(), func() { t.Error("an undo outside a transaction ran") })
+}
+
+func TestSecrets_AreDistinctAndRepeatable(t *testing.T) {
+	t.Parallel()
+
+	a, b := NewSecrets(), NewSecrets()
+	first, _ := a.NewSecret(context.Background())
+	second, _ := a.NewSecret(context.Background())
+	if first == second {
+		t.Error("two secrets in a row are equal")
+	}
+	if again, _ := b.NewSecret(context.Background()); again != first {
+		t.Error("a second generator does not give the same sequence")
+	}
+}
+
+func TestSecrets_Fail(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("no entropy")
+	s := NewSecrets()
+	s.Fail(boom)
+	if _, err := s.NewSecret(context.Background()); !errors.Is(err, boom) {
+		t.Errorf("NewSecret after Fail = %v, want %v", err, boom)
+	}
+	s.Fail(nil)
+	if _, err := s.NewSecret(context.Background()); err != nil {
+		t.Errorf("NewSecret after Fail(nil) = %v", err)
 	}
 }
 

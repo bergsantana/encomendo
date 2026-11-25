@@ -1,6 +1,6 @@
 # 0011 — Staff invitations, password reset and email in milestone 2
 
-- Status: accepted
+- Status: accepted; "No context cycle" refined by `m2-domain`
 - Date: 2026-11-25
 
 ## Context
@@ -44,6 +44,7 @@ The project owner decided on 2026-11-25:
 ### Password reset ("Esqueci a senha")
 
 - **Requesting.** `POST /auth/password-reset {email}` always answers 202, so it never reveals who has an account. The answer never waits for SMTP: the code is stored in the transaction, and the notify adapter sends it off the request path, so timing does not reveal it either. A failure to send is logged and still answers 202.
+  - *Accepted in `m2-domain`:* a known email stores a code, an unknown one stores nothing, and a careful prober can time that write. It tells no more than sign-up's `409 email_taken` already does (ADR 0010), and the limits of 5 requests per email per hour and per IP bound it. Hiding it would need a write for every unknown email.
 - **The code** has 6 digits, lasts 10 minutes and allows 5 wrong attempts. A new request replaces the old code. Each account also allows 10 wrong codes per 24 hours across all its codes, so requesting new codes does not buy more guesses. Requests are limited to 5 per email per hour.
 - **Counting** is one atomic statement: `UPDATE … SET attempts = attempts + 1 WHERE … AND attempts < 5 RETURNING …`.
 - **Storage.** The code is stored as an HMAC-SHA256 under a server key, not a plain hash, because six digits are cheap to brute-force from a leaked table.
@@ -63,6 +64,8 @@ The reserved slugs are the labels of the configured admin and API hosts, plus `w
 ### No context cycle
 
 `identity` reads memberships from `tenancy` (login, switch, accept), and `tenancy` reads users by email from `identity` (invite). Each side exposes a read-only query type that depends only on its own repositories. `adapter/inproc` implements the other side's port on top of it. `main.go` builds both query types before either service, so no service needs the other service.
+
+*Refined in `m2-domain`:* accepting also writes in `tenancy` (it uses the invitation up and adds the membership). `app/tenancy.Lookup` does that next to its queries. Like them it depends only on `tenancy`'s repositories and the event publisher, so the rule above still holds: `identity.Directory` and `tenancy.Lookup` come first in `main.go`, then both services. Accepting reads the invitation in one short transaction scoped to its store before argon2id runs, then uses it up in a second one scoped to the store, then builds the session in a third scoped to the user (ADR 0013: argon2id never runs inside a transaction).
 
 ## Consequences
 

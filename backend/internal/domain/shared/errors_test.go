@@ -63,3 +63,43 @@ func TestErrVersionConflict_IsAConflict(t *testing.T) {
 		t.Error("a plain conflict must not read as a version conflict")
 	}
 }
+
+func TestMergeValidation_JoinsEveryField(t *testing.T) {
+	t.Parallel()
+
+	name := NewValidationError(FieldError{Field: "name", Message: "Obrigatório."})
+	email := fmt.Errorf("parse: %w", NewValidationError(FieldError{Field: "email", Message: "Inválido."}))
+
+	err := MergeValidation(nil, name, nil, email)
+
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("MergeValidation = %v, want a ValidationError", err)
+	}
+	if len(ve.Fields) != 2 || ve.Fields[0].Field != "name" || ve.Fields[1].Field != "email" {
+		t.Errorf("Fields = %+v, want name then email", ve.Fields)
+	}
+}
+
+func TestMergeValidation_NilWhenEveryErrorIsNil(t *testing.T) {
+	t.Parallel()
+
+	if err := MergeValidation(); err != nil {
+		t.Errorf("MergeValidation() = %v", err)
+	}
+	if err := MergeValidation(nil, nil); err != nil {
+		t.Errorf("MergeValidation(nil, nil) = %v", err)
+	}
+}
+
+func TestMergeValidation_ReturnsOtherErrorsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	// An error that is not about the input wins: it is a bug or an outage,
+	// and must not turn into a 400.
+	other := errors.New("hasher down")
+	err := MergeValidation(NewValidationError(FieldError{Field: "name"}), other)
+	if err != other { //nolint:errorlint // the very same error must come back, not a wrapper
+		t.Errorf("MergeValidation = %v, want the non-validation error itself", err)
+	}
+}

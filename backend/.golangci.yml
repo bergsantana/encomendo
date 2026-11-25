@@ -71,6 +71,23 @@ linters:
               desc: HTTP belongs to adapter/http
             - pkg: database/sql
               desc: persistence belongs to adapter/postgres
+        # Fakes are for tests. A fake wired into the API would issue
+        # predictable secrets and keep no data, so only tests, the contract
+        # suites and the fakes themselves may import them.
+        fakes:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+            - "!**/internal/app/**/fake/**"
+            - "!**/test/**"
+          deny:
+            - pkg: github.com/bergsantana/encomendo/backend/internal/app/shared/fake
+              desc: fakes are for tests only
+            - pkg: github.com/bergsantana/encomendo/backend/internal/app/identity/fake
+              desc: fakes are for tests only
+            - pkg: github.com/bergsantana/encomendo/backend/internal/app/tenancy/fake
+              desc: fakes are for tests only
         # The app layer owns the ports and never reaches into adapters or drivers.
         app:
           list-mode: lax

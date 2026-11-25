@@ -47,6 +47,10 @@ func TestFakeClock_Contract(t *testing.T) {
 	RunClockContract(t, func(*testing.T) appshared.Clock { return sharedfake.NewClock(start) })
 }
 
+func TestFakeSecrets_Contract(t *testing.T) {
+	RunSecretGeneratorContract(t, func(*testing.T) appshared.SecretGenerator { return sharedfake.NewSecrets() })
+}
+
 func TestFakeIDs_Contract(t *testing.T) {
 	RunIDGeneratorContract(t, func(*testing.T) appshared.IDGenerator {
 		return sharedfake.NewIDs(sharedfake.NewClock(start))
