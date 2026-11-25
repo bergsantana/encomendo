@@ -35,9 +35,15 @@ One backend session means nothing fights over the shared files in `CLAUDE.md` ("
 4. `adapter/auth`: EdDSA JWT with `kid` rotation, refresh rotation with reuse detection, Argon2id, security tests.
 5. Postgres repositories, `authn` middleware, CORS, rate limit on `/auth`, handlers, wiring in `main.go` and `router.go`, "Done when" checks.
 
-**Web session**, after step 1 is merged: `packages/api` auth client with refresh once on 401, session store, login, sign-up, tenant picker, route guards, `usePermission`. Mocked until step 5 lands, then run against the real API with `make dev-up`.
+**Web session**
 
-**Mobile session**, after step 1 is merged: Ktor client with bearer and refresh, `TokenStore`, auth graph, login, sign-up, tenant picker, forgot password, `PermissionGate`. Mocked until step 5 lands, then run against the real API.
+- Now (no contract needed): refresh once on 401 in the `packages/api` fetch wrapper, session store (access token in memory, refresh from the cookie), route guards (`requiresAuth`, `permission`), `usePermission`.
+- After backend step 1 is merged: the auth and tenancy calls from the generated types, login, sign-up, tenant picker. Mocked with MSW until step 5 lands, then checked against the real API with `make dev-up`.
+
+**Mobile session**
+
+- Now (no contract needed): Ktor client with problem+json mapped to `ApiError`, the bearer-and-refresh plugin, `TokenStore` (Keystore + DataStore), the auth graph before the management graph, `PermissionGate`.
+- After backend step 1 is merged: the auth and tenancy DTOs and calls, login, sign-up, tenant picker, forgot password. Mocked with `MockEngine` until step 5 lands, then checked against the real API.
 
 ## Later milestones
 
