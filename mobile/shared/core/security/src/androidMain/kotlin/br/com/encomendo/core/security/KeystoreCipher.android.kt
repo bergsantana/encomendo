@@ -4,37 +4,36 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.GeneralSecurityException
 import java.security.KeyStore
-import javax.crypto.Cipher
+import java.security.ProviderException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 /**
  * KeystoreCipher seals secrets with an AES-256-GCM key that lives in the
- * Android Keystore and never leaves it. The sealed bytes are the 12-byte IV
- * followed by the ciphertext and tag.
+ * Android Keystore and never leaves it (framing in AesGcm.android.kt).
+ * [open] never throws: a key the Keystore can't load means an unreadable
+ * session, never a crash on every launch.
  */
 class KeystoreCipher(
     private val alias: String = DEFAULT_ALIAS,
 ) : SecretCipher {
-    override fun seal(plain: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, existingKey() ?: newKey())
-        return cipher.iv + cipher.doFinal(plain)
-    }
+    private val keyLock = Any()
 
-    override fun open(sealed: ByteArray): ByteArray? {
-        val key = existingKey()
-        if (key == null || sealed.size <= IV_BYTES) return null
-        return try {
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, sealed, 0, IV_BYTES))
-            cipher.doFinal(sealed, IV_BYTES, sealed.size - IV_BYTES)
+    override fun seal(plain: ByteArray): ByteArray = sealWith(key(), plain)
+
+    override fun open(sealed: ByteArray): ByteArray? =
+        try {
+            existingKey()?.let { openWith(it, sealed) }
         } catch (_: GeneralSecurityException) {
-            // Tampered bytes or a replaced key: the session is unreadable, so the user logs in again.
+            // KeyStoreException, UnrecoverableKeyException: known on some devices after updates.
+            null
+        } catch (_: ProviderException) {
+            // The Keystore daemon can fail with this RuntimeException; same outcome.
             null
         }
-    }
+
+    // Two first-time seals at once must not each create a key under the same alias.
+    private fun key(): SecretKey = synchronized(keyLock) { existingKey() ?: newKey() }
 
     private fun existingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -58,9 +57,6 @@ class KeystoreCipher(
     private companion object {
         const val DEFAULT_ALIAS = "encomendo.session"
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val KEY_BITS = 256
-        const val IV_BYTES = 12
-        const val TAG_BITS = 128
     }
 }

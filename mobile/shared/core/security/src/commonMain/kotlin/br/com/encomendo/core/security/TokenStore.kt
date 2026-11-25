@@ -50,6 +50,7 @@ class TokenStore(
     /** Signs out on this device. */
     suspend fun clear() {
         dataStore.edit { it.remove(SESSION) }
+        forgetOpened()
     }
 
     /**
@@ -67,7 +68,13 @@ class TokenStore(
             if (!replaced) return@edit
             if (replacement == null) preferences.remove(SESSION) else preferences[SESSION] = seal(replacement)
         }
+        if (replaced && replacement == null) forgetOpened()
         return replaced
+    }
+
+    /** Drops the ended session's plain tokens from memory; the cache only ever helps the live one. */
+    private fun forgetOpened() {
+        lastOpened.value = null
     }
 
     private suspend fun open(preferences: Preferences): SessionTokens? = open(preferences[SESSION])

@@ -24,6 +24,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":shared:core:domain"))
             implementation(project(":shared:core:ui"))
             implementation(project(":shared:feature:auth"))
             implementation(project(":shared:feature:hoje"))
