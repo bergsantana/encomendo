@@ -2,7 +2,15 @@ package br.com.encomendo.core.navigation
 
 import kotlinx.serialization.Serializable
 
-/** The management graph, opened after a staff login (milestone 2 adds the auth graph before it). */
+/** The auth graph, shown while nobody is signed in. */
+@Serializable
+data object AuthGraph
+
+/** Login: email and password (placeholder until the /auth contract). */
+@Serializable
+data object LoginRoute
+
+/** The management graph, opened after a staff login. */
 @Serializable
 data object BackofficeGraph
 

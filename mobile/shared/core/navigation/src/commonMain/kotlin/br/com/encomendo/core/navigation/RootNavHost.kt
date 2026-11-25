@@ -1,23 +1,58 @@
 package br.com.encomendo.core.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraphBuilder
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import br.com.encomendo.feature.auth.LoginScreen
 import br.com.encomendo.feature.hoje.HojeScreen
+import org.koin.compose.viewmodel.koinViewModel
 
-/** RootNavHost hosts every graph of the management app. */
+/** RootRoute connects [RootViewModel] to [RootNavHost]; the activity shows only this. */
+@Composable
+fun RootRoute(
+    modifier: Modifier = Modifier,
+    viewModel: RootViewModel = koinViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    RootNavHost(state = state, modifier = modifier)
+}
+
+/**
+ * RootNavHost hosts every graph of the management app: the auth graph while
+ * signed out, the management graph while signed in.
+ */
 @Composable
 fun RootNavHost(
+    state: RootUiState,
     modifier: Modifier = Modifier,
-    navController: NavHostController = rememberNavController(),
 ) {
-    NavHost(navController = navController, startDestination = BackofficeGraph, modifier = modifier) {
-        backofficeNavGraph()
+    if (state == RootUiState.Loading) return
+    val signedIn = state == RootUiState.SignedIn
+    // A fresh back stack per session: Back never leads from the login into
+    // management screens after a logout, nor from Hoje back to the login.
+    key(signedIn) {
+        NavHost(
+            navController = rememberNavController(),
+            startDestination = if (signedIn) BackofficeGraph else AuthGraph,
+            modifier = modifier,
+        ) {
+            authNavGraph()
+            backofficeNavGraph()
+        }
+    }
+}
+
+/** Login, and later sign-up, tenant picker and forgot password (`feature/auth`). */
+fun NavGraphBuilder.authNavGraph() {
+    navigation<AuthGraph>(startDestination = LoginRoute) {
+        composable<LoginRoute> { LoginScreen() }
     }
 }
 
