@@ -21,14 +21,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 4 | 23 | In progress: contract done (step 1 of 7), mobile session and auth graph |
+| 2 | Identity and tenancy | 5 | 23 | In progress: contract done (step 1 of 7), mobile API client, session and auth graph |
 | 3 | Catalog and suppliers | 0 | 13 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **26** | **117** | **about 22%** |
+|   | **All milestones** | **27** | **117** | **about 23%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -36,7 +36,7 @@ Percentages count checkboxes, and milestones differ a lot in size (milestone 4 i
 
 - **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM open with the pgx driver, Redis client, goose migration runner, the first migration (`0001_roles_and_extensions.sql`), `domain/shared` (typed UUIDv7 IDs, `Money`, `Page`, `Principal`, `Role`, sentinel errors), the `identity` permission map, `app/shared` ports with fakes and `authz`, and their contract suites in `test/contract/sharedports`. No bounded context yet, no `testkit`.
 - **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, health call, generated types) and `packages/ui` (tokens, `BaseButton`, `StatusBadge`, phase colours). Admin shows a Hoje placeholder behind a dashboard layout. The store app resolves the tenant from the subdomain and renders a shell.
-- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:security` (`TokenStore`: Keystore-sealed session in DataStore), `core:data` and `core:testing`, `core:navigation` (auth graph while signed out, management graph while signed in), `core:di` (Koin), and Login and Hoje placeholder screens.
+- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:network` (Ktor client, problem+json → `ApiError`, bearer with one refresh on 401), `core:security` (`TokenStore`: Keystore-sealed session in DataStore), `core:data` and `core:testing`, `core:navigation` (auth graph while signed out, management graph while signed in), `core:di` (Koin), and Login and Hoje placeholder screens.
 - **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0011, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
 
 ---
@@ -110,7 +110,7 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 
 ### Mobile
 
-- [ ] Ktor client with bearer-and-refresh plugin and problem+json mapping
+- [x] Ktor client with bearer-and-refresh plugin and problem+json mapping (`core:network`; the `/auth/refresh` call plugs in as a `TokenRefresher` with the auth DTOs)
 - [x] `TokenStore` (Keystore + DataStore) and auth graph before the management graph (`core:security`, `RootViewModel`; the login destination is a placeholder until the auth screens)
 - [ ] Login, sign-up, tenant picker, forgot password screens, `PermissionGate`
 - [ ] `feature/members`: list, invite, change role, remove
