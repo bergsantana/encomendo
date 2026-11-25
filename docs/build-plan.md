@@ -112,7 +112,7 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 
 - [ ] Ktor client with bearer-and-refresh plugin and problem+json mapping
 - [x] `TokenStore` (Keystore + DataStore) and auth graph before the management graph (`core:security`, `RootViewModel`; the login destination is a placeholder until the auth screens)
-- [ ] Login, sign-up, tenant picker, forgot password screens, `PermissionGate`
+- [ ] Login, sign-up, tenant picker, forgot password screens, `PermissionGate` (partial: `PermissionGate` and `GrantedPermissions` done. Still to do, now that the `/auth` contract is merged: the screens, providing `LocalGrantedPermissions` from the session's `permissions`, and filtering management destinations by permission (web's `meta.permission`))
 - [ ] `feature/members`: list, invite, change role, remove
 
 ### Done when
