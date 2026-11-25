@@ -12,6 +12,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import br.com.encomendo.core.domain.session.GrantedPermissions
+import br.com.encomendo.core.ui.LocalGrantedPermissions
 import br.com.encomendo.feature.auth.LoginScreen
 import br.com.encomendo.feature.hoje.HojeScreen
 import org.koin.compose.viewmodel.koinViewModel
@@ -29,7 +31,9 @@ fun RootRoute(
 /**
  * RootNavHost hosts every graph of the management app: the auth graph while
  * signed out, the management graph while signed in. Screen ViewModels live in
- * the session's own store ([RootUiState.Session.screens]).
+ * the session's own store ([RootUiState.Ready.screens]), and every
+ * `PermissionGate` below reads the session's permissions; signed out, nothing
+ * is granted.
  */
 @Composable
 fun RootNavHost(
@@ -39,13 +43,17 @@ fun RootNavHost(
     val session =
         when (state) {
             RootUiState.Loading -> return
-            is RootUiState.Session -> state
+            is RootUiState.Ready -> state
         }
     val signedIn = session is RootUiState.SignedIn
+    val permissions = (session as? RootUiState.SignedIn)?.permissions ?: GrantedPermissions.None
     // A fresh back stack per session: Back never leads from the login into
     // management screens after a logout, nor from Hoje back to the login.
     key(session.screens) {
-        CompositionLocalProvider(LocalViewModelStoreOwner provides session.screens) {
+        CompositionLocalProvider(
+            LocalViewModelStoreOwner provides session.screens,
+            LocalGrantedPermissions provides permissions,
+        ) {
             NavHost(
                 navController = rememberNavController(),
                 startDestination = if (signedIn) BackofficeGraph else AuthGraph,

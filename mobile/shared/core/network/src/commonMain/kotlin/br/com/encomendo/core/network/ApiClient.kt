@@ -44,17 +44,22 @@ internal val ApiJson: Json =
  *   origin (same scheme, host and port), so with an https base URL it never
  *   travels over plain HTTP or to another host;
  * - a 401 from the API triggers one refresh through [refresher] and one retry;
- *   if the server refuses the refresh token, [tokens] is cleared, which signs
- *   the user out; if the refresh fails for any other reason, that error is
- *   thrown and the session is kept.
+ *   if the server refuses the refresh token, the request fails with its 401
+ *   and [tokens] is cleared, which signs the user out (if the store cannot be
+ *   written, the next 401 tries again); if the refresh fails for any other
+ *   reason, that error is thrown and the session is kept.
  *
- * Use one client for the whole app, so refreshes are never run twice in parallel.
+ * Use one client for the whole app, so refreshes are never run twice in
+ * parallel. Its lock covers only its own refreshes: any other call that spends
+ * the refresh token (switch-tenant, a refresh on app start) must take the same
+ * turn: two calls presenting one token leave one of them with a superseded
+ * token, whose next use revokes the whole family (ADR 0013).
  */
-fun createApiClient(
+fun <S : BearerCredentials> createApiClient(
     engine: HttpClientEngine,
     config: ApiClientConfig,
-    tokens: TokenStorage,
-    refresher: TokenRefresher,
+    tokens: TokenStorage<S>,
+    refresher: TokenRefresher<S>,
 ): HttpClient =
     HttpClient(engine) {
         install(ContentNegotiation) { json(ApiJson) }
@@ -90,10 +95,10 @@ private fun HttpClientConfig<*>.installErrorMapping() {
     }
 }
 
-private fun HttpClientConfig<*>.installBearer(
+private fun <S : BearerCredentials> HttpClientConfig<*>.installBearer(
     apiOrigin: Url,
-    refresh: BearerRefresh,
-    tokens: TokenStorage,
+    refresh: BearerRefresh<S>,
+    tokens: TokenStorage<S>,
 ) {
     install(Auth) {
         // A 401 from another host must never be answered with our token, and a 401
@@ -120,4 +125,5 @@ private fun Url.isSameOrigin(other: Url): Boolean =
 
 private fun HttpRequest.bearerToken(): String? = headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
 
-private fun AuthTokens.toBearer(): BearerTokens = BearerTokens(accessToken = accessToken, refreshToken = refreshToken)
+private fun BearerCredentials.toBearer(): BearerTokens =
+    BearerTokens(accessToken = accessToken, refreshToken = refreshToken)

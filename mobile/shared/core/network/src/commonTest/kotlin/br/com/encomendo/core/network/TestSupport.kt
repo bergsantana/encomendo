@@ -24,34 +24,40 @@ internal fun MockRequestHandleScope.respondProblem(
 ): HttpResponseData = respond(body, status, headersOf(HttpHeaders.ContentType, "application/problem+json"))
 
 internal fun MockRequestHandleScope.respondUnauthorized(): HttpResponseData =
-    respondProblem(HttpStatusCode.Unauthorized, """{"title":"Sessão expirada","status":401,"code":"unauthorized"}""")
+    respondProblem(HttpStatusCode.Unauthorized, """{"title":"Sessão expirada","status":401,"code":"unauthenticated"}""")
+
+/** A token pair and nothing else: what the client needs from a stored session. */
+internal data class TestTokens(
+    override val accessToken: String,
+    override val refreshToken: String,
+) : BearerCredentials
 
 /** Keeps tokens in memory, as TokenStore does on the device; thread-safe because MockEngine runs on a pool. */
 internal class InMemoryTokenStorage(
-    initial: AuthTokens? = null,
-) : TokenStorage {
+    initial: TestTokens? = null,
+) : TokenStorage<TestTokens> {
     private val state = MutableStateFlow(initial)
 
     /** The tokens stored right now. */
-    val current: AuthTokens? get() = state.value
+    val current: TestTokens? get() = state.value
 
     /** Replaces the tokens from outside the client, as a login or logout screen would. */
-    fun overwrite(tokens: AuthTokens?) {
+    fun overwrite(tokens: TestTokens?) {
         state.value = tokens
     }
 
-    override suspend fun read(): AuthTokens? = state.value
+    override suspend fun read(): TestTokens? = state.value
 
     override suspend fun replace(
-        expected: AuthTokens,
-        replacement: AuthTokens?,
+        expected: TestTokens,
+        replacement: TestTokens?,
     ): Boolean = state.compareAndSet(expected, replacement)
 }
 
 /** Records every refresh and answers with [answer]. */
 internal class RecordingRefresher(
-    private val answer: suspend (refreshToken: String) -> AuthTokens,
-) : TokenRefresher {
+    private val answer: suspend (refreshToken: String) -> TestTokens,
+) : TokenRefresher<TestTokens> {
     private val seen = MutableStateFlow(emptyList<String>())
 
     /** The refresh tokens sent so far, in order. */
@@ -59,9 +65,9 @@ internal class RecordingRefresher(
 
     override suspend fun refresh(
         client: HttpClient,
-        refreshToken: String,
-    ): AuthTokens {
-        seen.update { it + refreshToken }
-        return answer(refreshToken)
+        current: TestTokens,
+    ): TestTokens {
+        seen.update { it + current.refreshToken }
+        return answer(current.refreshToken)
     }
 }

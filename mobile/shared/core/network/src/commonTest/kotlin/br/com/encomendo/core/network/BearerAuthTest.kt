@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.io.IOException
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,8 +31,8 @@ import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
 
 class BearerAuthTest {
-    private val old = AuthTokens(accessToken = "access-old", refreshToken = "refresh-old")
-    private val fresh = AuthTokens(accessToken = "access-new", refreshToken = "refresh-new")
+    private val old = TestTokens(accessToken = "access-old", refreshToken = "refresh-old")
+    private val fresh = TestTokens(accessToken = "access-new", refreshToken = "refresh-new")
 
     @Test
     fun sendsTheStoredAccessToken() =
@@ -108,7 +109,7 @@ class BearerAuthTest {
     fun logsOutWhenTheServerRejectsTheRefreshToken() =
         runTest {
             val storage = InMemoryTokenStorage(old)
-            val refresher = RecordingRefresher { throw ApiError(status = 401, code = ApiErrorCode("unauthorized")) }
+            val refresher = RecordingRefresher { throw ApiError(status = 401, code = ApiErrorCode("unauthenticated")) }
             val client = client(storage, refresher) { respondUnauthorized() }
 
             val error = assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") }
@@ -205,7 +206,7 @@ class BearerAuthTest {
     @Test
     fun aLoginDuringARejectedRefreshIsKept() =
         runTest {
-            val other = AuthTokens(accessToken = "access-other", refreshToken = "refresh-other")
+            val other = TestTokens(accessToken = "access-other", refreshToken = "refresh-other")
             val storage = InMemoryTokenStorage(old)
             val started = CompletableDeferred<Unit>()
             val gate = CompletableDeferred<Unit>()
@@ -213,7 +214,7 @@ class BearerAuthTest {
                 RecordingRefresher {
                     started.complete(Unit)
                     gate.await()
-                    throw ApiError(status = 401, code = ApiErrorCode("unauthorized"))
+                    throw ApiError(status = 401, code = ApiErrorCode("unauthenticated"))
                 }
             val client = client(storage, refresher) { respondUnauthorized() }
 
@@ -224,6 +225,25 @@ class BearerAuthTest {
             call.await()
 
             assertEquals(other, storage.current, "a refused old refresh must not end the new session")
+        }
+
+    @Test
+    fun aRefusedRefreshStillFailsAsRefusedWhenSigningOutCannotBeSaved() =
+        runTest {
+            // The server said the session is over; a full disk must not turn that into "offline".
+            val storage =
+                object : TokenStorage<TestTokens> by InMemoryTokenStorage(old) {
+                    override suspend fun replace(
+                        expected: TestTokens,
+                        replacement: TestTokens?,
+                    ): Boolean = throw IOException("disk full")
+                }
+            val refresher = RecordingRefresher { throw ApiError(status = 401, code = ApiErrorCode("unauthenticated")) }
+            val client = client(storage, refresher) { respondUnauthorized() }
+
+            val error = assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") }
+
+            assertEquals(401, error.status)
         }
 
     @Test
@@ -256,7 +276,13 @@ class BearerAuthTest {
     fun aRefresherThatForgetsWithoutBearerFailsInsteadOfHanging() =
         runTest {
             val storage = InMemoryTokenStorage(old)
-            val careless = TokenRefresher { client, _ -> client.get("/auth/refresh").body<AuthTokensBody>().toTokens() }
+            val careless =
+                TokenRefresher<TestTokens> {
+                    client,
+                    _,
+                    ->
+                    client.get("/auth/refresh").body<AuthTokensBody>().toTokens()
+                }
             val client = client(storage, careless) { respondUnauthorized() }
 
             // A deadlocked refresh is non-cancellable, so it runs in a detached scope and the
@@ -298,14 +324,14 @@ class BearerAuthTest {
         val accessToken: String,
         val refreshToken: String,
     ) {
-        fun toTokens() = AuthTokens(accessToken = accessToken, refreshToken = refreshToken)
+        fun toTokens() = TestTokens(accessToken = accessToken, refreshToken = refreshToken)
     }
 
     private fun HttpRequestData.bearer(): String? = headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
 
     private fun client(
-        storage: TokenStorage,
-        refresher: TokenRefresher = RecordingRefresher { error("no refresh expected") },
+        storage: TokenStorage<TestTokens>,
+        refresher: TokenRefresher<TestTokens> = RecordingRefresher { error("no refresh expected") },
         handler: MockRequestHandler,
     ): HttpClient =
         createApiClient(
@@ -317,8 +343,8 @@ class BearerAuthTest {
 }
 
 class BearerRefreshTest {
-    private val old = AuthTokens(accessToken = "access-old", refreshToken = "refresh-old")
-    private val fresh = AuthTokens(accessToken = "access-new", refreshToken = "refresh-new")
+    private val old = TestTokens(accessToken = "access-old", refreshToken = "refresh-old")
+    private val fresh = TestTokens(accessToken = "access-new", refreshToken = "refresh-new")
     private val client = HttpClient(MockEngine { error("the refresher is faked") })
 
     @Test

@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.byteArrayPreferencesKey
 import androidx.datastore.preferences.core.edit
+import br.com.encomendo.core.domain.session.Session
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,15 +12,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
  * TokenStore is the only place the app keeps the session's tokens
- * (mobile/CLAUDE.md, Auth and offline). It guarantees that:
+ * (mobile/CLAUDE.md, Auth and offline), with the [Session] they were issued
+ * for. It guarantees that:
  *
- * - tokens reach storage only sealed by [cipher] (the Keystore on Android),
- *   as one blob, so the access and refresh tokens always change together;
+ * - the session reaches storage only sealed by [cipher] (the Keystore on
+ *   Android), as one blob, so the access token, the refresh token and the
+ *   permissions always change together;
  * - a session the device can no longer decrypt reads as signed out, and the
  *   user simply logs in again;
  * - [replace] is atomic, so a refresh can never undo a logout or a login.
@@ -35,15 +37,18 @@ class TokenStore(
 ) {
     private val lastOpened = MutableStateFlow<Opened?>(null)
 
-    /** Emits whether a readable session is stored, then every change between signed in and out. */
-    val signedIn: Flow<Boolean> = dataStore.data.map { open(it) != null }.distinctUntilChanged()
+    /**
+     * Emits the stored session (null when signed out), then every change to it.
+     * The tokens stay out of it, so nothing that observes the session can leak them.
+     */
+    val session: Flow<Session?> = dataStore.data.map { open(it)?.session }.distinctUntilChanged()
 
-    /** Returns the stored tokens, or null when signed out. */
-    suspend fun read(): SessionTokens? = open(dataStore.data.first())
+    /** Returns the stored session with its tokens, or null when signed out. */
+    suspend fun read(): StoredSession? = open(dataStore.data.first())
 
-    /** Stores [tokens] after a login, replacing any previous session. */
-    suspend fun write(tokens: SessionTokens) {
-        val sealed = seal(tokens)
+    /** Stores [session] after a login, replacing any previous session. */
+    suspend fun write(session: StoredSession) {
+        val sealed = seal(session)
         dataStore.edit { it[SESSION] = sealed }
     }
 
@@ -55,16 +60,18 @@ class TokenStore(
 
     /**
      * Replaces the session with [replacement] (null signs out) only while the
-     * stored session is still [expected]. Returns false and changes nothing
-     * otherwise.
+     * stored tokens are still [expected]'s. Returns false and changes nothing
+     * otherwise. Only the tokens are compared: the refresh token is unique to
+     * one session, and a refresh must not lose its rotated tokens because
+     * something stored with them changed meanwhile.
      */
     suspend fun replace(
-        expected: SessionTokens,
-        replacement: SessionTokens?,
+        expected: StoredSession,
+        replacement: StoredSession?,
     ): Boolean {
         var replaced = false
         dataStore.edit { preferences ->
-            replaced = open(preferences) == expected
+            replaced = open(preferences)?.tokens == expected.tokens
             if (!replaced) return@edit
             if (replacement == null) preferences.remove(SESSION) else preferences[SESSION] = seal(replacement)
         }
@@ -77,30 +84,29 @@ class TokenStore(
         lastOpened.value = null
     }
 
-    private suspend fun open(preferences: Preferences): SessionTokens? = open(preferences[SESSION])
+    private suspend fun open(preferences: Preferences): StoredSession? = open(preferences[SESSION])
 
-    private suspend fun open(sealed: ByteArray?): SessionTokens? {
+    private suspend fun open(sealed: ByteArray?): StoredSession? {
         if (sealed == null) return null
         // Each API request reads the tokens; decrypt only when the stored blob changed.
         val cached = lastOpened.value?.takeIf { it.sealed.contentEquals(sealed) }
-        return if (cached != null) cached.tokens else decrypt(sealed)
+        return if (cached != null) cached.session else decrypt(sealed)
     }
 
-    private suspend fun decrypt(sealed: ByteArray): SessionTokens? {
-        val tokens = withContext(cryptoDispatcher) { cipher.open(sealed) }?.let(::decode)
-        lastOpened.value = Opened(sealed, tokens)
-        return tokens
+    private suspend fun decrypt(sealed: ByteArray): StoredSession? {
+        val session = withContext(cryptoDispatcher) { cipher.open(sealed) }?.let(::decode)
+        lastOpened.value = Opened(sealed, session)
+        return session
     }
 
-    private suspend fun seal(tokens: SessionTokens): ByteArray {
-        val plain = json.encodeToString(StoredSession(tokens.accessToken, tokens.refreshToken)).encodeToByteArray()
+    private suspend fun seal(session: StoredSession): ByteArray {
+        val plain = json.encodeToString(session.toRecord()).encodeToByteArray()
         return withContext(cryptoDispatcher) { cipher.seal(plain) }
     }
 
-    private fun decode(plain: ByteArray): SessionTokens? =
+    private fun decode(plain: ByteArray): StoredSession? =
         try {
-            val stored = json.decodeFromString<StoredSession>(plain.decodeToString())
-            SessionTokens(accessToken = stored.access, refreshToken = stored.refresh)
+            json.decodeFromString<SessionRecord>(plain.decodeToString()).toStoredSession()
         } catch (_: IllegalArgumentException) {
             // SerializationException is an IllegalArgumentException: an old or broken blob means signed out.
             null
@@ -109,13 +115,7 @@ class TokenStore(
     /** The last blob decrypted, so repeated reads skip the Keystore. */
     private class Opened(
         val sealed: ByteArray,
-        val tokens: SessionTokens?,
-    )
-
-    @Serializable
-    private data class StoredSession(
-        val access: String,
-        val refresh: String,
+        val session: StoredSession?,
     )
 
     private companion object {

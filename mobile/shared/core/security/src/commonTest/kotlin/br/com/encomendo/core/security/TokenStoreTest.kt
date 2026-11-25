@@ -2,9 +2,16 @@ package br.com.encomendo.core.security
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.byteArrayPreferencesKey
+import androidx.datastore.preferences.core.edit
 import app.cash.turbine.test
+import br.com.encomendo.core.domain.session.Membership
+import br.com.encomendo.core.domain.session.Permission
+import br.com.encomendo.core.domain.session.Role
+import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
+import br.com.encomendo.core.testing.testSession
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
@@ -14,12 +21,21 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TokenStoreTest {
-    private val session = SessionTokens(accessToken = "access-secret", refreshToken = "refresh-secret")
-    private val other = SessionTokens(accessToken = "access-other", refreshToken = "refresh-other")
+    private val session =
+        StoredSession(
+            tokens = SessionTokens(accessToken = "access-secret", refreshToken = "refresh-secret"),
+            session = testSession(permissions = setOf("order:read")),
+        )
+    private val other =
+        StoredSession(
+            tokens = SessionTokens(accessToken = "access-other", refreshToken = "refresh-other"),
+            session = testSession(permissions = setOf("order:read", "order:write")),
+        )
 
     @Test
     fun startsSignedOut() =
@@ -27,7 +43,7 @@ class TokenStoreTest {
             val store = tokenStore()
 
             assertNull(store.read())
-            assertFalse(store.signedIn.first())
+            assertNull(store.session.first())
         }
 
     @Test
@@ -38,6 +54,31 @@ class TokenStoreTest {
             tokenStore(dataStore).write(session)
 
             assertEquals(session, tokenStore(dataStore).read(), "the session must survive an app restart")
+        }
+
+    @Test
+    fun keepsTheWholeSessionWithTheTokens() =
+        runTest {
+            // Offline, the cached session is all the app knows about the user's store and permissions.
+            val dataStore = temporaryPreferencesDataStore(backgroundScope)
+
+            tokenStore(dataStore).write(session)
+
+            val read = tokenStore(dataStore).read()
+            assertEquals(session.session, read?.session)
+            assertEquals(session.session, tokenStore(dataStore).session.first())
+        }
+
+    @Test
+    fun keepsASessionWithoutAStore() =
+        runTest {
+            // Right after sign-up, or with several stores, no store is selected yet (ADR 0010).
+            val store = tokenStore()
+            val noStore = StoredSession(session.tokens, testSession(tenant = null))
+
+            store.write(noStore)
+
+            assertEquals(noStore, store.read())
         }
 
     @Test
@@ -56,6 +97,7 @@ class TokenStoreTest {
             assertEquals(1, stored.size)
             val raw = (stored.single() as ByteArray).decodeToString()
             assertFalse(raw.contains("secret"), "plain token in storage: $raw")
+            assertFalse(raw.contains("altarpm"), "plain email in storage: $raw")
         }
 
     @Test
@@ -67,22 +109,80 @@ class TokenStoreTest {
             store.clear()
 
             assertNull(store.read())
-            assertFalse(store.signedIn.first())
+            assertNull(store.session.first())
         }
 
     @Test
-    fun signedInFollowsLoginsAndLogouts() =
+    fun sessionFollowsLoginsRefreshesAndLogouts() =
         runTest {
             val store = tokenStore()
 
-            store.signedIn.test {
-                assertFalse(awaitItem())
+            store.session.test {
+                assertNull(awaitItem())
                 store.write(session)
-                assertTrue(awaitItem())
-                store.write(other) // a refresh or tenant switch is not a new sign-in
+                assertEquals(session.session, awaitItem())
+                store.write(other) // a refresh that brought a new permission
+                assertEquals(other.session, awaitItem())
+                store.write(StoredSession(session.tokens.copy(accessToken = "access-third"), other.session))
+                // New tokens alone are not a new session: nothing to show.
                 store.clear()
-                assertFalse(awaitItem())
+                assertNull(awaitItem())
             }
+        }
+
+    @Test
+    fun aStoreSwitchEmitsTheNewStore() =
+        runTest {
+            val store = tokenStore()
+            val elsewhere =
+                TenantSummary(id = "0190f3c4-0000-7000-8000-000000000002", name = "Moto Peças", slug = "moto-pecas")
+            store.write(session)
+
+            store.session.test {
+                assertEquals(session.session, awaitItem())
+                store.write(StoredSession(other.tokens, testSession(tenant = elsewhere)))
+                assertEquals(elsewhere, awaitItem()?.tenant)
+            }
+        }
+
+    @Test
+    fun replaceComparesOnlyTheTokens() =
+        runTest {
+            // The refresh token is unique, so the tokens alone say whether the session is still the
+            // one that was refreshed; a change to what is stored with them must not drop rotated tokens.
+            val store = tokenStore()
+            store.write(session)
+            store.write(StoredSession(session.tokens, other.session))
+
+            assertTrue(store.replace(expected = session, replacement = other))
+            assertEquals(other, store.read())
+        }
+
+    @Test
+    fun readsTheStoredFormat() =
+        runTest {
+            // Renaming the key or a field signs every device out; this pins the format in use.
+            val dataStore = temporaryPreferencesDataStore(backgroundScope)
+            val blob =
+                """
+                {"access":"access-secret","refresh":"refresh-secret",
+                 "user":{"id":"u-1","name":"Ana Souza","email":"ana@altarpm.com.br"},
+                 "tenant":{"id":"t-1","name":"Alta RPM","slug":"alta-rpm"},"role":"owner",
+                 "permissions":["order:read"],
+                 "memberships":[{"tenant":{"id":"t-1","name":"Alta RPM","slug":"alta-rpm"},"role":"owner"}]}
+                """.trimIndent()
+            val sealed = FakeSecretCipher().seal(blob.encodeToByteArray())
+            dataStore.edit { it[byteArrayPreferencesKey("session")] = sealed }
+
+            val read = assertNotNull(tokenStore(dataStore).read())
+
+            assertEquals(SessionTokens(accessToken = "access-secret", refreshToken = "refresh-secret"), read.tokens)
+            assertEquals("ana@altarpm.com.br", read.session.user.email)
+            val tenant = assertNotNull(read.session.tenant)
+            assertEquals("alta-rpm", tenant.slug)
+            assertEquals(Role("owner"), read.session.role)
+            assertTrue(read.session.permissions.allows(Permission("order:read")))
+            assertEquals(listOf(Membership(tenant, Role("owner"))), read.session.memberships)
         }
 
     @Test
@@ -113,14 +213,18 @@ class TokenStoreTest {
             val lostKey = tokenStore(dataStore, FakeSecretCipher(canOpen = false))
 
             assertNull(lostKey.read())
-            assertFalse(lostKey.signedIn.first())
+            assertNull(lostKey.session.first())
         }
 
     @Test
     fun onlyOneOfTwoRacingReplacesWins() =
         runTest {
             // Two refreshes answered at once: a read-then-write replace would let both "win".
-            val third = SessionTokens(accessToken = "access-third", refreshToken = "refresh-third")
+            val third =
+                StoredSession(
+                    SessionTokens(accessToken = "access-third", refreshToken = "refresh-third"),
+                    other.session,
+                )
             val store = tokenStore()
             store.write(session)
 
@@ -176,7 +280,9 @@ class TokenStoreTest {
 
     @Test
     fun neverPrintsTheTokens() {
+        assertFalse(session.tokens.toString().contains("secret"), session.tokens.toString())
         assertFalse(session.toString().contains("secret"), session.toString())
+        assertFalse(session.toString().contains("altarpm"), "no email in logs: $session")
     }
 
     /** Counts decryptions; runs on the test dispatcher only, so a plain counter is enough. */

@@ -7,8 +7,12 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.cash.turbine.test
-import br.com.encomendo.core.domain.session.ObserveSignedIn
+import br.com.encomendo.core.domain.session.GrantedPermissions
+import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.Permission
+import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.testing.FakeSessionRepository
+import br.com.encomendo.core.testing.testSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -24,6 +28,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class) // setMain / resetMain / advanceTimeBy
@@ -39,7 +44,7 @@ class RootViewModelTest {
     @Test
     fun waitsForTheStoredSessionBeforeChoosingAGraph() =
         runTest(main) {
-            val viewModel = rootViewModel(FakeSessionRepository(signedIn = false))
+            val viewModel = rootViewModel(FakeSessionRepository(session = null))
 
             viewModel.uiState.test {
                 assertEquals(RootUiState.Loading, awaitItem(), "no login flash before the session is read")
@@ -50,7 +55,7 @@ class RootViewModelTest {
     @Test
     fun opensTheManagementGraphStraightAwayForAStoredSession() =
         runTest(main) {
-            val viewModel = rootViewModel(FakeSessionRepository(signedIn = true))
+            val viewModel = rootViewModel(FakeSessionRepository(testSession()))
 
             viewModel.uiState.test {
                 skipItems(1) // Loading
@@ -61,17 +66,17 @@ class RootViewModelTest {
     @Test
     fun opensTheManagementGraphAfterLoginAndTheAuthGraphAfterLogout() =
         runTest(main) {
-            val sessions = FakeSessionRepository(signedIn = false)
+            val sessions = FakeSessionRepository(session = null)
             val viewModel = rootViewModel(sessions)
 
             viewModel.uiState.test {
                 skipItems(1) // Loading
                 assertIs<RootUiState.SignedOut>(awaitItem())
 
-                sessions.state.value = true
+                sessions.state.value = testSession()
                 assertIs<RootUiState.SignedIn>(awaitItem())
 
-                sessions.state.value = false // logout, or a refused refresh
+                sessions.state.value = null // logout, or a refused refresh
                 assertIs<RootUiState.SignedOut>(awaitItem())
             }
         }
@@ -81,7 +86,7 @@ class RootViewModelTest {
         runTest(main) {
             // The login form must not survive the login, and management screens must not run
             // under the next user's token.
-            val sessions = FakeSessionRepository(signedIn = true)
+            val sessions = FakeSessionRepository(testSession())
             val viewModel = rootViewModel(sessions)
 
             viewModel.uiState.test {
@@ -89,7 +94,7 @@ class RootViewModelTest {
                 val signedIn = assertIs<RootUiState.SignedIn>(awaitItem())
                 val managementScreen = probeIn(signedIn.screens)
 
-                sessions.state.value = false
+                sessions.state.value = null
                 val signedOut = assertIs<RootUiState.SignedOut>(awaitItem())
 
                 assertTrue(managementScreen.cleared)
@@ -102,7 +107,7 @@ class RootViewModelTest {
         runTest(main) {
             // Out and back in before the screen collects: the state must still change, so the
             // screens never sit on a store that was already cleared.
-            val sessions = FakeSessionRepository(signedIn = true)
+            val sessions = FakeSessionRepository(testSession())
             val viewModel = rootViewModel(sessions)
 
             viewModel.uiState.test {
@@ -110,9 +115,9 @@ class RootViewModelTest {
                 val first = assertIs<RootUiState.SignedIn>(awaitItem())
                 val oldScreen = probeIn(first.screens)
 
-                sessions.state.value = false
+                sessions.state.value = null
                 testScheduler.runCurrent()
-                sessions.state.value = true
+                sessions.state.value = testSession()
                 testScheduler.runCurrent()
 
                 // Even if the screen only ever saw the last state, it is a different one.
@@ -126,8 +131,8 @@ class RootViewModelTest {
     fun keepsTheScreensWhenTheSameSessionIsObservedAgain() =
         runTest(main) {
             // The app in the background for a while stops and restarts the session flow.
-            val viewModel = rootViewModel(FakeSessionRepository(signedIn = true))
-            val first = viewModel.uiState.first { it is RootUiState.Session }
+            val viewModel = rootViewModel(FakeSessionRepository(testSession()))
+            val first = viewModel.uiState.first { it is RootUiState.Ready }
             val screen = probeIn(assertIs<RootUiState.SignedIn>(first).screens)
             advanceTimeBy(STOPPED_LONG_ENOUGH_MILLIS)
 
@@ -146,12 +151,109 @@ class RootViewModelTest {
             val activityStore = ViewModelStore()
             val factory = viewModelFactory { initializer { rootViewModel(FakeSessionRepository()) } }
             val viewModel = ViewModelProvider.create(activityStore, factory).get(RootViewModel::class)
-            val signedOut = viewModel.uiState.first { it is RootUiState.Session }
+            val signedOut = viewModel.uiState.first { it is RootUiState.Ready }
             val screen = probeIn(assertIs<RootUiState.SignedOut>(signedOut).screens)
 
             activityStore.clear()
 
             assertTrue(screen.cleared)
+        }
+
+    @Test
+    fun givesTheManagementGraphTheSessionsPermissions() =
+        runTest(main) {
+            val viewModel = rootViewModel(FakeSessionRepository(testSession(permissions = setOf("order:write"))))
+
+            val signedIn = assertIs<RootUiState.SignedIn>(viewModel.uiState.first { it is RootUiState.Ready })
+
+            assertEquals(GrantedPermissions(listOf(Permission("order:write"))), signedIn.permissions)
+        }
+
+    @Test
+    fun aRefreshWithNewPermissionsKeepsTheScreens() =
+        runTest(main) {
+            // A role change reaches the app with the next refresh (ADR 0010); the open screens stay.
+            val sessions = FakeSessionRepository(testSession(permissions = setOf("order:read")))
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                val before = assertIs<RootUiState.SignedIn>(awaitItem())
+                val screen = probeIn(before.screens)
+
+                sessions.state.value = testSession(permissions = setOf("order:read", "order:write"))
+                val after = assertIs<RootUiState.SignedIn>(awaitItem())
+
+                assertEquals(
+                    GrantedPermissions(listOf(Permission("order:read"), Permission("order:write"))),
+                    after.permissions,
+                )
+                assertSame(before.screens, after.screens)
+                assertFalse(screen.cleared)
+            }
+        }
+
+    @Test
+    fun switchingStoresClearsTheScreens() =
+        runTest(main) {
+            // A screen loaded for one store must not keep showing it, or keep working on it,
+            // once the session moved to another (ADR 0012, Consequences).
+            val other =
+                TenantSummary(id = "0190f3c4-0000-7000-8000-000000000002", name = "Moto Peças", slug = "moto-pecas")
+            val sessions = FakeSessionRepository(testSession())
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                val first = assertIs<RootUiState.SignedIn>(awaitItem())
+                val screen = probeIn(first.screens)
+
+                sessions.state.value = testSession(tenant = other)
+                val second = assertIs<RootUiState.SignedIn>(awaitItem())
+
+                assertTrue(screen.cleared)
+                assertNotSame(first.screens, second.screens)
+            }
+        }
+
+    @Test
+    fun anotherUserInTheSameStoreGetsNewScreens() =
+        runTest(main) {
+            // A new login over the old one, with no signed-out state in between.
+            val sessions = FakeSessionRepository(testSession())
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                val first = assertIs<RootUiState.SignedIn>(awaitItem())
+                val screen = probeIn(first.screens)
+
+                sessions.state.value = testSession(userId = "0190f3c4-0000-7000-8000-0000000000bb")
+                val second = assertIs<RootUiState.SignedIn>(awaitItem())
+
+                assertTrue(screen.cleared)
+                assertNotSame(first.screens, second.screens)
+            }
+        }
+
+    @Test
+    fun aRefreshThatDropsTheStoreClearsTheScreensAndTheGrants() =
+        runTest(main) {
+            // Removed from the store: the refresh answers with no store selected (docs/api/openapi.yaml).
+            val sessions = FakeSessionRepository(testSession(permissions = setOf("order:write")))
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                val first = assertIs<RootUiState.SignedIn>(awaitItem())
+                val screen = probeIn(first.screens)
+
+                sessions.state.value = testSession(tenant = null)
+                val second = assertIs<RootUiState.SignedIn>(awaitItem())
+
+                assertTrue(screen.cleared)
+                assertEquals(GrantedPermissions.None, second.permissions)
+            }
         }
 
     /** Stands in for a screen's ViewModel and records whether it was cleared. */
@@ -164,7 +266,7 @@ class RootViewModelTest {
         }
     }
 
-    private fun rootViewModel(sessions: FakeSessionRepository) = RootViewModel(ObserveSignedIn(sessions))
+    private fun rootViewModel(sessions: FakeSessionRepository) = RootViewModel(ObserveSession(sessions))
 
     private fun probeIn(owner: ViewModelStoreOwner): ProbeViewModel =
         ViewModelProvider
