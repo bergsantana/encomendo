@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import br.com.encomendo.core.navigation.RootNavHost
+import br.com.encomendo.core.navigation.RootRoute
 import br.com.encomendo.core.ui.theme.EncomendoTheme
 
-/** The single activity; every screen is a Compose destination in RootNavHost. */
+/** The single activity; every screen is a Compose destination under RootRoute. */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             EncomendoTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    RootNavHost(modifier = Modifier.safeDrawingPadding())
+                    RootRoute(modifier = Modifier.safeDrawingPadding())
                 }
             }
         }

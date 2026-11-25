@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pt-BR is the only language; it lives in the default values folder. -->
+<resources>
+    <string name="login_title">Entrar</string>
+    <string name="login_placeholder">Em breve: entrar com e-mail e senha.</string>
+</resources>

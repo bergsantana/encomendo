@@ -21,7 +21,11 @@ include(
     ":shared:core:domain",
     ":shared:core:ui",
     ":shared:core:database",
+    ":shared:core:security",
+    ":shared:core:data",
+    ":shared:core:testing",
     ":shared:core:navigation",
     ":shared:core:di",
+    ":shared:feature:auth",
     ":shared:feature:hoje",
 )

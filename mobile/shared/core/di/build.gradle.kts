@@ -16,16 +16,26 @@ kotlin {
             libs.versions.android.minSdk
                 .get()
                 .toInt()
+        withHostTestBuilder {} // runs commonTest on the JVM
     }
 
     sourceSets {
         commonMain.dependencies {
             implementation(project(":shared:core:database"))
+            implementation(project(":shared:core:domain"))
+            implementation(project(":shared:core:security"))
+            implementation(project(":shared:core:data"))
+            implementation(project(":shared:core:navigation"))
             api(libs.koin.core)
             implementation(libs.kotlinx.coroutines.core)
         }
         androidMain.dependencies {
             implementation(libs.koin.android)
+        }
+        commonTest.dependencies {
+            implementation(project(":shared:core:testing"))
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
