@@ -4,9 +4,11 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -255,6 +257,53 @@ func TestTxManager_CanceledDuringFnRollsBack(t *testing.T) {
 	}
 	if tenantExists(t, id) {
 		t.Error("the row of a canceled transaction was committed")
+	}
+}
+
+// TestTxManager_CanceledCommitReportsTheCancellation is the regression for
+// a flaky failure of the test above. database/sql rolls a transaction back
+// from its own goroutine when the context ends; if that goroutine wins the
+// race, Commit says sql.ErrTxDone, and a request that went away looked like
+// a server failure. Here the test waits until that rollback has happened,
+// so the race is lost every time.
+func TestTxManager_CanceledCommitReportsTheCancellation(t *testing.T) {
+	t.Parallel()
+	tx := NewTxManager(openApp(t, 2))
+	id := shared.TenantID(pgtest.NewID())
+	ctx, cancel := context.WithCancel(storeCtx(t, id))
+
+	err := tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := insertTenant(ctx, id); err != nil {
+			return err
+		}
+		cancel()
+		waitRolledBack(ctx, t)
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("WithinTx = %v, want context.Canceled", err)
+	}
+	if tenantExists(t, id) {
+		t.Error("the row of a canceled transaction was committed")
+	}
+}
+
+// waitRolledBack waits until database/sql has rolled back the transaction
+// in ctx after ctx ended: a statement on an uncanceled context then fails
+// with sql.ErrTxDone.
+func waitRolledBack(ctx context.Context, t *testing.T) {
+	t.Helper()
+	tx, err := conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := tx.WithContext(context.WithoutCancel(ctx))
+	deadline := time.Now().Add(5 * time.Second)
+	for !errors.Is(db.Exec("SELECT 1").Error, sql.ErrTxDone) {
+		if time.Now().After(deadline) {
+			t.Fatal("database/sql never rolled back the canceled transaction")
+		}
+		runtime.Gosched()
 	}
 }
 

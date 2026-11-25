@@ -96,7 +96,13 @@ func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) e
 
 // begin runs fn in a new transaction that starts by setting scope. fn's
 // error comes back unchanged; a failure to begin, set the scope or commit is
-// mapped like a repository error. A panic rolls back and propagates.
+// mapped like a repository error, and matches ctx's error too when ctx has
+// ended. A panic rolls back and propagates.
+//
+// The ctx check is there because database/sql rolls a transaction back from
+// its own goroutine when ctx ends: if that goroutine runs first, Commit
+// returns sql.ErrTxDone, and a request that went away would look like a
+// server failure.
 func (m *TxManager) begin(ctx context.Context, scope appshared.Scope, fn func(ctx context.Context) error) error {
 	root := &txRoot{}
 	var fnErr error
@@ -112,6 +118,9 @@ func (m *TxManager) begin(ctx context.Context, scope appshared.Scope, fn func(ct
 	})
 	if fnErr != nil {
 		return fnErr
+	}
+	if err != nil && ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
+		return fmt.Errorf("transaction: %w: %w", ctx.Err(), mapError(err))
 	}
 	if err != nil {
 		return fmt.Errorf("transaction: %w", mapError(err))
