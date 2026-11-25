@@ -10,6 +10,7 @@ import br.com.encomendo.core.database.buildDatabase
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.TenancyRepository
+import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.navigation.navigationModule
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
@@ -62,6 +63,11 @@ val networkModule: Module =
     module {
         // One per process: the client's refreshes and every store switch take their turns here.
         single { SessionTurns() }
+        // The root says which scope its screens serve; only they get that scope's token (ADR 0018).
+        single<ScreenHandover> {
+            val turns = get<SessionTurns>()
+            ScreenHandover(turns::screensServe)
+        }
         single<HttpClient> { createSessionApiClient(engine = get(), config = get(), store = get(), turns = get()) }
         single { AuthApi(get()) }
         single { TenancyApi(get()) }

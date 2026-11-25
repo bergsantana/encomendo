@@ -11,6 +11,7 @@ import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.domain.session.TenantSummary
+import br.com.encomendo.core.domain.session.scope
 import br.com.encomendo.core.testing.FakeSessionRepository
 import br.com.encomendo.core.testing.testSession
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,8 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class) // setMain / resetMain / advanceTimeBy
 class RootViewModelTest {
     private val main = StandardTestDispatcher()
+    private val motoPecas =
+        TenantSummary(id = "0190f3c4-0000-7000-8000-000000000002", name = "Moto Peças", slug = "moto-pecas")
 
     @BeforeTest
     fun useTestMain() = Dispatchers.setMain(main)
@@ -170,6 +173,95 @@ class RootViewModelTest {
         }
 
     @Test
+    fun saysWhichScopeTheNewScreensServeOnceTheOldOnesAreGone() =
+        runTest(main) {
+            // Only then may the new store's token go out (ADR 0018): no screen of the old store is left.
+            val sessions = FakeSessionRepository(testSession())
+            val reported = mutableListOf<String?>()
+            var oldScreen: ProbeViewModel? = null
+            var clearedWhenReported: Boolean? = null
+            val viewModel =
+                rootViewModel(sessions) { scope ->
+                    reported += scope
+                    clearedWhenReported = oldScreen?.cleared
+                }
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                oldScreen = probeIn(assertIs<RootUiState.SignedIn>(awaitItem()).screens)
+                val moved = testSession(tenant = motoPecas)
+
+                sessions.state.value = moved
+                awaitItem()
+
+                assertEquals(listOf<String?>(testSession().scope, moved.scope), reported)
+                assertEquals(true, clearedWhenReported, "cleared before the new scope is served")
+            }
+        }
+
+    @Test
+    fun reportsNoScopeOnceTheRootItselfIsGone() =
+        runTest(main) {
+            // No screens are left; anything still running outside them must not keep a store's scope.
+            val reported = mutableListOf<String?>()
+            val owner = ViewModelStore()
+            val viewModel =
+                ViewModelProvider
+                    .create(
+                        object : ViewModelStoreOwner {
+                            override val viewModelStore = owner
+                        },
+                        viewModelFactory {
+                            initializer {
+                                rootViewModel(FakeSessionRepository(testSession())) {
+                                    reported +=
+                                        it
+                                }
+                            }
+                        },
+                    ).get(RootViewModel::class)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                awaitItem()
+                owner.clear()
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            assertEquals(listOf(testSession().scope, null), reported)
+        }
+
+    @Test
+    fun reportsNoScopeWhileSignedOut() =
+        runTest(main) {
+            val reported = mutableListOf<String?>()
+            val viewModel = rootViewModel(FakeSessionRepository(session = null)) { reported += it }
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                awaitItem()
+                assertEquals(listOf<String?>(null), reported)
+            }
+        }
+
+    @Test
+    fun aRefreshOfTheSameStoreHandsNothingOver() =
+        runTest(main) {
+            val sessions = FakeSessionRepository(testSession(permissions = setOf("order:read")))
+            val reported = mutableListOf<String?>()
+            val viewModel = rootViewModel(sessions) { reported += it }
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                awaitItem()
+                sessions.state.value = testSession(permissions = setOf("order:read", "order:write"))
+                awaitItem()
+
+                assertEquals(1, reported.size)
+            }
+        }
+
+    @Test
     fun aRefreshWithNewPermissionsKeepsTheScreens() =
         runTest(main) {
             // A role change reaches the app with the next refresh (ADR 0010); the open screens stay.
@@ -296,7 +388,10 @@ class RootViewModelTest {
         }
     }
 
-    private fun rootViewModel(sessions: FakeSessionRepository) = RootViewModel(ObserveSession(sessions))
+    private fun rootViewModel(
+        sessions: FakeSessionRepository,
+        handover: ScreenHandover = ScreenHandover { },
+    ) = RootViewModel(ObserveSession(sessions), handover)
 
     private fun probeIn(owner: ViewModelStoreOwner): ProbeViewModel =
         ViewModelProvider

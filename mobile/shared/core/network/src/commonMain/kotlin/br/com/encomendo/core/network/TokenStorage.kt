@@ -15,6 +15,14 @@ interface BearerCredentials {
 
     /** The opaque token exchanged for a new session; valid once. */
     val refreshToken: String
+
+    /**
+     * Who the tokens act for, and in which store: equal for two sessions of the
+     * same user in the same store. The token goes out only once the app's
+     * screens serve this scope, and a request is retried only with tokens of
+     * the scope it was sent with, so it never runs in another store (ADR 0018).
+     */
+    val scope: String
 }
 
 /**
