@@ -7,8 +7,9 @@ import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Permission
 
 /**
- * The signed-in user's permissions for every screen below. The app root
- * provides them from the session; until it does, nothing gated is shown.
+ * LocalGrantedPermissions holds the signed-in user's permissions for every
+ * screen below. The app root provides them from the session; until it does,
+ * nothing gated is shown.
  */
 val LocalGrantedPermissions: ProvidableCompositionLocal<GrantedPermissions> =
     staticCompositionLocalOf { GrantedPermissions.None }

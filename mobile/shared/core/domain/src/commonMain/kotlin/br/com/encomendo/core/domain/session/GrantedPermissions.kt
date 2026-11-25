@@ -17,16 +17,25 @@ value class Permission(
  * GrantedPermissions is what the signed-in user may do in the current tenant.
  * The app only hides what is not granted; the backend stays the authority
  * and checks every call (docs/architecture.md 5.4).
+ *
+ * It is a value: grants with the same keys are equal, and it keeps its own
+ * copy, so a later change to the caller's collection never changes it.
  */
 class GrantedPermissions(
-    private val keys: Set<Permission>,
+    keys: Collection<Permission>,
 ) {
+    private val keys: Set<Permission> = keys.toSet()
+
     /** Returns true only when [required] was granted. */
     fun allows(required: Permission): Boolean = required in keys
 
-    /** The grants before a session supplies them. */
+    override fun equals(other: Any?): Boolean = other is GrantedPermissions && other.keys == keys
+
+    override fun hashCode(): Int = keys.hashCode()
+
+    /** Holds [None], the grants before a session supplies them. */
     companion object {
-        /** Nothing is allowed until the session says otherwise: the UI fails closed. */
+        /** None allows nothing, so the UI fails closed until the session says otherwise. */
         val None = GrantedPermissions(emptySet())
     }
 }
