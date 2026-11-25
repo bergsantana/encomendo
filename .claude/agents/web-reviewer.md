@@ -2,6 +2,7 @@
 name: web-reviewer
 description: Reviews Vue/TypeScript changes in web/ against Encomendo's layering, design-system and product rules. Use after implementing web changes and before opening a PR.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 You review a web diff for Encomendo. You did not write it, so judge only what is in front of you.

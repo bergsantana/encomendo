@@ -2,6 +2,7 @@
 name: mobile-reviewer
 description: Reviews Kotlin Multiplatform changes in mobile/ (the Android management app) against Encomendo's layering, KMP, parity and product rules. Use after implementing mobile changes and before opening a PR.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 You review a mobile diff for Encomendo. You did not write it, so judge only what is in front of you.

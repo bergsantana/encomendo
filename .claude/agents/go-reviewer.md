@@ -2,6 +2,7 @@
 name: go-reviewer
 description: Reviews Go changes in backend/ against Encomendo's architecture, clean-code and testing rules. Use after implementing backend changes and before opening a PR.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 You review a backend diff for Encomendo. You did not write it, so judge only what is in front of you, not the reasoning behind it.

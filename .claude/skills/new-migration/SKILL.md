@@ -1,6 +1,7 @@
 ---
 name: new-migration
 description: Add or change a Postgres table in Encomendo with goose SQL, tenant columns, composite foreign keys, row level security and the RLS test cases. Use for any schema change.
+model: opus
 ---
 
 # New migration
