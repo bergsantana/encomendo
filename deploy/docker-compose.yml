@@ -1,4 +1,5 @@
-# Local development and e2e stack.
+# Base stack: local development (with docker-compose.dev.yml), CI and e2e.
+# Production is docker-compose.prod.yml, a separate file.
 #
 #   make dev-up      build and start everything
 #   make dev-down    stop and remove containers (volumes are kept)
@@ -23,6 +24,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - ./postgres/database.sqlinc:/docker-entrypoint-initdb.d/database.sqlinc:ro
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
       # Over TCP, which only opens once the init script has finished.

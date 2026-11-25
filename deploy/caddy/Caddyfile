@@ -1,0 +1,18 @@
+# TLS terminator. Caddy gets and renews certificates by itself (HTTP-01), so
+# each public host is listed by name.
+#
+# Store pages at {slug}.encomendo.com.br need a wildcard
+# certificate, which needs a DNS-01 challenge and a Caddy build with the DNS
+# provider's module. That lands with milestone 7 (docs/build-plan.md). Until
+# then only the admin and API hosts are served.
+
+{$ADMIN_HOST} {
+	encode zstd gzip
+	reverse_proxy web:8080
+}
+
+# The mobile app and any direct API client.
+{$API_HOST} {
+	encode zstd gzip
+	reverse_proxy api:8080
+}

@@ -9,7 +9,7 @@ SaaS for small Brazilian businesses that sell made-to-order products: the client
 | `backend/` | Go modular monolith (ports and adapters), Postgres with RLS, Redis |
 | `web/` | Vue 3 workspace: `apps/admin` (management) and `apps/store` (store pages and client area) |
 | `mobile/` | Kotlin Multiplatform management app, Android only for now |
-| `deploy/` | Docker Compose stack, Dockerfiles, Postgres init |
+| `deploy/` | Docker Compose for development and production, Dockerfiles, Caddy, Postgres init |
 | `docs/` | Architecture, product docs, ADRs, OpenAPI contract |
 
 Start with `docs/architecture.md` and `CLAUDE.md`.
@@ -18,21 +18,22 @@ Start with `docs/architecture.md` and `CLAUDE.md`.
 
 - Go 1.27+, Docker with Compose
 - Node 22+ and pnpm 10 (`corepack enable`)
-- JDK 21 and the Android SDK (API 36) for `mobile/`
+- JDK 21 and the Android SDK (API 37) for `mobile/`, or Docker and `scripts/mobile-docker.sh`
 
 ## First time
 
 ```bash
-cd backend && go mod tidy && cd ..   # creates backend/go.sum; commit it
 make setup                           # .env from .env.example + web deps
-make dev-up                          # postgres, redis, migrations, api, web
+make dev-up                          # postgres, redis, migrations, api, Vite admin and store (hot reload)
 ```
 
 Then open:
 
-- Admin: http://admin.localhost:8080
-- A store page: http://altarpm.localhost:8080 (any `<slug>.localhost`)
+- Admin: http://localhost:5173
+- A store page: http://altarpm.localhost:5174 (any `<slug>.localhost`)
 - API readiness: http://localhost:8081/readyz
+
+`make stack-up` runs the built images behind nginx instead (`admin.localhost:8080`). Deploying: `deploy/README.md`.
 
 ## Everyday commands
 

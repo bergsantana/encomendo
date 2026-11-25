@@ -1,11 +1,12 @@
-# Local stack: admin.localhost serves the admin app; any other host serves
-# the store app, which reads the tenant slug from the host
-# (altarpm.localhost locally, altarpm.encomendo.com.br in production).
+# One config for every environment. ADMIN_HOST is substituted at container
+# start (admin.localhost locally, admin.encomendo.com.br in production).
+# It serves the admin app; any other host serves the store app, which reads
+# the tenant slug from the host (altarpm.localhost, altarpm.encomendo.com.br).
 # API paths go to the api service on the same origin, so no CORS is needed.
 
 server {
   listen 8080;
-  server_name admin.localhost;
+  server_name ${ADMIN_HOST};
   root /usr/share/nginx/admin;
 
   location ~ ^/(api|auth|healthz|readyz)(/|$) {

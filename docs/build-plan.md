@@ -2,7 +2,7 @@
 
 Tracks how much of the system is built, milestone by milestone. The milestones and their order come from `docs/architecture.md` section 11; the scope of each item comes from sections 4, 7 and 8 of the same document. This file records **status only**. If it disagrees with the architecture or the product docs, those win.
 
-**Last audited:** 2026-11-24, against commit `c3d1600` plus the uncommitted working tree. The audit read the code. It did not run the test suites: the audit machine had no Go toolchain and no installed web dependencies. Every "done" below means "the code and its tests exist", not "CI is green". The first job of the next session with a toolchain is to run `make lint test` and fix this file if it finds a surprise.
+**Last audited:** 2026-11-24. Run locally: backend lint (golangci-lint v2.15.0), unit and integration tests pass; web lint, typecheck and tests pass. Mobile `./gradlew check` and `:androidApp:assembleDebug` pass in a container (`scripts/mobile-docker.sh`) after raising `compileSdk` to 37 and fixing the ktlint setup. **Not run:** CI.
 
 ## How to keep this file honest
 
@@ -20,7 +20,7 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
-| 1 | Skeleton | 21 | 24 | Almost done: foundations are in; `go.sum`, a verified green CI run and the worker shell remain |
+| 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 0 | 20 | Not started |
 | 3 | Catalog and suppliers | 0 | 13 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
@@ -28,7 +28,7 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **21** | **114** | **about 18%** |
+|   | **All milestones** | **22** | **114** | **about 19%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -60,7 +60,7 @@ Goal: the monorepo builds, runs and is checked by CI before any business code la
 - [x] Migration `0001_roles_and_extensions.sql`
 - [x] Migration integration test: roles and up → reset → up (`test/integration/postgres`)
 - [x] `cmd/api/main.go` composition root
-- [ ] `backend/go.sum` committed (README still says to run `go mod tidy` first)
+- [x] `backend/go.sum` committed
 - [ ] `cmd/worker` shell (entry point only; the outbox relay and deadline check come in milestone 6)
 
 ### Web
@@ -315,7 +315,7 @@ The architecture numbers the migrations in section 7, but `0004_tenancy` referen
 - Land `0003_workflows` (tables and the preset seed only) in milestone 2, with the workflow domain code following in milestone 4; or
 - Make `tenant_settings.status_workflow_id` nullable in `0004` and add the foreign key when workflows land.
 
-This is not decided. Record the choice as an ADR before writing `0004`.
+Decided in ADR 0006: ship `0003_workflows` (tables and seed) in milestone 2.
 
 ## Open questions
 
@@ -337,3 +337,6 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | — | JWT access tokens with rotating opaque refresh tokens | ADR 0003 |
 | — | Fixed order phases, store-chosen status lists | ADR 0004 |
 | — | Room 3 and the Android-KMP library plugin | ADR 0005 |
+| 2026-11-24 | Workflow tables and preset seed land in milestone 2 | ADR 0006 |
+| 2026-11-24 | Docker Compose for development and deployment, all in `deploy/` | ADR 0007 |
+| 2026-11-24 | Drop CodeQL and dependency review (they need GHAS on a private repo) | ADR 0008 |

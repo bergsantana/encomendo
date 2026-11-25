@@ -1,0 +1,102 @@
+# Production stack for one host. Standalone: it does not extend the dev files.
+#
+#   cp deploy/prod.env.example deploy/.env.prod   # fill in every value
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+#
+# Images come from GHCR (built by release.yml on a v* tag). Only Caddy is
+# published; Postgres, Redis, the API and nginx live on the internal network.
+# Runbook: deploy/README.md. Decision: docs/adr/0007-compose-dev-and-deploy.md.
+
+name: ${COMPOSE_PROJECT_NAME:-encomendo}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: postgres
+      ENCOMENDO_OWNER_PASSWORD: ${ENCOMENDO_OWNER_PASSWORD:?}
+      ENCOMENDO_APP_PASSWORD: ${ENCOMENDO_APP_PASSWORD:?}
+    volumes:
+      - ./postgres/init-prod.sh:/docker-entrypoint-initdb.d/001-init.sh:ro
+      - ./postgres/database.sqlinc:/docker-entrypoint-initdb.d/database.sqlinc:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d encomendo"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: ${IMAGE_REPO:?set IMAGE_REPO, e.g. ghcr.io/bergsantana/encomendo}/api:${VERSION:?set VERSION, e.g. 1.2.3}
+    entrypoint: ["/migrate"]
+    command: ["up"]
+    restart: "no"
+    environment:
+      MIGRATE_DATABASE_URL: postgres://encomendo_owner:${ENCOMENDO_OWNER_PASSWORD}@postgres:5432/encomendo?sslmode=disable
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: ${IMAGE_REPO}/api:${VERSION}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_FORMAT: json
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://encomendo_app:${ENCOMENDO_APP_PASSWORD}@postgres:5432/encomendo?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    image: ${IMAGE_REPO}/web:${VERSION}
+    restart: unless-stopped
+    environment:
+      ADMIN_HOST: ${ADMIN_HOST:?set ADMIN_HOST, e.g. admin.encomendo.com.br}
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ADMIN_HOST: ${ADMIN_HOST}
+      API_HOST: ${API_HOST:?set API_HOST, e.g. api.encomendo.com.br}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:

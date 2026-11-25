@@ -37,7 +37,12 @@ func startPostgres(t *testing.T) (host, port string) {
 	t.Helper()
 	ctx := context.Background()
 
+	// init.sql includes database.sqlinc (\ir), so both files go to the container.
 	initScript, err := filepath.Abs("../../../../deploy/postgres/init.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedGrants, err := filepath.Abs("../../../../deploy/postgres/database.sqlinc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +50,7 @@ func startPostgres(t *testing.T) (host, port string) {
 		tcpostgres.WithDatabase("postgres"),
 		tcpostgres.WithUsername("postgres"),
 		tcpostgres.WithPassword("postgres"),
-		tcpostgres.WithInitScripts(initScript),
+		tcpostgres.WithInitScripts(initScript, sharedGrants),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
