@@ -4,11 +4,14 @@
  * right. Menu order follows the product: Hoje · Pedidos · Compras · Produção ·
  * Estoque · Catálogo · Clientes · Financeiro. Each feature adds its entry
  * when it ships; Produção and Estoque show only when the tenant turns them on.
- * The foot of the menu shows who is signed in, in which store, and logs out;
- * App leaves for login once the session has ended.
+ * Equipe comes after them, for the roles that manage the team. The foot of
+ * the menu shows who is signed in, in which store, and logs out; App leaves
+ * for login once the session has ended.
  */
+import type { Permission } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
+import { computed } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
 import { useAuthStore } from '../features/auth/store'
@@ -17,11 +20,18 @@ import { useSessionStore } from '../stores/session'
 interface MenuItem {
   label: string
   to: { name: string }
+  /** permission hides the entry from roles without it; the route and the API check it again. */
+  permission?: Permission
 }
 
-const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
+const items: MenuItem[] = [
+  { label: 'Hoje', to: { name: 'hoje' } },
+  { label: 'Equipe', to: { name: 'members' }, permission: 'members:manage' },
+]
 
-const { user, tenant, memberships } = storeToRefs(useSessionStore())
+const session = useSessionStore()
+const { user, tenant, memberships } = storeToRefs(session)
+const menu = computed(() => items.filter((item) => item.permission === undefined || session.can(item.permission)))
 const auth = useAuthStore()
 const { loggingOut, logOutError } = storeToRefs(auth)
 </script>
