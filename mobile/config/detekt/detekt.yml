@@ -1,0 +1,9 @@
+# Only the differences from detekt's defaults (buildUponDefaultConfig = true in build.gradle.kts).
+# Each entry says why; add one only for a convention the defaults don't know.
+
+naming:
+  FunctionNaming:
+    # Compose convention: @Composable functions that emit UI are named like types (HojeScreen),
+    # the same decision as ktlint's function-naming setting in /.editorconfig.
+    ignoreAnnotated:
+      - 'Composable'
