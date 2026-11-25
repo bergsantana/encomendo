@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Session
+import br.com.encomendo.core.domain.session.scope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -62,6 +63,7 @@ sealed interface RootUiState {
  */
 class RootViewModel(
     observeSession: ObserveSession,
+    private val handover: ScreenHandover,
 ) : ViewModel() {
     // Read and replaced on the main thread only, by the session flow below.
     private var current: SessionScreens? = null
@@ -74,13 +76,15 @@ class RootViewModel(
 
     override fun onCleared() {
         current?.viewModelStore?.clear()
+        // No screens are left: nothing still running may keep a store's scope.
+        handover.screensReplaced(null)
     }
 
     // The flow restarts after the app sat in the background, re-emitting the same value,
     // and a refresh re-emits the same user and store; only a new user or store clears the screens.
     private fun stateFor(session: Session?): RootUiState.Ready {
-        val identity = session?.let { Identity(userId = it.user.id, tenantId = it.tenant?.id) }
-        val screens = current?.takeIf { it.identity == identity } ?: startSession(identity)
+        val scope = session?.scope
+        val screens = current?.takeIf { it.scope == scope } ?: startSession(scope)
         return when {
             session == null -> RootUiState.SignedOut(screens)
             session.tenant == null -> RootUiState.ChoosingStore(screens)
@@ -88,19 +92,18 @@ class RootViewModel(
         }
     }
 
-    private fun startSession(identity: Identity?): SessionScreens {
+    private fun startSession(scope: String?): SessionScreens {
+        // Clearing cancels the old screens' work, including requests waiting for the new store's token;
+        // only then may it go out (ADR 0018).
         current?.viewModelStore?.clear()
-        return SessionScreens(identity).also { current = it }
+        val screens = SessionScreens(scope).also { current = it }
+        handover.screensReplaced(scope)
+        return screens
     }
 
-    /** Who the screens work for: a user in a store, or nobody (null) while signed out. */
-    private data class Identity(
-        val userId: String,
-        val tenantId: String?,
-    )
-
+    /** The ViewModels of screens serving [scope]: a user in a store, or nobody (null) while signed out. */
     private class SessionScreens(
-        val identity: Identity?,
+        val scope: String?,
     ) : ViewModelStoreOwner {
         override val viewModelStore = ViewModelStore()
     }

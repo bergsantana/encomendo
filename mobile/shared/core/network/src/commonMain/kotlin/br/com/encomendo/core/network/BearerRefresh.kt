@@ -1,6 +1,8 @@
 package br.com.encomendo.core.network
 
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.io.IOException
 
 /**
@@ -21,9 +23,28 @@ internal class BearerRefresh<S : BearerCredentials>(
     private val refresher: TokenRefresher<S>,
     private val turns: SessionTurns,
 ) {
+    // The scope of each access token handed out lately: a 401 names only the token it was sent with. Keyed
+    // by the token's signature, unique and useless on its own, so no usable token stays in memory after Sair.
+    private val issuedScopes = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** Remembers which user and store [credentials]' access token acts for, each time the client loads it. */
+    fun issued(credentials: S) {
+        val key = credentials.accessToken.signature()
+        issuedScopes.update { scopes ->
+            (scopes - key + (key to credentials.scope))
+                .entries
+                .toList()
+                .takeLast(REMEMBERED_TOKENS)
+                .associate { it.key to it.value }
+        }
+    }
+
     /**
-     * Returns the session to retry with, or null when the request should fail
-     * with its 401.
+     * Decides whether the request is retried: non-null to retry, null to fail
+     * with its 401. Ktor takes the retry's token from a fresh load, which
+     * waits until the screens serve the stored scope; this only says whether a
+     * retry may happen. It may only in the scope the request was sent with:
+     * after a store switch, it would otherwise run in the new store.
      *
      * The session ends only when the server refuses the refresh token. Any
      * other failure (offline, 429, 5xx) is rethrown as it is, so the caller sees
@@ -36,7 +57,9 @@ internal class BearerRefresh<S : BearerCredentials>(
     ): S? =
         turns.take {
             val stored = tokens.read() ?: return@take null
-            if (stored.accessToken != rejectedAccessToken) return@take stored
+            if (stored.accessToken != rejectedAccessToken) {
+                return@take stored.takeIf { it.scope == issuedScopes.value[rejectedAccessToken?.signature()] }
+            }
             val renewed =
                 try {
                     refresher.refresh(client, stored)
@@ -45,7 +68,10 @@ internal class BearerRefresh<S : BearerCredentials>(
                     signOut(stored)
                     return@take null
                 }
-            renewed.takeIf { tokens.replace(expected = stored, replacement = it) }
+            // Kept even when the refresh left the store, since the old token is spent; but then the
+            // request, meant for that store, fails instead of running without it.
+            val replaced = tokens.replace(expected = stored, replacement = renewed)
+            renewed.takeIf { replaced && it.scope == stored.scope }
         }
 
     private suspend fun signOut(stored: S) {
@@ -57,8 +83,17 @@ internal class BearerRefresh<S : BearerCredentials>(
         }
     }
 
+    /** The JWT's signature, its last part; the whole value for a token without one, as in tests. */
+    private fun String.signature(): String = substringAfterLast('.')
+
     private companion object {
         /** The server looked at the refresh token and said no; anything else may pass. */
         val SESSION_ENDING_STATUSES = setOf(400, 401, 403)
+
+        /**
+         * Enough for every request a burst of screens has in flight. Eviction fails safe: a
+         * token forgotten only turns its retry into a 401.
+         */
+        const val REMEMBERED_TOKENS = 32
     }
 }

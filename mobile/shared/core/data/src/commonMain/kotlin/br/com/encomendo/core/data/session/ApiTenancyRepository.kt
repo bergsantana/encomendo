@@ -19,7 +19,8 @@ import kotlinx.io.IOException
  * ApiTenancyRepository creates stores and switches the session between them.
  * A switch spends the refresh token, so it runs in its [turns] turn, the same
  * one the API client refreshes in (ADR 0010, ADR 0013), and keeps the new
- * session in [store] with its tokens (ADR 0015).
+ * session in [store] with its tokens (ADR 0015). The new store's token goes
+ * out only once the app's screens serve it (ADR 0018).
  */
 class ApiTenancyRepository(
     private val auth: AuthApi,
@@ -41,17 +42,33 @@ class ApiTenancyRepository(
         current: StoredSession,
         tenantId: String,
     ): Session {
-        val switched =
-            try {
-                auth.switchTenant(refreshToken = current.tokens.refreshToken, tenantId = tenantId).toStoredSession()
-            } catch (error: ApiError) {
-                // 400 and 403 are checked before anything rotates (ADR 0013); a 401 is the refresh
-                // token itself refused, as on /auth/refresh, and ends the session.
-                if (error.status == UNAUTHORIZED) forget(current)
-                throw error
-            }
-        if (!store.replace(expected = current, replacement = switched)) throw signedOutMeanwhile()
+        val switched = rotate(current, tenantId)
+        keep(current, switched)
         return switched.session
+    }
+
+    private suspend fun rotate(
+        current: StoredSession,
+        tenantId: String,
+    ): StoredSession =
+        try {
+            auth.switchTenant(refreshToken = current.tokens.refreshToken, tenantId = tenantId).toStoredSession()
+        } catch (error: ApiError) {
+            // 400 and 403 are checked before anything rotates (ADR 0013); a 401 is the refresh
+            // token itself refused, as on /auth/refresh, and ends the session.
+            if (error.status == UNAUTHORIZED) forget(current)
+            throw error
+        }
+
+    /**
+     * Stores [switched] in place of [current]. The new store's token then
+     * waits until the root has replaced the old store's screens (ADR 0018).
+     */
+    private suspend fun keep(
+        current: StoredSession,
+        switched: StoredSession,
+    ) {
+        if (!store.replace(expected = current, replacement = switched)) throw signedOutMeanwhile()
     }
 
     override suspend fun createStore(

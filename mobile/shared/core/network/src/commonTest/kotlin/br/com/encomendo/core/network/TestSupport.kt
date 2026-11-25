@@ -36,10 +36,11 @@ internal fun MockRequestHandleScope.respondRateLimited(retryAfter: String): Http
 internal fun MockRequestHandleScope.respondUnauthorized(): HttpResponseData =
     respondProblem(HttpStatusCode.Unauthorized, """{"title":"Sessão expirada","status":401,"code":"unauthenticated"}""")
 
-/** A token pair and nothing else: what the client needs from a stored session. */
+/** A token pair and the user and store it acts for: what the client needs from a stored session. */
 internal data class TestTokens(
     override val accessToken: String,
     override val refreshToken: String,
+    override val scope: String = "ana@alta-rpm",
 ) : BearerCredentials
 
 /** Keeps tokens in memory, as TokenStore does on the device; thread-safe because MockEngine runs on a pool. */

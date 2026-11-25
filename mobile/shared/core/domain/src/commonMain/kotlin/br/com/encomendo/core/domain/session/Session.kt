@@ -20,6 +20,14 @@ data class Session(
     val memberships: List<Membership>,
 )
 
+/**
+ * Who this session acts for, and where: `{userId}@{tenantId}`, or
+ * `{userId}@` with no store selected. The one definition, shared by the API
+ * client and the root: a session's token goes out only from screens of its
+ * own scope (ADR 0018).
+ */
+val Session.scope: String get() = "${user.id}@${tenant?.id.orEmpty()}"
+
 /** User is a staff account: the person behind the session. [toString] prints only the id. */
 data class User(
     /** The account's id (a UUID), stable across stores. */

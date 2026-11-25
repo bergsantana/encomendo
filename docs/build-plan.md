@@ -36,8 +36,8 @@ Percentages count checkboxes, and milestones differ a lot in size (milestone 4 i
 
 - **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM open with the pgx driver, Redis client, goose migration runner, the first migration (`0001_roles_and_extensions.sql`), `domain/shared` (typed UUIDv7 IDs, `Money`, `Page`, `Principal`, `Role`, sentinel errors), the `identity` permission map, `app/shared` ports with fakes and `authz`, and their contract suites in `test/contract/sharedports`. No bounded context yet, no `testkit`.
 - **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, health call, generated types) and `packages/ui` (tokens, `BaseButton`, `StatusBadge`, phase colours). Admin shows a Hoje placeholder behind a dashboard layout. The store app resolves the tenant from the subdomain and renders a shell.
-- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:network` (Ktor client, problem+json → `ApiError`, bearer with one refresh on 401, `/auth/refresh`, `SessionTurns` shared by every call that spends the refresh token), `core:security` (`TokenStore`: the session's tokens, store, role and permissions, Keystore-sealed in DataStore), `core:data` (the session-backed API client, login and logout, store switch and creation, the store used last, `ApiError` → `Failure`) and `core:testing`, `core:navigation` (auth graph while signed out, the store picker while signed in without a store, management graph under the account bar once a store is open, with the session's permissions), `core:di` (Koin, one API client: `https://api.encomendo.com.br` in release, the local stack in debug), the login screen, the store picker (choose or create a store), the account bar (store, person, Trocar de loja, Sair) and a Hoje placeholder.
-- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0016, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
+- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:network` (Ktor client, problem+json → `ApiError`, bearer with one refresh on 401, `/auth/refresh`, `SessionTurns` shared by every call that spends the refresh token, requests kept in the store they were made for), `core:security` (`TokenStore`: the session's tokens, store, role and permissions, Keystore-sealed in DataStore), `core:data` (the session-backed API client, login and logout, store switch and creation, the store used last, `ApiError` → `Failure`) and `core:testing`, `core:navigation` (auth graph while signed out, the store picker while signed in without a store, management graph under the account bar once a store is open, with the session's permissions), `core:di` (Koin, one API client: `https://api.encomendo.com.br` in release, the local stack in debug), the login screen, the store picker (choose or create a store), the account bar (store, person, Trocar de loja, Sair) and a Hoje placeholder.
+- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0018, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
 
 ---
 
@@ -310,7 +310,7 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
 | Parity: every management feature on web and Android | Only Hoje, a placeholder on both |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | Nothing to leak yet; the test lands with the first store response |
-| ADRs | 0001–0016 written |
+| ADRs | 0001–0018 written |
 
 ## Order of migrations
 
@@ -354,3 +354,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | Android logout clears the device first, then tells the server without waiting | ADR 0016 |
 | 2026-11-25 | Fake transactions undo the writes of repository fakes on failure; secrets are drawn through `appshared.SecretGenerator` | ADR 0009 (amended) |
 | 2026-11-25 | `tenancy.Lookup` also uses invitations up for `identity`; accepting runs in three transactions | ADR 0011 (refined) |
+| 2026-11-25 | Android requests stay in the store they were made for: same-scope retries, tokens only to screens of their scope | ADR 0018 |

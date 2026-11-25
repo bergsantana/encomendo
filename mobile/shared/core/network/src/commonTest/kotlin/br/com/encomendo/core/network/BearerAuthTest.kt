@@ -3,6 +3,7 @@ package br.com.encomendo.core.network
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.get
@@ -19,6 +20,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -33,9 +37,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
 
+@OptIn(ExperimentalCoroutinesApi::class) // runCurrent
 class BearerAuthTest {
     private val old = TestTokens(accessToken = "access-old", refreshToken = "refresh-old")
     private val fresh = TestTokens(accessToken = "access-new", refreshToken = "refresh-new")
+    private val otherStore = TestTokens("access-other-store", "refresh-other-store", scope = "ana@moto-pecas")
 
     @Test
     fun sendsTheStoredAccessToken() =
@@ -306,6 +312,172 @@ class BearerAuthTest {
         }
 
     @Test
+    fun aRetryNeverCrossesIntoAnotherStore() =
+        runTest {
+            // A request made for one store, rejected while the session moved to another, must fail rather
+            // than run in the new store with its token: the server could not tell (the web's scope check).
+            val storage = InMemoryTokenStorage(old)
+            val refresher = RecordingRefresher { error("the switch already rotated the token") }
+            val seen = mutableListOf<String?>()
+            val client =
+                client(storage, refresher) { request ->
+                    seen += request.bearer()
+                    if (request.bearer() == old.accessToken) {
+                        storage.overwrite(otherStore) // a switch landed while this request was on the wire
+                        respondUnauthorized()
+                    } else {
+                        respondJson("{}")
+                    }
+                }
+
+            val error = assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") }
+
+            assertEquals(401, error.status)
+            assertEquals(listOf<String?>("access-old"), seen, "never retried with the other store's token")
+            assertEquals(emptyList(), refresher.calls)
+        }
+
+    @Test
+    fun theScreensOfTheStoredStoreSendAtOnce() =
+        runTest {
+            val turns = SessionTurns().apply { screensServe(old.scope) }
+            val seen = mutableListOf<String?>()
+            val client =
+                pinnedClient(InMemoryTokenStorage(old), turns) { request ->
+                    seen += request.bearer()
+                    respondJson("{}")
+                }
+
+            client.get("/api/v1/admin/orders")
+
+            assertEquals(listOf<String?>("access-old"), seen)
+        }
+
+    @Test
+    fun aStoresTokenWaitsUntilTheScreensServeThatStore() =
+        runTest {
+            // After a switch, the new store's token waits until the root has replaced the old store's
+            // screens (ADR 0018): until then, whoever asks may be one of those screens.
+            val turns = SessionTurns().apply { screensServe(old.scope) }
+            val seen = mutableListOf<String?>()
+            val client =
+                pinnedClient(InMemoryTokenStorage(otherStore), turns) { request ->
+                    seen += request.bearer()
+                    respondJson("{}")
+                }
+
+            val call = async { client.get("/api/v1/admin/orders") }
+            runCurrent()
+            assertEquals(emptyList(), seen, "nothing goes out while the old store's screens are on")
+
+            turns.screensServe(otherStore.scope) // the root has replaced them
+            call.await()
+
+            assertEquals(listOf<String?>("access-other-store"), seen)
+        }
+
+    @Test
+    fun aRequestOfScreensClearedDuringTheMoveIsNeverSent() =
+        runTest {
+            val turns = SessionTurns().apply { screensServe(old.scope) }
+            val seen = mutableListOf<String?>()
+            val client =
+                pinnedClient(InMemoryTokenStorage(otherStore), turns) { request ->
+                    seen += request.bearer()
+                    respondJson("{}")
+                }
+
+            val call = launch { client.get("/api/v1/admin/orders") }
+            runCurrent()
+            call.cancel() // the root clears the old store's screens, then serves the new store
+            turns.screensServe(otherStore.scope)
+            call.join()
+            runCurrent()
+
+            assertEquals(emptyList(), seen)
+        }
+
+    @Test
+    fun aRequestWaitingThroughASwitchAwayAndBackStillGoesOut() =
+        runTest {
+            // A to B and back before the root reported B: the screens never change, so the wait must look again.
+            val turns = SessionTurns().apply { screensServe(old.scope) }
+            val storage = InMemoryTokenStorage(otherStore)
+            val seen = mutableListOf<String?>()
+            val client =
+                pinnedClient(storage, turns) { request ->
+                    seen += request.bearer()
+                    respondJson("{}")
+                }
+
+            val call = async { client.get("/api/v1/admin/orders") }
+            runCurrent()
+            assertEquals(emptyList(), seen)
+
+            storage.overwrite(old) // back to the screens' own store
+            advanceTimeBy(SessionTurns.RECHECK_MILLIS + 1)
+            call.await()
+
+            assertEquals(listOf<String?>("access-old"), seen)
+        }
+
+    @Test
+    fun aReadOlderThanTheScreensStillGoesToItsOwnStore() =
+        runTest {
+            // The screens' scope is sampled before the read: a read that lands after the screens moved
+            // still pairs with the scope it was read against, and never waits for a change already made.
+            val turns = SessionTurns().apply { screensServe(old.scope) }
+            val inner = InMemoryTokenStorage(old)
+            val gate = CompletableDeferred<Unit>()
+            val slowFirstRead =
+                object : TokenStorage<TestTokens> {
+                    private var first = true
+
+                    override suspend fun read(): TestTokens? {
+                        val value = inner.read()
+                        if (first) {
+                            first = false
+                            gate.await()
+                        }
+                        return value
+                    }
+
+                    override suspend fun replace(
+                        expected: TestTokens,
+                        replacement: TestTokens?,
+                    ): Boolean = inner.replace(expected, replacement)
+                }
+            val seen = mutableListOf<String?>()
+            val client =
+                pinnedClient(slowFirstRead, turns) { request ->
+                    seen += request.bearer()
+                    respondJson("{}")
+                }
+
+            val call = async { client.get("/api/v1/admin/orders") }
+            runCurrent()
+            inner.overwrite(otherStore) // a switch lands while the read is on its way back
+            turns.screensServe(otherStore.scope)
+            gate.complete(Unit)
+            call.await()
+
+            assertEquals(listOf<String?>("access-old"), seen, "sent at once, with the token read for A's screens")
+            assertEquals(0L, testScheduler.currentTime, "no wait")
+        }
+
+    @Test
+    fun aStoreSwitchedAwayAndBackNeverWaits() =
+        runTest {
+            // A to B and back before the root caught up: the stored token is the screens' own again.
+            val turns = SessionTurns().apply { screensServe(old.scope) }
+            val storage = InMemoryTokenStorage(otherStore)
+            val client = pinnedClient(storage, turns) { respondJson("{}") }
+            storage.overwrite(old)
+
+            client.get("/api/v1/admin/orders")
+        }
+
+    @Test
     fun requestsMarkedWithoutBearerCarryNoTokenAndNeverRefresh() =
         runTest {
             val refresher = RecordingRefresher { error("a failed login must not refresh") }
@@ -332,9 +504,30 @@ class BearerAuthTest {
 
     private fun HttpRequestData.bearer(): String? = headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
 
+    /** A client whose engine answers on the test's own scheduler, so "nothing went out" is certain. */
+    private fun TestScope.pinnedClient(
+        storage: TokenStorage<TestTokens>,
+        turns: SessionTurns,
+        handler: MockRequestHandler,
+    ): HttpClient =
+        createApiClient(
+            engine =
+                MockEngine(
+                    MockEngineConfig().apply {
+                        dispatcher = StandardTestDispatcher(testScheduler)
+                        addHandler(handler)
+                    },
+                ),
+            config = ApiClientConfig(baseUrl = API_URL),
+            tokens = storage,
+            refresher = RecordingRefresher { error("no refresh expected") },
+            turns = turns,
+        )
+
     private fun client(
         storage: TokenStorage<TestTokens>,
         refresher: TokenRefresher<TestTokens> = RecordingRefresher { error("no refresh expected") },
+        turns: SessionTurns = SessionTurns(),
         handler: MockRequestHandler,
     ): HttpClient =
         createApiClient(
@@ -342,7 +535,7 @@ class BearerAuthTest {
             config = ApiClientConfig(baseUrl = API_URL),
             tokens = storage,
             refresher = refresher,
-            turns = SessionTurns(),
+            turns = turns,
         )
 }
 
@@ -357,9 +550,46 @@ class BearerRefreshTest {
         runTest {
             val refresher = RecordingRefresher { error("already refreshed") }
             val refresh = BearerRefresh(InMemoryTokenStorage(fresh), refresher, SessionTurns())
+            refresh.issued(old)
 
             assertEquals(fresh, refresh.refresh(client, rejectedAccessToken = old.accessToken))
             assertEquals(emptyList(), refresher.calls)
+        }
+
+    @Test
+    fun neverHandsARetryTheTokensOfAnotherStore() =
+        runTest {
+            val otherStore = TestTokens("access-other-store", "refresh-other-store", scope = "ana@moto-pecas")
+            val refresher = RecordingRefresher { error("the switch already rotated the token") }
+            val refresh = BearerRefresh(InMemoryTokenStorage(otherStore), refresher, SessionTurns())
+            refresh.issued(old)
+
+            assertNull(refresh.refresh(client, rejectedAccessToken = old.accessToken))
+            assertEquals(emptyList(), refresher.calls)
+        }
+
+    @Test
+    fun aRejectedTokenItNeverHandedOutIsNeverRetried() =
+        runTest {
+            // Its store is unknown, so it can't be shown to match.
+            val refresh =
+                BearerRefresh(InMemoryTokenStorage(fresh), RecordingRefresher { error("no refresh") }, SessionTurns())
+
+            assertNull(refresh.refresh(client, rejectedAccessToken = "access-from-nowhere"))
+        }
+
+    @Test
+    fun aRefreshThatLeavesTheStoreKeepsItsTokensButNeverRetries() =
+        runTest {
+            // Removed from the store: the refresh answers with no store (ADR 0010). The rotated tokens must be
+            // kept, but the request was meant for the store it no longer has.
+            val storage = InMemoryTokenStorage(old)
+            val noStore = TestTokens("access-no-store", "refresh-no-store", scope = "ana@")
+            val refresh = BearerRefresh(storage, RecordingRefresher { noStore }, SessionTurns())
+            refresh.issued(old)
+
+            assertNull(refresh.refresh(client, rejectedAccessToken = old.accessToken))
+            assertEquals(noStore, storage.current)
         }
 
     @Test
@@ -386,33 +616,30 @@ class BearerRefreshTest {
         runTest {
             // A switch spends the refresh token too (ADR 0010). If a refresh presented the same token
             // meanwhile, one of the two would hold a superseded token and sign the user out (ADR 0013).
+            // And the request, meant for the old store, must not be retried in the new one.
             val turns = SessionTurns()
             val storage = InMemoryTokenStorage(old)
             val refresher = RecordingRefresher { error("the switch already rotated the token") }
+            val refresh = BearerRefresh(storage, refresher, turns).apply { issued(old) }
+            val switched = TestTokens("access-switched", "refresh-switched", scope = "ana@moto-pecas")
             val switchDone = CompletableDeferred<Unit>()
             launch {
                 turns.take {
                     switchDone.await()
-                    storage.overwrite(fresh)
+                    storage.overwrite(switched)
                 }
             }
             runCurrent()
 
-            val waiting =
-                async {
-                    BearerRefresh(
-                        storage,
-                        refresher,
-                        turns,
-                    ).refresh(client, rejectedAccessToken = old.accessToken)
-                }
+            val waiting = async { refresh.refresh(client, rejectedAccessToken = old.accessToken) }
             runCurrent()
             assertFalse(waiting.isCompleted, "the refresh waits its turn")
 
             switchDone.complete(Unit)
 
-            assertEquals(fresh, waiting.await())
+            assertNull(waiting.await(), "no retry in the store it moved to")
             assertEquals(emptyList(), refresher.calls)
+            assertEquals(switched, storage.current)
         }
 
     @Test

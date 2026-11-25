@@ -1,5 +1,6 @@
 package br.com.encomendo.core.data.session
 
+import br.com.encomendo.core.domain.session.scope
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.BearerCredentials
 import br.com.encomendo.core.network.SessionTurns
@@ -26,12 +27,13 @@ fun createSessionApiClient(
     turns: SessionTurns,
 ): HttpClient = createApiClient(engine, config, TokenStoreStorage(store), SessionRefresher, turns)
 
-/** A stored session as the API client sees it: its tokens. The rest travels along untouched. */
+/** A stored session as the API client sees it: its tokens and who they act for. The rest travels along untouched. */
 internal class StoredCredentials(
     val stored: StoredSession,
 ) : BearerCredentials {
     override val accessToken: String get() = stored.tokens.accessToken
     override val refreshToken: String get() = stored.tokens.refreshToken
+    override val scope: String get() = stored.session.scope
 }
 
 /** Backs the API client's [TokenStorage] with the device's [TokenStore]. */

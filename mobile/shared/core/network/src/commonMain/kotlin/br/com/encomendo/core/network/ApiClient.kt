@@ -77,6 +77,7 @@ fun <S : BearerCredentials> createApiClient(
             apiOrigin = Url(config.baseUrl),
             refresh = BearerRefresh(tokens, refresher, turns),
             tokens = tokens,
+            turns = turns,
         )
     }
 
@@ -104,6 +105,7 @@ private fun <S : BearerCredentials> HttpClientConfig<*>.installBearer(
     apiOrigin: Url,
     refresh: BearerRefresh<S>,
     tokens: TokenStorage<S>,
+    turns: SessionTurns,
 ) {
     install(Auth) {
         // A 401 from another host must never be answered with our token, and a 401 inside a
@@ -119,10 +121,30 @@ private fun <S : BearerCredentials> HttpClientConfig<*>.installBearer(
             cacheTokens = false
             // A cancelled screen must not drop a refresh the server already rotated: the old token is spent.
             nonCancellableRefresh = true
-            loadTokens { tokens.read()?.toBearer() }
+            loadTokens { tokenForTheScreens(tokens, turns)?.also(refresh::issued)?.toBearer() }
             sendWithoutRequest { it.url.build().isSameOrigin(apiOrigin) }
             refreshTokens { refresh.refresh(client, response.request.bearerToken())?.toBearer() }
         }
+    }
+}
+
+/**
+ * Returns the stored session once the app's screens serve its scope (ADR 0018).
+ * A stored scope the screens don't serve means a store switch is under way:
+ * the screens that started this request may be the old store's, about to be
+ * cleared, so wait until the screens change, then read again. The screens'
+ * scope is sampled before the read, so a change that lands in between is never
+ * missed and the wait never outlives it.
+ */
+private suspend fun <S : BearerCredentials> tokenForTheScreens(
+    tokens: TokenStorage<S>,
+    turns: SessionTurns,
+): S? {
+    while (true) {
+        val screens = turns.screensScope()
+        val stored = tokens.read() ?: return null
+        if (screens == null || stored.scope == screens) return stored
+        turns.awaitScreensOtherThan(screens)
     }
 }
 

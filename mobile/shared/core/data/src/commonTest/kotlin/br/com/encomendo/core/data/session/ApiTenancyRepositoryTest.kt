@@ -2,6 +2,7 @@ package br.com.encomendo.core.data.session
 
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.TenantSummary
+import br.com.encomendo.core.domain.session.scope
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.network.auth.AuthApi
@@ -37,11 +38,41 @@ import kotlinx.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ApiTenancyRepositoryTest {
     private val signedIn = StoredSession(SessionTokens("access-old", "refresh-old"), testSession(tenant = AltaRpm))
+
+    @Test
+    fun theNewStoresTokenWaitsUntilTheScreensServeIt() =
+        runTest {
+            // Until the root has replaced the old store's screens, none of them may send with it (ADR 0018).
+            val store = tokenStore().apply { write(signedIn) }
+            val turns = SessionTurns().apply { screensServe(signedIn.session.scope) }
+            val sent = CompletableDeferred<String?>()
+            val tenancy =
+                repository(store, turns) { request ->
+                    if (request.url.encodedPath == "/auth/switch-tenant") {
+                        respondJson(switchedSession(refreshToken = "refresh-switched"))
+                    } else {
+                        sent.complete(request.headers[HttpHeaders.Authorization])
+                        respondJson("{}")
+                    }
+                }
+            tenancy.repository.switchTo(MOTO_PECAS.id)
+
+            val call = async { tenancy.client.get("/api/v1/admin/orders") }
+            // Real time: a request that skipped the check would go out now.
+            withContext(Dispatchers.Default) { delay(SETTLE_MILLIS) }
+            assertFalse(sent.isCompleted, "waits for the new store's screens")
+
+            turns.screensServe(store.read()?.session?.scope) // what the root does once they are on
+            call.await()
+
+            assertEquals("Bearer access-switched", sent.await())
+        }
 
     @Test
     fun aSwitchKeepsTheNewStoreWithItsTokens() =
