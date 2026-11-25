@@ -35,11 +35,18 @@ The mobile and web sessions pointed out what serializing does not cover, and wha
 The first design marked each token row revoked. The security review of `m2-db` showed the race in that: a revoke that runs while a rotation is inserting a successor does not see the new row, so the successor stays live. A thief holding a stolen session could keep a rotation in flight and survive the owner's password reset.
 
 - A family is a row of `refresh_families`: one login, its owner and its audience. Every rotation, retry and switch starts by locking that row (`SELECT … FOR UPDATE`) and refuses a revoked family. So everything that happens to one login happens one step at a time, a retry included.
+- **Decide only after the lock.** Finding the family takes a first read of the token by hash, which can be stale by the time the lock is granted: two presentations of one unused token would both see it unused. So, after the lock, a new statement reads the token and its successor again, and only that read decides between rotation, retry and reuse. The changes are conditional too: `SET used_at = now(), replaced_by = $2 WHERE id = $1 AND used_at IS NULL AND superseded_at IS NULL`, and superseding a successor `WHERE … AND used_at IS NULL AND superseded_at IS NULL`. No row changed means another call got there first, and the call takes the retry or reuse path instead. One `JOIN … FOR UPDATE OF` the family is not enough: after waiting, Postgres re-reads only the locked row, not the token's columns.
 - Revoking a family, on reuse or logout, sets `refresh_families.revoked_at`. A token is live only when it is unused (or a valid retry), not superseded, not expired, and its family is live. A revoke that meets a rotation in flight waits for it, then kills the family with the token it created.
-- Revoking every family of an account, on password reset, first updates the `users` row (the new password hash), then the families. Login and invitation acceptance read the password hash `FOR SHARE` and create their family in the same transaction. A login that started first makes the reset wait and is then revoked with the rest; a login that starts after the reset waits for it and then reads the new hash.
+- Revoking every family of an account, on password reset, first updates the `users` row (the new password hash), then the families.
+- Login and invitation acceptance check the password like this:
+  1. Verify argon2id against the hash read without a lock, so the slow check never holds a lock or a transaction.
+  2. In the transaction that creates the family, read the hash again with `SELECT password_hash FROM users WHERE id = $1 FOR SHARE`.
+  3. Refuse with `invalid_credentials` if it differs from the hash just verified.
+
+  A login whose lock comes first makes the reset wait and is then revoked with the rest; one that comes after the reset sees a new hash and fails. For acceptance this is its second, user-scoped transaction (ADR 0009, ADR 0011), the one that builds the session.
 - A token's own `superseded_at` means only that a retry replaced it before anyone used it; presenting it later is reuse. A dead family is never recorded on the token rows.
 - A successor is always in its token's family, and a token's audience is its family's (composite keys), so lookups by hash ask for staff tokens only and a client token never carries a store.
-- Revoking a family also puts the access tokens issued with it in the last 15 minutes on the Redis denylist, from `refresh_tokens.access_jti`, so the thief's access token stops too.
+- Revoking a family also puts the access tokens issued with it in the last 15 minutes and 30 seconds (their lifetime plus the verifier's leeway) on the Redis denylist, from `refresh_tokens.access_jti`, so the thief's access token stops too. The revoke in Postgres commits even when the Redis write fails; that failure is logged, not returned.
 
 ### Failures are never 401
 
@@ -64,6 +71,10 @@ Both apps end the session only when `/auth/refresh` answers 400, 401 or 403 (ADR
 
 - `m2-db` adds `refresh_families`, and `replaced_by`, `superseded_at` and `access_jti` on `refresh_tokens`.
 - `m2-domain` and `m2-auth` test the window's edges: a retry inside it, a retry after the successor was used, a retry after 2 minutes, repeated retries, two presentations at once, and a failing repository that must not become `ErrUnauthenticated`.
-- The repositories of `m2-integrate` test the locks against Postgres: presenting a successor superseded by a retry revokes the family, the retry's token included; a revoke during a rotation in flight leaves no live token; a password reset during a login leaves no live family.
+- The repositories of `m2-integrate` test the locks against Postgres:
+  - presenting a successor superseded by a retry revokes the family, the retry's token included;
+  - two concurrent presentations of one unused token give one rotation and one retry, never two fresh successors;
+  - a revoke during a rotation in flight leaves no live token;
+  - a password reset during a login or an invitation acceptance leaves no live family.
 - `m2-integrate` adds the HTTP tests above, plus a 5xx (not 401) on `/auth/refresh` when the store behind it fails.
 - `docs/architecture.md` 5.1, 7, 8.1 and 8.2 point here and at ADR 0012.

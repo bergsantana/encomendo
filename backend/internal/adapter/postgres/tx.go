@@ -74,7 +74,9 @@ func (r *txRoot) err() error {
 
 // WithinTx follows the appshared.TxManager contract. A nested call becomes a
 // savepoint of the outer transaction, so its failure undoes only its own
-// writes and events.
+// writes and events. If that undo itself fails, the nested call returns fn's
+// error joined with the undo's (errors.Is still finds fn's), and the outer
+// transaction refuses to commit.
 func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	if err := ctx.Err(); err != nil {
 		return err

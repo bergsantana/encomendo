@@ -46,7 +46,7 @@ CREATE TABLE client_login_codes (
     email      citext      NOT NULL CHECK (char_length(email) BETWEEN 3 AND 254),
     code_hash  bytea       NOT NULL CHECK (octet_length(code_hash) = 32), -- HMAC-SHA256
     expires_at timestamptz NOT NULL,
-    attempts   int         NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+    attempts   int         NOT NULL DEFAULT 0 CHECK (attempts >= 0), -- the limit comes with milestone 7
     used_at    timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()
 );

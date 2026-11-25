@@ -327,6 +327,30 @@ func TestTxManager_RefusesToCommitWhenAnUndoFails(t *testing.T) {
 	}
 }
 
+// TestTxManager_RefusesToCommitABrokenTransaction covers an undo that never
+// reached the server (a busy connection, say): Postgres does not know the
+// transaction is broken, so only the TxManager's own flag stops the commit.
+func TestTxManager_RefusesToCommitABrokenTransaction(t *testing.T) {
+	t.Parallel()
+	tx := NewTxManager(openApp(t, 2))
+	id := shared.TenantID(pgtest.NewID())
+	broken := errors.New("undo never ran")
+	err := tx.WithinTx(storeCtx(t, id), func(ctx context.Context) error {
+		if err := insertTenant(ctx, id); err != nil {
+			return err
+		}
+		c, _ := ctx.Value(txKey{}).(*txConn) // WithinTx always puts one there
+		c.root.breakWith(broken)
+		return nil
+	})
+	if !errors.Is(err, broken) {
+		t.Errorf("WithinTx = %v, want the broken transaction refused", err)
+	}
+	if tenantExists(t, id) {
+		t.Error("a broken transaction was committed")
+	}
+}
+
 func TestTxManager_RLSRefusesARowOutsideTheScope(t *testing.T) {
 	t.Parallel()
 	tx := NewTxManager(openApp(t, 2))

@@ -224,8 +224,9 @@ func caseNoTenant(t *testing.T, app *sql.DB, w world, tt tenantTable) {
 	}
 }
 
-// caseMove rewrites the tenant column of store A's own rows to B. Column
-// grants refuse it, and WITH CHECK would too.
+// caseMove rewrites the tenant column of store A's own rows to B. The column
+// grants refuse it before any policy runs; that the policy would refuse it
+// too is TestPolicies_OnlyTheListedExtrasWidenReads (WITH CHECK = USING).
 func caseMove(t *testing.T, app *sql.DB, w world, tt tenantTable) {
 	err := inScope(t, app, storeA(w), func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, "UPDATE "+tt.name+" SET "+tt.column+" = $1 WHERE "+tt.column+" = $2",
