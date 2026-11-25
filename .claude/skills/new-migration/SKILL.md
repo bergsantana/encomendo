@@ -13,7 +13,8 @@ Migrations have one owner per milestone (see "Working in parallel sessions" in t
 
 ## 2. Create the file
 
-- Path: `backend/internal/adapter/postgres/migrations/NNNN_<what>.sql`, where NNNN is the next number on `main`. Rebase first so the number is free.
+- Path: `backend/internal/adapter/postgres/migrations/NNNN_<what>.sql`, where NNNN is the next number on `main`. Rebase first so the number is free. Never take a number from a planning list: versions stay `1, 2, 3 …`, and `TestMigrationVersions_AreContiguous` fails on a gap, because goose refuses a file numbered below the database's version (ADR 0014).
+- Enable RLS and write the policies and grants of a new table in the same file, so it is never granted without RLS.
 - SQL only, never a Go migration. Both sections are required:
 
 ```sql
@@ -57,7 +58,7 @@ CREATE POLICY tenant_isolation ON purchase_lines
 GRANT SELECT, INSERT, UPDATE, DELETE ON purchase_lines TO encomendo_app;
 ```
 
-(The table above only illustrates the conventions. The real `purchase_lines` in `0011_purchasing.sql` follows `docs/architecture.md` section 7: supplier, expected and promised dates, status.)
+(The table above only illustrates the conventions. The real `purchase_lines` in the purchasing migration follows `docs/architecture.md` section 7: supplier, expected and promised dates, status.)
 
 Checklist:
 
@@ -81,7 +82,7 @@ Checklist:
 
 ## 5. Tests
 
-- `test/integration/rls/`: add the table to the RLS suite with all five cases: select, insert with the other tenant's id, update, delete, and no tenant set (expects zero rows). With a client policy, also: another client's rows (zero rows) and any write as a client (rejected).
+- `test/integration/rls/`: add the table to `tenantTables` in `tenant_tables_test.go` (`TestEveryTenantTableIsListed` fails until you do), which runs all five cases: select, insert with the other tenant's id, update, delete, and no tenant set (expects zero rows). With a client policy, also: another client's rows (zero rows) and any write as a client (rejected).
 - `test/integration/postgres/`: repository tests for the new queries, including the constraint errors mapped to domain errors.
 - Run:
 

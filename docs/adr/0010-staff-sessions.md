@@ -1,6 +1,6 @@
 # 0010 — Staff sessions: stores, refresh transport and permissions
 
-- Status: accepted
+- Status: accepted; amended by ADR 0013 (a 2-minute retry window for lost answers; server failures are never 401)
 - Date: 2026-11-25
 
 ## Context
@@ -40,7 +40,7 @@ ADR 0003 fixes the token formats. Writing the `/auth/*` contract left several qu
   - The web app holds a Web Lock (`navigator.locks`, name `encomendo-refresh`) around `/auth/refresh`, and tabs take turns. Each turn sends the cookie the previous turn set.
   - Android holds a mutex in the Ktor auth plugin.
 
-  There is no server-side grace window.
+  There is no grace window for parallel refreshes. ADR 0013 adds a 2-minute retry window for an answer lost after the server rotated the token.
 - **Logout** revokes the family, clears the cookie, adds the access token's `jti` to the Redis denylist when one is sent, and always answers 204.
 
 ### CSRF and CORS

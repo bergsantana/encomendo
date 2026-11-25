@@ -21,14 +21,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 5 | 23 | In progress: contract done (step 1 of 7), mobile API client, session and auth graph |
-| 3 | Catalog and suppliers | 0 | 13 | Not started |
+| 2 | Identity and tenancy | 6 | 23 | In progress: contract and database done (steps 1 and 2 of 7), mobile API client, session and auth graph |
+| 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **27** | **117** | **about 23%** |
+|   | **All milestones** | **28** | **118** | **about 24%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -94,12 +94,12 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 - [x] `app/shared`: `TxManager` and `Scope`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`, `authz.Require`; fakes and their contract suites (ADR 0009)
 - [ ] `app/identity` and `app/tenancy` services with fakes: Register, Login, Refresh, Logout, SwitchTenant, password reset, accept invitation, CreateTenant, InviteMember, RevokeInvitation, ChangeRole, RemoveMember, UpdateSettings
 - [ ] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id
-- [ ] Migrations `0002_identity` (with `password_reset_codes`), `0003_workflows` (ADR 0006), `0004_tenancy` (with `invitations`, ADR 0011), `0005_rls_helpers`, `0014_platform`, `0015_rls_policies`
-- [ ] `adapter/postgres`: `TxManager` that sets `app.tenant_id`, `errors.go` mapping, identity and tenancy repositories
+- [x] Migrations `0002_identity` (with `password_reset_codes`), `0003_workflows` (ADR 0006), `0004_tenancy` (with `invitations`, ADR 0011), `0005_rls_helpers`, `0006_platform`, `0007_rls_policies` (numbered as they land, ADR 0014)
+- [ ] `adapter/postgres`: `TxManager` that sets `app.tenant_id`, `errors.go` mapping, identity and tenancy repositories (partial: `TxManager` with all three settings and savepoints, `errors.go` and the outbox publisher, passing their port contracts; the repositories come with `m2-integrate`)
 - [ ] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes
 - [ ] `adapter/notify/smtp.go` for invitations and password reset codes; Mailpit in the dev stack (ADR 0011)
 - [x] OpenAPI: `/auth/*`, tenancy and members endpoints (ADRs 0010, 0011)
-- [ ] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse)
+- [ ] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse) (partial: the RLS suite is done, with the user-scope policies of ADR 0010; the auth tests come with `m2-auth`)
 - [ ] Contract suites for the identity and tenancy ports, run against fakes and real adapters
 
 ### Web
@@ -133,7 +133,8 @@ Goal: the owner can describe what they sell, where it comes from and what it cos
 - [ ] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (swap price rule tested)
 - [ ] `domain/supplier`: supplier, supplier item (lead time, cost, backup supplier)
 - [ ] `app/catalog` and `app/supplier` services, cached queries, fakes
-- [ ] Migrations `0006_catalog`, `0007_suppliers`, with RLS policies and tests
+- [ ] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`)
+- [ ] Migrations for catalog and suppliers, with RLS policies and tests
 - [ ] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
 - [ ] `adapter/storage`: local and S3-compatible photo storage
 - [ ] HTTP handlers, OpenAPI entries, and the "clients never see costs or suppliers" visibility test
@@ -163,10 +164,10 @@ Goal: the core of the product. An order moves through its store's status list, a
 
 - [ ] `domain/workflow`: phases, status workflow, `validate.go`, four launch presets, each with its own test
 - [ ] Migration `0003_workflows` with the preset seed
-- [ ] `domain/customer`; migration `0008_customers`
+- [ ] `domain/customer`; customers migration
 - [ ] `domain/order`: aggregate, items, item status per sourcing mode, customization snapshot, payments (deposit and balance), `Advance` with phase guards, tracking token, events
 - [ ] `domain/schedule`: delivery date, arrival limit, `at_risk` and `late` alerts (pure functions, fuzz or table tests)
-- [ ] Migration `0010_orders`, with RLS and the client read policy (a client account reads only its own linked orders)
+- [ ] Orders migration, with RLS and the client read policy (a client account reads only its own linked orders)
 - [ ] `app/workflow`, `app/customer`, `app/order` (create, confirm deposit, release without deposit, advance, record balance, hand over, change delivery date → `wa.me` link, cancel), `app/schedule`
 - [ ] Outbox (`outbox_repo`) in the same transaction as order writes
 - [ ] Tracking tokens (`adapter/auth/tracking.go`); `adapter/notify/whatsapp_link.go`
@@ -200,7 +201,7 @@ Goal: the business buys only what was sold, tells the supplier without leaking t
 ### Backend
 
 - [ ] `domain/purchasing`: purchase line, supplier order, supplier message (never carries client name or phone, with test), receipt (`ok` / `defective`)
-- [ ] Migration `0011_purchasing`, with RLS and tests
+- [ ] Purchasing migration, with RLS and tests
 - [ ] `app/purchasing`: `GeneratePurchases` (after deposit unless `purchase_before_deposit`), `SendSupplierOrder` → `wa.me` link, `RecordPromisedDate`, `Receive`
 - [ ] Postgres repository (grouping by supplier with `Raw` where clearer); receipt photo upload through storage
 - [ ] HTTP handlers and OpenAPI
@@ -228,7 +229,7 @@ Goal: stores that keep stock or make things themselves get the same dates and al
 ### Backend
 
 - [ ] `domain/inventory` (stock item, append-only movements, reservation) and `domain/production` (job, stage, capacity, assignment)
-- [ ] Migrations `0009_inventory`, `0012_production`, with RLS and tests
+- [ ] Inventory and production migrations, with RLS and tests
 - [ ] `app/inventory` (receive, adjust, reserve, release, low-stock alerts) and `app/production` (start job, complete stage, assign, weekly capacity)
 - [ ] `adapter/inproc/stock_reserver.go` implementing `order.StockReserver`
 - [ ] `cmd/worker`: outbox relay and the daily Pode atrasar / Atrasada check
@@ -255,7 +256,7 @@ Goal: a client opens `{slug}.encomendo.com.br`, builds an order, pays the deposi
 ### Backend
 
 - [ ] `domain/portal`: storefront, template, branding, sections, subdomain (reserved words blocked)
-- [ ] Migration `0013_portal` with the niche template seed (templates are data)
+- [ ] Portal migration with the niche template seed (templates are data)
 - [ ] `app/portal` and `app/storefront`: catalog, kits, Monte o seu preview (price, deposit and date calculated by the backend), place order, track by token
 - [ ] `adapter/http/middleware/storefront.go`: tenant from the Host subdomain
 - [ ] Client accounts: email code and Google sign-in (`adapter/auth/email_code.go`, `google.go`), `app/clientarea`, `/api/v1/me/*`, SMTP notifier
@@ -347,3 +348,5 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | Staff sessions may have no store; switching is a refresh; refresh token by cookie (web) or body (Android) | ADR 0010 |
 | 2026-11-25 | Email in milestone 2: invitations by link, password reset by code; members can be removed | ADR 0011 |
 | 2026-11-24 | A failed token refresh ends the session only when the server refuses it; offline keeps it | ADR 0012 |
+| 2026-11-25 | A 2-minute retry window for lost refresh answers; server failures are never 401; Retry-After on every 429 | ADR 0013 |
+| 2026-11-25 | Migrations take the next free number when they land; M2 platform and policies are 0006 and 0007 | ADR 0014 |

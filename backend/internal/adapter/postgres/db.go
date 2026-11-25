@@ -63,7 +63,10 @@ func Open(ctx context.Context, cfg config.Database, log *slog.Logger) (*DB, erro
 	return db, nil
 }
 
-// Gorm returns the GORM handle for repositories and the TxManager.
+// Gorm returns the pool's GORM handle, for the TxManager and for checks that
+// need no scope, such as tests of the connection itself. Repositories never
+// use it: they take the transaction from the context (conn.go), so no query
+// runs without an RLS scope.
 func (db *DB) Gorm() *gorm.DB { return db.gorm }
 
 // Ping checks that Postgres answers. It backs the readiness probe.
