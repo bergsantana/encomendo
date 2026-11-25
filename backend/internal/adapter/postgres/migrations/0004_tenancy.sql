@@ -26,6 +26,7 @@ CREATE TABLE tenants (
 -- the session without one (ADR 0010).
 ALTER TABLE refresh_tokens
     ADD CONSTRAINT refresh_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL;
+CREATE INDEX refresh_tokens_tenant_idx ON refresh_tokens (tenant_id) WHERE tenant_id IS NOT NULL;
 
 -- "Equipe": who belongs to a store and with which role. A store has exactly
 -- one owner: the index allows at most one, and app/tenancy never removes or
@@ -100,5 +101,6 @@ CREATE INDEX invitations_tenant_sender_idx ON invitations (tenant_id, invited_by
 DROP TABLE invitations;
 DROP TABLE tenant_settings;
 DROP TABLE memberships;
+DROP INDEX refresh_tokens_tenant_idx;
 ALTER TABLE refresh_tokens DROP CONSTRAINT refresh_tokens_tenant_id_fkey;
 DROP TABLE tenants;

@@ -1,5 +1,5 @@
--- Identity: staff users, client accounts, their login codes, refresh tokens
--- and password reset codes.
+-- Identity: staff users, client accounts, their login codes, refresh
+-- families and tokens, and password reset codes.
 --
 -- These tables are global, not tenant-scoped, so they have no RLS: a staff
 -- user belongs to many stores, a client account reads orders from every
@@ -46,38 +46,68 @@ CREATE TABLE client_login_codes (
     email      citext      NOT NULL CHECK (char_length(email) BETWEEN 3 AND 254),
     code_hash  bytea       NOT NULL CHECK (octet_length(code_hash) = 32), -- HMAC-SHA256
     expires_at timestamptz NOT NULL,
-    attempts   int         NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    attempts   int         NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
     used_at    timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX client_login_codes_email_idx ON client_login_codes (email, created_at DESC);
 
--- Refresh tokens rotate on every use. A family is one login; presenting a
--- token that was already used revokes the family, except for a retry within
--- 2 minutes while its successor (replaced_by) is unused (ADR 0013).
--- tenant_id is the store the token was issued for; its foreign key is added
--- by 0004_tenancy, which creates tenants.
-CREATE TABLE refresh_tokens (
+-- A refresh family is one login (ADR 0010, ADR 0013). Revoking it, on reuse,
+-- logout or password reset, is one update of this row. Every rotation, retry
+-- and switch first locks the row (SELECT … FOR UPDATE) and refuses a revoked
+-- family, so a revoke waits for a rotation in flight and kills the token it
+-- creates. Revoking token rows instead would miss that token.
+CREATE TABLE refresh_families (
     id                uuid        PRIMARY KEY,
-    family_id         uuid        NOT NULL,
+    audience          text        NOT NULL CHECK (audience IN ('backoffice', 'client')),
     user_id           uuid        REFERENCES users (id) ON DELETE CASCADE,
     client_account_id uuid        REFERENCES client_accounts (id) ON DELETE CASCADE,
-    tenant_id         uuid,
-    token_hash        bytea       NOT NULL UNIQUE CHECK (octet_length(token_hash) = 32), -- SHA-256
-    expires_at        timestamptz NOT NULL,
-    used_at           timestamptz,
-    replaced_by       uuid        REFERENCES refresh_tokens (id) ON DELETE SET NULL,
     revoked_at        timestamptz,
     created_at        timestamptz NOT NULL DEFAULT now(),
-    CHECK (num_nonnulls(user_id, client_account_id) = 1),
-    CHECK (client_account_id IS NULL OR tenant_id IS NULL), -- a client session never has a store
+    UNIQUE (id, audience),
+    CHECK ((audience = 'backoffice') = (user_id IS NOT NULL)),
+    CHECK ((audience = 'client') = (client_account_id IS NOT NULL))
+);
+
+CREATE INDEX refresh_families_user_idx ON refresh_families (user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX refresh_families_client_account_idx ON refresh_families (client_account_id)
+    WHERE client_account_id IS NOT NULL;
+
+-- Refresh tokens rotate on every use. Presenting a used token revokes its
+-- family, except for a retry within 2 minutes while its successor
+-- (replaced_by) is unused; the retry supersedes that successor (ADR 0013).
+-- audience repeats the family's through the composite key, so a lookup by
+-- hash asks for staff tokens only, and a client token never has a store.
+-- tenant_id is the store the token was issued for; its foreign key comes in
+-- 0004_tenancy, which creates tenants.
+CREATE TABLE refresh_tokens (
+    id            uuid        PRIMARY KEY,
+    family_id     uuid        NOT NULL,
+    audience      text        NOT NULL,
+    tenant_id     uuid,
+    token_hash    bytea       NOT NULL UNIQUE CHECK (octet_length(token_hash) = 32), -- SHA-256
+    -- The access token issued with this one: revoking the family puts the
+    -- recent ones on the Redis denylist, so a thief's access token stops too.
+    access_jti    uuid        NOT NULL,
+    expires_at    timestamptz NOT NULL,
+    used_at       timestamptz,
+    replaced_by   uuid,
+    -- A retry replaced this token before anyone used it. Presenting it later
+    -- is reuse. A dead family is refresh_families.revoked_at, never this.
+    superseded_at timestamptz,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (family_id, id),
+    FOREIGN KEY (family_id, audience) REFERENCES refresh_families (id, audience) ON DELETE CASCADE,
+    -- A successor is always in the same family.
+    FOREIGN KEY (family_id, replaced_by) REFERENCES refresh_tokens (family_id, id) ON DELETE SET NULL (replaced_by),
+    CHECK (audience = 'backoffice' OR tenant_id IS NULL),
     CHECK (replaced_by IS NULL OR used_at IS NOT NULL)
 );
 
-CREATE INDEX refresh_tokens_family_idx ON refresh_tokens (family_id);
-CREATE INDEX refresh_tokens_user_idx ON refresh_tokens (user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX refresh_tokens_client_account_idx ON refresh_tokens (client_account_id) WHERE client_account_id IS NOT NULL;
+-- Each token has at most one predecessor; the index also serves the
+-- self-reference when old tokens are purged.
+CREATE UNIQUE INDEX refresh_tokens_replaced_by_key ON refresh_tokens (replaced_by) WHERE replaced_by IS NOT NULL;
 CREATE INDEX refresh_tokens_expires_idx ON refresh_tokens (expires_at);
 
 -- "Esqueci a senha" codes (ADR 0011): 6 digits, stored as an HMAC-SHA256
@@ -97,17 +127,26 @@ CREATE TABLE password_reset_codes (
 
 CREATE INDEX password_reset_codes_user_idx ON password_reset_codes (user_id, created_at DESC);
 
--- No DELETE on users in milestone 2: staff accounts are never deleted yet.
-GRANT SELECT, INSERT, UPDATE ON users TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON client_accounts TO encomendo_app;
+-- Least privilege: UPDATE only on the columns the use cases change. No
+-- DELETE on users: staff accounts are never deleted yet.
+GRANT SELECT, INSERT ON users TO encomendo_app;
+GRANT UPDATE (name, password_hash, version, updated_at) ON users TO encomendo_app;
+GRANT SELECT, INSERT, DELETE ON client_accounts TO encomendo_app;
+GRANT UPDATE (name, version, updated_at) ON client_accounts TO encomendo_app;
 GRANT SELECT, INSERT, DELETE ON client_identities TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON client_login_codes TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON refresh_tokens TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON password_reset_codes TO encomendo_app;
+GRANT SELECT, INSERT, DELETE ON client_login_codes TO encomendo_app;
+GRANT UPDATE (attempts, used_at) ON client_login_codes TO encomendo_app;
+GRANT SELECT, INSERT, DELETE ON refresh_families TO encomendo_app;
+GRANT UPDATE (revoked_at) ON refresh_families TO encomendo_app;
+GRANT SELECT, INSERT, DELETE ON refresh_tokens TO encomendo_app;
+GRANT UPDATE (used_at, replaced_by, superseded_at) ON refresh_tokens TO encomendo_app;
+GRANT SELECT, INSERT, DELETE ON password_reset_codes TO encomendo_app;
+GRANT UPDATE (attempts, used_at) ON password_reset_codes TO encomendo_app;
 
 -- +goose Down
 DROP TABLE password_reset_codes;
 DROP TABLE refresh_tokens;
+DROP TABLE refresh_families;
 DROP TABLE client_login_codes;
 DROP TABLE client_identities;
 DROP TABLE client_accounts;

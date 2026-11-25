@@ -24,8 +24,10 @@ func TestMapError_TurnsPostgresCodesIntoSentinels(t *testing.T) {
 		{"serialization failure", &pgconn.PgError{Code: "40001"}, shared.ErrConflict},
 		{"deadlock", &pgconn.PgError{Code: "40P01"}, shared.ErrConflict},
 		{"foreign key violation", &pgconn.PgError{Code: "23503"}, shared.ErrInvalid},
-		{"check violation", &pgconn.PgError{Code: "23514"}, shared.ErrInvalid},
-		{"not null violation", &pgconn.PgError{Code: "23502"}, shared.ErrInvalid},
+		// The domain validates first, so these mean a bug: a logged 500,
+		// never a 400 that would end a session on /auth/refresh (ADR 0013).
+		{"check violation", &pgconn.PgError{Code: "23514"}, nil},
+		{"not null violation", &pgconn.PgError{Code: "23502"}, nil},
 		{"wrapped unique violation", fmt.Errorf("insert user: %w", &pgconn.PgError{Code: "23505"}), shared.ErrConflict},
 		// A row refused by a policy, or a missing grant, means the code above
 		// set the wrong scope: a bug, so it stays a logged 500 (ADR 0009).

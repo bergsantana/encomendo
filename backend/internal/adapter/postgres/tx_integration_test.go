@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/platform/config"
@@ -117,6 +119,24 @@ func insertTenant(ctx context.Context, id shared.TenantID) error {
 	return db.Exec(`INSERT INTO tenants (id, slug, name) VALUES (?, ?, 'Loja')`, id.String(), "tx-"+id.String()[24:]).Error
 }
 
+func renameTenant(ctx context.Context, id shared.TenantID, name string) error {
+	db, err := conn(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Exec(`UPDATE tenants SET name = ? WHERE id = ?`, name, id.String()).Error
+}
+
+func tenantName(t *testing.T, id shared.TenantID) string {
+	t.Helper()
+	var name string
+	if err := env.Seeder(t).DB().QueryRowContext(t.Context(),
+		`SELECT name FROM tenants WHERE id = $1`, id.String()).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
 func tenantExists(t *testing.T, id shared.TenantID) bool {
 	t.Helper()
 	var n int
@@ -175,7 +195,7 @@ func TestTxManager_NestedCallIsASavepointInTheSameTransaction(t *testing.T) {
 			if seen != 1 {
 				t.Error("the nested call does not see the outer call's uncommitted row")
 			}
-			if err := db.Exec(`UPDATE tenants SET name = 'Desfeito' WHERE id = ?`, id.String()).Error; err != nil {
+			if err := renameTenant(ctx, id, "Desfeito"); err != nil {
 				return err
 			}
 			return failure
@@ -188,11 +208,7 @@ func TestTxManager_NestedCallIsASavepointInTheSameTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var name string
-	if err := env.Seeder(t).DB().QueryRowContext(t.Context(),
-		`SELECT name FROM tenants WHERE id = $1`, id.String()).Scan(&name); err != nil {
-		t.Fatal(err)
-	}
+	name := tenantName(t, id)
 	if name != "Loja" {
 		t.Errorf("name = %q, want the inner update undone and the outer insert kept", name)
 	}
@@ -225,18 +241,89 @@ func TestTxManager_CanceledDuringFnRollsBack(t *testing.T) {
 	tx := NewTxManager(openApp(t, 2))
 	id := shared.TenantID(pgtest.NewID())
 	ctx, cancel := context.WithCancel(storeCtx(t, id))
+	// fn succeeds, but its context is gone before the commit: the commit
+	// fails and the row must not stay.
 	err := tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := insertTenant(ctx, id); err != nil {
 			return err
 		}
 		cancel()
-		return ctx.Err()
+		return nil
 	})
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("WithinTx = %v, want context.Canceled", err)
+		t.Fatalf("WithinTx = %v, want context.Canceled from the failed commit", err)
 	}
 	if tenantExists(t, id) {
 		t.Error("the row of a canceled transaction was committed")
+	}
+}
+
+// TestTxManager_CanceledNestedCallStillRollsBack is the regression for a
+// nested call whose own context is canceled: its rollback to the savepoint
+// must still run, or the outer commit keeps the inner writes.
+func TestTxManager_CanceledNestedCallStillRollsBack(t *testing.T) {
+	t.Parallel()
+	tx := NewTxManager(openApp(t, 2))
+	id := shared.TenantID(pgtest.NewID())
+	err := tx.WithinTx(storeCtx(t, id), func(ctx context.Context) error {
+		if err := insertTenant(ctx, id); err != nil {
+			return err
+		}
+		innerCtx, cancel := context.WithCancel(ctx)
+		inner := tx.WithinTx(innerCtx, func(ctx context.Context) error {
+			if err := renameTenant(ctx, id, "Desfeito"); err != nil {
+				return err
+			}
+			cancel()
+			return ctx.Err()
+		})
+		if !errors.Is(inner, context.Canceled) {
+			return inner
+		}
+		return nil // the outer work goes on without the failed inner part
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tenantName(t, id); got != "Loja" {
+		t.Errorf("name = %q, want the canceled inner update undone", got)
+	}
+}
+
+// TestTxManager_RefusesToCommitWhenAnUndoFails: if the rollback to a
+// savepoint fails, the inner writes may still be in the transaction, so the
+// whole transaction rolls back even though the outer fn succeeded.
+func TestTxManager_RefusesToCommitWhenAnUndoFails(t *testing.T) {
+	t.Parallel()
+	tx := NewTxManager(openApp(t, 2))
+	id := shared.TenantID(pgtest.NewID())
+	failure := errors.New("inner failed")
+	var inner error
+	err := tx.WithinTx(storeCtx(t, id), func(ctx context.Context) error {
+		if err := insertTenant(ctx, id); err != nil {
+			return err
+		}
+		inner = tx.WithinTx(ctx, func(ctx context.Context) error {
+			db, err := conn(ctx)
+			if err != nil {
+				return err
+			}
+			// Releasing the savepoint makes the rollback to it fail.
+			if err := db.Exec("RELEASE SAVEPOINT sp_1").Error; err != nil {
+				return err
+			}
+			return failure
+		})
+		return nil
+	})
+	if !errors.Is(inner, failure) {
+		t.Errorf("nested WithinTx = %v, want fn's error kept", inner)
+	}
+	if err == nil {
+		t.Error("the transaction committed after a failed rollback to a savepoint")
+	}
+	if tenantExists(t, id) {
+		t.Error("the outer row was committed although the transaction was broken")
 	}
 }
 
@@ -245,8 +332,9 @@ func TestTxManager_RLSRefusesARowOutsideTheScope(t *testing.T) {
 	tx := NewTxManager(openApp(t, 2))
 	scoped, other := shared.TenantID(pgtest.NewID()), shared.TenantID(pgtest.NewID())
 	err := tx.WithinTx(storeCtx(t, scoped), func(ctx context.Context) error { return insertTenant(ctx, other) })
-	if err == nil {
-		t.Error("insert of another store's row in a store's scope succeeded")
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Errorf("insert of another store's row = %v, want RLS to refuse it (42501)", err)
 	}
 	if tenantExists(t, other) {
 		t.Error("RLS let a row outside the scope in")

@@ -35,14 +35,16 @@ func TestTxManager_RefusesBeforeTouchingTheDatabase(t *testing.T) {
 		"client mixed with a tenant": {mixed, appshared.ErrInvalidScope},
 		"nested with another scope":  {nestedOther, appshared.ErrInvalidScope},
 	} {
-		called := false
-		err := tx.WithinTx(c.ctx, func(context.Context) error {
-			called = true
-			return nil
+		t.Run(name, func(t *testing.T) {
+			called := false
+			err := tx.WithinTx(c.ctx, func(context.Context) error {
+				called = true
+				return nil
+			})
+			if !errors.Is(err, c.want) || called {
+				t.Errorf("WithinTx = %v, called %v; want %v and no call", err, called, c.want)
+			}
 		})
-		if !errors.Is(err, c.want) || called {
-			t.Errorf("%s: WithinTx = %v, called %v; want %v and no call", name, err, called, c.want)
-		}
 	}
 }
 

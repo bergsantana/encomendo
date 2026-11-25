@@ -54,13 +54,23 @@ CREATE POLICY tenant_isolation ON outbox_events
     USING (tenant_id = current_tenant_id())
     WITH CHECK (tenant_id = current_tenant_id());
 
--- No DELETE on stores, settings or invitations in milestone 2: a store is
--- never deleted yet, and invitations are revoked, not deleted. The audit
--- log and the outbox are append-only; the app never reads the outbox.
-GRANT SELECT, INSERT, UPDATE ON tenants TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON memberships TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE ON tenant_settings TO encomendo_app;
-GRANT SELECT, INSERT, UPDATE ON invitations TO encomendo_app;
+-- Least privilege. UPDATE only on the columns the use cases change, so no
+-- row can move to another tenant and a store cannot change its own slug or
+-- lift its own suspension (status is the platform's). No DELETE on stores,
+-- settings or invitations in milestone 2: a store is never deleted yet, and
+-- invitations are revoked, not deleted. The audit log and the outbox are
+-- append-only; the app never reads the outbox.
+GRANT SELECT, INSERT ON tenants TO encomendo_app;
+GRANT UPDATE (name, niche, version, updated_at) ON tenants TO encomendo_app;
+GRANT SELECT, INSERT, DELETE ON memberships TO encomendo_app;
+GRANT UPDATE (role, version, updated_at) ON memberships TO encomendo_app;
+GRANT SELECT, INSERT ON tenant_settings TO encomendo_app;
+GRANT UPDATE (status_workflow_id, status_workflow_version, stock_enabled, production_enabled,
+    purchase_before_deposit, deposit_percent, assembly_days, safety_margin_days, whatsapp_phone,
+    version, updated_at) ON tenant_settings TO encomendo_app;
+GRANT SELECT, INSERT ON invitations TO encomendo_app;
+GRANT UPDATE (role, token_hash, invited_by, expires_at, accepted_at, revoked_at, updated_at)
+    ON invitations TO encomendo_app;
 GRANT SELECT, INSERT ON audit_log TO encomendo_app;
 GRANT INSERT ON outbox_events TO encomendo_app;
 

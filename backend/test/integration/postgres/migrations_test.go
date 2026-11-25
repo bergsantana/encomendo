@@ -101,6 +101,15 @@ func TestAppRole_CannotBypassTenantIsolation(t *testing.T) {
 	if _, err := app.ExecContext(ctx, `CREATE TABLE should_fail (id int)`); err == nil {
 		t.Error("encomendo_app created a table; it must not have CREATE on the schema")
 	}
+	// A temporary table could shadow a table a function names without a
+	// schema (deploy/postgres/database.sqlinc revokes TEMP with the rest).
+	var temp bool
+	if err := app.QueryRowContext(ctx, `SELECT has_database_privilege(current_database(), 'TEMP')`).Scan(&temp); err != nil {
+		t.Fatal(err)
+	}
+	if temp {
+		t.Error("encomendo_app may create temporary tables")
+	}
 }
 
 // TestOpen_ConnectsAsAppRole checks the adapter the API uses: pool settings

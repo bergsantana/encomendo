@@ -14,6 +14,8 @@ CREATE TABLE status_workflows (
     key        text        NOT NULL CHECK (key ~ '^[a-z][a-z0-9_]{1,62}$'),
     name       text        NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80), -- pt-BR
     -- New stores take the default until niche templates suggest one (ADR 0006).
+    -- The one mutable column: publishing a new version of the default preset
+    -- moves the flag to it, in the migration that publishes it.
     is_default boolean     NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id, version),

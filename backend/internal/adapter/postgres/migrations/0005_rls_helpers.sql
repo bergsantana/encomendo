@@ -27,13 +27,21 @@ CREATE FUNCTION current_client_account_id() RETURNS uuid
 -- +goose StatementEnd
 
 -- audit_row records a change to a tenant table in audit_log (0006_platform):
--- which row, what it was and became, and app.user_id as the actor. It runs
--- as the caller, so the audit row passes the same RLS check as the change.
--- Secret hashes are left out of the copies. A delete cascading from a
--- deleted store is not recorded, because the store's log goes with it.
+-- which row, what it was and became, and app.user_id as the actor.
+--   - It runs as the caller, so the audit row passes the same RLS check as
+--     the change. The app can therefore also write audit rows itself, and it
+--     sets app.user_id: the log records what the API did, it is not proof
+--     against the API.
+--   - Every column whose name ends in _hash is left out of the copies, so no
+--     token or code hash reaches a log that staff can read.
+--   - A delete cascading from a deleted store is not recorded, because the
+--     store's log goes with it.
+--   - search_path is fixed, so a table the caller could create elsewhere
+--     never captures the rows (the helpers above stay unset so they inline).
 -- +goose StatementBegin
 CREATE FUNCTION audit_row() RETURNS trigger
     LANGUAGE plpgsql
+    SET search_path = pg_catalog, public, pg_temp
     AS $$
 DECLARE
     tenant uuid;
@@ -49,10 +57,12 @@ BEGIN
         tenant := NEW.tenant_id;
     END IF;
     IF TG_OP <> 'INSERT' THEN
-        old_row := to_jsonb(OLD) - 'token_hash';
+        SELECT jsonb_object_agg(key, value) INTO old_row
+        FROM jsonb_each(to_jsonb(OLD)) WHERE key NOT LIKE '%\_hash';
     END IF;
     IF TG_OP <> 'DELETE' THEN
-        new_row := to_jsonb(NEW) - 'token_hash';
+        SELECT jsonb_object_agg(key, value) INTO new_row
+        FROM jsonb_each(to_jsonb(NEW)) WHERE key NOT LIKE '%\_hash';
     END IF;
     INSERT INTO audit_log (tenant_id, table_name, action, actor_user_id, old_row, new_row)
     VALUES (tenant, TG_TABLE_NAME, lower(TG_OP), current_user_id(), old_row, new_row);

@@ -2,7 +2,10 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
+	"sync"
 
 	"gorm.io/gorm"
 
@@ -36,11 +39,42 @@ type txKey struct{}
 type txConn struct {
 	db    *gorm.DB
 	scope appshared.Scope
+	root  *txRoot
+}
+
+// txRoot is the state one database transaction shares with its savepoints.
+type txRoot struct {
+	mu         sync.Mutex
+	savepoints int
+	// broken is set when undoing a failed nested call failed, so the nested
+	// call's writes may still be in the transaction: it must not commit.
+	broken error
+}
+
+func (r *txRoot) nextSavepoint() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.savepoints++
+	return "sp_" + strconv.Itoa(r.savepoints)
+}
+
+func (r *txRoot) breakWith(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.broken == nil {
+		r.broken = err
+	}
+}
+
+func (r *txRoot) err() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.broken
 }
 
 // WithinTx follows the appshared.TxManager contract. A nested call becomes a
-// savepoint of the outer transaction (GORM's nested Transaction), so its
-// failure undoes only its own writes and events.
+// savepoint of the outer transaction, so its failure undoes only its own
+// writes and events.
 func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -53,24 +87,26 @@ func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) e
 		if outer.scope != scope {
 			return appshared.ErrInvalidScope
 		}
-		return run(ctx, outer.db.WithContext(ctx), scope, false, fn)
+		return nested(ctx, outer, fn)
 	}
-	return run(ctx, m.db.WithContext(ctx), scope, true, fn)
+	return m.begin(ctx, scope, fn)
 }
 
-// run calls fn inside a transaction on db, or a savepoint when db is already
-// in one. fn's error comes back unchanged; a failure to begin, set the scope
-// or commit is mapped like a repository error.
-func run(ctx context.Context, db *gorm.DB, scope appshared.Scope, setScope bool, fn func(ctx context.Context) error) error {
+// begin runs fn in a new transaction that starts by setting scope. fn's
+// error comes back unchanged; a failure to begin, set the scope or commit is
+// mapped like a repository error. A panic rolls back and propagates.
+func (m *TxManager) begin(ctx context.Context, scope appshared.Scope, fn func(ctx context.Context) error) error {
+	root := &txRoot{}
 	var fnErr error
-	err := db.Transaction(func(tx *gorm.DB) error {
-		if setScope {
-			if err := tx.Exec(setScopeSQL, setting(scope.TenantID), setting(scope.UserID), setting(scope.ClientAccountID)).Error; err != nil {
-				return fmt.Errorf("set rls scope: %w", err)
-			}
+	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(setScopeSQL, setting(scope.TenantID), setting(scope.UserID), setting(scope.ClientAccountID)).Error; err != nil {
+			return fmt.Errorf("set rls scope: %w", err)
 		}
-		fnErr = fn(context.WithValue(ctx, txKey{}, &txConn{db: tx, scope: scope}))
-		return fnErr
+		fnErr = fn(context.WithValue(ctx, txKey{}, &txConn{db: tx, scope: scope, root: root}))
+		if fnErr != nil {
+			return fnErr
+		}
+		return root.err()
 	})
 	if fnErr != nil {
 		return fnErr
@@ -81,15 +117,32 @@ func run(ctx context.Context, db *gorm.DB, scope appshared.Scope, setScope bool,
 	return nil
 }
 
-// conn returns the transaction in ctx, bound to ctx. Repositories run only
-// inside TxManager.WithinTx: outside it no scope is set and RLS would show
-// nothing, so they fail loudly with appshared.ErrNoTransaction instead.
-func conn(ctx context.Context) (*gorm.DB, error) {
-	c, ok := ctx.Value(txKey{}).(*txConn)
-	if !ok {
-		return nil, appshared.ErrNoTransaction
+// nested runs fn under a savepoint of outer's transaction and rolls back to
+// it when fn fails or panics. The savepoint statements run themselves, with
+// their errors checked, because the GORM Postgres driver discards them; and
+// they ignore the cancellation of ctx, because a canceled inner context must
+// not stop the undo of the inner work. If the undo still fails, the whole
+// transaction is refused at commit.
+func nested(ctx context.Context, outer *txConn, fn func(ctx context.Context) error) (err error) {
+	sp := outer.root.nextSavepoint()
+	db := outer.db.WithContext(context.WithoutCancel(ctx))
+	if err := db.Exec("SAVEPOINT " + sp).Error; err != nil {
+		return fmt.Errorf("savepoint: %w", mapError(err))
 	}
-	return c.db.WithContext(ctx), nil
+	done := false
+	defer func() {
+		if done {
+			return // released with the transaction at commit
+		}
+		if rbErr := db.Exec("ROLLBACK TO SAVEPOINT " + sp).Error; rbErr != nil {
+			rbErr = fmt.Errorf("roll back to savepoint: %w", mapError(rbErr))
+			outer.root.breakWith(rbErr)
+			err = errors.Join(err, rbErr)
+		}
+	}()
+	err = fn(context.WithValue(ctx, txKey{}, &txConn{db: outer.db, scope: outer.scope, root: outer.root}))
+	done = err == nil
+	return err
 }
 
 type scopeID interface {

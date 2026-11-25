@@ -122,6 +122,7 @@ func TestTenantTables(t *testing.T) {
 				caseWrite(t, app, w, tt, "d", "DELETE FROM "+tt.name+" WHERE "+tt.column+" = $1")
 			})
 			t.Run("no tenant set sees and writes nothing", func(t *testing.T) { caseNoTenant(t, app, w, tt) })
+			t.Run("own row cannot move to another tenant", func(t *testing.T) { caseMove(t, app, w, tt) })
 		})
 	}
 }
@@ -220,6 +221,19 @@ func caseNoTenant(t *testing.T, app *sql.DB, w world, tt tenantTable) {
 	})
 	if !refused(err) {
 		t.Errorf("insert into %s with no tenant set: err = %v, want 42501", tt.name, err)
+	}
+}
+
+// caseMove rewrites the tenant column of store A's own rows to B. Column
+// grants refuse it, and WITH CHECK would too.
+func caseMove(t *testing.T, app *sql.DB, w world, tt tenantTable) {
+	err := inScope(t, app, storeA(w), func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE "+tt.name+" SET "+tt.column+" = $1 WHERE "+tt.column+" = $2",
+			w.b.String(), w.a.String())
+		return err
+	})
+	if !refused(err) {
+		t.Errorf("moving %s rows from A to B: err = %v, want 42501", tt.name, err)
 	}
 }
 

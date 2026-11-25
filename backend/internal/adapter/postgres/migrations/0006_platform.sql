@@ -4,7 +4,9 @@
 --
 -- Their rows are written by a trigger or by the outbox adapter, not built as
 -- aggregates in Go, so their ids come from an identity column rather than a
--- Go UUIDv7. The id also gives the order rows were written in.
+-- Go UUIDv7 (docs/architecture.md section 7). An id gives insert order, not
+-- commit order: a lower id can commit after a higher one, so a reader must
+-- never use the last id it saw as a cursor.
 
 -- +goose Up
 CREATE TABLE audit_log (

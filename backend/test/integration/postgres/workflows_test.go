@@ -4,6 +4,7 @@ package postgres_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/bergsantana/encomendo/backend/test/integration/pgtest"
@@ -89,6 +90,13 @@ func checkPreset(t *testing.T, preset string, statuses []seededStatus) {
 		phases[s.phase] = true
 		if s.label == "" || s.clientLabel == "" {
 			t.Errorf("%s: %s needs a label and a client label", preset, s.key)
+		}
+		// Clients never see suppliers, purchases or "Pode atrasar"
+		// (docs/product/design-document.md, System rules).
+		for _, internal := range []string{"fornecedor", "compra", "atras"} {
+			if strings.Contains(strings.ToLower(s.clientLabel), internal) {
+				t.Errorf("%s: client label %q of %s names internal work (%q)", preset, s.clientLabel, s.key, internal)
+			}
 		}
 	}
 	for _, required := range []string{"draft", "awaiting_deposit", "ready", "handed_over"} {

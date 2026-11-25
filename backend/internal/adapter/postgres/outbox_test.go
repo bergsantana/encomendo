@@ -45,9 +45,11 @@ func TestOutbox_RefusesBeforeAnySQL(t *testing.T) {
 		"not JSON":          {storeTx, unencodable{Fn: func() {}}, appshared.ErrInvalidEvent},
 	}
 	for name, c := range cases {
-		if err := NewOutbox().Publish(c.ctx, c.ev); !errors.Is(err, c.want) {
-			t.Errorf("%s: Publish = %v, want %v", name, err, c.want)
-		}
+		t.Run(name, func(t *testing.T) {
+			if err := NewOutbox().Publish(c.ctx, c.ev); !errors.Is(err, c.want) {
+				t.Errorf("Publish = %v, want %v", err, c.want)
+			}
+		})
 	}
 }
 

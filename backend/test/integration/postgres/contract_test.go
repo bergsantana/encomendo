@@ -4,7 +4,10 @@ package postgres_test
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/bergsantana/encomendo/backend/internal/adapter/postgres"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
@@ -63,7 +66,8 @@ func TestOutbox_AppCannotReadTheOutbox(t *testing.T) {
 	t.Parallel()
 	app := env.Open(t, pgtest.App)
 	_, err := app.ExecContext(t.Context(), `SELECT 1 FROM outbox_events LIMIT 1`)
-	if err == nil {
-		t.Error("encomendo_app can read outbox_events; it should only insert")
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Errorf("encomendo_app reading outbox_events: err = %v, want permission denied (42501)", err)
 	}
 }

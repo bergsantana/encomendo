@@ -373,7 +373,7 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 | Token | Format | Lifetime | Client storage | Contents |
 | --- | --- | --- | --- | --- |
 | Access | JWT, EdDSA, `kid` header | 15 min | Memory (web); encrypted DataStore + Keystore (Android) | `sub`, `tid`, `role`, `aud`, `jti`, `iat`, `exp`, `iss` |
-| Refresh | Opaque 32 random bytes | 30 days, rotated on every use | httpOnly Secure SameSite=Strict cookie (web; client cookie on `.encomendo.com.br` so one login works on every store page); Keystore (Android) | Server stores only SHA-256 hash + `family_id`, `user_id` or `client_account_id`, `tenant_id` |
+| Refresh | Opaque 32 random bytes | 30 days, rotated on every use | httpOnly Secure SameSite=Strict cookie (web; client cookie on `.encomendo.com.br` so one login works on every store page); Keystore (Android) | Server stores only SHA-256 hash + `family_id` (the family holds `user_id` or `client_account_id`), `tenant_id` |
 
 - `aud` is `backoffice` (staff, carries `tid` and `role`) or `client` (carries `sub` = client account id, no `tid`). Client tokens are rejected on admin routes and staff tokens on `/api/v1/me/*`.
 - Refresh rotation with reuse detection: a reused refresh token revokes its whole family. A retry within 2 minutes, while the token it was rotated to is unused, rotates again instead (ADR 0013). Server failures answer 5xx, never 401.
@@ -418,7 +418,7 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 4. No tenant set → zero rows (fail closed). The TxManager sets every setting on every transaction, to `''` when unset, and policies read them through the `0005_rls_helpers` functions that turn `''` into NULL: on a pooled connection, `current_setting(…, true)` returns `''` rather than NULL once any earlier transaction set it (ADR 0009).
 5. Store page routes resolve the tenant from the Host subdomain, then set the same variable; public reads expose only published data.
 6. Cross-tenant platform jobs (the deadline check) use a separate `encomendo_platform` role from `cmd/worker`, never from the API.
-7. Client area requests set `app.client_account_id` instead of `app.tenant_id`. The tables a client reads (`orders`, `order_items`, `payments`, `tenants` name only, and the global `status_workflows` / `workflow_statuses` for step names) get a second, `SELECT`-only policy: `client_account_id = current_client_account_id()` (the global workflow tables need no tenant policy). No write policy uses it, and supplier, cost and purchasing tables have no client policy at all.
+7. Client area requests set `app.client_account_id` instead of `app.tenant_id`. The tables a client reads (`orders`, `order_items`, `payments`, `tenants` name only, and the global `status_workflows` / `workflow_statuses` for step names) get a second, `SELECT`-only policy: `current_tenant_id() IS NULL AND client_account_id = current_client_account_id()` (the global workflow tables need no tenant policy). The tenant guard keeps it off in every store scope, like the store picker policies (ADR 0010), and the RLS suite lists every policy besides `tenant_isolation`. No write policy uses it, and supplier, cost and purchasing tables have no client policy at all.
 
 ```sql
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
@@ -481,7 +481,8 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. V
 | `client_accounts`, `client_identities` | No | Global client accounts; identities: verified email (`citext unique`) or Google `sub` |
 | `client_login_codes` | No | Hashed one-time codes, `expires_at`, attempts |
 | `password_reset_codes` | No | HMAC of a 6-digit code, `expires_at`, `attempts` (at most 5), `used_at`; only the newest per user counts (ADR 0011) |
-| `refresh_tokens` | No | `token_hash`, `family_id`, `user_id` or `client_account_id`, `tenant_id`, `expires_at`, `used_at`, `replaced_by` (ADR 0013), `revoked_at` |
+| `refresh_families` | No | One login: `audience`, `user_id` or `client_account_id`, `revoked_at`; every rotation locks it (ADR 0013) |
+| `refresh_tokens` | No | `token_hash`, `family_id`, `audience`, `tenant_id`, `access_jti`, `expires_at`, `used_at`, `replaced_by`, `superseded_at` (ADR 0013) |
 | `status_workflows`, `workflow_statuses` | No | Global presets, read-only to tenants; `(id, version)` immutable once published; statuses with `key`, `label`, `client_label`, `phase`, `position` |
 | `tenants` | Self | `slug unique` (the subdomain label; reserved words blocked), `niche`, `status`; policy `id = current tenant` |
 | `memberships` | Yes | `(tenant_id, user_id) unique`, `role`; policy also lets a user see their own memberships for tenant switching |
@@ -505,7 +506,7 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. V
 | `storefronts`, `storefront_sections` | Yes | Template id, logo, brand color, cover photo; sections on/off (Kits prontos, Monte o seu, Acompanhar pedido) |
 | `audit_log`, `outbox_events`, `idempotency_keys` | Yes | Written by triggers or in the same transaction; append-only for `encomendo_app`, which never reads the outbox |
 
-**Conventions:** UUIDv7 primary keys generated in Go. Every tenant table has `tenant_id uuid not null references tenants`, an index starting with `tenant_id`, `created_at`, `updated_at`. Money = `bigint` cents + `char(3)` currency. Composite foreign keys `(tenant_id, id)` so a row can never reference another tenant's row.
+**Conventions:** UUIDv7 primary keys generated in Go. The exception is rows written by a trigger or an adapter rather than built as aggregates (`audit_log`, `outbox_events`): `bigint` identity, which gives insert order, not commit order, so never read it as a cursor. Every tenant table has `tenant_id uuid not null references tenants`, an index starting with `tenant_id`, `created_at`, `updated_at`. Money = `bigint` cents + `char(3)` currency. Composite foreign keys `(tenant_id, id)` so a row can never reference another tenant's row.
 
 ---
 

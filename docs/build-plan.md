@@ -22,13 +22,13 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 6 | 23 | In progress: contract and database done (steps 1 and 2 of 7), mobile API client, session and auth graph |
-| 3 | Catalog and suppliers | 0 | 13 | Not started |
+| 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **28** | **117** | **about 24%** |
+|   | **All milestones** | **28** | **118** | **about 24%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -133,6 +133,7 @@ Goal: the owner can describe what they sell, where it comes from and what it cos
 - [ ] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (swap price rule tested)
 - [ ] `domain/supplier`: supplier, supplier item (lead time, cost, backup supplier)
 - [ ] `app/catalog` and `app/supplier` services, cached queries, fakes
+- [ ] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`)
 - [ ] Migrations for catalog and suppliers, with RLS policies and tests
 - [ ] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
 - [ ] `adapter/storage`: local and S3-compatible photo storage

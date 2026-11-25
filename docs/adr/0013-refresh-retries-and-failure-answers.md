@@ -22,14 +22,24 @@ The mobile and web sessions pointed out what serializing does not cover, and wha
 
 - Presenting a refresh token again is a **retry**, not reuse, when both hold:
   - it was first used at most **2 minutes** ago;
-  - the token it was rotated to has been neither used nor revoked.
-- A retry revokes that unused successor and does what the call asks again, from the presented token: refresh rotates it within its family for the same store; switch rotates it for the requested store, after the same membership check. Each family therefore keeps exactly one live token.
+  - the token it was rotated to has been neither used nor superseded.
+- A retry supersedes that unused successor and does what the call asks again, from the presented token: refresh rotates it within its family for the same store; switch rotates it for the requested store, after the same membership check. Each family therefore keeps exactly one live token.
 - The 2 minutes count from the first use, so retries never extend the window. Outside it, or once the successor has been used, presenting the token is reuse, as in ADR 0010: the family is revoked and the answer is `401 unauthenticated`. The API still never says which case it was.
-- Rotation locks the presented token's row, so two presentations of one token are handled one after the other.
 - **Why 2 minutes:** a 30-second timeout plus one or two retries fit inside it, and it is short next to the 15 minutes between an active client's refreshes.
-- **Why theft detection still works:** a thief who presents a stolen token inside the window gets the family's only live token. The owner's next refresh then presents a revoked token, which is reuse and revokes the family, the thief's token included. That is the same outcome as a thief who uses a stolen token before its owner does. The window only adds 2 minutes, after each rotation, in which a stolen old token is still worth trying.
+- **Why theft detection still works:** a thief who presents a stolen token inside the window gets the family's only live token. The owner's next refresh then presents a superseded token, which is reuse and revokes the family, the thief's token included. That next refresh can be days away when the owner's app stays closed, and until then the thief keeps the session. A thief who uses a stolen token before its owner does keeps it just as long, so this is not new. The window only adds 2 minutes, after each rotation, in which a stolen old token is still worth trying.
 - **Clients still serialize refreshes** (the Web Lock and the Android mutex of ADR 0010). The window covers lost answers, not parallel refreshes: two refreshes in flight at once leave one client holding a revoked token.
-- The access token issued with a revoked successor stays valid until it expires, at most 15 minutes. In the lost-answer case nobody received it.
+- The access token issued with a superseded successor stays valid until it expires, at most 15 minutes. In the lost-answer case nobody received it.
+
+### One family, one lock
+
+The first design marked each token row revoked. The security review of `m2-db` showed the race in that: a revoke that runs while a rotation is inserting a successor does not see the new row, so the successor stays live. A thief holding a stolen session could keep a rotation in flight and survive the owner's password reset.
+
+- A family is a row of `refresh_families`: one login, its owner and its audience. Every rotation, retry and switch starts by locking that row (`SELECT … FOR UPDATE`) and refuses a revoked family. So everything that happens to one login happens one step at a time, a retry included.
+- Revoking a family, on reuse or logout, sets `refresh_families.revoked_at`. A token is live only when it is unused (or a valid retry), not superseded, not expired, and its family is live. A revoke that meets a rotation in flight waits for it, then kills the family with the token it created.
+- Revoking every family of an account, on password reset, first updates the `users` row (the new password hash), then the families. Login and invitation acceptance read the password hash `FOR SHARE` and create their family in the same transaction. A login that started first makes the reset wait and is then revoked with the rest; a login that starts after the reset waits for it and then reads the new hash.
+- A token's own `superseded_at` means only that a retry replaced it before anyone used it; presenting it later is reuse. A dead family is never recorded on the token rows.
+- A successor is always in its token's family, and a token's audience is its family's (composite keys), so lookups by hash ask for staff tokens only and a client token never carries a store.
+- Revoking a family also puts the access tokens issued with it in the last 15 minutes on the Redis denylist, from `refresh_tokens.access_jti`, so the thief's access token stops too.
 
 ### Failures are never 401
 
@@ -52,7 +62,8 @@ Both apps end the session only when `/auth/refresh` answers 400, 401 or 403 (ADR
 
 ## Consequences
 
-- `m2-db` adds `replaced_by` (the successor's id) to `refresh_tokens`, next to `used_at` and `revoked_at`.
+- `m2-db` adds `refresh_families`, and `replaced_by`, `superseded_at` and `access_jti` on `refresh_tokens`.
 - `m2-domain` and `m2-auth` test the window's edges: a retry inside it, a retry after the successor was used, a retry after 2 minutes, repeated retries, two presentations at once, and a failing repository that must not become `ErrUnauthenticated`.
+- The repositories of `m2-integrate` test the locks against Postgres: presenting a successor superseded by a retry revokes the family, the retry's token included; a revoke during a rotation in flight leaves no live token; a password reset during a login leaves no live family.
 - `m2-integrate` adds the HTTP tests above, plus a 5xx (not 401) on `/auth/refresh` when the store behind it fails.
 - `docs/architecture.md` 5.1, 7, 8.1 and 8.2 point here and at ADR 0012.
