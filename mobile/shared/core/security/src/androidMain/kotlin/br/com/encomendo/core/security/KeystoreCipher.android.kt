@@ -33,7 +33,23 @@ class KeystoreCipher(
         }
 
     // Two first-time seals at once must not each create a key under the same alias.
-    private fun key(): SecretKey = synchronized(keyLock) { existingKey() ?: newKey() }
+    private fun key(): SecretKey = synchronized(keyLock) { loadableKey() ?: newKey() }
+
+    // A key the Keystore can no longer load would make every login fail. open() already
+    // treats it as gone, so replace it: the blob sealed next overwrites the unreadable one.
+    private fun loadableKey(): SecretKey? =
+        try {
+            existingKey()
+        } catch (_: GeneralSecurityException) {
+            dropKey()
+        } catch (_: ProviderException) {
+            dropKey()
+        }
+
+    private fun dropKey(): SecretKey? {
+        KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }.deleteEntry(alias)
+        return null
+    }
 
     private fun existingKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }

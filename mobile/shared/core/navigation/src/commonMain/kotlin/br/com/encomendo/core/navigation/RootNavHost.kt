@@ -5,7 +5,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation.NavGraphBuilder
@@ -24,30 +23,29 @@ fun RootRoute(
     viewModel: RootViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    RootNavHost(state = state, sessionViewModels = viewModel.sessionViewModels, modifier = modifier)
+    RootNavHost(state = state, modifier = modifier)
 }
 
 /**
  * RootNavHost hosts every graph of the management app: the auth graph while
  * signed out, the management graph while signed in. Screen ViewModels live in
- * [sessionViewModels], which the caller clears when the session changes.
+ * the session's own store ([RootUiState.Session.screens]).
  */
 @Composable
 fun RootNavHost(
     state: RootUiState,
-    sessionViewModels: ViewModelStoreOwner,
     modifier: Modifier = Modifier,
 ) {
-    val signedIn =
+    val session =
         when (state) {
             RootUiState.Loading -> return
-            RootUiState.SignedOut -> false
-            RootUiState.SignedIn -> true
+            is RootUiState.Session -> state
         }
+    val signedIn = session is RootUiState.SignedIn
     // A fresh back stack per session: Back never leads from the login into
     // management screens after a logout, nor from Hoje back to the login.
-    key(signedIn) {
-        CompositionLocalProvider(LocalViewModelStoreOwner provides sessionViewModels) {
+    key(session.screens) {
+        CompositionLocalProvider(LocalViewModelStoreOwner provides session.screens) {
             NavHost(
                 navController = rememberNavController(),
                 startDestination = if (signedIn) BackofficeGraph else AuthGraph,
