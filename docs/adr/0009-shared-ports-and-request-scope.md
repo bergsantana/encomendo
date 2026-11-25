@@ -1,6 +1,6 @@
 # 0009 — Shared application ports, the request scope and `authz`
 
-- Status: accepted
+- Status: accepted; amended by `m2-domain` (fakes roll back; `SecretGenerator`)
 - Date: 2026-11-25
 
 ## Context
@@ -58,8 +58,10 @@
 - **Cache keys** are an `appshared.Key` built only by `TenantKey(tenant, parts…)` (`t:{id}:…`) or `GlobalKey(parts…)` (`g:…`). Parts are limited to `[A-Za-z0-9._-]`, so no part can hold the separator or a Redis glob character and reach another tenant's keys. `DeleteByPrefix(p)` deletes `p` and `p:*` only.
 - **Cache failures never fail a request.** An unreachable cache is a miss or a no-op. A stored value that no longer decodes into the caller's type (a deploy changed it) is a miss, the entry is dropped, and `dst` stays untouched. The adapter logs both.
 - **Events need a transaction and a tenant.** `EventPublisher.Publish` returns `ErrNoTransaction` outside one, and `ErrEventWithoutTenant` when the transaction's scope has no tenant, because `outbox_events` is a tenant table under RLS. Work done before a store exists (sign-up, password reset) publishes nothing. An event published in a failed nested call is dropped with it.
+- **Secrets** (added in `m2-domain`). `appshared.SecretGenerator` draws 32 random bytes; `domain/shared.Secret` encodes them (43 characters of URL-safe base64) and hashes them (SHA-256). Refresh tokens, invitation links and reset codes take their randomness from it, so tests fix it, as they fix ids. The real generator (`crypto/rand`) comes with `adapter/auth`.
 - **IDs.** `domain/shared.NewV7(unixMilli, random)` builds a UUIDv7 as a pure function, so the real generator and `sharedfake.IDs` produce the same layout. Ids keep their order even if the wall clock steps back. `Clock.Now` makes no such promise.
-- **Fakes and contract suites.** `sharedfake.TxManager` emulates savepoints for staged work (events). It does not roll back other fakes' writes; rollback is tested against Postgres.
+- **Fakes and contract suites.** `sharedfake.TxManager` emulates savepoints for staged work (events).
+  - *Amended in `m2-domain`:* it also runs the undo steps repository fakes register with `sharedfake.OnRollback` (through `KeepOnRollback`) when a transaction or savepoint fails. A failed use case then leaves no trace in the fakes, as with Postgres, and unit tests can tell work that must commit despite an error from work that must not. The case that needed it: a wrong password reset code is counted and committed although the call fails (ADR 0011). Rollback is still also tested against Postgres.
 - Contract suites live in `test/contract/<ctx>/` as importable `Run…Contract` functions. The fakes run them in `make test` (the unit job now includes `./test/contract/...`), and real adapters run them in `test/integration`.
 
 ## Consequences

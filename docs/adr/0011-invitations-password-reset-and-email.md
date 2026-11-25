@@ -1,6 +1,6 @@
 # 0011 — Staff invitations, password reset and email in milestone 2
 
-- Status: accepted
+- Status: accepted; "No context cycle" refined by `m2-domain`
 - Date: 2026-11-25
 
 ## Context
@@ -63,6 +63,8 @@ The reserved slugs are the labels of the configured admin and API hosts, plus `w
 ### No context cycle
 
 `identity` reads memberships from `tenancy` (login, switch, accept), and `tenancy` reads users by email from `identity` (invite). Each side exposes a read-only query type that depends only on its own repositories. `adapter/inproc` implements the other side's port on top of it. `main.go` builds both query types before either service, so no service needs the other service.
+
+*Refined in `m2-domain`:* accepting also writes in `tenancy` (it uses the invitation up and adds the membership). `app/tenancy.Lookup` does that next to its queries. Like them it depends only on `tenancy`'s repositories and the event publisher, so the rule above still holds: `identity.Directory` and `tenancy.Lookup` come first in `main.go`, then both services. Accepting reads the invitation in one short transaction scoped to its store before argon2id runs, then uses it up in a second one scoped to the store, then builds the session in a third scoped to the user (ADR 0013: argon2id never runs inside a transaction).
 
 ## Consequences
 

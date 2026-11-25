@@ -3,7 +3,8 @@
 // 0009). Every fake passes the same contract suite as its real adapter
 // (test/contract/sharedports).
 //
-// The fake TxManager does not roll back other fakes' writes, but it does
-// hold events back until the transaction succeeds, so "an event exists only
-// if its change committed" holds in use case tests too.
+// The fake TxManager holds events back until the transaction succeeds, and
+// undoes the writes repository fakes register with OnRollback when it
+// fails, so "a change and its event exist only if the transaction
+// committed" holds in use case tests too.
 package fake

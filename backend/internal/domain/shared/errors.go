@@ -60,3 +60,26 @@ func (e *ValidationError) Error() string {
 
 // Unwrap makes errors.Is(err, ErrInvalid) true for every ValidationError.
 func (e *ValidationError) Unwrap() error { return ErrInvalid }
+
+// MergeValidation joins the fields of every ValidationError in errs, in
+// order, so one input reports all its invalid fields at once. It returns nil
+// when every error is nil. The first error that is not a ValidationError
+// comes back unchanged instead, because it is a bug or an outage, not bad
+// input, and must not become a 400.
+func MergeValidation(errs ...error) error {
+	var fields []FieldError
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		var ve *ValidationError
+		if !errors.As(err, &ve) {
+			return err
+		}
+		fields = append(fields, ve.Fields...)
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return NewValidationError(fields...)
+}

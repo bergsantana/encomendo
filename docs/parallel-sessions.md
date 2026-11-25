@@ -25,7 +25,7 @@ How to split the build plan across worktree sessions without collisions. `docs/b
 
 ## Later milestones (plan, refine when you get there)
 
-- **M3:** `m3-contract` (OpenAPI, then) → `m3-catalog`, `m3-supplier`, `m3-web-catalogo`, `m3-mobile-catalogo` → `m3-integrate`. Migrations `0006`, `0007` go to one session.
+- **M3:** `m3-contract` (OpenAPI, then) → `m3-catalog`, `m3-supplier`, `m3-web-catalogo`, `m3-mobile-catalogo` → `m3-integrate`. The catalog and supplier migrations, numbered as they land (ADR 0014), go to one session.
 - **M4:** `m4-workflow` (pure domain + `0003` tests), `m4-schedule` (pure functions) and `m4-customer` in parallel → `m4-order` → `m4-contract` → web and mobile screens in parallel → `m4-integrate`. Build payments as manual; ask before PIX.
 - **M5, M6:** same shape: contract, backend contexts, web and mobile in parallel, integrate.
 - **M7:** blocked on SEO and custom domains. Ask first.

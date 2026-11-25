@@ -9,9 +9,11 @@ import (
 )
 
 // TxManager is a TxManager without a database. It records the scope of
-// every call, so a use case test can check that the right tenant was set,
-// and it runs the work staged by other fakes (such as Events) only when the
-// transaction commits. Nested calls behave like savepoints.
+// every call, so a use case test can check that the right tenant was set;
+// it runs the work staged by other fakes (such as Events) only when the
+// transaction commits; and it runs the undo steps repository fakes register
+// with OnRollback when the transaction fails. Nested calls behave like
+// savepoints.
 type TxManager struct {
 	mu     sync.Mutex
 	scopes []appshared.Scope
@@ -27,9 +29,10 @@ type txKey struct{}
 // txState is one transaction or savepoint: the scope it started with (what
 // RLS would see) and the work other fakes stage until it commits.
 type txState struct {
-	scope    appshared.Scope
-	mu       sync.Mutex
-	onCommit []func()
+	scope      appshared.Scope
+	mu         sync.Mutex
+	onCommit   []func()
+	onRollback []func()
 }
 
 func (s *txState) stage(fn func()) {
@@ -38,20 +41,69 @@ func (s *txState) stage(fn func()) {
 	s.onCommit = append(s.onCommit, fn)
 }
 
-// adopt moves a released savepoint's work into s.
+// adopt moves a released savepoint's work and undo steps into s, so a
+// later failure of s undoes them too.
 func (s *txState) adopt(child *txState) {
 	child.mu.Lock()
-	work := child.onCommit
+	work, undo := child.onCommit, child.onRollback
 	child.mu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.onCommit = append(s.onCommit, work...)
+	s.onRollback = append(s.onRollback, undo...)
+}
+
+// rollback runs the undo steps, newest first.
+func (s *txState) rollback() {
+	s.mu.Lock()
+	undo := s.onRollback
+	s.onRollback = nil
+	s.mu.Unlock()
+	for i := len(undo) - 1; i >= 0; i-- {
+		undo[i]()
+	}
+}
+
+// OnRollback registers undo to run if the transaction in ctx, or the
+// savepoint it is in, fails; undo steps run newest first. Repository fakes
+// call it, through KeepOnRollback, before every write, so a failed use case
+// leaves no trace in them, as with Postgres, and a test can tell work that
+// must commit despite an error (a wrong reset code) from work that must
+// not. Outside a transaction it does nothing.
+func OnRollback(ctx context.Context, undo func()) {
+	if s := txFrom(ctx); s != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.onRollback = append(s.onRollback, undo)
+	}
+}
+
+// KeepOnRollback registers the restoring of m[k] to its value now, or its
+// absence, if the transaction in ctx fails. Call it with mu held, before
+// changing m[k]; the restore takes mu itself.
+func KeepOnRollback[K comparable, V any](ctx context.Context, mu sync.Locker, m map[K]V, k K) {
+	old, had := m[k]
+	OnRollback(ctx, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if had {
+			m[k] = old
+		} else {
+			delete(m, k)
+		}
+	})
 }
 
 func txFrom(ctx context.Context) *txState {
 	s, _ := ctx.Value(txKey{}).(*txState) // nil means no transaction
 	return s
 }
+
+// InTx reports whether ctx carries a transaction of a fake TxManager. The
+// repository fakes of each context call it and return ErrNoTransaction
+// otherwise, as adapter/postgres does, so a use case that reads outside
+// WithinTx fails in its unit tests too.
+func InTx(ctx context.Context) bool { return txFrom(ctx) != nil }
 
 // WithinTx follows the TxManager contract: fn runs once with the caller's
 // scope and its error is returned unchanged; a canceled ctx or an invalid
@@ -72,6 +124,7 @@ func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) e
 	m.record(scope)
 	state := &txState{scope: scope}
 	if err := fn(context.WithValue(ctx, txKey{}, state)); err != nil {
+		state.rollback()
 		return err
 	}
 	if outer != nil {
