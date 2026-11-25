@@ -1,5 +1,6 @@
 package br.com.encomendo.core.di
 
+import br.com.encomendo.core.data.session.deviceDataStore
 import br.com.encomendo.core.database.databaseBuilder
 import br.com.encomendo.core.network.okHttpEngine
 import br.com.encomendo.core.security.KeystoreCipher
@@ -20,6 +21,9 @@ actual val platformModule: Module =
         single<SecretCipher> { KeystoreCipher() }
         single(SessionDataStore) {
             sessionDataStore(androidContext(), scope = CoroutineScope(Dispatchers.IO + SupervisorJob()))
+        }
+        single(DeviceDataStore) {
+            deviceDataStore(androidContext(), scope = CoroutineScope(Dispatchers.IO + SupervisorJob()))
         }
         single<HttpClientEngine> { okHttpEngine() }
     }

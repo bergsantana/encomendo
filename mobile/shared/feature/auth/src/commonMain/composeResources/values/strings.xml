@@ -29,4 +29,22 @@
     <string name="account_log_out">Sair</string>
     <string name="account_logging_out">Saindo…</string>
     <string name="account_log_out_failed">Não foi possível sair. Tente de novo.</string>
+
+    <!-- The store picker, as on the web admin (features/auth/views/StorePickerView.vue, features/auth/store.ts). -->
+    <string name="picker_choose_title">Escolha a loja</string>
+    <string name="picker_create_title">Crie sua loja</string>
+    <string name="picker_create_another">Criar outra loja</string>
+    <string name="picker_store_address">%1$s.encomendo.com.br</string>
+    <string name="picker_opening">Abrindo…</string>
+    <string name="picker_store_name">Nome da loja</string>
+    <string name="picker_store_link">Link da loja</string>
+    <string name="picker_link_hint">Sua loja ficará em %1$s.encomendo.com.br.</string>
+    <string name="picker_link_rule">Use de 3 a 40 letras minúsculas, números e hífens.</string>
+    <string name="picker_link_taken">Este link já está em uso. Escolha outro.</string>
+    <string name="picker_create">Criar loja</string>
+    <string name="picker_creating">Criando…</string>
+    <string name="picker_error_not_member">Você não faz mais parte desta loja.</string>
+    <string name="picker_error_check_fields">Confira os campos destacados.</string>
+    <string name="picker_error_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
+    <string name="account_switch_store">Trocar de loja</string>
 </resources>

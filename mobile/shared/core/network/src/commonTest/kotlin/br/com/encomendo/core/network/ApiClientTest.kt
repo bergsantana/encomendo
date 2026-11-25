@@ -187,5 +187,6 @@ class ApiClientTest {
             config = ApiClientConfig(baseUrl = API_URL),
             tokens = InMemoryTokenStorage(),
             refresher = TokenRefresher<TestTokens> { _, _ -> error("no refresh expected") },
+            turns = SessionTurns(),
         )
 }

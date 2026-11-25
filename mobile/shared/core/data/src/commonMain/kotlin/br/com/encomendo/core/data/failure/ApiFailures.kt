@@ -38,6 +38,9 @@ internal fun ApiError.toFailure(): Failure =
                 cause = this,
             )
         code == ApiErrorCode.InvalidCredentials -> Failure.WrongCredentials(cause = this)
+        code == ApiErrorCode.Forbidden -> Failure.Forbidden(cause = this)
+        code == ApiErrorCode.SlugTaken -> Failure.AlreadyTaken(field = "slug", cause = this)
+        code == ApiErrorCode.EmailTaken -> Failure.AlreadyTaken(field = "email", cause = this)
         else -> Failure.Unexpected(status = status, code = code.value, cause = this)
     }
 

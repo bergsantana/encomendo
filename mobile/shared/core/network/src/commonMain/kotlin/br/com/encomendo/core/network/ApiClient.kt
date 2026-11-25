@@ -50,16 +50,17 @@ internal val ApiJson: Json =
  *   reason, that error is thrown and the session is kept.
  *
  * Use one client for the whole app, so refreshes are never run twice in
- * parallel. Its lock covers only its own refreshes: any other call that spends
- * the refresh token (switch-tenant, a refresh on app start) must take the same
- * turn: two calls presenting one token leave one of them with a superseded
- * token, whose next use revokes the whole family (ADR 0013).
+ * parallel. Its refreshes run in [turns]; any other call that spends the
+ * refresh token (switch-tenant, a refresh on app start) must take its turn
+ * there too: two calls presenting one token leave one of them with a
+ * superseded token, whose next use revokes the whole family (ADR 0013).
  */
 fun <S : BearerCredentials> createApiClient(
     engine: HttpClientEngine,
     config: ApiClientConfig,
     tokens: TokenStorage<S>,
     refresher: TokenRefresher<S>,
+    turns: SessionTurns,
 ): HttpClient =
     HttpClient(engine) {
         install(ContentNegotiation) { json(ApiJson) }
@@ -72,7 +73,11 @@ fun <S : BearerCredentials> createApiClient(
             accept(ContentType.Application.ProblemJson)
         }
         installErrorMapping()
-        installBearer(apiOrigin = Url(config.baseUrl), refresh = BearerRefresh(tokens, refresher), tokens = tokens)
+        installBearer(
+            apiOrigin = Url(config.baseUrl),
+            refresh = BearerRefresh(tokens, refresher, turns),
+            tokens = tokens,
+        )
     }
 
 /**
@@ -101,12 +106,13 @@ private fun <S : BearerCredentials> HttpClientConfig<*>.installBearer(
     tokens: TokenStorage<S>,
 ) {
     install(Auth) {
-        // A 401 from another host must never be answered with our token, and a 401
-        // on the refresh call itself must fail instead of refreshing inside the refresh.
+        // A 401 from another host must never be answered with our token, and a 401 inside a
+        // SessionTurns turn (the refresh call itself, a switch) must fail rather than wait for
+        // another turn to refresh: turns are not reentrant.
         reAuthorizeOnResponse {
             it.status == HttpStatusCode.Unauthorized &&
                 it.request.url.isSameOrigin(apiOrigin) &&
-                !BearerRefresh.isRunning()
+                !SessionTurns.inTurn()
         }
         bearer {
             // TokenStorage is the only copy, so a logout or tenant switch applies to the next request.

@@ -2,14 +2,17 @@ package br.com.encomendo.core.di
 
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.SessionRepository
+import br.com.encomendo.core.domain.session.TenancyRepository
 import br.com.encomendo.core.navigation.RootViewModel
 import br.com.encomendo.core.network.ApiClientConfig
+import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
 import br.com.encomendo.feature.auth.AccountViewModel
 import br.com.encomendo.feature.auth.LoginViewModel
+import br.com.encomendo.feature.auth.StorePickerViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
@@ -44,14 +47,24 @@ class ModulesTest {
                 module {
                     single<SecretCipher> { FakeSecretCipher() }
                     single(SessionDataStore) { temporaryPreferencesDataStore(backgroundScope) }
+                    single(DeviceDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single<HttpClientEngine> { MockEngine { respondOk() } }
                 }
-            val modules = listOf(fakePlatform, apiConfigModule("https://api.test")) + commonModules
+            // The test's own scope as the app's, so nothing started at launch outlives the test.
+            val testAppScope = module { single(AppScope) { backgroundScope } }
+            val modules = listOf(fakePlatform, apiConfigModule("https://api.test")) + commonModules + testAppScope
             val koin = koinApplication { modules(modules) }.koin
 
             koin.get<RootViewModel>()
             koin.get<LoginViewModel>()
             koin.get<AccountViewModel>()
+            koin.get<StorePickerViewModel>()
+            koin.get<TenancyRepository>()
+            assertSame(
+                koin.get<SessionTurns>(),
+                koin.get<SessionTurns>(),
+                "one turn for every call that spends the refresh token",
+            )
             koin.get<SessionRepository>()
             koin.get<AuthRepository>()
             assertSame(koin.get<TokenStore>(), koin.get<TokenStore>(), "one TokenStore per process")

@@ -27,7 +27,11 @@ class AccountViewModel(
     /** The bar as the screen shows it. */
     val uiState: StateFlow<AccountUiState> =
         combine(observeSession(), menu) { session, local ->
-            local.copy(userName = session?.user?.name.orEmpty(), storeName = session?.tenant?.name)
+            local.copy(
+                userName = session?.user?.name.orEmpty(),
+                storeName = session?.tenant?.name,
+                canSwitchStore = session?.memberships.orEmpty().size >= STORES_TO_SWITCH_BETWEEN,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_AFTER_MILLIS), AccountUiState())
 
     /** The user opened the account menu. */
@@ -51,6 +55,8 @@ class AccountViewModel(
         }
     }
 }
+
+private const val STORES_TO_SWITCH_BETWEEN = 2
 
 /** Keeps the session flow alive across a configuration change. */
 private const val STOP_AFTER_MILLIS = 5_000L

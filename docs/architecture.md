@@ -590,7 +590,7 @@ mobile/
 
 - Layers: Screen (Compose Multiplatform) → ViewModel exposing `StateFlow<UiState>` → use case in `core:domain` → repository interface → implementation in `core:data` (uses `core:network` and `core:database`).
 - Code goes in `commonMain` unless it touches a platform API; then use `expect` in `commonMain` with a small `actual` implementation in `androidMain`, behind an interface.
-- After login the app opens the management graph, filtered by permissions.
+- After login the app opens the management graph, filtered by permissions, or the store picker when the session has no store.
 - Auth bearer plugin refreshes once on 401. The session ends only when `/auth/refresh` answers 400, 401 or 403; offline, 429 and 5xx keep it (ADR 0012).
 - Errors: `core:network` maps problem+json to `ApiError`; `core:data` maps that by its code to `Failure` (`core:domain`), the one error type repositories throw and ViewModels catch.
 - Offline: recent orders, the receiving checklist and the production board are cached in Room; writes made offline (including receiving photos) queue and retry with WorkManager and an `Idempotency-Key`.

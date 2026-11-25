@@ -27,6 +27,17 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("invalid input", cause)
 
+    /** The signed-in user may not do this, such as opening a store they no longer belong to. */
+    class Forbidden(
+        cause: Throwable? = null,
+    ) : Failure("forbidden", cause)
+
+    /** The value of [field] (`email`, `slug` …) is someone else's already; the screen asks for another. */
+    class AlreadyTaken(
+        val field: String,
+        cause: Throwable? = null,
+    ) : Failure("already taken: $field", cause)
+
     /** The email and password match no account. The server never says which one was wrong. */
     class WrongCredentials(
         cause: Throwable? = null,

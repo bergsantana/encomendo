@@ -27,21 +27,27 @@ import br.com.encomendo.feature.auth.resources.account_log_out
 import br.com.encomendo.feature.auth.resources.account_log_out_failed
 import br.com.encomendo.feature.auth.resources.account_logging_out
 import br.com.encomendo.feature.auth.resources.account_menu_description
+import br.com.encomendo.feature.auth.resources.account_switch_store
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-/** AccountBarRoute connects [AccountViewModel] to [AccountBar]. */
+/** AccountBarRoute connects [AccountViewModel] to [AccountBar]; [onSwitchStore] opens the store picker. */
 @Composable
 fun AccountBarRoute(
+    onSwitchStore: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: AccountViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val actions =
-        remember(viewModel) {
+        remember(viewModel, onSwitchStore) {
             AccountActions(
                 onMenuOpen = viewModel::onMenuOpen,
                 onMenuDismiss = viewModel::onMenuDismiss,
+                onSwitchStore = {
+                    viewModel.onMenuDismiss()
+                    onSwitchStore()
+                },
                 onLogOut = viewModel::onLogOut,
             )
         }
@@ -52,12 +58,14 @@ fun AccountBarRoute(
 data class AccountActions(
     val onMenuOpen: () -> Unit,
     val onMenuDismiss: () -> Unit,
+    val onSwitchStore: () -> Unit,
     val onLogOut: () -> Unit,
 )
 
 /**
  * AccountBar tops every management screen: the store's name, and the
- * signed-in person's name, which opens the account menu with Sair, as the
+ * signed-in person's name, which opens the account menu with Trocar de loja
+ * (two stores or more) and Sair, as the
  * foot of the web admin's menu does.
  */
 @OptIn(ExperimentalMaterial3Api::class) // TopAppBar
@@ -92,6 +100,14 @@ private fun AccountMenu(
             Text(text = state.userName, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         DropdownMenu(expanded = state.menuOpen, onDismissRequest = actions.onMenuDismiss) {
+            if (state.canSwitchStore) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(Res.string.account_switch_store)) },
+                    onClick = actions.onSwitchStore,
+                    enabled = !state.loggingOut,
+                    modifier = Modifier.heightIn(min = WORKSHOP_TARGET),
+                )
+            }
             DropdownMenuItem(
                 text = {
                     Text(

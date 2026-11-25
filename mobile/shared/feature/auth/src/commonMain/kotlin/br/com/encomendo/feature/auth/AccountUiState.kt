@@ -3,11 +3,13 @@ package br.com.encomendo.feature.auth
 /**
  * AccountUiState is the management app bar: who is signed in ([userName]),
  * in which store ([storeName], null when none is selected), and the account
- * menu with Sair.
+ * menu with Trocar de loja and Sair.
  */
 data class AccountUiState(
     val userName: String = "",
     val storeName: String? = null,
+    /** Two stores or more: the menu offers "Trocar de loja", as on the web. */
+    val canSwitchStore: Boolean = false,
     val menuOpen: Boolean = false,
     val loggingOut: Boolean = false,
     val logOutFailed: Boolean = false,

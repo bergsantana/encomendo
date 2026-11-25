@@ -72,15 +72,14 @@ private fun LoginUiState.showing(failure: Failure): LoginUiState {
             }
         }
         is Failure.Unexpected -> stopped.copy(error = unexpected(failure.status))
+        // Not answers a login gives; say something went wrong rather than guess.
+        is Failure.Forbidden, is Failure.AlreadyTaken -> stopped.copy(error = LoginError.Unexpected)
     }
 }
 
-/** A 5xx is the server's fault; anything else (status 0 is the device) gets a general message. */
 private fun unexpected(status: Int): LoginError =
-    if (status >= FIRST_SERVER_ERROR) LoginError.ServerUnavailable else LoginError.Unexpected
+    if (isServerFailure(status)) LoginError.ServerUnavailable else LoginError.Unexpected
 
 /** The field names of `LoginRequest` in docs/api/openapi.yaml. */
 private const val EMAIL_FIELD = "email"
 private const val PASSWORD_FIELD = "password"
-
-private const val FIRST_SERVER_ERROR = 500

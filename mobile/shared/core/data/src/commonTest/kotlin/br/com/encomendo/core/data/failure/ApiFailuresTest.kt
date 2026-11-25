@@ -32,6 +32,18 @@ class ApiFailuresTest {
     }
 
     @Test
+    fun aRefusalIsForbidden() {
+        assertIs<Failure.Forbidden>(ApiError(status = 403, code = ApiErrorCode.Forbidden).toFailure())
+    }
+
+    @Test
+    fun aTakenAddressOrEmailNamesItsField() {
+        // The screen puts its own words next to the field (web: features/auth/store.ts, fieldByCode).
+        assertEquals("slug", assertIs<Failure.AlreadyTaken>(ApiError(409, ApiErrorCode.SlugTaken).toFailure()).field)
+        assertEquals("email", assertIs<Failure.AlreadyTaken>(ApiError(409, ApiErrorCode.EmailTaken).toFailure()).field)
+    }
+
+    @Test
     fun codesTheAppDoesNotHandleAreUnexpected() {
         val failure = ApiError(status = 409, code = ApiErrorCode("plan_limit_reached")).toFailure()
 

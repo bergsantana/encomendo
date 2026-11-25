@@ -4,6 +4,7 @@ import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.ApiError
+import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.security.SessionTokens
 import br.com.encomendo.core.security.StoredSession
 import br.com.encomendo.core.security.TokenStore
@@ -181,7 +182,13 @@ class SessionApiClientTest {
     private fun client(
         store: TokenStore,
         handler: MockRequestHandler,
-    ): HttpClient = createSessionApiClient(MockEngine(handler), ApiClientConfig(baseUrl = "https://api.test"), store)
+    ): HttpClient =
+        createSessionApiClient(
+            MockEngine(handler),
+            ApiClientConfig(baseUrl = "https://api.test"),
+            store,
+            SessionTurns(),
+        )
 
     private fun MockRequestHandleScope.respondJson(body: String): HttpResponseData =
         respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))

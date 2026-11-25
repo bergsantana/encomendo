@@ -4,7 +4,11 @@ import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.LogOut
+import br.com.encomendo.core.domain.session.Membership
 import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.Role
+import br.com.encomendo.core.domain.session.Session
+import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.testing.AltaRpm
 import br.com.encomendo.core.testing.FakeAuthRepository
 import br.com.encomendo.core.testing.FakeSessionRepository
@@ -45,6 +49,19 @@ class AccountViewModelTest {
                 assertEquals("Ana Souza", state.userName)
                 assertEquals(AltaRpm.name, state.storeName)
             }
+        }
+
+    @Test
+    fun offersToSwitchStoresOnlyWithTwoOrMore() =
+        runTest(main) {
+            // As the web's menu: "Trocar de loja" with two or more stores.
+            val motoPecas =
+                TenantSummary(id = "0190f3c4-0000-7000-8000-000000000002", name = "Moto Peças", slug = "moto-pecas")
+            val one = testSession()
+            val two = one.copy(memberships = one.memberships + Membership(motoPecas, Role("staff")))
+
+            accountViewModel(session = one).uiState.test { assertFalse(skipToSignedIn().canSwitchStore) }
+            accountViewModel(session = two).uiState.test { assertTrue(skipToSignedIn().canSwitchStore) }
         }
 
     @Test
@@ -125,8 +142,10 @@ class AccountViewModelTest {
             }
         }
 
-    private fun accountViewModel(auth: FakeAuthRepository = FakeAuthRepository()): AccountViewModel =
-        AccountViewModel(ObserveSession(FakeSessionRepository(testSession())), LogOut(auth))
+    private fun accountViewModel(
+        auth: FakeAuthRepository = FakeAuthRepository(),
+        session: Session = testSession(),
+    ): AccountViewModel = AccountViewModel(ObserveSession(FakeSessionRepository(session)), LogOut(auth))
 
     /** Skips the empty state before the session is read; returns the first signed-in state. */
     private suspend fun ReceiveTurbine<AccountUiState>.skipToSignedIn(): AccountUiState {

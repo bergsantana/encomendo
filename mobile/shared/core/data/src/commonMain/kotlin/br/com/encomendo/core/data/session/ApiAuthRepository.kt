@@ -15,7 +15,8 @@ import kotlinx.coroutines.withContext
 /**
  * ApiAuthRepository logs in and out through the `/auth` endpoints and keeps
  * the session in [store], tokens and all, in one write (ADR 0015). Nothing
- * is stored unless the whole login worked.
+ * is stored unless the whole login worked. A login asks for the store this
+ * device used last ([lastStore]).
  *
  * @param appScope lives as long as the app, so the server hears about a
  *   logout even after the screen that asked for it is gone.
@@ -24,13 +25,14 @@ class ApiAuthRepository(
     private val api: AuthApi,
     private val store: TokenStore,
     private val appScope: CoroutineScope,
+    private val lastStore: LastStore,
 ) : AuthRepository {
     override suspend fun logIn(
         email: String,
         password: String,
     ): Session =
         asFailures {
-            val stored = api.logIn(email = email, password = password).toStoredSession()
+            val stored = api.logIn(email = email, password = password, tenantId = lastStore.read()).toStoredSession()
             store.write(stored)
             stored.session
         }
