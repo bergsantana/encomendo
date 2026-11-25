@@ -452,33 +452,40 @@ CREATE POLICY tenant_isolation ON orders
 ```text
 internal/adapter/postgres/migrations/
 ├── 0001_roles_and_extensions.sql   pgcrypto, citext; grants for encomendo_app
-├── 0002_identity.sql               users, client_accounts, client_identities, client_login_codes, refresh_tokens
+├── 0002_identity.sql               users, client_accounts, client_identities, client_login_codes,
+│                                   refresh_tokens, password_reset_codes
 ├── 0003_workflows.sql              status_workflows, workflow_statuses (global) + launch presets seed
-├── 0004_tenancy.sql                tenants, memberships, tenant_settings (references status_workflows)
-├── 0005_rls_helpers.sql            current_tenant_id() function, audit trigger function
-├── 0006_catalog.sql                categories, items, item_attributes, customization_options, kits, kit_items, media
-├── 0007_suppliers.sql              suppliers, supplier_items
-├── 0008_customers.sql              customers, customer_addresses
-├── 0009_inventory.sql              stock_items, stock_movements, stock_reservations
-├── 0010_orders.sql                 orders, order_items, order_status_history, payments, order_messages
-├── 0011_purchasing.sql             supplier_orders, purchase_lines, receipts, receipt_photos
-├── 0012_production.sql             production_jobs, production_stages, production_capacity
-├── 0013_portal.sql                 templates (global), storefronts, storefront_sections
-├── 0014_platform.sql               audit_log, outbox_events, idempotency_keys
-└── 0015_rls_policies.sql           ENABLE + FORCE RLS and policies for every tenant table
+├── 0004_tenancy.sql                tenants, memberships, tenant_settings (references status_workflows), invitations
+├── 0005_rls_helpers.sql            current_tenant_id(), current_user_id(), current_client_account_id(),
+│                                   audit trigger function
+├── 0006_platform.sql               audit_log, outbox_events
+├── 0007_rls_policies.sql           ENABLE + FORCE RLS, policies and grants for the tables of 0004 and 0006
+└── planned, in the order they are expected to land; each takes the next free number and
+    carries its own RLS policies (ADR 0014):
+    catalog          categories, items, item_attributes, customization_options, kits, kit_items, media
+    suppliers        suppliers, supplier_items
+    customers        customers, customer_addresses
+    orders           orders, order_items, order_status_history, payments, order_messages
+    idempotency      idempotency_keys
+    purchasing       supplier_orders, purchase_lines, receipts, receipt_photos
+    inventory        stock_items, stock_movements, stock_reservations
+    production       production_jobs, production_stages, production_capacity
+    portal           templates (global), storefronts, storefront_sections
 ```
 
-Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up.
+Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. Versions stay `1, 2, 3 …` with no gap: a unit test fails otherwise, because goose refuses a file numbered below the database's current version (ADR 0014).
 
 | Table | Tenant-scoped | Notes |
 | --- | --- | --- |
 | `users` | No | Staff identities; `email citext unique`, `password_hash` |
 | `client_accounts`, `client_identities` | No | Global client accounts; identities: verified email (`citext unique`) or Google `sub` |
 | `client_login_codes` | No | Hashed one-time codes, `expires_at`, attempts |
+| `password_reset_codes` | No | HMAC of a 6-digit code, `expires_at`, `attempts` (at most 5), `used_at`; only the newest per user counts (ADR 0011) |
 | `refresh_tokens` | No | `token_hash`, `family_id`, `user_id` or `client_account_id`, `tenant_id`, `expires_at`, `used_at`, `replaced_by` (ADR 0013), `revoked_at` |
 | `status_workflows`, `workflow_statuses` | No | Global presets, read-only to tenants; `(id, version)` immutable once published; statuses with `key`, `label`, `client_label`, `phase`, `position` |
 | `tenants` | Self | `slug unique` (the subdomain label; reserved words blocked), `niche`, `status`; policy `id = current tenant` |
 | `memberships` | Yes | `(tenant_id, user_id) unique`, `role`; policy also lets a user see their own memberships for tenant switching |
+| `invitations` | Yes | `email citext`, `role` (never owner), `token_hash`, `invited_by`, `expires_at`, `accepted_at`, `revoked_at`; one pending per `(tenant_id, email)` (ADR 0011) |
 | `tenant_settings` | Yes | `status_workflow_id` + `status_workflow_version`, `stock_enabled`, `production_enabled`, `purchase_before_deposit`, `deposit_percent` (50), `assembly_days` (3), `safety_margin_days` (2), currency, WhatsApp phone |
 | `items` | Yes | `sourcing_mode`, `price_cents`, `cost_cents`, `production_days`, `published` ("No portal"), `version` |
 | `item_attributes` | Yes | Template-defined fields such as "Serve em" (motorcycle model, roof type, room) |
@@ -496,7 +503,7 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up.
 | `production_jobs`, `production_stages`, `production_capacity` | Yes | One job per in-house item; ordered stages; weekly capacity |
 | `templates` | No | Global niche presets: categories, attributes, default sourcing per category, sample kits, wording, suggested status workflow; read-only to tenants |
 | `storefronts`, `storefront_sections` | Yes | Template id, logo, brand color, cover photo; sections on/off (Kits prontos, Monte o seu, Acompanhar pedido) |
-| `audit_log`, `outbox_events`, `idempotency_keys` | Yes | Written by triggers or in the same transaction |
+| `audit_log`, `outbox_events`, `idempotency_keys` | Yes | Written by triggers or in the same transaction; append-only for `encomendo_app`, which never reads the outbox |
 
 **Conventions:** UUIDv7 primary keys generated in Go. Every tenant table has `tenant_id uuid not null references tenants`, an index starting with `tenant_id`, `created_at`, `updated_at`. Money = `bigint` cents + `char(3)` currency. Composite foreign keys `(tenant_id, id)` so a row can never reference another tenant's row.
 
