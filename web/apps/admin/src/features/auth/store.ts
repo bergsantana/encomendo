@@ -1,9 +1,22 @@
-import { ApiError, createTenant, logIn as requestSession, signUp as requestAccount, type Tenant } from '@encomendo/api'
+import {
+  acceptInvitation as joinStore,
+  ApiError,
+  confirmPasswordReset,
+  createTenant,
+  type InvitationPreview,
+  logIn as requestSession,
+  previewInvitation,
+  requestPasswordReset,
+  signUp as requestAccount,
+  type Tenant,
+} from '@encomendo/api'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 
 import { api } from '../../api'
-import { errorMessage, issuesByField } from '../../errorMessage'
+import { authClient } from '../../authClient'
+import { type FieldCheck, type FormMessages, useForm } from '../../composables/useForm'
+import { errorMessage } from '../../errorMessage'
 import { lastStore } from '../../lastStore'
 import { useSessionStore } from '../../stores/session'
 
@@ -26,36 +39,72 @@ export interface NewStore {
   slug: string
 }
 
-const fixTheFields = 'Confira os campos destacados.'
+/** NewPassword is what the second step of "Esqueci a senha" collects. */
+export interface NewPassword {
+  code: string
+  password: string
+}
 
-// The text above each form for the problem codes it expects.
-const loginMessages = { invalid_credentials: 'E-mail ou senha incorretos.', invalid: fixTheFields }
-const fieldMessages = { invalid: fixTheFields, email_taken: fixTheFields, slug_taken: fixTheFields }
-const switchMessages = { forbidden: 'Você não faz mais parte desta loja.' }
-
-// Codes that are about one field, and what that field says.
-const fieldByCode: Partial<Record<string, [field: string, message: string]>> = {
-  email_taken: ['email', 'Já existe uma conta com este e-mail.'],
-  slug_taken: ['slug', 'Este link já está em uso. Escolha outro.'],
+/** Joining is what accepting an invitation collects; the name only for a new account. */
+export interface Joining {
+  name: string
+  password: string
 }
 
 /**
+ * InvitationState is where the invitation screen stands. `missing` is a link
+ * without its token, as after logging in again from that page (the token
+ * never travels in a redirect); `unavailable` is a token that no longer works.
+ */
+export type InvitationState = 'loading' | 'ready' | 'missing' | 'unavailable' | 'failed'
+
+const fixTheFields = 'Confira os campos destacados.'
+/** invitationGone explains an invitation that is unknown, expired, revoked or used: the API does not say which. */
+export const invitationGone = 'Este convite não vale mais. Peça um novo a quem convidou você.'
+
+const loginMessages: FormMessages = { byCode: { invalid_credentials: 'E-mail ou senha incorretos.', invalid: fixTheFields } }
+const signUpMessages: FormMessages = {
+  byCode: { invalid: fixTheFields, email_taken: fixTheFields },
+  fieldByCode: { email_taken: ['email', 'Já existe uma conta com este e-mail.'] },
+}
+const storeMessages: FormMessages = {
+  byCode: { invalid: fixTheFields, slug_taken: fixTheFields },
+  fieldByCode: { slug_taken: ['slug', 'Este link já está em uso. Escolha outro.'] },
+}
+const switchMessages: FormMessages = { byCode: { forbidden: 'Você não faz mais parte desta loja.' } }
+const resetMessages: FormMessages = {
+  byCode: { invalid: fixTheFields, invalid_code: fixTheFields },
+  fieldByCode: { invalid_code: ['code', 'Código errado ou vencido. Confira o e-mail ou peça um novo código.'] },
+}
+const joinMessages: FormMessages = {
+  byCode: { invalid: fixTheFields, invalid_credentials: fixTheFields, already_member: 'Você já faz parte desta loja.', not_found: invitationGone },
+  fieldByCode: { invalid_credentials: ['password', 'Senha incorreta.'] },
+}
+
+const sixDigits = (value: string) => /^\d{6}$/.test(value)
+
+/**
  * useAuthStore backs the screens that start, move and end a session: login,
- * sign-up, the store picker and logout. It checks each form, makes the call,
- * and keeps the pt-BR errors to show above the form and next to its fields.
+ * sign-up, the store picker, "Esqueci a senha", accepting an invitation and
+ * logout. It checks each form, makes the call, and keeps the pt-BR messages.
  */
 export const useAuthStore = defineStore('auth', () => {
   const session = useSessionStore()
-  const submitting = ref(false)
-  const attemptError = ref<string | null>(null)
-  const fieldErrors = ref<Record<string, string>>({})
+  const form = useForm()
   const loggingOut = ref(false)
   const logOutError = ref<string | null>(null)
+  /** notice is good news for the login screen, such as a password just changed. */
+  const notice = ref<string | null>(null)
+  /** resetEmail is where the reset code went, while the member types it in. */
+  const resetEmail = ref<string | null>(null)
+  const resetNotice = ref<string | null>(null)
+  const invitation = shallowRef<InvitationPreview | null>(null)
+  const invitationState = ref<InvitationState>('loading')
   let created: Tenant | null = null
 
   /** formError is the message above the form: the last attempt's, or why the session could not be restored. */
   const formError = computed(() => {
-    if (attemptError.value !== null) return attemptError.value
+    if (form.error.value !== null) return form.error.value
     return session.restoreError === null ? null : errorMessage(session.restoreError)
   })
 
@@ -63,11 +112,12 @@ export const useAuthStore = defineStore('auth', () => {
   function logIn(credentials: Credentials): Promise<boolean> {
     const email = credentials.email.trim()
     const { password } = credentials
-    const missing = required([
+    notice.value = null
+    const checks: FieldCheck[] = [
       ['email', email, 'Informe seu e-mail.'],
       ['password', password, 'Informe sua senha.'],
-    ])
-    return attempt(missing, loginMessages, () =>
+    ]
+    return form.attempt(checks, loginMessages, () =>
       session.begin((client) => requestSession(client, { email, password, tenantId: lastStore() })),
     )
   }
@@ -77,28 +127,28 @@ export const useAuthStore = defineStore('auth', () => {
     const name = account.name.trim()
     const email = account.email.trim()
     const { password } = account
-    const missing = required([
+    const checks: FieldCheck[] = [
       ['name', name, 'Informe seu nome.'],
       ['email', email, 'Informe seu e-mail.'],
       ['password', password, 'Informe uma senha.'],
-    ])
-    return attempt(missing, fieldMessages, () => session.begin((client) => requestAccount(client, { name, email, password })))
+    ]
+    return form.attempt(checks, signUpMessages, () => session.begin((client) => requestAccount(client, { name, email, password })))
   }
 
-  /** chooseStore resolves true once the session is in that store. */
+  /** chooseStore resolves true once the session has moved to that store. */
   function chooseStore(tenantId: string): Promise<boolean> {
-    return attempt({}, switchMessages, () => session.switchTo(tenantId))
+    return form.attempt([], switchMessages, () => session.switchTo(tenantId))
   }
 
-  /** createStore resolves true once the store exists, owned by the member, and the session is in it. */
+  /** createStore resolves true once the store exists, owned by the member, and the session has moved to it. */
   function createStore(store: NewStore): Promise<boolean> {
     const name = store.name.trim()
     const slug = store.slug.trim().toLowerCase()
-    const missing = required([
+    const checks: FieldCheck[] = [
       ['name', name, 'Informe o nome da loja.'],
       ['slug', slug, 'Informe o link da loja.'],
-    ])
-    return attempt(missing, fieldMessages, async () => {
+    ]
+    return form.attempt(checks, storeMessages, async () => {
       // When the store was created but opening it failed, the retry only
       // opens it: creating it again would say its own link is taken.
       if (created?.slug !== slug) created = await createTenant(api, { name, slug })
@@ -108,34 +158,100 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * attempt runs one form's call: it stops at missing fields, and turns a
-   * refusal into the message above the form and the errors next to fields.
+   * requestReset asks for a code by email. The screen says the same whether
+   * or not the account exists, as the API does (ADR 0011).
    */
-  async function attempt(missing: Record<string, string>, messages: Partial<Record<string, string>>, call: () => Promise<unknown>): Promise<boolean> {
-    clearErrors()
-    fieldErrors.value = missing
-    if (Object.keys(missing).length > 0) {
-      attemptError.value = fixTheFields
-      return false
+  async function requestReset(email: string): Promise<boolean> {
+    const address = email.trim()
+    const sent = await form.attempt([['email', address, 'Informe seu e-mail.']], {}, () => requestPasswordReset(authClient, address))
+    if (sent) {
+      resetEmail.value = address
+      resetNotice.value = `Se houver uma conta com ${address}, enviamos um código de 6 dígitos. Ele vale por 10 minutos.`
     }
-    submitting.value = true
-    try {
-      await call()
-      return true
-    } catch (error) {
-      if (!(error instanceof ApiError)) throw error
-      fieldErrors.value = { ...issuesByField(error), ...fieldError(error.code) }
-      attemptError.value = errorMessage(error, messages)
-      return false
-    } finally {
-      submitting.value = false
+    return sent
+  }
+
+  /** resendReset asks for a new code for the same email; the earlier one stops working. */
+  async function resendReset(): Promise<void> {
+    const address = resetEmail.value
+    if (address === null) return
+    if (await form.attempt([], {}, () => requestPasswordReset(authClient, address))) {
+      resetNotice.value = `Se houver uma conta com ${address}, enviamos um novo código. O anterior deixou de valer.`
     }
   }
 
-  /** clearErrors forgets the last attempt's errors, e.g. when a form opens again. */
-  function clearErrors(): void {
-    attemptError.value = null
-    fieldErrors.value = {}
+  /** restartReset goes back to asking for the email. */
+  function restartReset(): void {
+    resetEmail.value = null
+    resetNotice.value = null
+    form.clear()
+  }
+
+  /** confirmReset sets the new password; the login screen then says so. Every session of the account ends. */
+  async function confirmReset(input: NewPassword): Promise<boolean> {
+    const email = resetEmail.value
+    if (email === null) return false
+    // A code copied from the email may come with spaces, such as "482 913".
+    const code = input.code.replace(/\s/g, '')
+    const { password } = input
+    const checks: FieldCheck[] = [
+      ['code', code, 'Informe os 6 dígitos do código.', sixDigits],
+      ['password', password, 'Informe a nova senha.'],
+    ]
+    const changed = await form.attempt(checks, resetMessages, () => confirmPasswordReset(authClient, { email, code, password }))
+    if (changed) {
+      restartReset()
+      notice.value = 'Senha alterada. Entre com a nova senha.'
+      session.announceAllEnded()
+    }
+    return changed
+  }
+
+  /** clearNotice forgets the login screen's good news once the member moves on. */
+  function clearNotice(): void {
+    notice.value = null
+  }
+
+  /** openInvitation reads what an invitation link offers. */
+  async function openInvitation(token: string): Promise<void> {
+    invitation.value = null
+    form.clear()
+    if (token === '') {
+      invitationState.value = 'missing'
+      return
+    }
+    invitationState.value = 'loading'
+    try {
+      invitation.value = await previewInvitation(authClient, token)
+      invitationState.value = 'ready'
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error
+      invitationState.value = error.code === 'not_found' ? 'unavailable' : 'failed'
+      if (invitationState.value === 'failed') form.error.value = errorMessage(error)
+    }
+  }
+
+  /** acceptInvitation joins the store with a new account, or with the existing account's password, and signs in there. */
+  function acceptInvitation(token: string, input: Joining): Promise<boolean> {
+    const exists = invitation.value?.accountExists ?? false
+    const name = input.name.trim()
+    const { password } = input
+    const checks: FieldCheck[] = exists
+      ? [['password', password, 'Informe sua senha.']]
+      : [
+          ['name', name, 'Informe seu nome.'],
+          ['password', password, 'Informe uma senha.'],
+        ]
+    const body = exists ? { token, password } : { token, name, password }
+    return form.attempt(checks, joinMessages, async () => {
+      try {
+        await session.begin((client) => joinStore(client, body))
+      } catch (error) {
+        // It ran out, or was used or revoked, since the preview: stop offering the form.
+        if (error instanceof ApiError && error.code === 'not_found') invitationState.value = 'unavailable'
+        throw error
+      }
+    })
   }
 
   /**
@@ -155,15 +271,29 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { submitting, formError, fieldErrors, loggingOut, logOutError, logIn, signUp, chooseStore, createStore, clearErrors, logOut }
+  return {
+    submitting: form.submitting,
+    fieldErrors: form.fieldErrors,
+    formError,
+    notice,
+    resetEmail,
+    resetNotice,
+    invitation,
+    invitationState,
+    loggingOut,
+    logOutError,
+    logIn,
+    signUp,
+    chooseStore,
+    createStore,
+    requestReset,
+    resendReset,
+    restartReset,
+    confirmReset,
+    clearNotice,
+    openInvitation,
+    acceptInvitation,
+    clearErrors: form.clear,
+    logOut,
+  }
 })
-
-/** required lists the empty fields with what each should say. Passwords are not trimmed: spaces are valid in them. */
-function required(fields: [field: string, value: string, message: string][]): Record<string, string> {
-  return Object.fromEntries(fields.filter(([, value]) => value === '').map(([field, , message]) => [field, message]))
-}
-
-function fieldError(code: string): Record<string, string> {
-  const known = fieldByCode[code]
-  return known === undefined ? {} : { [known[0]]: known[1] }
-}

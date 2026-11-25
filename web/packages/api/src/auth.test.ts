@@ -2,7 +2,19 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { type AuthSession, logIn, logOut, refreshSession, signUp, switchTenant } from './auth'
+import {
+  acceptInvitation,
+  type AuthSession,
+  confirmPasswordReset,
+  type InvitationPreview,
+  logIn,
+  logOut,
+  previewInvitation,
+  refreshSession,
+  requestPasswordReset,
+  signUp,
+  switchTenant,
+} from './auth'
 import { ApiError, createHttpClient } from './http'
 
 const base = 'http://api.test'
@@ -172,6 +184,106 @@ describe('switchTenant', () => {
       contentType: 'application/json',
       body: { tenantId: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d00' },
     })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('password reset', () => {
+  it('asks for a code by email, without a bearer token, and gets no answer about the account', async () => {
+    let request: Seen | undefined
+    server.use(
+      http.post(`${base}/auth/password-reset`, async (info) => {
+        request = await seen(info.request)
+        return new HttpResponse(null, { status: 202 })
+      }),
+    )
+
+    await expect(requestPasswordReset(signedInClient().client, 'ana@altarpm.com.br')).resolves.toBeUndefined()
+    expect(request).toEqual({ authorization: null, contentType: 'application/json', body: { email: 'ana@altarpm.com.br' } })
+  })
+
+  it('sets the new password with the code', async () => {
+    let request: Seen | undefined
+    server.use(
+      http.post(`${base}/auth/password-reset/confirm`, async (info) => {
+        request = await seen(info.request)
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const body = { email: 'ana@altarpm.com.br', code: '482913', password: 'outra-senha-forte' }
+
+    await expect(confirmPasswordReset(signedInClient().client, body)).resolves.toBeUndefined()
+    expect(request).toEqual({ authorization: null, contentType: 'application/json', body })
+  })
+
+  it('reports a wrong or expired code as invalid_code', async () => {
+    server.use(
+      http.post(`${base}/auth/password-reset/confirm`, () =>
+        HttpResponse.json({ type: 'about:blank', title: 'Código inválido', status: 400, code: 'invalid_code' }, { status: 400, headers: problem }),
+      ),
+    )
+    const { client, refresh } = signedInClient()
+
+    await expect(confirmPasswordReset(client, { email: 'ana@altarpm.com.br', code: '000000', password: 'outra-senha-forte' })).rejects.toMatchObject({
+      code: 'invalid_code',
+    })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('invitations', () => {
+  const preview: InvitationPreview = {
+    tenant: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d00', name: 'Alta RPM', slug: 'altarpm' },
+    email: 'bruno@example.com',
+    role: 'staff',
+    accountExists: false,
+    expiresAt: '2026-12-02T12:00:00Z',
+  }
+
+  it('previews what the link offers, without a bearer token', async () => {
+    let request: Seen | undefined
+    server.use(
+      http.post(`${base}/auth/invitations/preview`, async (info) => {
+        request = await seen(info.request)
+        return HttpResponse.json(preview)
+      }),
+    )
+
+    await expect(previewInvitation(signedInClient().client, 'tok-123')).resolves.toEqual(preview)
+    expect(request).toEqual({ authorization: null, contentType: 'application/json', body: { token: 'tok-123' } })
+  })
+
+  it('accepts and returns the session in that store', async () => {
+    let request: Seen | undefined
+    server.use(
+      http.post(`${base}/auth/invitations/accept`, async (info) => {
+        request = await seen(info.request)
+        return HttpResponse.json(session)
+      }),
+    )
+
+    await expect(acceptInvitation(signedInClient().client, { token: 'tok-123', name: 'Bruno Lima', password: 'segredo-forte' })).resolves.toEqual(
+      session,
+    )
+    expect(request).toEqual({
+      authorization: null,
+      contentType: 'application/json',
+      body: { token: 'tok-123', name: 'Bruno Lima', password: 'segredo-forte' },
+    })
+  })
+
+  it('reports a wrong password for an existing account as invalid_credentials and never refreshes', async () => {
+    server.use(
+      http.post(`${base}/auth/invitations/accept`, () =>
+        HttpResponse.json(
+          { type: 'about:blank', title: 'Senha incorreta', status: 401, code: 'invalid_credentials' },
+          { status: 401, headers: problem },
+        ),
+      ),
+    )
+    const { client, refresh } = signedInClient()
+
+    await expect(acceptInvitation(client, { token: 'tok-123', password: 'errada' })).rejects.toMatchObject({ code: 'invalid_credentials' })
     expect(refresh).not.toHaveBeenCalled()
   })
 })

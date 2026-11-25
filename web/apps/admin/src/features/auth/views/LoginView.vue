@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { BaseButton, BaseInput } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
-import { onMounted, ref, useTemplateRef } from 'vue'
+import { onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import AuthCard from '../components/AuthCard.vue'
@@ -10,7 +10,7 @@ import { safeRedirect } from '../../../router/redirect'
 import { useAuthStore } from '../store'
 
 const auth = useAuthStore()
-const { submitting, formError, fieldErrors } = storeToRefs(auth)
+const { submitting, formError, fieldErrors, notice } = storeToRefs(auth)
 const route = useRoute()
 const router = useRouter()
 
@@ -22,6 +22,8 @@ const focusFirstError = useFirstErrorFocus([
 ])
 
 onMounted(() => auth.clearErrors())
+// The notice (a password just changed) is for this visit only.
+onUnmounted(() => auth.clearNotice())
 
 async function submit(): Promise<void> {
   if (await auth.logIn({ email: email.value, password: password.value })) {
@@ -37,6 +39,12 @@ async function submit(): Promise<void> {
     <h1 id="login-title">
       Entrar
     </h1>
+    <p
+      v-if="notice"
+      role="status"
+    >
+      {{ notice }}
+    </p>
     <p
       v-if="formError"
       role="alert"
@@ -74,10 +82,23 @@ async function submit(): Promise<void> {
         Entrar
       </BaseButton>
     </form>
-    <p>
+    <p class="links">
+      <RouterLink :to="{ name: 'forgot-password' }">
+        Esqueci a senha
+      </RouterLink>
       <RouterLink :to="{ name: 'signup' }">
         Criar conta
       </RouterLink>
     </p>
   </AuthCard>
 </template>
+
+<style scoped>
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+</style>

@@ -87,6 +87,18 @@ describe('createHttpClient', () => {
     await expect(client.get('/cut-off')).rejects.toMatchObject({ status: 0, code: 'network' })
   })
 
+  it('resolves an accepted call with no body, such as a 202', async () => {
+    server.use(http.post(`${base}/accepted`, () => new HttpResponse(null, { status: 202 })))
+
+    await expect(client.post('/accepted', {})).resolves.toBeUndefined()
+  })
+
+  it('reports an empty 200 as an unusable answer, since a 200 always has a body', async () => {
+    server.use(http.post(`${base}/auth/login`, () => new HttpResponse(null, { status: 200 })))
+
+    await expect(client.post('/auth/login', {})).rejects.toMatchObject({ name: 'ApiError', status: 0 })
+  })
+
   it('reports a success that is not JSON, such as a web page from a server without the API', async () => {
     server.use(http.get(`${base}/page`, () => HttpResponse.html('<!doctype html><title>Encomendo</title>')))
 
