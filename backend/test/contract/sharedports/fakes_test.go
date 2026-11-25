@@ -6,6 +6,7 @@ import (
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
+	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
 var start = time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
@@ -30,7 +31,14 @@ func TestFakeEvents_Contract(t *testing.T) {
 		return EventsHarness{
 			Tx:        sharedfake.NewTxManager(),
 			Publisher: events,
-			Committed: func(*testing.T) []string { return events.Names() },
+			TenantID:  shared.TenantID(shared.NewV7(start.UnixMilli(), [10]byte{0xe})),
+			Committed: func(t *testing.T) []StoredEvent {
+				var stored []StoredEvent
+				for _, r := range events.Records() {
+					stored = append(stored, StoredEvent{Name: r.Name, Payload: r.Payload})
+				}
+				return stored
+			},
 		}
 	})
 }

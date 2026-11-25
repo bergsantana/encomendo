@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"testing"
@@ -128,6 +129,54 @@ func TestMoney_String(t *testing.T) {
 		if got := brl(t, tt.cents).String(); got != tt.want {
 			t.Errorf("String(%d) = %q, want %q", tt.cents, got, tt.want)
 		}
+	}
+}
+
+func TestMoney_RoundTripsThroughJSON(t *testing.T) {
+	t.Parallel()
+
+	// Events and cached views carry money as JSON (ADR 0009).
+	type view struct {
+		Price Money `json:"price"`
+		Unset Money `json:"unset"`
+	}
+	in := view{Price: brl(t, 45000)}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), `{"price":{"cents":45000,"currency":"BRL"},"unset":null}`; got != want {
+		t.Errorf("JSON = %s, want %s", got, want)
+	}
+	var out view
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out != in {
+		t.Errorf("round trip = %+v, want %+v", out, in)
+	}
+}
+
+func TestMoney_UnmarshalValidates(t *testing.T) {
+	t.Parallel()
+
+	for _, in := range []string{
+		`{"cents":100,"currency":"real"}`,
+		`{"cents":100}`,
+		`{"currency":"BRL"}`, // a missing amount is not zero
+		`{"cents":"100","currency":"BRL"}`,
+		`[]`,
+	} {
+		var m Money
+		if err := json.Unmarshal([]byte(in), &m); err == nil {
+			t.Errorf("Unmarshal(%s) accepted %+v", in, m)
+		}
+	}
+
+	// null is "not present": the value stays as it was.
+	m := brl(t, 7)
+	if err := m.UnmarshalJSON([]byte("null")); err != nil || m != brl(t, 7) {
+		t.Errorf("UnmarshalJSON(null) = %v, %v; want the value unchanged", m, err)
 	}
 }
 

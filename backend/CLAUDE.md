@@ -63,7 +63,7 @@ func (s *Service) Advance(ctx context.Context, id shared.OrderID, to workflow.St
 }
 ```
 
-`authz` is `internal/app/shared/authz`. The ports come from `internal/app/shared`, always imported as `appshared` (its fakes as `sharedfake`), because `internal/domain/shared` is imported next to it; golangci-lint enforces both aliases (ADR 0009). The transaction's RLS scope comes from the context: the authn middleware sets it through `authz.WithPrincipal`, and a use case sets one itself only when it creates a tenant.
+`authz` is `internal/app/shared/authz`. The ports come from `internal/app/shared`, always imported as `appshared` (its fakes as `sharedfake`), because `internal/domain/shared` is imported next to it; golangci-lint enforces both aliases (ADR 0009). The transaction's RLS scope comes from the context: the authn middleware sets it through `authz.WithPrincipal`, and `authz.Require` refuses a scope that no longer matches the caller. Only the use cases listed on `appshared.Scope` set a scope themselves (ADR 0009). A client account never shares a scope with a tenant.
 
 ## Errors
 

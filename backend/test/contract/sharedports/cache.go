@@ -14,7 +14,8 @@ import (
 type CacheHarness struct {
 	Cache appshared.Cache
 	// Elapse lets d pass for the cache. A fake advances its clock; a real
-	// cache waits, which the TTL case does in short steps with a deadline.
+	// cache can return at once, because the TTL case polls with a deadline
+	// either way (no sleeps in tests).
 	Elapse func(t *testing.T, d time.Duration)
 }
 
@@ -38,13 +39,14 @@ func tenantKey(t *testing.T, tenant shared.TenantID, parts ...string) appshared.
 }
 
 // RunCacheContract checks that a Cache stores JSON values per key, expires
-// them, deletes by key and by prefix without touching siblings or other
-// tenants, and refuses zero keys, non-positive TTLs and values JSON cannot
-// carry.
+// them, treats an entry that no longer fits as a miss, deletes by key and by
+// prefix without touching siblings or other tenants, and refuses zero keys,
+// non-positive TTLs and values JSON cannot carry.
 func RunCacheContract(t *testing.T, newHarness func(t *testing.T) CacheHarness) {
 	t.Run("miss on a missing key", func(t *testing.T) { cacheMiss(t, newHarness(t)) })
 	t.Run("set then get round-trips JSON", func(t *testing.T) { cacheRoundTrip(t, newHarness(t)) })
 	t.Run("set replaces", func(t *testing.T) { cacheReplace(t, newHarness(t)) })
+	t.Run("an entry that no longer fits is a miss", func(t *testing.T) { cacheStaleShape(t, newHarness(t)) })
 	t.Run("entries expire after their ttl", func(t *testing.T) { cacheExpiry(t, newHarness(t)) })
 	t.Run("delete removes one key", func(t *testing.T) { cacheDelete(t, newHarness(t)) })
 	t.Run("delete by prefix stays inside the prefix", func(t *testing.T) { cacheDeleteByPrefix(t, newHarness(t)) })
@@ -93,6 +95,29 @@ func cacheReplace(t *testing.T, h CacheHarness) {
 
 	if got, _ := mustGet(t, h.Cache, k); got.Name != "new" {
 		t.Errorf("Get = %+v, want the second value", got)
+	}
+}
+
+func cacheStaleShape(t *testing.T, h CacheHarness) {
+	// A deploy changed the cached view's type while old entries live on.
+	// The read must fall back to Postgres, not fail the store page.
+	k := tenantKey(t, cacheTenantA, "item", "1")
+	mustSet(t, h.Cache, k, cachedItem{Name: "Banco de couro"}, time.Minute)
+
+	type changedItem struct {
+		Name  int   `json:"name"`  // was a string
+		Cents int64 `json:"cents"` // still fits, so a careless decode would write it
+	}
+	changed := changedItem{Name: 7, Cents: 1}
+	found, err := h.Cache.Get(context.Background(), k, &changed)
+	if err != nil || found {
+		t.Errorf("Get into a changed type = %v, %v; want a miss without error", found, err)
+	}
+	if changed != (changedItem{Name: 7, Cents: 1}) {
+		t.Errorf("dst = %+v after a miss, want it untouched", changed)
+	}
+	if _, found := mustGet(t, h.Cache, k); found {
+		t.Error("the entry that did not fit is still cached")
 	}
 }
 
@@ -185,7 +210,7 @@ func cacheInvalidInput(t *testing.T, h CacheHarness) {
 		{"delete by zero prefix", h.Cache.DeleteByPrefix(ctx, appshared.Key{}), appshared.ErrInvalidCacheKey},
 		{"zero ttl", h.Cache.Set(ctx, k, dst, 0), appshared.ErrInvalidTTL},
 		{"negative ttl", h.Cache.Set(ctx, k, dst, -time.Second), appshared.ErrInvalidTTL},
-		{"value JSON cannot encode", h.Cache.Set(ctx, k, func() {}, time.Minute), shared.ErrInvalid},
+		{"value JSON cannot encode", h.Cache.Set(ctx, k, func() {}, time.Minute), appshared.ErrInvalidCacheValue},
 	}
 	for _, c := range checks {
 		if !errors.Is(c.err, c.want) {
@@ -194,8 +219,11 @@ func cacheInvalidInput(t *testing.T, h CacheHarness) {
 	}
 
 	mustSet(t, h.Cache, k, cachedItem{Name: "x"}, time.Minute)
-	if _, err := h.Cache.Get(ctx, k, dst); !errors.Is(err, shared.ErrInvalid) {
-		t.Errorf("Get into a non-pointer error = %v, want shared.ErrInvalid", err)
+	if _, err := h.Cache.Get(ctx, k, dst); !errors.Is(err, appshared.ErrInvalidCacheValue) {
+		t.Errorf("Get into a non-pointer error = %v, want ErrInvalidCacheValue", err)
+	}
+	if _, err := h.Cache.Get(ctx, k, nil); !errors.Is(err, appshared.ErrInvalidCacheValue) {
+		t.Errorf("Get into nil error = %v, want ErrInvalidCacheValue", err)
 	}
 }
 

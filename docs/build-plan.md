@@ -96,7 +96,7 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 - [ ] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id
 - [ ] Migrations `0002_identity` (with `password_reset_codes`), `0003_workflows` (ADR 0006), `0004_tenancy` (with `invitations`, ADR 0011), `0005_rls_helpers`, `0014_platform`, `0015_rls_policies`
 - [ ] `adapter/postgres`: `TxManager` that sets `app.tenant_id`, `errors.go` mapping, identity and tenancy repositories
-- [ ] HTTP: `authn` middleware, CORS, rate limit on `/auth`, auth, tenancy and members handlers, new problem codes
+- [ ] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes
 - [ ] `adapter/notify/smtp.go` for invitations and password reset codes; Mailpit in the dev stack (ADR 0011)
 - [x] OpenAPI: `/auth/*`, tenancy and members endpoints (ADRs 0010, 0011)
 - [ ] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse)

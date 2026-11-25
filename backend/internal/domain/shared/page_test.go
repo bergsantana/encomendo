@@ -49,6 +49,16 @@ func TestNewPageRequest_DefaultsAndBounds(t *testing.T) {
 	}
 }
 
+func TestPageRequest_ZeroValueUsesTheDefault(t *testing.T) {
+	t.Parallel()
+
+	// A caller that skips NewPageRequest must still get a sensible page, not
+	// LIMIT 0.
+	if got := (PageRequest{}).Limit(); got != DefaultPageLimit {
+		t.Errorf("PageRequest{}.Limit() = %d, want %d", got, DefaultPageLimit)
+	}
+}
+
 func TestPage_HasMore(t *testing.T) {
 	t.Parallel()
 

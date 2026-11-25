@@ -154,17 +154,49 @@ func TestWithPrincipal_SetsTheStaffScope(t *testing.T) {
 	}
 }
 
-func TestWithPrincipal_ClientKeepsTheStoreTenant(t *testing.T) {
+func TestWithPrincipal_ClientOnAStorePageKeepsOnlyTheStoreTenant(t *testing.T) {
 	t.Parallel()
 
-	// A logged-in client on a store page: the tenant comes from the
-	// subdomain, the account from the token.
+	// A logged-in client on a store page. Adding the account to the store's
+	// scope would let RLS read the whole store plus the client's orders at
+	// every other store (ADR 0009). The account stays on the principal for
+	// use cases that write it as a column, such as checkout.
 	store := appshared.WithScope(context.Background(), appshared.Scope{TenantID: tenant})
 	ctx := WithPrincipal(store, client(t))
 
-	want := appshared.Scope{TenantID: tenant, ClientAccountID: account}
-	if got := appshared.ScopeFrom(ctx); got != want {
+	if got, want := appshared.ScopeFrom(ctx), (appshared.Scope{TenantID: tenant}); got != want {
 		t.Errorf("scope = %+v, want %+v", got, want)
+	}
+	if p, ok := PrincipalFrom(ctx); !ok || p.ClientAccountID() != account {
+		t.Errorf("PrincipalFrom = %+v, %v; want the client", p, ok)
+	}
+}
+
+func TestWithPrincipal_ClientAreaScopesTheAccountOnly(t *testing.T) {
+	t.Parallel()
+
+	// A stale user id must not survive into a client scope either.
+	stale := appshared.WithScope(context.Background(), appshared.Scope{UserID: user})
+	ctx := WithPrincipal(stale, client(t))
+
+	if got, want := appshared.ScopeFrom(ctx), (appshared.Scope{ClientAccountID: account}); got != want {
+		t.Errorf("scope = %+v, want %+v", got, want)
+	}
+}
+
+func TestRequire_RefusesAScopeThatDoesNotMatchTheCaller(t *testing.T) {
+	t.Parallel()
+
+	// A staff token for one store with the RLS scope of another, as when a
+	// store page middleware runs after authn on a store host (ADR 0009).
+	other := shared.TenantID(shared.NewV7(9, [10]byte{9}))
+	ctx := appshared.WithScope(WithPrincipal(context.Background(), staff(t, shared.RoleOwner)), appshared.Scope{TenantID: other})
+
+	if _, err := Require(ctx, identity.PermOrderRead); !errors.Is(err, ErrScopeMismatch) || !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("Require error = %v, want ErrScopeMismatch", err)
+	}
+	if _, err := RequireUser(ctx); !errors.Is(err, ErrScopeMismatch) {
+		t.Errorf("RequireUser error = %v, want ErrScopeMismatch", err)
 	}
 }
 

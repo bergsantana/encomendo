@@ -39,7 +39,7 @@ func TestKeys_RejectPartsThatCouldEscapeTheirSpace(t *testing.T) {
 		t.Run(part, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := TenantKey(tenantA, "catalog", part); !errors.Is(err, ErrInvalidCacheKey) || !errors.Is(err, shared.ErrInvalid) {
+			if _, err := TenantKey(tenantA, "catalog", part); !errors.Is(err, ErrInvalidCacheKey) {
 				t.Errorf("TenantKey part %q error = %v, want ErrInvalidCacheKey", part, err)
 			}
 			if _, err := GlobalKey(part); !errors.Is(err, ErrInvalidCacheKey) {
@@ -63,6 +63,53 @@ func TestKeys_RejectMissingOwnerOrParts(t *testing.T) {
 	}
 	if !(Key{}).IsZero() {
 		t.Error("Key{}.IsZero() = false")
+	}
+}
+
+func TestPortMisuseErrors_AreNotBadInput(t *testing.T) {
+	t.Parallel()
+
+	// These mean the calling code is wrong, not the user's input: they must
+	// reach the 500 path, which logs, instead of a silent 400 (ADR 0009).
+	for _, err := range []error{
+		ErrNoTransaction, ErrInvalidScope, ErrInvalidCacheKey, ErrInvalidTTL,
+		ErrInvalidCacheValue, ErrInvalidEvent, ErrEventWithoutTenant,
+	} {
+		for _, sentinel := range []error{shared.ErrInvalid, shared.ErrNotFound, shared.ErrConflict, shared.ErrForbidden, shared.ErrUnauthenticated} {
+			if errors.Is(err, sentinel) {
+				t.Errorf("%v matches %v", err, sentinel)
+			}
+		}
+	}
+}
+
+func TestScope_Validate(t *testing.T) {
+	t.Parallel()
+
+	account := shared.ClientAccountID(shared.NewV7(3, [10]byte{3}))
+	user := shared.UserID(shared.NewV7(2, [10]byte{2}))
+	valid := []Scope{
+		{},
+		{TenantID: tenantA},
+		{TenantID: tenantA, UserID: user},
+		{UserID: user},
+		{ClientAccountID: account},
+	}
+	for _, s := range valid {
+		if err := s.Validate(); err != nil {
+			t.Errorf("Validate(%+v) = %v, want nil", s, err)
+		}
+	}
+	// Postgres ORs permissive policies: a tenant and a client account
+	// together would read the whole store plus the client's orders
+	// everywhere (docs/architecture.md section 5.5, item 7).
+	both := Scope{TenantID: tenantA, ClientAccountID: account}
+	if err := both.Validate(); !errors.Is(err, ErrInvalidScope) {
+		t.Errorf("Validate(tenant + client) = %v, want ErrInvalidScope", err)
+	}
+	clientAndUser := Scope{UserID: user, ClientAccountID: account}
+	if err := clientAndUser.Validate(); !errors.Is(err, ErrInvalidScope) {
+		t.Errorf("Validate(user + client) = %v, want ErrInvalidScope", err)
 	}
 }
 

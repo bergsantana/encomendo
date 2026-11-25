@@ -2,6 +2,7 @@ package shared
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,14 +10,19 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
-// Cache errors. Each matches shared.ErrInvalid: they are programming
-// mistakes, never the result of the cache being down.
+// Cache misuse errors. Like ErrNoTransaction they mean the calling code is
+// wrong, never that the cache is down, so they match no domain sentinel and
+// reach the API as a logged 500.
 var (
 	// ErrInvalidCacheKey means a key part is empty or uses a character
-	// outside [A-Za-z0-9._-], or the tenant is zero.
-	ErrInvalidCacheKey = fmt.Errorf("cache: invalid key: %w", shared.ErrInvalid)
+	// outside [A-Za-z0-9._-], the tenant is zero, or a method got the zero
+	// Key.
+	ErrInvalidCacheKey = errors.New("cache: invalid key")
 	// ErrInvalidTTL means a TTL is zero or negative. Every entry expires.
-	ErrInvalidTTL = fmt.Errorf("cache: ttl must be positive: %w", shared.ErrInvalid)
+	ErrInvalidTTL = errors.New("cache: ttl must be positive")
+	// ErrInvalidCacheValue means Set got a value JSON cannot encode, or Get
+	// got a destination JSON cannot decode into (nil or not a pointer).
+	ErrInvalidCacheValue = errors.New("cache: value cannot go through JSON")
 )
 
 // Key is a cache key that always starts with its owner: "t:{tenantID}:" for
@@ -80,13 +86,17 @@ func (k Key) IsZero() bool { return k.s == "" }
 // Never cache orders, customers or anything that depends on the caller's
 // permissions (docs/architecture.md section 4.4).
 //
-// A cache outage never fails a request: an unreachable cache is a miss for
-// Get and a no-op for Set and the deletes, and the adapter logs it. Errors
-// are returned only for a zero key, a non-positive TTL, or a value that
-// cannot be encoded or decoded as JSON.
+// A cache problem never fails a request. An unreachable cache is a miss for
+// Get and a no-op for Set and the deletes. A stored value that no longer
+// decodes into dst (its type changed in a deploy, or it is corrupt) is a
+// miss, and the entry is dropped. The adapter logs both. Errors are returned
+// only for misuse: the zero Key (ErrInvalidCacheKey), a non-positive TTL
+// (ErrInvalidTTL), and values or destinations JSON cannot handle
+// (ErrInvalidCacheValue).
 type Cache interface {
-	// Get decodes the value at key into dst, which must be a pointer, and
-	// reports whether it was found and not expired.
+	// Get decodes the value at key into dst, which must be a non-nil
+	// pointer, and reports whether it was found, not expired, and decoded.
+	// On a miss dst is left untouched, even when a stale entry half fitted.
 	Get(ctx context.Context, key Key, dst any) (bool, error)
 	// Set stores value at key for ttl, replacing any previous value.
 	Set(ctx context.Context, key Key, value any, ttl time.Duration) error

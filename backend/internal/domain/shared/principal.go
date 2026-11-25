@@ -2,14 +2,16 @@ package shared
 
 import "fmt"
 
-// Principal errors. Each matches ErrInvalid.
+// Principal errors.
 var (
-	// ErrInvalidRole means a string is not one of the four staff roles.
+	// ErrInvalidRole means a string is not one of the four staff roles. It
+	// matches ErrInvalid.
 	ErrInvalidRole = fmt.Errorf("invalid role: %w", ErrInvalid)
 	// ErrInvalidPrincipal means the parts of a principal do not fit together,
-	// such as a tenant without a role. The auth adapter treats it as a bad
-	// token.
-	ErrInvalidPrincipal = fmt.Errorf("invalid principal: %w", ErrInvalid)
+	// such as a tenant without a role. Principals come only from verified
+	// tokens, so it matches ErrUnauthenticated: a bad token is a 401, never a
+	// 400.
+	ErrInvalidPrincipal = fmt.Errorf("invalid principal: %w", ErrUnauthenticated)
 )
 
 // Audience says which kind of caller a token was issued to. It is the JWT

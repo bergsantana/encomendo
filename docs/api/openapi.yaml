@@ -26,24 +26,41 @@ info:
     The refresh token (30 days, rotated on every use) travels one of two
     ways, chosen by `refreshTransport` on the calls that start a session:
 
-    - `cookie` (default, web): an httpOnly cookie `encomendo_refresh`
-      (`Secure; SameSite=Strict; Path=/auth`), never readable by JavaScript.
-      It is never returned in the body.
+    - `cookie` (default, web): an httpOnly cookie
+      `__Host-encomendo_refresh` (`Secure; SameSite=Strict; Path=/`, no
+      `Domain`, so no store subdomain can set or read it), never readable by
+      JavaScript and never returned in the body. A local stack on plain
+      HTTP uses `encomendo_refresh` without `Secure`.
     - `body` (Android): `refreshToken` in the response body; send it back in
       the request body.
 
     A call that presents a refresh token gets the new one back the same way
     it came, whatever `refreshTransport` says, so a script on the web page
-    can never trade the cookie for a token it can read. Calls that use the
-    cookie must send `Content-Type: application/json` with a JSON body
-    (`{}` is fine), which forces a CORS preflight from any other origin.
+    can never trade the cookie for a token it can read. Sending both the
+    cookie and a body token is `400 invalid`; more than one refresh cookie is
+    `401 unauthenticated`.
+
+    The web apps call the API on their own origin (the admin host routes
+    `/api` and `/auth`), so the API sends no CORS headers at all. Every
+    `/auth/*` call must send `Content-Type: application/json` with a JSON
+    body (`{}` is fine), and a browser request whose `Origin` is another
+    origin, or whose `Sec-Fetch-Site` is `same-site` or `cross-site`, is
+    `403 forbidden`. Store pages share the registrable domain, so SameSite
+    alone would not stop them.
 
     Using a refresh token that was already used revokes every token of its
-    family: all devices of that login must sign in again.
+    family: all devices of that login must sign in again. So clients never
+    refresh twice at once: the web app holds a Web Lock
+    (`navigator.locks`, name `encomendo-refresh`) around `/auth/refresh` so
+    tabs take turns, and Android holds a mutex. There is no grace window.
 
     Permissions in the session only drive what the apps show. The backend
     checks every call. A role change takes effect at the next refresh, at
-    most 15 minutes later.
+    most 15 minutes later, except for team management, which re-reads the
+    caller's role on every call (ADR 0011).
+
+    Limits keyed on an email use the email trimmed and lower-cased, so
+    changing its case never buys more attempts.
 servers:
   - url: http://localhost:8081
     description: Local stack (make dev-up)
@@ -161,7 +178,8 @@ paths:
       description: |
         Rotates the refresh token and keeps the store it was issued for. If
         the user no longer belongs to that store, the new session has no
-        store. The web app calls this on load and once after any 401.
+        store. The web app calls this on load and once after any 401, one
+        call at a time (see "Sessions").
       security:
         - refreshCookie: []
         - {}
@@ -174,6 +192,12 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/AuthSession"
+        "400":
+          description: "`invalid`: both the cookie and a body `refreshToken` were sent."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "401":
           description: |
             `unauthenticated`: the refresh token is missing, unknown, expired,
@@ -238,7 +262,7 @@ paths:
               $ref: "#/components/schemas/LogoutRequest"
       responses:
         "204":
-          description: Logged out. Sets an expired `encomendo_refresh` cookie.
+          description: Logged out. Sets an expired refresh cookie.
           headers:
             Set-Cookie:
               $ref: "#/components/headers/SetRefreshCookie"
@@ -251,9 +275,11 @@ paths:
       summary: Email a 6-digit code to reset a forgotten password ("Esqueci a senha").
       description: |
         Always answers 202, whether or not the email has an account, so the
-        answer never tells who is registered. A new request replaces any
-        earlier code. The code lasts 10 minutes and allows 5 attempts.
-        Rate-limited per IP and per email.
+        answer never tells who is registered. The answer never waits for the
+        email to go out, so its timing does not tell either. A new request
+        replaces any earlier code. The code lasts 10 minutes and allows 5
+        wrong attempts; an account allows 10 wrong codes a day, however many
+        codes are requested (ADR 0011). Rate-limited per IP and per email.
       requestBody:
         required: true
         content:
@@ -361,7 +387,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "404":
-          description: "`not_found`: unknown, expired, revoked or already used."
+          description: |
+            `not_found`: unknown, expired, revoked or already used, or its
+            sender can no longer manage the team (the same answer for each).
           content:
             application/problem+json:
               schema:
@@ -582,10 +610,13 @@ paths:
       operationId: inviteMember
       summary: Invite someone to the team by email.
       description: |
-        Needs `members:manage`. Emails a link that is valid for 7 days and
-        works once. Inviting an email that already has a pending invitation
-        replaces it (new link, new expiry), which is how "Reenviar convite"
-        works. The link is only in the email, never in this response.
+        Needs `members:manage`, checked against the caller's current role, not
+        the one in the token. Emails a link that is valid for 7 days and works
+        once, and only while the person who sent it can still manage the team.
+        Inviting an email that already has a pending invitation replaces it
+        (new link, new expiry), which is how "Reenviar convite" works. The
+        link is only in the email, never in this response. Limited to 20
+        invitations per store and 3 per email per day.
       security:
         - bearerAuth: []
       requestBody:
@@ -613,6 +644,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           description: |
             `email_unavailable`: the invitation was saved but the email could
@@ -654,12 +687,15 @@ components:
     refreshCookie:
       type: apiKey
       in: cookie
-      name: encomendo_refresh
-      description: Web only. httpOnly; Secure; SameSite=Strict; Path=/auth; 30 days.
+      name: __Host-encomendo_refresh
+      description: |
+        Web only. HttpOnly; Secure; SameSite=Strict; Path=/; host-only; 30
+        days. Named `encomendo_refresh`, without Secure, on a local stack over
+        plain HTTP.
 
   headers:
     SetRefreshCookie:
-      description: "`encomendo_refresh` with the new refresh token, when the refresh transport is `cookie`."
+      description: The refresh cookie with the new token, when the refresh transport is `cookie`.
       schema:
         type: string
     RetryAfter:
@@ -849,8 +885,10 @@ components:
       pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
       description: |
         The store's address label: `{slug}.encomendo.com.br`. Lower-case
-        letters, digits and single hyphens. Some words (www, api, admin,
-        conta …) are reserved and answer `invalid`.
+        letters, digits and single hyphens. Reserved, and answered with
+        `invalid`: the labels of the configured admin and API hosts, plus
+        www, api, admin, app, conta, mail and static (the list the store app
+        uses in web/apps/store/src/site.ts).
       example: altarpm
     Role:
       type: string

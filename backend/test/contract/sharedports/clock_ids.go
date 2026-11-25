@@ -7,19 +7,15 @@ import (
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 )
 
-// RunClockContract checks that a Clock reports a real, UTC time that never
-// goes backwards between two calls.
+// RunClockContract checks that a Clock reports a real time in UTC. It does
+// not check order: the wall clock may step back (see Clock.Now).
 func RunClockContract(t *testing.T, newClock func(t *testing.T) appshared.Clock) {
-	c := newClock(t)
-	first, second := c.Now(), c.Now()
-	if first.IsZero() {
+	now := newClock(t).Now()
+	if now.IsZero() {
 		t.Error("Now() is the zero time")
 	}
-	if first.Location() != time.UTC {
-		t.Errorf("Now() location = %v, want UTC", first.Location())
-	}
-	if second.Before(first) {
-		t.Errorf("Now() went backwards: %v then %v", first, second)
+	if now.Location() != time.UTC {
+		t.Errorf("Now() location = %v, want UTC", now.Location())
 	}
 }
 

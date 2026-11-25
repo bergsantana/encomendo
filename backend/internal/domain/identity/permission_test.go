@@ -51,12 +51,20 @@ func TestAllows_MatchesTheRoleTable(t *testing.T) {
 	}
 }
 
-func TestAllows_OwnerHasEveryPermission(t *testing.T) {
+func TestPermissionsOf_GrantsNothingOutsideTheTable(t *testing.T) {
 	t.Parallel()
 
-	for _, perm := range AllPermissions() {
-		if !Allows(shared.RoleOwner, perm) {
-			t.Errorf("owner lacks %s", perm)
+	// The test above walks AllPermissions, which is the owner's list. This one
+	// walks every role's own list, so a permission given only to admin or
+	// staff (and forgotten for the owner) still fails here.
+	for _, role := range allRoles {
+		for _, perm := range PermissionsOf(role) {
+			if !slices.Contains(wantGrants[perm], role) {
+				t.Errorf("%s grants %s, which wantGrants does not list for it", role, perm)
+			}
+			if !slices.Contains(AllPermissions(), perm) {
+				t.Errorf("%s grants %s, which the owner lacks", role, perm)
+			}
 		}
 	}
 }

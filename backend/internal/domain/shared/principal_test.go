@@ -72,8 +72,11 @@ func TestNewBackofficePrincipal_RejectsInconsistentInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := NewBackofficePrincipal(tt.user, tt.tenant, tt.role); !errors.Is(err, ErrInvalidPrincipal) {
-				t.Errorf("error = %v, want ErrInvalidPrincipal", err)
+			_, err := NewBackofficePrincipal(tt.user, tt.tenant, tt.role)
+			// A principal that does not fit together comes from a bad token,
+			// so it reads as unauthenticated (401), never as bad input (400).
+			if !errors.Is(err, ErrInvalidPrincipal) || !errors.Is(err, ErrUnauthenticated) || errors.Is(err, ErrInvalid) {
+				t.Errorf("error = %v, want ErrInvalidPrincipal matching ErrUnauthenticated only", err)
 			}
 		})
 	}

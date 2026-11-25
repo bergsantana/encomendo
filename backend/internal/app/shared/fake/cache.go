@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
-	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
 // Cache is a Cache in memory. Values go through JSON, as in Redis, so a
@@ -31,20 +31,29 @@ func NewCache(clock appshared.Clock) *Cache {
 	return &Cache{clock: clock, entries: map[string]cacheEntry{}}
 }
 
-// Get follows the Cache contract.
+// Get follows the Cache contract. It decodes into a fresh value and copies
+// it to dst only on success, so a stale entry never half-writes dst.
 func (c *Cache) Get(_ context.Context, key appshared.Key, dst any) (bool, error) {
 	if key.IsZero() {
 		return false, appshared.ErrInvalidCacheKey
 	}
+	target := reflect.ValueOf(dst)
+	if dst == nil || target.Kind() != reflect.Pointer || target.IsNil() {
+		return false, fmt.Errorf("decode into %T: %w", dst, appshared.ErrInvalidCacheValue)
+	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	e, ok := c.entries[key.String()]
-	c.mu.Unlock()
 	if !ok || !c.clock.Now().Before(e.expires) {
 		return false, nil
 	}
-	if err := json.Unmarshal(e.data, dst); err != nil {
-		return false, fmt.Errorf("decode cached %s: %w (%w)", key, shared.ErrInvalid, err)
+	fresh := reflect.New(target.Elem().Type())
+	if err := json.Unmarshal(e.data, fresh.Interface()); err != nil {
+		// The entry no longer fits its type: a miss, and it goes away.
+		delete(c.entries, key.String())
+		return false, nil
 	}
+	target.Elem().Set(fresh.Elem())
 	return true, nil
 }
 
@@ -58,7 +67,7 @@ func (c *Cache) Set(_ context.Context, key appshared.Key, value any, ttl time.Du
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("encode cached %s: %w (%w)", key, shared.ErrInvalid, err)
+		return fmt.Errorf("encode cached %s: %w (%w)", key, appshared.ErrInvalidCacheValue, err)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

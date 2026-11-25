@@ -41,7 +41,13 @@ func NewPageRequest(cursor string, limit int) (PageRequest, error) {
 func (p PageRequest) Cursor() string { return p.cursor }
 
 // Limit returns the maximum number of items, between 1 and MaxPageLimit.
-func (p PageRequest) Limit() int { return p.limit }
+// The zero PageRequest asks for DefaultPageLimit, never for zero items.
+func (p PageRequest) Limit() int {
+	if p.limit == 0 {
+		return DefaultPageLimit
+	}
+	return p.limit
+}
 
 // Page is one page of a list. NextCursor is empty on the last page.
 type Page[T any] struct {

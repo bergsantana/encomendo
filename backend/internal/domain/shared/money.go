@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -83,6 +84,44 @@ func (m Money) Sub(o Money) (Money, error) {
 		return Money{}, ErrMoneyOverflow
 	}
 	return Money{cents: m.cents - o.cents, currency: m.currency}, nil
+}
+
+// moneyJSON is the wire shape of Money, the same as the API's.
+type moneyJSON struct {
+	Cents    *int64 `json:"cents"`
+	Currency string `json:"currency"`
+}
+
+// MarshalJSON writes {"cents":…,"currency":…}, or null for the zero value
+// (no currency), so amounts survive the JSON of events and cached views
+// (ADR 0009).
+func (m Money) MarshalJSON() ([]byte, error) {
+	if m.currency == "" {
+		return []byte("null"), nil
+	}
+	return json.Marshal(moneyJSON{Cents: &m.cents, Currency: m.currency})
+}
+
+// UnmarshalJSON reads what MarshalJSON writes. null leaves m unchanged. It
+// returns ErrInvalidCurrency for a bad currency and ErrInvalid when cents
+// are missing.
+func (m *Money) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	var w moneyJSON
+	if err := json.Unmarshal(b, &w); err != nil {
+		return fmt.Errorf("decode money: %w", err)
+	}
+	if w.Cents == nil {
+		return fmt.Errorf("decode money without cents: %w", ErrInvalid)
+	}
+	parsed, err := NewMoney(*w.Cents, w.Currency)
+	if err != nil {
+		return err
+	}
+	*m = parsed
+	return nil
 }
 
 // String formats the amount for logs and test failures, such as "BRL 12.34".

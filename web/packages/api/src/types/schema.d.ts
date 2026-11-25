@@ -98,7 +98,8 @@ export interface paths {
          * Trade a refresh token for a new session.
          * @description Rotates the refresh token and keeps the store it was issued for. If
          *     the user no longer belongs to that store, the new session has no
-         *     store. The web app calls this on load and once after any 401.
+         *     store. The web app calls this on load and once after any 401, one
+         *     call at a time (see "Sessions").
          */
         post: operations["refreshSession"];
         delete?: never;
@@ -162,9 +163,11 @@ export interface paths {
         /**
          * Email a 6-digit code to reset a forgotten password ("Esqueci a senha").
          * @description Always answers 202, whether or not the email has an account, so the
-         *     answer never tells who is registered. A new request replaces any
-         *     earlier code. The code lasts 10 minutes and allows 5 attempts.
-         *     Rate-limited per IP and per email.
+         *     answer never tells who is registered. The answer never waits for the
+         *     email to go out, so its timing does not tell either. A new request
+         *     replaces any earlier code. The code lasts 10 minutes and allows 5
+         *     wrong attempts; an account allows 10 wrong codes a day, however many
+         *     codes are requested (ADR 0011). Rate-limited per IP and per email.
          */
         post: operations["requestPasswordReset"];
         delete?: never;
@@ -369,10 +372,13 @@ export interface paths {
         put?: never;
         /**
          * Invite someone to the team by email.
-         * @description Needs `members:manage`. Emails a link that is valid for 7 days and
-         *     works once. Inviting an email that already has a pending invitation
-         *     replaces it (new link, new expiry), which is how "Reenviar convite"
-         *     works. The link is only in the email, never in this response.
+         * @description Needs `members:manage`, checked against the caller's current role, not
+         *     the one in the token. Emails a link that is valid for 7 days and works
+         *     once, and only while the person who sent it can still manage the team.
+         *     Inviting an email that already has a pending invitation replaces it
+         *     (new link, new expiry), which is how "Reenviar convite" works. The
+         *     link is only in the email, never in this response. Limited to 20
+         *     invitations per store and 3 per email per day.
          */
         post: operations["inviteMember"];
         delete?: never;
@@ -450,8 +456,10 @@ export interface components {
         Password: string;
         /**
          * @description The store's address label: `{slug}.encomendo.com.br`. Lower-case
-         *     letters, digits and single hyphens. Some words (www, api, admin,
-         *     conta …) are reserved and answer `invalid`.
+         *     letters, digits and single hyphens. Reserved, and answered with
+         *     `invalid`: the labels of the configured admin and API hosts, plus
+         *     www, api, admin, app, conta, mail and static (the list the store app
+         *     uses in web/apps/store/src/site.ts).
          * @example altarpm
          */
         Slug: string;
@@ -742,7 +750,7 @@ export interface components {
     };
     requestBodies: never;
     headers: {
-        /** @description `encomendo_refresh` with the new refresh token, when the refresh transport is `cookie`. */
+        /** @description The refresh cookie with the new token, when the refresh transport is `cookie`. */
         SetRefreshCookie: string;
         /** @description Seconds until the limit resets. */
         RetryAfter: number;
@@ -870,6 +878,15 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["AuthSession"];
+            /** @description `invalid`: both the cookie and a body `refreshToken` were sent. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /**
              * @description `unauthenticated`: the refresh token is missing, unknown, expired,
              *     revoked or already used. A reused token also revokes its family.
@@ -926,7 +943,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Logged out. Sets an expired `encomendo_refresh` cookie. */
+            /** @description Logged out. Sets an expired refresh cookie. */
             204: {
                 headers: {
                     "Set-Cookie": components["headers"]["SetRefreshCookie"];
@@ -1054,7 +1071,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description `not_found`: unknown, expired, revoked or already used. */
+            /**
+             * @description `not_found`: unknown, expired, revoked or already used, or its
+             *     sender can no longer manage the team (the same answer for each).
+             */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1317,6 +1337,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            429: components["responses"]["RateLimited"];
             /**
              * @description `email_unavailable`: the invitation was saved but the email could
              *     not be sent. Invite again; it replaces the link.
