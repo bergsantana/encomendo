@@ -81,3 +81,9 @@ func fakeTenancy(*testing.T) TenancyHarness {
 func TestFakeMemberships_Contract(t *testing.T) { RunMembershipsContract(t, fakeTenancy) }
 
 func TestFakeInvitations_Contract(t *testing.T) { RunInvitationsContract(t, fakeTenancy) }
+
+func TestFakeTokens_Contract(t *testing.T) {
+	RunAccessTokenIssuerContract(t, func(*testing.T) IssuerHarness {
+		return IssuerHarness{Issuer: fake.NewTokens(), NewID: sharedfake.NewIDs(sharedfake.NewClock(start)).NewID, Now: start}
+	})
+}

@@ -24,6 +24,10 @@ var (
 	// ErrUnauthenticated means the caller could not be identified: no token,
 	// a bad or expired token, or wrong credentials. Adapters answer 401.
 	ErrUnauthenticated = errors.New("unauthenticated")
+	// ErrUnavailable means the server cannot do this now but may soon, such
+	// as when every password-hashing slot is taken. Adapters answer 503 with
+	// Retry-After, never 401: a busy server must not end a session (ADR 0013).
+	ErrUnavailable = errors.New("unavailable")
 )
 
 // ErrVersionConflict means an optimistic lock failed: the row changed since

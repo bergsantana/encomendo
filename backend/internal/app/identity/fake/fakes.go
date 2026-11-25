@@ -111,6 +111,9 @@ func (t *Tokens) Issue(_ context.Context, c appidentity.AccessClaims) (string, e
 	if t.fail != nil {
 		return "", t.fail
 	}
+	if err := appidentity.CheckAccessClaims(c); err != nil {
+		return "", err
+	}
 	t.issued = append(t.issued, c)
 	return "access." + c.JTI.String(), nil
 }
