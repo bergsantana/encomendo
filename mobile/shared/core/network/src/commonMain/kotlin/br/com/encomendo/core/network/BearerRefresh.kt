@@ -1,12 +1,15 @@
 package br.com.encomendo.core.network
 
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * BearerRefresh runs at most one token refresh at a time and decides what a
- * failed refresh means.
+ * failed refresh means (docs/adr/0012-refresh-failure-keeps-offline-sessions.md).
  *
  * Refresh tokens rotate on every use and a reused one revokes its whole family
  * (docs/architecture.md 5.1), so two refreshes racing with the same token would
@@ -21,8 +24,12 @@ internal class BearerRefresh(
 
     /**
      * Returns tokens to retry with, or null when the request should fail with
-     * its 401. Clears [tokens] only when the server refuses the refresh token,
-     * never when it cannot be reached: workshops lose signal often.
+     * its 401.
+     *
+     * The session ends only when the server refuses the refresh token. Any
+     * other failure (offline, 429, 5xx) is rethrown as it is, so the caller sees
+     * why and the session survives: workshops lose signal often. Nothing is
+     * written if a logout, login or tenant switch replaced the tokens meanwhile.
      */
     suspend fun refresh(
         client: HttpClient,
@@ -33,17 +40,28 @@ internal class BearerRefresh(
             if (stored.accessToken != rejectedAccessToken) return@withLock stored
             val renewed =
                 try {
-                    refresher.refresh(client, stored.refreshToken)
+                    withContext(RefreshInFlight) { refresher.refresh(client, stored.refreshToken) }
                 } catch (error: ApiError) {
-                    if (error.status in SESSION_ENDING_STATUSES) tokens.clear()
+                    if (error.status !in SESSION_ENDING_STATUSES) throw error
+                    tokens.replace(expected = stored, replacement = null)
                     return@withLock null
                 }
-            tokens.write(renewed)
-            renewed
+            renewed.takeIf { tokens.replace(expected = stored, replacement = it) }
         }
 
-    private companion object {
-        /** The server looked at the refresh token and said no; anything else (offline, 429, 5xx) may pass. */
-        val SESSION_ENDING_STATUSES = setOf(400, 401, 403)
+    /** Marks the coroutine of a refresh call, whose own 401 must never start another refresh. */
+    private object RefreshInFlight : CoroutineContext.Element, CoroutineContext.Key<RefreshInFlight> {
+        override val key: CoroutineContext.Key<*> get() = this
+    }
+
+    companion object {
+        /** The server looked at the refresh token and said no; anything else may pass. */
+        private val SESSION_ENDING_STATUSES = setOf(400, 401, 403)
+
+        /**
+         * True inside a refresh call. Ktor's refresh lock is not reentrant, so a
+         * 401 on the refresh call itself would wait on it forever.
+         */
+        suspend fun isRunning(): Boolean = currentCoroutineContext()[RefreshInFlight] != null
     }
 }

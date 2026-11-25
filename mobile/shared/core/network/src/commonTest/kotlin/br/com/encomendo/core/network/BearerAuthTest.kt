@@ -1,6 +1,7 @@
 package br.com.encomendo.core.network
 
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.request.HttpRequestData
@@ -8,16 +9,25 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.time.Duration.Companion.seconds
 
 class BearerAuthTest {
     private val old = AuthTokens(accessToken = "access-old", refreshToken = "refresh-old")
@@ -116,7 +126,8 @@ class BearerAuthTest {
 
             val error = assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") }
 
-            assertEquals(401, error.status)
+            // The caller sees why it failed (offline), not a 401 that would read as "session expired".
+            assertEquals(ApiErrorCode.Network, error.code)
             assertEquals(old, storage.current, "a workshop with weak signal must not be logged out")
         }
 
@@ -127,8 +138,9 @@ class BearerAuthTest {
             val refresher = RecordingRefresher { throw ApiError(status = 503, code = ApiErrorCode.NotReady) }
             val client = client(storage, refresher) { respondUnauthorized() }
 
-            assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") }
+            val error = assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") }
 
+            assertEquals(503, error.status)
             assertEquals(old, storage.current)
         }
 
@@ -168,6 +180,103 @@ class BearerAuthTest {
         }
 
     @Test
+    fun aLogoutDuringARefreshStaysALogout() =
+        runTest {
+            val storage = InMemoryTokenStorage(old)
+            val started = CompletableDeferred<Unit>()
+            val gate = CompletableDeferred<Unit>()
+            val refresher =
+                RecordingRefresher {
+                    started.complete(Unit)
+                    gate.await()
+                    fresh
+                }
+            val client = client(storage, refresher) { respondUnauthorized() }
+
+            val call = async { assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") } }
+            started.await()
+            storage.overwrite(null) // "Sair" while the refresh is on the wire
+            gate.complete(Unit)
+
+            assertEquals(401, call.await().status)
+            assertNull(storage.current, "the refreshed pair must not sign the user back in")
+        }
+
+    @Test
+    fun aLoginDuringARejectedRefreshIsKept() =
+        runTest {
+            val other = AuthTokens(accessToken = "access-other", refreshToken = "refresh-other")
+            val storage = InMemoryTokenStorage(old)
+            val started = CompletableDeferred<Unit>()
+            val gate = CompletableDeferred<Unit>()
+            val refresher =
+                RecordingRefresher {
+                    started.complete(Unit)
+                    gate.await()
+                    throw ApiError(status = 401, code = ApiErrorCode("unauthorized"))
+                }
+            val client = client(storage, refresher) { respondUnauthorized() }
+
+            val call = async { assertFailsWith<ApiError> { client.get("/api/v1/admin/orders") } }
+            started.await()
+            storage.overwrite(other) // a new login while the old session's refresh is refused
+            gate.complete(Unit)
+            call.await()
+
+            assertEquals(other, storage.current, "a refused old refresh must not end the new session")
+        }
+
+    @Test
+    fun leavingAScreenDuringARefreshStillKeepsTheRotatedTokens() =
+        runTest {
+            // The server has already spent refresh-old; dropping its answer would leave a
+            // spent token behind, and reusing it revokes the whole family.
+            val storage = InMemoryTokenStorage(old)
+            val started = CompletableDeferred<Unit>()
+            val gate = CompletableDeferred<Unit>()
+            val refresher =
+                RecordingRefresher {
+                    started.complete(Unit)
+                    gate.await()
+                    fresh
+                }
+            val client = client(storage, refresher) { respondUnauthorized() }
+
+            val call = launch { client.get("/api/v1/admin/orders") }
+            started.await()
+            call.cancel()
+            gate.complete(Unit)
+            call.join()
+
+            assertEquals(fresh, storage.current)
+            assertEquals(listOf("refresh-old"), refresher.calls)
+        }
+
+    @Test
+    fun aRefresherThatForgetsWithoutBearerFailsInsteadOfHanging() =
+        runTest {
+            val storage = InMemoryTokenStorage(old)
+            val careless = TokenRefresher { client, _ -> client.get("/auth/refresh").body<AuthTokensBody>().toTokens() }
+            val client = client(storage, careless) { respondUnauthorized() }
+
+            // A deadlocked refresh is non-cancellable, so it runs in a detached scope and the
+            // test waits in real time: a regression fails here instead of hanging the build.
+            val call =
+                CoroutineScope(Dispatchers.Default).async {
+                    try {
+                        client.get("/api/v1/admin/orders")
+                        null
+                    } catch (error: ApiError) {
+                        error
+                    }
+                }
+            val error = withContext(Dispatchers.Default) { withTimeoutOrNull(5.seconds) { call.await() } }
+
+            assertEquals(401, assertNotNull(error, "the refresh deadlocked").status)
+            assertNull(storage.current)
+        }
+
+    @Test
     fun requestsMarkedWithoutBearerCarryNoTokenAndNeverRefresh() =
         runTest {
             val refresher = RecordingRefresher { error("a failed login must not refresh") }
@@ -183,6 +292,14 @@ class BearerAuthTest {
             assertEquals(listOf<String?>(null), seen)
             assertEquals(emptyList(), refresher.calls)
         }
+
+    @Serializable
+    private data class AuthTokensBody(
+        val accessToken: String,
+        val refreshToken: String,
+    ) {
+        fun toTokens() = AuthTokens(accessToken = accessToken, refreshToken = refreshToken)
+    }
 
     private fun HttpRequestData.bearer(): String? = headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
 
@@ -233,7 +350,12 @@ class BearerRefreshTest {
             val storage = InMemoryTokenStorage(old)
             val refresher = RecordingRefresher { throw ApiError(status = 429, code = ApiErrorCode.Unknown) }
 
-            assertNull(BearerRefresh(storage, refresher).refresh(client, rejectedAccessToken = old.accessToken))
+            val error =
+                assertFailsWith<ApiError> {
+                    BearerRefresh(storage, refresher).refresh(client, rejectedAccessToken = old.accessToken)
+                }
+
+            assertEquals(429, error.status)
             assertEquals(old, storage.current)
         }
 }

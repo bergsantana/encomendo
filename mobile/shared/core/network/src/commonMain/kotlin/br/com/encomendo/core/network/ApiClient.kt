@@ -41,10 +41,12 @@ internal val ApiJson: Json =
  *   and a request that never reached the server throws [ApiError] with
  *   [ApiErrorCode.Network];
  * - the access token from [tokens] goes only to the [ApiClientConfig.baseUrl]
- *   origin, never to another host or over plain HTTP;
+ *   origin (same scheme, host and port), so with an https base URL it never
+ *   travels over plain HTTP or to another host;
  * - a 401 from the API triggers one refresh through [refresher] and one retry;
  *   if the server refuses the refresh token, [tokens] is cleared, which signs
- *   the user out.
+ *   the user out; if the refresh fails for any other reason, that error is
+ *   thrown and the session is kept.
  *
  * Use one client for the whole app, so refreshes are never run twice in parallel.
  */
@@ -94,8 +96,13 @@ private fun HttpClientConfig<*>.installBearer(
     tokens: TokenStorage,
 ) {
     install(Auth) {
-        // A 401 from another host must never be answered with our token.
-        reAuthorizeOnResponse { it.status == HttpStatusCode.Unauthorized && it.request.url.isSameOrigin(apiOrigin) }
+        // A 401 from another host must never be answered with our token, and a 401
+        // on the refresh call itself must fail instead of refreshing inside the refresh.
+        reAuthorizeOnResponse {
+            it.status == HttpStatusCode.Unauthorized &&
+                it.request.url.isSameOrigin(apiOrigin) &&
+                !BearerRefresh.isRunning()
+        }
         bearer {
             // TokenStorage is the only copy, so a logout or tenant switch applies to the next request.
             cacheTokens = false

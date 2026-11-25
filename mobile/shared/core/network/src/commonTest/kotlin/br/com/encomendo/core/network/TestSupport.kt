@@ -32,17 +32,20 @@ internal class InMemoryTokenStorage(
 ) : TokenStorage {
     private val state = MutableStateFlow(initial)
 
+    /** The tokens stored right now. */
     val current: AuthTokens? get() = state.value
 
-    override suspend fun read(): AuthTokens? = state.value
-
-    override suspend fun write(tokens: AuthTokens) {
+    /** Replaces the tokens from outside the client, as a login or logout screen would. */
+    fun overwrite(tokens: AuthTokens?) {
         state.value = tokens
     }
 
-    override suspend fun clear() {
-        state.value = null
-    }
+    override suspend fun read(): AuthTokens? = state.value
+
+    override suspend fun replace(
+        expected: AuthTokens,
+        replacement: AuthTokens?,
+    ): Boolean = state.compareAndSet(expected, replacement)
 }
 
 /** Records every refresh and answers with [answer]. */
