@@ -2,6 +2,7 @@ package br.com.encomendo.core.data.session
 
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.BearerCredentials
+import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.network.TokenRefresher
 import br.com.encomendo.core.network.TokenStorage
 import br.com.encomendo.core.network.auth.AuthApi
@@ -14,14 +15,16 @@ import io.ktor.client.engine.HttpClientEngine
 /**
  * Creates the app's one API client, signed in through [store]: requests carry
  * the stored access token, and a refresh replaces the tokens and the session's
- * store, role and permissions together. Keep one per process, so refreshes
- * never run twice at once (docs/api/openapi.yaml, "Sessions").
+ * store, role and permissions together. Keep one per process, and share
+ * [turns] with every other call that spends the refresh token, so no two run
+ * at once (docs/api/openapi.yaml, "Sessions").
  */
 fun createSessionApiClient(
     engine: HttpClientEngine,
     config: ApiClientConfig,
     store: TokenStore,
-): HttpClient = createApiClient(engine, config, TokenStoreStorage(store), SessionRefresher)
+    turns: SessionTurns,
+): HttpClient = createApiClient(engine, config, TokenStoreStorage(store), SessionRefresher, turns)
 
 /** A stored session as the API client sees it: its tokens. The rest travels along untouched. */
 internal class StoredCredentials(

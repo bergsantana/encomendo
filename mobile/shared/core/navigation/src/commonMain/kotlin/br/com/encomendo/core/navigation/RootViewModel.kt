@@ -32,18 +32,27 @@ sealed interface RootUiState {
         override val screens: ViewModelStoreOwner,
     ) : Ready
 
-    /** A business user is signed in: the management graph, showing what [permissions] allow. */
+    /**
+     * Signed in, but no store is selected: right after sign-up, or with
+     * several stores and none picked. The store picker, since every store
+     * route would answer `403 tenant_required` (ADR 0010).
+     */
+    data class ChoosingStore(
+        override val screens: ViewModelStoreOwner,
+    ) : Ready
+
+    /** A business user is signed in to a store: the management graph, showing what [permissions] allow. */
     data class SignedIn(
         override val screens: ViewModelStoreOwner,
-        /** What the session's role allows in the selected store; nothing while no store is selected. */
+        /** What the session's role allows in the selected store. */
         val permissions: GrantedPermissions,
     ) : Ready
 }
 
 /**
- * RootViewModel picks the auth graph or the management graph from the
- * session, and switches as soon as it starts or ends (a login, "Sair", or a
- * refresh the server refused).
+ * RootViewModel picks the auth graph, the store picker or the management
+ * graph from the session, and switches as soon as it starts, ends or moves
+ * (a login, "Sair", a store switch, or a refresh the server refused).
  *
  * It also owns each session's screen ViewModels. They survive rotation and
  * are cleared when the session starts or ends, or moves to another store, so
@@ -72,10 +81,10 @@ class RootViewModel(
     private fun stateFor(session: Session?): RootUiState.Ready {
         val identity = session?.let { Identity(userId = it.user.id, tenantId = it.tenant?.id) }
         val screens = current?.takeIf { it.identity == identity } ?: startSession(identity)
-        return if (session == null) {
-            RootUiState.SignedOut(screens)
-        } else {
-            RootUiState.SignedIn(screens, session.permissions)
+        return when {
+            session == null -> RootUiState.SignedOut(screens)
+            session.tenant == null -> RootUiState.ChoosingStore(screens)
+            else -> RootUiState.SignedIn(screens, session.permissions)
         }
     }
 

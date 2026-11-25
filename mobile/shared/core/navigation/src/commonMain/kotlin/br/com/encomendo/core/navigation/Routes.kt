@@ -20,3 +20,7 @@ data object BackofficeGraph
 /** Hoje: what needs the owner today. */
 @Serializable
 data object HojeDestination
+
+/** The store picker, reached from "Trocar de loja" inside the management graph. */
+@Serializable
+data object StorePickerDestination

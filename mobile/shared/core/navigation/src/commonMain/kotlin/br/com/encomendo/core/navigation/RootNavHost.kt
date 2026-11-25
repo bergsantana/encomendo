@@ -9,6 +9,7 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -18,6 +19,7 @@ import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.ui.LocalGrantedPermissions
 import br.com.encomendo.feature.auth.AccountBarRoute
 import br.com.encomendo.feature.auth.LoginRoute
+import br.com.encomendo.feature.auth.StorePickerRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -33,7 +35,8 @@ fun RootRoute(
 
 /**
  * RootNavHost hosts every graph of the management app: the auth graph while
- * signed out, the management graph under the account bar while signed in. Screen ViewModels live in
+ * signed out, the store picker while signed in without a store, and the
+ * management graph under the account bar once a store is open. Screen ViewModels live in
  * the session's own store ([RootUiState.Ready.screens]), and every
  * `PermissionGate` below reads the session's permissions; signed out, nothing
  * is granted.
@@ -48,7 +51,6 @@ fun RootNavHost(
             RootUiState.Loading -> return
             is RootUiState.Ready -> state
         }
-    val signedIn = session is RootUiState.SignedIn
     val permissions = (session as? RootUiState.SignedIn)?.permissions ?: GrantedPermissions.None
     // A fresh back stack per session: Back never leads from the login into
     // management screens after a logout, nor from Hoje back to the login.
@@ -57,7 +59,11 @@ fun RootNavHost(
             LocalViewModelStoreOwner provides session.screens,
             LocalGrantedPermissions provides permissions,
         ) {
-            if (signedIn) ManagementShell(modifier) else AuthHost(modifier)
+            when (session) {
+                is RootUiState.SignedOut -> AuthHost(modifier)
+                is RootUiState.ChoosingStore -> StorePickerRoute(modifier)
+                is RootUiState.SignedIn -> ManagementShell(modifier)
+            }
         }
     }
 }
@@ -69,21 +75,30 @@ private fun AuthHost(modifier: Modifier) {
     }
 }
 
-/** The management screens under the account bar: the store's name, the person's, and Sair. */
+/** The management screens under the account bar: the store's name, the person's, Trocar de loja and Sair. */
 @Composable
 private fun ManagementShell(modifier: Modifier) {
-    Scaffold(topBar = { AccountBarRoute() }, modifier = modifier) { padding ->
+    val navController = rememberNavController()
+    Scaffold(
+        topBar = {
+            AccountBarRoute(
+                // Single top: the bar stays above the picker, and a second tap must not stack another.
+                onSwitchStore = { navController.navigate(StorePickerDestination) { launchSingleTop = true } },
+            )
+        },
+        modifier = modifier,
+    ) { padding ->
         NavHost(
-            navController = rememberNavController(),
+            navController = navController,
             startDestination = BackofficeGraph,
             modifier = Modifier.padding(padding),
         ) {
-            backofficeNavGraph()
+            backofficeNavGraph(navController)
         }
     }
 }
 
-/** Login, and later sign-up, tenant picker and forgot password (`feature/auth`). */
+/** Login, and later sign-up and forgot password (`feature/auth`); the store picker has its own state. */
 fun NavGraphBuilder.authNavGraph() {
     navigation<AuthGraph>(startDestination = LoginDestination) {
         composable<LoginDestination> { LoginRoute() }
@@ -95,8 +110,13 @@ fun NavGraphBuilder.authNavGraph() {
  * Estoque · Catálogo · Clientes · Financeiro. Each feature adds its route here
  * when it ships, matching the web admin features one to one.
  */
-fun NavGraphBuilder.backofficeNavGraph() {
+fun NavGraphBuilder.backofficeNavGraph(navController: NavController) {
     navigation<BackofficeGraph>(startDestination = HojeDestination) {
         composable<HojeDestination> { HojeScreen() }
+        // Choosing a store moves the session; the root then starts that store's screens afresh.
+        composable<StorePickerDestination> {
+            // Pops the picker itself, so a second tap on the open store, still in flight, pops nothing more.
+            StorePickerRoute(onClose = { navController.popBackStack(StorePickerDestination, inclusive = true) })
+        }
     }
 }

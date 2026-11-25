@@ -8,11 +8,13 @@ import br.com.encomendo.core.domain.failure.InputIssue
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.network.ApiClientConfig
+import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.network.auth.AuthApi
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.SessionTokens
 import br.com.encomendo.core.security.StoredSession
 import br.com.encomendo.core.security.TokenStore
+import br.com.encomendo.core.testing.AltaRpm
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
 import br.com.encomendo.core.testing.testSession
@@ -59,6 +61,23 @@ class ApiAuthRepositoryTest {
             assertEquals(session, stored?.session)
             assertEquals("alta-rpm", session.tenant?.slug)
             assertEquals(GrantedPermissions(listOf(Permission("order:read"))), session.permissions)
+        }
+
+    @Test
+    fun aLoginAsksForTheStoreUsedLastOnThisDevice() =
+        runTest {
+            val lastStore = LastStore(temporaryPreferencesDataStore(backgroundScope))
+            lastStore.follow(flowOf(testSession(tenant = AltaRpm))) // a finite flow: returns once remembered
+            val bodies = mutableListOf<String>()
+            val auth =
+                repository(tokenStore(), lastStore) { request ->
+                    bodies += request.body.toByteArray().decodeToString()
+                    respondJson(SESSION_JSON)
+                }
+
+            auth.logIn(email = "ana@altarpm.com.br", password = "segredo-forte")
+
+            assertTrue(bodies.single().contains(""""tenantId":"${AltaRpm.id}""""), bodies.single())
         }
 
     @Test
@@ -343,15 +362,22 @@ class ApiAuthRepositoryTest {
 
     private fun TestScope.repository(
         store: TokenStore,
+        lastStore: LastStore = LastStore(temporaryPreferencesDataStore(backgroundScope)),
         handler: MockRequestHandler,
     ): ApiAuthRepository =
         ApiAuthRepository(
             api =
                 AuthApi(
-                    createSessionApiClient(MockEngine(handler), ApiClientConfig(baseUrl = "https://api.test"), store),
+                    createSessionApiClient(
+                        MockEngine(handler),
+                        ApiClientConfig(baseUrl = "https://api.test"),
+                        store,
+                        SessionTurns(),
+                    ),
                 ),
             store = store,
             appScope = backgroundScope,
+            lastStore = lastStore,
         )
 
     private fun MockRequestHandleScope.respondJson(body: String): HttpResponseData =

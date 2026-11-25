@@ -237,7 +237,7 @@ class RootViewModelTest {
         }
 
     @Test
-    fun aRefreshThatDropsTheStoreClearsTheScreensAndTheGrants() =
+    fun aRefreshThatDropsTheStoreClearsTheScreensAndOpensThePicker() =
         runTest(main) {
             // Removed from the store: the refresh answers with no store selected (docs/api/openapi.yaml).
             val sessions = FakeSessionRepository(testSession(permissions = setOf("order:write")))
@@ -249,10 +249,40 @@ class RootViewModelTest {
                 val screen = probeIn(first.screens)
 
                 sessions.state.value = testSession(tenant = null)
-                val second = assertIs<RootUiState.SignedIn>(awaitItem())
+                assertIs<RootUiState.ChoosingStore>(awaitItem())
 
                 assertTrue(screen.cleared)
-                assertEquals(GrantedPermissions.None, second.permissions)
+            }
+        }
+
+    @Test
+    fun aSessionWithoutAStoreOpensThePickerNotTheManagementGraph() =
+        runTest(main) {
+            // Right after sign-up, or with several stores and none picked: store routes would answer
+            // 403 tenant_required (ADR 0010).
+            val viewModel = rootViewModel(FakeSessionRepository(testSession(tenant = null)))
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                assertIs<RootUiState.ChoosingStore>(awaitItem())
+            }
+        }
+
+    @Test
+    fun choosingAStoreClearsThePickersScreens() =
+        runTest(main) {
+            val sessions = FakeSessionRepository(testSession(tenant = null))
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                val picking = assertIs<RootUiState.ChoosingStore>(awaitItem())
+                val picker = probeIn(picking.screens)
+
+                sessions.state.value = testSession()
+                assertIs<RootUiState.SignedIn>(awaitItem())
+
+                assertTrue(picker.cleared)
             }
         }
 

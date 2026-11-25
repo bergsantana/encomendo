@@ -4,15 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -39,8 +35,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.encomendo.feature.auth.resources.Res
 import br.com.encomendo.feature.auth.resources.login_email
 import br.com.encomendo.feature.auth.resources.login_error_offline
-import br.com.encomendo.feature.auth.resources.login_error_rate_limited_minutes
-import br.com.encomendo.feature.auth.resources.login_error_rate_limited_seconds
 import br.com.encomendo.feature.auth.resources.login_error_server
 import br.com.encomendo.feature.auth.resources.login_error_unexpected
 import br.com.encomendo.feature.auth.resources.login_error_wrong_credentials
@@ -52,7 +46,6 @@ import br.com.encomendo.feature.auth.resources.login_password_show_description
 import br.com.encomendo.feature.auth.resources.login_submit
 import br.com.encomendo.feature.auth.resources.login_submitting
 import br.com.encomendo.feature.auth.resources.login_title
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -113,7 +106,13 @@ fun LoginScreen(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
-        SubmitButton(submitting = state.submitting, enabled = state.canSubmit, onClick = actions.onSubmit)
+        BusyButton(
+            label = stringResource(Res.string.login_submit),
+            busyLabel = stringResource(Res.string.login_submitting),
+            busy = state.submitting,
+            enabled = state.canSubmit,
+            onClick = actions.onSubmit,
+        )
     }
 }
 
@@ -198,30 +197,6 @@ private fun VisibilityToggle(
 }
 
 @Composable
-private fun SubmitButton(
-    submitting: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val submittingLabel = stringResource(Res.string.login_submitting)
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .semantics { if (submitting) contentDescription = submittingLabel },
-    ) {
-        if (submitting) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-        } else {
-            Text(stringResource(Res.string.login_submit))
-        }
-    }
-}
-
-@Composable
 private fun LoginError.message(): String =
     when (this) {
         LoginError.WrongCredentials -> stringResource(Res.string.login_error_wrong_credentials)
@@ -230,26 +205,3 @@ private fun LoginError.message(): String =
         LoginError.Unexpected -> stringResource(Res.string.login_error_unexpected)
         is LoginError.RateLimited -> rateLimitMessage(retryAfterSeconds)
     }
-
-@Composable
-private fun rateLimitMessage(retryAfterSeconds: Int?): String {
-    // Every 429 carries Retry-After (ADR 0013); a minute is a safe guess if one ever does not, as on web.
-    val seconds = retryAfterSeconds ?: SECONDS_PER_MINUTE
-    val minutes = minutesToWait(seconds)
-    return if (minutes == null) {
-        pluralStringResource(Res.plurals.login_error_rate_limited_seconds, seconds, seconds)
-    } else {
-        pluralStringResource(Res.plurals.login_error_rate_limited_minutes, minutes, minutes)
-    }
-}
-
-/**
- * Returns the wait in whole minutes, rounded up, from a minute on; null below
- * that, where seconds read better. The web admin uses the same thresholds.
- * Rounding up never tells the user to come back before the limit resets.
- */
-internal fun minutesToWait(seconds: Int): Int? =
-    if (seconds < MINUTES_FROM_SECONDS) null else (seconds + SECONDS_PER_MINUTE - 1) / SECONDS_PER_MINUTE
-
-private const val MINUTES_FROM_SECONDS = 60
-private const val SECONDS_PER_MINUTE = 60

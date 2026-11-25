@@ -5,6 +5,7 @@ import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.ApiError
 import br.com.encomendo.core.network.ApiErrorCode
 import br.com.encomendo.core.network.InMemoryTokenStorage
+import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.network.TestTokens
 import br.com.encomendo.core.network.TokenRefresher
 import br.com.encomendo.core.network.createApiClient
@@ -226,6 +227,69 @@ class AuthApiTest {
             assertFailsWith<ApiError> { api.logOut(accessToken = "access-leaving", refreshToken = "refresh-leaving") }
         }
 
+    @Test
+    fun logInNamesTheStoreUsedLastOnThisDevice() =
+        runTest {
+            // ADR 0010: login takes the store used last on the device, so a member of several opens it.
+            val bodies = mutableListOf<String>()
+            val api =
+                authApi { request ->
+                    bodies += request.body.toByteArray().decodeToString()
+                    respondJson(SESSION_JSON)
+                }
+
+            api.logIn(
+                email = "ana@altarpm.com.br",
+                password = "segredo-forte",
+                tenantId = "0190f3c4-0000-7000-8000-000000000001",
+            )
+
+            assertEquals(
+                """{"email":"ana@altarpm.com.br","password":"segredo-forte",""" +
+                    """"tenantId":"0190f3c4-0000-7000-8000-000000000001","refreshTransport":"body"}""",
+                bodies.single(),
+            )
+        }
+
+    @Test
+    fun switchTenantSendsTheRefreshTokenAndTheStoreAndNoBearer() =
+        runTest {
+            // A switch is a refresh for another store (ADR 0010): the refresh token in the body, Android only.
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                authApi { request ->
+                    requests += request
+                    respondJson(SESSION_JSON)
+                }
+
+            val session =
+                api.switchTenant(
+                    refreshToken = "refresh-old",
+                    tenantId = "0190f3c4-0000-7000-8000-000000000001",
+                )
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/auth/switch-tenant", request.url.encodedPath)
+            assertNull(request.headers[HttpHeaders.Authorization])
+            assertEquals(
+                """{"tenantId":"0190f3c4-0000-7000-8000-000000000001","refreshToken":"refresh-old"}""",
+                request.body.toByteArray().decodeToString(),
+            )
+            assertEquals("refresh-new", session.refreshToken)
+            assertEquals("alta-rpm", session.tenant?.slug)
+        }
+
+    @Test
+    fun aRefusedSwitchIsAnApiErrorAndNeverARefresh() =
+        runTest {
+            val api = authApi { respondProblem(HttpStatusCode.Forbidden, """{"status":403,"code":"forbidden"}""") }
+
+            val error = assertFailsWith<ApiError> { api.switchTenant(refreshToken = "refresh-old", tenantId = "x") }
+
+            assertEquals(ApiErrorCode.Forbidden, error.code)
+        }
+
     private fun authApi(handler: MockRequestHandler): AuthApi =
         AuthApi(
             createApiClient(
@@ -234,6 +298,7 @@ class AuthApiTest {
                 // A stored session, so a missing withoutBearer() would show up as a header.
                 tokens = InMemoryTokenStorage(TestTokens(accessToken = "access-old", refreshToken = "refresh-old")),
                 refresher = TokenRefresher<TestTokens> { _, _ -> error("no /auth call may trigger a refresh") },
+                turns = SessionTurns(),
             ),
         )
 

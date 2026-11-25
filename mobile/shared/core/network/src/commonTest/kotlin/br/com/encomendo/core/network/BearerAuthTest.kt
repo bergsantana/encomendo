@@ -12,12 +12,14 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -26,6 +28,7 @@ import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
@@ -339,9 +342,11 @@ class BearerAuthTest {
             config = ApiClientConfig(baseUrl = API_URL),
             tokens = storage,
             refresher = refresher,
+            turns = SessionTurns(),
         )
 }
 
+@OptIn(ExperimentalCoroutinesApi::class) // runCurrent
 class BearerRefreshTest {
     private val old = TestTokens(accessToken = "access-old", refreshToken = "refresh-old")
     private val fresh = TestTokens(accessToken = "access-new", refreshToken = "refresh-new")
@@ -351,7 +356,7 @@ class BearerRefreshTest {
     fun reusesTokensAnotherRequestAlreadyRefreshed() =
         runTest {
             val refresher = RecordingRefresher { error("already refreshed") }
-            val refresh = BearerRefresh(InMemoryTokenStorage(fresh), refresher)
+            val refresh = BearerRefresh(InMemoryTokenStorage(fresh), refresher, SessionTurns())
 
             assertEquals(fresh, refresh.refresh(client, rejectedAccessToken = old.accessToken))
             assertEquals(emptyList(), refresher.calls)
@@ -365,9 +370,49 @@ class BearerRefreshTest {
                 val refresher =
                     RecordingRefresher { throw ApiError(status = status.value, code = ApiErrorCode.Unknown) }
 
-                assertNull(BearerRefresh(storage, refresher).refresh(client, rejectedAccessToken = old.accessToken))
+                assertNull(
+                    BearerRefresh(
+                        storage,
+                        refresher,
+                        SessionTurns(),
+                    ).refresh(client, rejectedAccessToken = old.accessToken),
+                )
                 assertNull(storage.current, "status ${status.value} must end the session")
             }
+        }
+
+    @Test
+    fun aRefreshWaitsForAStoreSwitchAndNeverSpendsTheTokenItRotated() =
+        runTest {
+            // A switch spends the refresh token too (ADR 0010). If a refresh presented the same token
+            // meanwhile, one of the two would hold a superseded token and sign the user out (ADR 0013).
+            val turns = SessionTurns()
+            val storage = InMemoryTokenStorage(old)
+            val refresher = RecordingRefresher { error("the switch already rotated the token") }
+            val switchDone = CompletableDeferred<Unit>()
+            launch {
+                turns.take {
+                    switchDone.await()
+                    storage.overwrite(fresh)
+                }
+            }
+            runCurrent()
+
+            val waiting =
+                async {
+                    BearerRefresh(
+                        storage,
+                        refresher,
+                        turns,
+                    ).refresh(client, rejectedAccessToken = old.accessToken)
+                }
+            runCurrent()
+            assertFalse(waiting.isCompleted, "the refresh waits its turn")
+
+            switchDone.complete(Unit)
+
+            assertEquals(fresh, waiting.await())
+            assertEquals(emptyList(), refresher.calls)
         }
 
     @Test
@@ -378,7 +423,11 @@ class BearerRefreshTest {
 
             val error =
                 assertFailsWith<ApiError> {
-                    BearerRefresh(storage, refresher).refresh(client, rejectedAccessToken = old.accessToken)
+                    BearerRefresh(
+                        storage,
+                        refresher,
+                        SessionTurns(),
+                    ).refresh(client, rejectedAccessToken = old.accessToken)
                 }
 
             assertEquals(429, error.status)
