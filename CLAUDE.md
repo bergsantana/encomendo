@@ -70,7 +70,7 @@ The full table is in `docs/architecture.md` section 4.2. The names you will use 
 | Entrega / Retirada | `Handover`: `delivery` / `pickup` |
 | Cliente (of one store) / conta do cliente | `customer.Customer` / `identity.ClientAccount` |
 | Página da loja, Minhas encomendas | `storefront`, `clientarea` |
-| Equipe, membro, papel | `tenancy.Membership`, `shared.Role` (`owner` / `admin` / `staff` / `viewer`) |
+| Equipe, membro, papel: Dono / Admin / Funcionário / Visualizador | `tenancy.Membership`, `shared.Role` (`owner` / `admin` / `staff` / `viewer`, ADR 0017) |
 | Convite (para a equipe) | `tenancy.Invitation` (ADR 0011) |
 | Esqueci a senha, código | password reset code in `identity` (ADR 0011) |
 

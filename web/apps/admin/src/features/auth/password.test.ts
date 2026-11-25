@@ -163,6 +163,31 @@ describe('forgot password', () => {
     expect(document.activeElement).toBe(field(wrapper, 'E-mail').element)
   })
 
+  it('points at the field when the server refuses the email, as every form does', async () => {
+    server.use(
+      http.post(
+        '*/auth/password-reset',
+        () =>
+          new HttpResponse(
+            JSON.stringify({
+              type: 'about:blank',
+              title: 'Dados inválidos',
+              status: 400,
+              code: 'invalid',
+              errors: [{ field: 'email', message: 'Informe um e-mail válido.' }],
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/problem+json' } },
+          ),
+      ),
+    )
+    const { wrapper } = await openApp('/esqueci-a-senha')
+
+    await submitForm(wrapper, { 'E-mail': 'ana' })
+
+    expect(wrapper.get('[role=alert]').text()).toBe('Confira os campos destacados.')
+    expect(wrapper.text()).toContain('Informe um e-mail válido.')
+  })
+
   it('tells how long to wait after too many requests', async () => {
     server.use(http.post('*/auth/password-reset', () => problem(429, 'rate_limited', 'Muitas tentativas', { 'Retry-After': '600' })))
     const { wrapper } = await openApp('/esqueci-a-senha')

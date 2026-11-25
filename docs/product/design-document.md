@@ -120,6 +120,85 @@ Hoje · Pedidos · Compras · Produção · Estoque · Catálogo · Clientes · 
 - **Moto (what it fits):** Ambiente, Telhado, Plataforma
 - **Montagem:** Instalação, Produção, Entrega
 
+### Roles
+
+A store's team (Equipe) has four roles (ADR 0017). Each person has one role per store.
+
+| Role (code) | Shown as | Can do (docs/architecture.md 5.4) |
+| --- | --- | --- |
+| `owner` | Dono | Everything, finance, billing, the status workflow; one per store |
+| `admin` | Admin | Catalog, suppliers, purchasing, orders, stock, production, portal, the team except the owner |
+| `staff` | Funcionário | Orders, receiving, production stages; reads catalog and stock |
+| `viewer` | Visualizador | Reads only, without costs or margins |
+
+### Account and store screens (staff)
+
+The exact wording of the screens that start, move and end a staff session. Web and Android use the same text. `{…}` is filled in by the app.
+
+**Messages any of these screens can show**
+
+| When | Text |
+| --- | --- |
+| A field to fix, empty or refused by the server (above the form) | Confira os campos destacados. |
+| No connection | Sem conexão com o servidor. Confira a internet e tente de novo. |
+| Server failure (5xx) | O servidor não respondeu. Tente de novo em instantes. |
+| Too many attempts (429) | Muitas tentativas. Tente de novo em {wait}. |
+| Any other refusal | The pt-BR `title` the API sent. |
+| A password rule (hint under the field) | Pelo menos 8 caracteres. |
+
+- `{wait}` comes from `Retry-After`: under 60 seconds it is "1 segundo" or "N segundos"; from 60 on it is minutes, rounded up, "1 minuto" or "N minutos". Without the header it is "1 minuto".
+- When the session could not be restored on load (offline or a server failure), the connection or server message shows above the form on every screen below.
+
+**Entrar (login)**
+
+- Title and button: "Entrar". Fields: "E-mail", "Senha". Links: "Esqueci a senha", "Criar conta".
+- Empty fields: "Informe seu e-mail.", "Informe sua senha."
+- Wrong email or password: "E-mail ou senha incorretos."
+- After a password reset: "Senha alterada. Entre com a nova senha."
+
+**Criar conta (sign-up)**
+
+- Title and button: "Criar conta". Fields: "Nome", "E-mail", "Senha" (hint "Pelo menos 8 caracteres."). Link: "Já tenho conta".
+- Empty fields: "Informe seu nome.", "Informe seu e-mail.", "Informe uma senha."
+- Email in use, next to the field: "Já existe uma conta com este e-mail."
+
+**Lojas (store picker)**
+
+- With stores: title "Escolha a loja", one button per store with its link `{slug}.encomendo.com.br` beside it, then "Criar outra loja".
+- Without stores: title "Crie sua loja".
+- Create form: fields "Nome da loja" and "Link da loja", button "Criar loja"; "Sair" below.
+  - Link hint: "Use de 3 a 40 letras minúsculas, números e hífens." until the link is valid, then "Sua loja ficará em {link}.encomendo.com.br."
+  - Empty fields: "Informe o nome da loja.", "Informe o link da loja."
+  - Link in use, next to the field: "Este link já está em uso. Escolha outro."
+- A store the member no longer belongs to: "Você não faz mais parte desta loja."
+- In the menu: "Trocar de loja", only for members of two or more stores.
+
+**Esqueci a senha**
+
+- Title "Esqueci a senha". First step: "Informe o e-mail da sua conta. Enviaremos um código para você criar uma nova senha.", field "E-mail", button "Enviar código". Empty field: "Informe seu e-mail."
+- Second step, the same whether or not the account exists: "Se houver uma conta com {e-mail}, enviamos um código de 6 dígitos. Ele vale por 10 minutos."
+  - Fields "Código" and "Nova senha" (hint "Pelo menos 8 caracteres."), button "Alterar senha".
+  - Buttons "Enviar outro código" (then "Se houver uma conta com {e-mail}, enviamos um novo código. O anterior deixou de valer.") and "Usar outro e-mail".
+  - "Informe os 6 dígitos do código.", "Informe a nova senha.", and next to the code: "Código errado ou vencido. Confira o e-mail ou peça um novo código."
+- Link: "Voltar para o login".
+
+**Convite (accepting an invitation)**
+
+- While loading: "Verificando o convite…"
+- Title: "Entrar na equipe da loja {loja}".
+  - New account: "Convite para {e-mail}. Crie sua conta para aceitar.", fields "Nome" and "Senha" (hint "Pelo menos 8 caracteres."). Empty fields: "Informe seu nome.", "Informe uma senha."
+  - Existing account: "Você já tem uma conta com {e-mail}. Entre com a sua senha para aceitar.", field "Senha", link "Esqueci a senha". Empty field: "Informe sua senha."
+  - Button "Aceitar convite". Wrong password, next to the field: "Senha incorreta." Already in the store: "Você já faz parte desta loja."
+- An invitation that no longer works, also when it runs out between opening and accepting: title "Convite indisponível", "Este convite não vale mais. Peça um novo a quem convidou você."
+- A link without its token: title "Abra o convite pelo e-mail", "Este endereço não traz o convite. Abra de novo o link que chegou no seu e-mail."
+- When the invitation cannot be read for another reason (offline, 5xx, 429): title "Convite", the matching message from the table above, button "Tentar de novo".
+- Link: "Entrar".
+
+**Menu**
+
+- The store's name under the logo; the member's name and "Sair" at the foot.
+- When the server cannot be reached: "Não foi possível sair. {the connection or server message}"
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.
