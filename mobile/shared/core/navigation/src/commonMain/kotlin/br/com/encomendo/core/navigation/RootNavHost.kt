@@ -14,7 +14,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.ui.LocalGrantedPermissions
-import br.com.encomendo.feature.auth.LoginScreen
+import br.com.encomendo.feature.auth.LoginRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -68,8 +68,8 @@ fun RootNavHost(
 
 /** Login, and later sign-up, tenant picker and forgot password (`feature/auth`). */
 fun NavGraphBuilder.authNavGraph() {
-    navigation<AuthGraph>(startDestination = LoginRoute) {
-        composable<LoginRoute> { LoginScreen() }
+    navigation<AuthGraph>(startDestination = LoginDestination) {
+        composable<LoginDestination> { LoginRoute() }
     }
 }
 
@@ -79,7 +79,7 @@ fun NavGraphBuilder.authNavGraph() {
  * when it ships, matching the web admin features one to one.
  */
 fun NavGraphBuilder.backofficeNavGraph() {
-    navigation<BackofficeGraph>(startDestination = HojeRoute) {
-        composable<HojeRoute> { HojeScreen() }
+    navigation<BackofficeGraph>(startDestination = HojeDestination) {
+        composable<HojeDestination> { HojeScreen() }
     }
 }

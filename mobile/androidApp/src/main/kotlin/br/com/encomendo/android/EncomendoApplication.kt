@@ -11,7 +11,8 @@ class EncomendoApplication : Application() {
         super.onCreate()
         startKoin {
             androidContext(this@EncomendoApplication)
-            modules(sharedModules)
+            // Release talks to the production API; debug to the local stack (androidApp/build.gradle.kts).
+            modules(sharedModules(apiBaseUrl = BuildConfig.API_BASE_URL))
         }
     }
 }

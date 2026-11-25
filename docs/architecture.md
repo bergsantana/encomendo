@@ -592,6 +592,7 @@ mobile/
 - Code goes in `commonMain` unless it touches a platform API; then use `expect` in `commonMain` with a small `actual` implementation in `androidMain`, behind an interface.
 - After login the app opens the management graph, filtered by permissions.
 - Auth bearer plugin refreshes once on 401. The session ends only when `/auth/refresh` answers 400, 401 or 403; offline, 429 and 5xx keep it (ADR 0012).
+- Errors: `core:network` maps problem+json to `ApiError`; `core:data` maps that by its code to `Failure` (`core:domain`), the one error type repositories throw and ViewModels catch.
 - Offline: recent orders, the receiving checklist and the production board are cached in Room; writes made offline (including receiving photos) queue and retry with WorkManager and an `Idempotency-Key`.
 - ViewModels obtained with `koinViewModel()`.
 - Tests: kotlin.test, Turbine and coroutines-test in `commonTest` with fakes from `core:testing`; Ktor `MockEngine` for `core:network`; in-memory Room tests; Compose Multiplatform UI tests for order and receiving screens. Shared tests run on the JVM and Android.

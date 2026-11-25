@@ -20,6 +20,8 @@ class ApiError(
     val detail: String? = null,
     /** The invalid fields of a 400 response, in the order the server sent them. */
     val fieldIssues: List<FieldIssue> = emptyList(),
+    /** The wait `Retry-After` asked for, in whole seconds; null when the answer gave none or not in seconds. */
+    val retryAfterSeconds: Int? = null,
     cause: Throwable? = null,
 ) : Exception("HTTP $status ${code.value}", cause)
 
@@ -34,7 +36,10 @@ value class ApiErrorCode(
     /** The code exactly as the API sends it. */
     val value: String,
 ) {
-    /** The codes the contract lists today, plus the two the client adds itself. */
+    /**
+     * The codes the contract lists today (docs/api/openapi.yaml, `Problem.code`),
+     * plus the two the client adds itself.
+     */
     companion object {
         /** The request body or parameters were invalid; see [ApiError.fieldIssues]. */
         val Invalid = ApiErrorCode("invalid")
@@ -56,6 +61,36 @@ value class ApiErrorCode(
 
         /** A dependency of the server is down. */
         val NotReady = ApiErrorCode("not_ready")
+
+        /** The access or refresh token is missing, bad or expired. */
+        val Unauthenticated = ApiErrorCode("unauthenticated")
+
+        /** Login or invitation acceptance: wrong email or password. A form error, never a reason to refresh. */
+        val InvalidCredentials = ApiErrorCode("invalid_credentials")
+
+        /** The session has no store selected; open the store picker. */
+        val TenantRequired = ApiErrorCode("tenant_required")
+
+        /** Someone saved first; reload and apply the change again. */
+        val VersionConflict = ApiErrorCode("version_conflict")
+
+        /** Too many attempts; see [ApiError.retryAfterSeconds]. */
+        val RateLimited = ApiErrorCode("rate_limited")
+
+        /** Sign-up: an account with this email already exists. */
+        val EmailTaken = ApiErrorCode("email_taken")
+
+        /** Creating a store: another store has this address. */
+        val SlugTaken = ApiErrorCode("slug_taken")
+
+        /** Inviting or accepting an invitation: the person is already on the team. */
+        val AlreadyMember = ApiErrorCode("already_member")
+
+        /** Password reset: the code is wrong, expired or used up. */
+        val InvalidCode = ApiErrorCode("invalid_code")
+
+        /** Inviting: the invitation was saved but the email could not be sent; invite again. */
+        val EmailUnavailable = ApiErrorCode("email_unavailable")
 
         /** Client side: the request never reached the server (offline, timeout, DNS). */
         val Network = ApiErrorCode("network")

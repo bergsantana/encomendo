@@ -129,6 +129,69 @@ class AuthApiTest {
             assertEquals(ApiErrorCode.Unknown, error.code)
         }
 
+    @Test
+    fun logInAsksForTheRefreshTokenInTheBody() =
+        runTest {
+            // Android takes the refresh token from the body (ADR 0010), and a login carries no old access token.
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                authApi { request ->
+                    requests += request
+                    respondJson(SESSION_JSON)
+                }
+
+            val session = api.logIn(email = "ana@altarpm.com.br", password = "segredo-forte")
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/auth/login", request.url.encodedPath)
+            assertNull(request.headers[HttpHeaders.Authorization])
+            assertEquals(ContentType.Application.Json, request.body.contentType?.withoutParameters())
+            assertEquals(
+                """{"email":"ana@altarpm.com.br","password":"segredo-forte","refreshTransport":"body"}""",
+                request.body.toByteArray().decodeToString(),
+            )
+            assertEquals("refresh-new", session.refreshToken)
+            assertEquals("alta-rpm", session.tenant?.slug)
+        }
+
+    @Test
+    fun wrongCredentialsAreAnApiErrorAndNeverARefresh() =
+        runTest {
+            // A 401 invalid_credentials from /auth/login is a form error and never calls for a refresh (ADR 0013).
+            val api =
+                authApi {
+                    respondProblem(
+                        HttpStatusCode.Unauthorized,
+                        """{"title":"E-mail ou senha incorretos","status":401,"code":"invalid_credentials"}""",
+                    )
+                }
+
+            val error = assertFailsWith<ApiError> { api.logIn(email = "ana@altarpm.com.br", password = "errada") }
+
+            assertEquals(401, error.status)
+            assertEquals(ApiErrorCode.InvalidCredentials, error.code)
+        }
+
+    @Test
+    fun aBrokenSessionNeverPrintsItsTokens() =
+        runTest {
+            // The decoder quotes the JSON around a fault; here that JSON is the tokens.
+            val broken = """{"accessToken": "access-new", "refreshToken": "refresh-new", "user": """
+            for (call in listOf<
+                suspend (
+                    AuthApi,
+                ) -> Unit,
+            >({ it.refresh("refresh-old") }, { it.logIn("ana@altarpm.com.br", "x") })) {
+                val api = authApi { respondJson(broken) }
+
+                val printed = assertFailsWith<ApiError> { call(api) }.stackTraceToString()
+
+                assertFalse(printed.contains("access-new"), printed)
+                assertFalse(printed.contains("refresh-new"), printed)
+            }
+        }
+
     private fun authApi(handler: MockRequestHandler): AuthApi =
         AuthApi(
             createApiClient(
@@ -136,7 +199,7 @@ class AuthApiTest {
                 config = ApiClientConfig(baseUrl = API_URL),
                 // A stored session, so a missing withoutBearer() would show up as a header.
                 tokens = InMemoryTokenStorage(TestTokens(accessToken = "access-old", refreshToken = "refresh-old")),
-                refresher = TokenRefresher<TestTokens> { _, _ -> error("the refresh call must never refresh") },
+                refresher = TokenRefresher<TestTokens> { _, _ -> error("no /auth call may trigger a refresh") },
             ),
         )
 

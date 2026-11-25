@@ -19,12 +19,24 @@ kotlin {
                 .get()
                 .toInt()
         androidResources { enable = true } // Compose Multiplatform string resources
+        withHostTestBuilder {} // runs commonTest on the JVM
     }
 
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":shared:core:domain"))
             implementation(project(":shared:core:ui"))
             implementation(libs.compose.components.resources)
+            implementation(libs.jetbrains.lifecycle.viewmodel.compose)
+            implementation(libs.jetbrains.lifecycle.runtime.compose)
+            api(libs.koin.core) // authModule is a Koin Module
+            implementation(libs.koin.compose.viewmodel)
+        }
+        commonTest.dependencies {
+            implementation(project(":shared:core:testing"))
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.turbine)
         }
     }
 }

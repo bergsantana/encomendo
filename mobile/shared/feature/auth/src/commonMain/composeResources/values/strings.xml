@@ -2,5 +2,25 @@
 <!-- pt-BR is the only language; it lives in the default values folder. -->
 <resources>
     <string name="login_title">Entrar</string>
-    <string name="login_placeholder">Em breve: entrar com e-mail e senha.</string>
+    <string name="login_email">E-mail</string>
+    <string name="login_password">Senha</string>
+    <string name="login_password_show">Mostrar</string>
+    <string name="login_password_show_description">Mostrar senha</string>
+    <string name="login_password_hide">Ocultar</string>
+    <string name="login_password_hide_description">Ocultar senha</string>
+    <string name="login_submit">Entrar</string>
+    <string name="login_submitting">Entrando…</string>
+    <!-- Same wording as the web admin (web/apps/admin/src/errorMessage.ts, features/auth/store.ts). -->
+    <string name="login_error_wrong_credentials">E-mail ou senha incorretos.</string>
+    <string name="login_error_offline">Sem conexão com o servidor. Confira a internet e tente de novo.</string>
+    <string name="login_error_server">O servidor não respondeu. Tente de novo em instantes.</string>
+    <plurals name="login_error_rate_limited_seconds">
+        <item quantity="one">Muitas tentativas. Tente de novo em %1$d segundo.</item>
+        <item quantity="other">Muitas tentativas. Tente de novo em %1$d segundos.</item>
+    </plurals>
+    <plurals name="login_error_rate_limited_minutes">
+        <item quantity="one">Muitas tentativas. Tente de novo em %1$d minuto.</item>
+        <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
+    </plurals>
+    <string name="login_error_unexpected">Não foi possível entrar agora. Tente de novo em instantes.</string>
 </resources>

@@ -24,6 +24,22 @@ class AuthApi(
     private val client: HttpClient,
 ) {
     /**
+     * Logs in with [email] and [password] and returns the new session, with
+     * its refresh token in the body. Wrong credentials throw ApiError with
+     * code `invalid_credentials`: a form error, never a reason to refresh.
+     */
+    suspend fun logIn(
+        email: String,
+        password: String,
+    ): AuthSessionDto =
+        client
+            .post("/auth/login") {
+                withoutBearer()
+                contentType(ContentType.Application.Json)
+                setBody(LoginRequest(email = email, password = password, refreshTransport = BODY_TRANSPORT))
+            }.session()
+
+    /**
      * Trades [refreshToken] for a new session. The token is spent once the
      * server reads it, even if the answer never arrives, so call this only
      * through the client's serialized refresh.
@@ -46,10 +62,33 @@ private suspend fun HttpResponse.session(): AuthSessionDto =
     try {
         body()
     } catch (error: ContentConvertException) {
-        throw ApiError(status = status.value, code = ApiErrorCode.Unknown, cause = error)
+        throw undecodable(error)
     } catch (error: NoTransformationFoundException) {
-        throw ApiError(status = status.value, code = ApiErrorCode.Unknown, cause = error)
+        throw undecodable(error)
     }
+
+/**
+ * The decoder's message quotes the JSON around the fault, and this JSON holds
+ * the tokens, so only the exception's name is kept for logs and crash reports.
+ */
+private fun HttpResponse.undecodable(error: Exception): ApiError =
+    ApiError(
+        status = status.value,
+        code = ApiErrorCode.Unknown,
+        cause = IllegalStateException("undecodable session: ${error::class.simpleName}"),
+    )
+
+/** Asks for the refresh token in the response body instead of a cookie (docs/api/openapi.yaml, `RefreshTransport`). */
+private const val BODY_TRANSPORT = "body"
+
+/** Not a data class, so the password never reaches a log through toString. */
+@Serializable
+private class LoginRequest(
+    val email: String,
+    val password: String,
+    // No default: ApiJson leaves defaults out, and the server would fall back to the cookie.
+    val refreshTransport: String,
+)
 
 @Serializable
 private class RefreshRequest(

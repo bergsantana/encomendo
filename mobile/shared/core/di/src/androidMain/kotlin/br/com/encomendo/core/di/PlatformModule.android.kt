@@ -1,9 +1,11 @@
 package br.com.encomendo.core.di
 
 import br.com.encomendo.core.database.databaseBuilder
+import br.com.encomendo.core.network.okHttpEngine
 import br.com.encomendo.core.security.KeystoreCipher
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.sessionDataStore
+import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,4 +21,5 @@ actual val platformModule: Module =
         single(SessionDataStore) {
             sessionDataStore(androidContext(), scope = CoroutineScope(Dispatchers.IO + SupervisorJob()))
         }
+        single<HttpClientEngine> { okHttpEngine() }
     }

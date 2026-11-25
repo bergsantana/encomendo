@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    HTTPS only, on every Android version. Android 8.x (minSdk 26) still allows
+    plain HTTP by default; this config refuses it. Debug builds replace this
+    file (src/debug/res/xml) to reach the local stack.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

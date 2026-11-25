@@ -15,6 +15,8 @@ The **management** app for owners, admins and staff, with every feature of the w
 
 No Android SDK on the machine? Run any of these in a container: `scripts/mobile-docker.sh check` (same arguments as `./gradlew`). It is how Claude sessions verify mobile changes.
 
+Release builds talk to `https://api.encomendo.com.br`. Debug builds talk to the local stack (`make dev-up`) at `http://10.0.2.2:8081`, the host machine as the emulator sees it. On a phone, run `adb reverse tcp:8081 tcp:8081` and build with `-Pencomendo.apiBaseUrl=http://localhost:8081`. Release builds refuse plain HTTP on every Android version (`androidApp/src/main/res/xml/network_security_config.xml`; Android 8.x would allow it by default). Debug builds replace that file to allow it to those two hosts only.
+
 Each module configures its own plugins (see `shared/core/ui/build.gradle.kts` for a Compose module, `shared/core/domain/build.gradle.kts` for a plain one). Copy the closest one when you add a module, and add it to `settings.gradle.kts`.
 
 ## Libraries
@@ -30,7 +32,7 @@ Shared modules use the Android-KMP library plugin (`com.android.kotlin.multiplat
 `XScreen` (Compose) → `XViewModel` exposing `StateFlow<XUiState>` → use case in `core:domain` → repository interface in `core:domain` → implementation in `core:data` (uses `core:network` and `core:database`)
 
 - **`core:domain`** is `commonMain` only, with no platform or library imports beyond coroutines and kotlinx-datetime. Its tests run on the JVM in seconds.
-- **Screens** are stateless: they take a `UiState` and callbacks. A thin `XRoute` composable connects the ViewModel to the screen, so screens can be previewed and tested without Koin.
+- **Screens** are stateless: they take a `UiState` and callbacks. A thin `XRoute` composable connects the ViewModel to the screen, so screens can be previewed and tested without Koin. Navigation keys are `XDestination` objects in `core:navigation`, so they never clash with an `XRoute`.
 - **ViewModels** expose one `StateFlow<XUiState>` and functions for user actions. One-shot effects (navigate, open a wa.me link, show a toast) go through a `Channel`-backed `Flow`, never through state flags you have to reset.
 - **`XUiState`** is an immutable `data class`, or a `sealed interface` for Loading / Content / Error.
 - **Repositories** return domain models, never DTOs or Room entities. Map at the boundary in `core:data`.
@@ -48,7 +50,7 @@ Shared modules use the Android-KMP library plugin (`com.android.kotlin.multiplat
 - Follow ktlint and detekt. Fix their findings; don't suppress them without a comment saying why.
 - `val` over `var`, and immutable collections in public APIs.
 - No `!!`. Handle the null case, or use `requireNotNull` with a message where null would be a bug.
-- Errors: the network layer maps problem+json to a typed `ApiError`. Repositories return `Result`-style types or throw domain exceptions, one convention for the whole module. Never catch `CancellationException`.
+- Errors: the network layer maps problem+json to a typed `ApiError`. Repositories throw `Failure` (`core:domain`), mapped from `ApiError` in `core:data` by its code; they never return `Result`. ViewModels catch `Failure` and nothing broader. Never catch `CancellationException`.
 - KDoc on public classes, functions and every `expect` declaration.
 - Money is `Long` cents plus a currency code. Format with the pt-BR locale only in the UI layer.
 

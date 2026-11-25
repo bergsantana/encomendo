@@ -26,6 +26,7 @@ kotlin {
             implementation(project(":shared:core:security"))
             implementation(project(":shared:core:data"))
             implementation(project(":shared:core:navigation"))
+            implementation(project(":shared:feature:auth"))
             api(libs.koin.core)
             implementation(libs.kotlinx.coroutines.core)
         }
@@ -34,6 +35,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(project(":shared:core:testing"))
+            implementation(libs.ktor.client.mock)
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }

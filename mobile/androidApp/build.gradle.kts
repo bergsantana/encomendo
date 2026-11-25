@@ -22,6 +22,8 @@ android {
                 .toInt()
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("VERSION_NAME") ?: "0.1.0"
+        // The production API has its own host; `api` is a reserved store slug (ADR 0011).
+        buildConfigField("String", "API_BASE_URL", "\"https://api.encomendo.com.br\"")
     }
 
     // Release signing comes only from environment secrets in release.yml.
@@ -38,6 +40,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The local stack (make dev-up). 10.0.2.2 is the host machine as the emulator sees it;
+            // on a phone, run `adb reverse tcp:8081 tcp:8081` and pass -Pencomendo.apiBaseUrl=http://localhost:8081.
+            val localApi = providers.gradleProperty("encomendo.apiBaseUrl").getOrElse("http://10.0.2.2:8081")
+            buildConfigField("String", "API_BASE_URL", "\"$localApi\"")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -53,6 +61,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true // API_BASE_URL
     }
 }
 
