@@ -1,6 +1,7 @@
 ---
 name: new-bounded-context
 description: Scaffold a new bounded context in Encomendo's backend (domain, app with ports and fakes, adapters, contract tests, wiring) by hand, following the architecture. Use when starting a context listed in docs/architecture.md or one approved by an ADR.
+model: opus
 ---
 
 # New bounded context

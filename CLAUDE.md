@@ -103,6 +103,14 @@ Several sessions may run at once, each in its own git worktree. To avoid collisi
 - Local services: set `COMPOSE_PROJECT_NAME` to your worktree name before `make dev-up`, so containers and volumes don't clash.
 - Branch from `main`, keep PRs small, and rebase on `main` before opening one.
 
+## Model routing
+
+Spend the strongest model where a mistake spreads or leaks; use Sonnet where a written rule or skill already holds the design.
+
+- Defaults are set in `.claude/`: subagents without a `model` run on Sonnet (`CLAUDE_CODE_SUBAGENT_MODEL`); `tenancy-security-reviewer` runs on Opus at high effort; the other reviewers on Sonnet. Skill `model` applies only when the skill is invoked as `/name`: `/new-migration` and `/new-bounded-context` use Opus, `/new-endpoint` uses Sonnet.
+- When you spawn an agent, pass `model` explicitly if the default is wrong for the task: Opus for planning or reviewing schema, RLS, auth, tenancy or cross-context design; Sonnet for implementation that follows a plan or skill; Haiku for pure lookups.
+- Main session: plan a milestone on Opus (or `/model opusplan`), write the plan down, then execute on Sonnet.
+
 ## Definition of done
 
 - `make lint test` passes, plus `make test-integration` when adapters changed. Show the output; don't just say it passed.

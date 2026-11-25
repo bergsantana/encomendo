@@ -1,6 +1,7 @@
 ---
 name: new-endpoint
 description: Add or change an Encomendo API endpoint end to end, from the OpenAPI contract through domain, use case, repository and handler to the web and mobile clients, with tests at every layer. Use when a feature needs a new or changed route.
+model: sonnet
 ---
 
 # New endpoint
