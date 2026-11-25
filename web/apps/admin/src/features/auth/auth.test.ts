@@ -1,16 +1,14 @@
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryHistory } from 'vue-router'
 
 import { api } from '../../api'
-import App from '../../App.vue'
+import { rememberStore } from '../../lastStore'
 import { loadPage } from '../../pageLoad'
-import { createAppRouter } from '../../router'
 import { useSessionStore } from '../../stores/session'
-import { authSession, gate, problem } from '../../testing/fixtures'
+import { button, closeApps, field, link, openApp, submitForm } from '../../testing/app'
+import { altaRpm, authSession, gate, problem } from '../../testing/fixtures'
 
 // A full page load cannot happen in jsdom; the tests check where it would go.
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
@@ -20,9 +18,11 @@ beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => {
   server.resetHandlers()
   vi.mocked(loadPage).mockClear()
+  localStorage.clear()
 })
 afterAll(() => server.close())
 enableAutoUnmount(afterEach)
+afterEach(closeApps)
 
 const ready = http.get('*/readyz', () => HttpResponse.json({ status: 'ok' }))
 const noSession = http.post('*/auth/refresh', () => problem(401, 'unauthenticated', 'Sessão expirada'))
@@ -30,41 +30,33 @@ const signedIn = http.post('*/auth/refresh', () => HttpResponse.json(authSession
 
 beforeEach(() => server.use(ready, noSession))
 
-/** openApp loads the admin app at a path, as a reload or a pasted link does. */
-async function openApp(path: string) {
-  const pinia = createPinia()
-  setActivePinia(pinia)
-  const router = createAppRouter(createMemoryHistory())
-  await router.push(path)
-  // Attached, so focus moves can be checked.
-  const wrapper = mount(App, { global: { plugins: [pinia, router] }, attachTo: document.body })
-  await flushPromises()
-  return { wrapper, router }
-}
-
-/** field finds an input by its visible label, as a user does. */
-function field(wrapper: VueWrapper, label: string) {
-  const id = wrapper.findAll('label').find((l) => l.text() === label)?.attributes('for')
-  if (id === undefined) throw new Error(`no field labelled ${label}`)
-  return wrapper.get(`#${id}`)
-}
-
-function button(wrapper: VueWrapper, name: string) {
-  const found = wrapper.findAll('button').find((b) => b.text() === name)
-  if (found === undefined) throw new Error(`no button ${name}`)
-  return found
-}
-
-async function logIn(wrapper: VueWrapper, email: string, password: string) {
-  await field(wrapper, 'E-mail').setValue(email)
-  await field(wrapper, 'Senha').setValue(password)
-  await wrapper.get('form').trigger('submit')
-  await flushPromises()
-}
+const logIn = (wrapper: VueWrapper, email: string, password: string) => submitForm(wrapper, { 'E-mail': email, Senha: password })
 
 const loginAnswers = (answer: () => Response) => server.use(http.post('*/auth/login', answer))
 
 describe('login', () => {
+  it('offers to create an account', async () => {
+    const { wrapper } = await openApp('/entrar')
+
+    expect(link(wrapper, 'Criar conta').attributes('href')).toBe('/criar-conta')
+  })
+
+  it('opens the store this device used last', async () => {
+    rememberStore(altaRpm.id)
+    let body: unknown
+    server.use(
+      http.post('*/auth/login', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(authSession())
+      }),
+    )
+    const { wrapper } = await openApp('/entrar')
+
+    await logIn(wrapper, 'ana@altarpm.com.br', 'segredo-forte')
+
+    expect(body).toMatchObject({ tenantId: altaRpm.id })
+  })
+
   it('opens on the login form when signed out', async () => {
     const { wrapper, router } = await openApp('/')
 

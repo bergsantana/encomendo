@@ -21,7 +21,7 @@ interface MenuItem {
 
 const menu: MenuItem[] = [{ label: 'Hoje', to: { name: 'hoje' } }]
 
-const { user, tenant } = storeToRefs(useSessionStore())
+const { user, tenant, memberships } = storeToRefs(useSessionStore())
 const auth = useAuthStore()
 const { loggingOut, logOutError } = storeToRefs(auth)
 </script>
@@ -56,6 +56,13 @@ const { loggingOut, logOutError } = storeToRefs(auth)
       </RouterLink>
       <div class="account">
         <span class="account-name">{{ user?.name }}</span>
+        <RouterLink
+          v-if="memberships.length > 1"
+          :to="{ name: 'stores' }"
+          class="account-link"
+        >
+          Trocar de loja
+        </RouterLink>
         <BaseButton
           :disabled="loggingOut"
           @click="auth.logOut()"
@@ -132,6 +139,9 @@ const { loggingOut, logOutError } = storeToRefs(auth)
 }
 .account-error {
   margin: 0;
+}
+.account-link {
+  color: var(--enc-ink);
 }
 .page {
   padding: 24px 32px;

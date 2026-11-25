@@ -126,7 +126,7 @@ describe('createHttpClient', () => {
         return HttpResponse.json({ status: 'ok' })
       }),
     )
-    const withSession = createHttpClient({ baseUrl: base, session: { accessToken: () => 'access-1', refresh: async () => true } })
+    const withSession = createHttpClient({ baseUrl: base, session: { accessToken: () => 'access-1', refresh: async () => true, scope: () => 'ana@alta-rpm' } })
 
     await getReadiness(withSession)
 
@@ -146,7 +146,7 @@ describe('createHttpClient with a session', () => {
       current = renewed
       return renewed !== null
     })
-    const hooks: SessionHooks = { accessToken: () => current, refresh }
+    const hooks: SessionHooks = { accessToken: () => current, refresh, scope: () => 'ana@alta-rpm' }
     return { hooks, refresh }
   }
 
@@ -224,7 +224,7 @@ describe('createHttpClient with a session', () => {
       refreshed()
       return true
     })
-    const client = createHttpClient({ baseUrl: base, session: { accessToken: () => current, refresh } })
+    const client = createHttpClient({ baseUrl: base, session: { accessToken: () => current, refresh, scope: () => 'ana@alta-rpm' } })
 
     await expect(Promise.all([client.get('/api/v1/admin/orders'), client.get('/api/v1/admin/orders')])).resolves.toEqual([
       { items: [] },
@@ -287,8 +287,36 @@ describe('createHttpClient with a session', () => {
   it('passes a failed refresh on to the caller', async () => {
     server.use(orders())
     const offline = new ApiError(0, { title: 'Sem conexão com o servidor' })
-    const hooks: SessionHooks = { accessToken: () => 'expired', refresh: () => Promise.reject(offline) }
+    const hooks: SessionHooks = { accessToken: () => 'expired', refresh: () => Promise.reject(offline), scope: () => 'ana@alta-rpm' }
 
     await expect(createHttpClient({ baseUrl: base, session: hooks }).get('/api/v1/admin/orders')).rejects.toBe(offline)
+  })
+
+  it('never retries a call under another session than the one it was made for', async () => {
+    // A write meant for one store must not run in another after a switch, nor
+    // as another user after a login elsewhere (ADR 0012).
+    const sent: (string | null)[] = []
+    server.use(
+      http.post(`${base}/api/v1/admin/orders`, ({ request }) => {
+        sent.push(request.headers.get('Authorization'))
+        return unauthorized()
+      }),
+    )
+    let token = 'access-store-a'
+    let scope = 'ana@store-a'
+    const hooks: SessionHooks = {
+      accessToken: () => token,
+      scope: () => scope,
+      refresh: async () => {
+        token = 'access-store-b'
+        scope = 'ana@store-b'
+        return true
+      },
+    }
+
+    await expect(createHttpClient({ baseUrl: base, session: hooks }).post('/api/v1/admin/orders', { qty: 1 })).rejects.toMatchObject({
+      status: 401,
+    })
+    expect(sent).toEqual(['Bearer access-store-a'])
   })
 })

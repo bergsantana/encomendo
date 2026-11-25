@@ -1,11 +1,11 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { createPinia, setActivePinia } from 'pinia'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from './api'
 import { useSessionStore } from './stores/session'
-import { authSession, problem } from './testing/fixtures'
+import { authSession, gate, problem } from './testing/fixtures'
 
 const server = setupServer()
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
@@ -74,5 +74,56 @@ describe('api', () => {
     expect(retriedWith).toBeNull()
     expect(session.user).toBeNull()
     expect(session.ended).toBe('replaced')
+  })
+
+  it("never runs a write meant for one store with the next store's token", async () => {
+    const answer = gate()
+    const sentWith: (string | null)[] = []
+    server.use(
+      http.post('*/api/v1/admin/orders', async ({ request }) => {
+        sentWith.push(request.headers.get('Authorization'))
+        await answer.opened
+        return problem(401, 'unauthenticated', 'Sessão expirada')
+      }),
+      http.post('*/auth/switch-tenant', () => HttpResponse.json(authSession({ accessToken: 'access-store-b' }))),
+    )
+    const session = useSessionStore()
+    session.start(authSession({ accessToken: 'access-store-a' }))
+
+    const write = api.post('/api/v1/admin/orders', { qty: 1 })
+    await vi.waitFor(() => expect(sentWith).toHaveLength(1))
+    await session.switchTo('0190f3c4-5e1a-7b2c-8d3e-00000000cafe')
+    answer.open()
+
+    await expect(write).rejects.toMatchObject({ status: 401 })
+    expect(sentWith).toEqual(['Bearer access-store-a'])
+  })
+
+  it('does not retry a write whose 401 arrives while the switch is still on its way', async () => {
+    const switching = gate()
+    const sentWith: (string | null)[] = []
+    server.use(
+      http.post('*/api/v1/admin/orders', ({ request }) => {
+        sentWith.push(request.headers.get('Authorization'))
+        return problem(401, 'unauthenticated', 'Sessão expirada')
+      }),
+      http.post('*/auth/switch-tenant', async () => {
+        await switching.opened
+        return HttpResponse.json(authSession({ accessToken: 'access-store-b' }))
+      }),
+      http.post('*/auth/refresh', () => HttpResponse.json(authSession({ accessToken: 'access-store-b' }))),
+    )
+    const session = useSessionStore()
+    session.start(authSession({ accessToken: 'access-store-a' }))
+
+    const switched = session.switchTo('0190f3c4-5e1a-7b2c-8d3e-00000000cafe')
+    // The write's refresh queues behind the switch, which holds the turn.
+    const write = api.post('/api/v1/admin/orders', { qty: 1 })
+    await vi.waitFor(() => expect(sentWith).toHaveLength(1))
+    switching.open()
+
+    await switched
+    await expect(write).rejects.toMatchObject({ status: 401 })
+    expect(sentWith).toEqual(['Bearer access-store-a'])
   })
 })

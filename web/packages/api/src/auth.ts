@@ -19,6 +19,8 @@ export type Membership = Schemas['Membership']
 export type User = Schemas['User']
 /** LoginRequest is the body of POST /auth/login. */
 export type LoginRequest = Schemas['LoginRequest']
+/** SignUpRequest is the body of POST /auth/signup. */
+export type SignUpRequest = Schemas['SignUpRequest']
 
 // Every call here is anonymous: /auth authenticates with a password or the
 // refresh cookie, never the access token, and a 401 from it must not trigger
@@ -30,6 +32,23 @@ export type LoginRequest = Schemas['LoginRequest']
  */
 export function logIn(client: HttpClient, body: LoginRequest): Promise<AuthSession> {
   return client.post<AuthSession>('/auth/login', body, { anonymous: true })
+}
+
+/**
+ * signUp calls POST /auth/signup. The new session has no store: create one,
+ * then switch to it. An email already registered throws `email_taken`.
+ */
+export function signUp(client: HttpClient, body: SignUpRequest): Promise<AuthSession> {
+  return client.post<AuthSession>('/auth/signup', body, { anonymous: true })
+}
+
+/**
+ * switchTenant calls POST /auth/switch-tenant, which rotates the refresh
+ * cookie into a session for that store. A store the user does not belong to
+ * throws `forbidden` and leaves the session as it was (ADR 0013).
+ */
+export function switchTenant(client: HttpClient, tenantId: string): Promise<AuthSession> {
+  return client.post<AuthSession>('/auth/switch-tenant', { tenantId }, { anonymous: true })
 }
 
 /**
