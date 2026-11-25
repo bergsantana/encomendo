@@ -15,10 +15,11 @@ const page = (title: string) => defineComponent({ render: () => h('h1', title) }
 const routes: RouteRecordRaw[] = [
   { path: '/entrar', name: 'login', component: page('Entrar'), meta: { guestOnly: true } },
   { path: '/convite', name: 'invite', component: page('Aceitar convite') },
+  { path: '/lojas', name: 'stores', component: page('Escolha a loja'), meta: { requiresAuth: true } },
   {
     path: '/',
     component: RouterView,
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresStore: true },
     children: [
       { path: '', name: 'hoje', component: page('Hoje') },
       { path: 'financeiro', name: 'financeiro', component: page('Financeiro'), meta: { permission: 'finance:read' } },
@@ -50,7 +51,7 @@ const cookieFor = (permissions: Permission[] | null) =>
 /** open loads the app at a path, as a reload or a pasted link does. */
 async function open(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  router.beforeEach(createAuthGuard({ login: 'login', home: 'hoje' }))
+  router.beforeEach(createAuthGuard({ login: 'login', home: 'hoje', storePicker: 'stores' }))
   await router.push(path)
   const wrapper = mount(RouterView, { global: { plugins: [router] } })
   await flushPromises()
@@ -89,6 +90,24 @@ describe('createAuthGuard', () => {
     const { heading } = await open('/relatorios')
 
     expect(heading).toBe('Entrar')
+  })
+
+  it('sends a member with no store selected to the store picker, and back afterwards', async () => {
+    // Right after sign-up, or with several stores and none chosen (ADR 0010).
+    server.use(http.post('*/auth/refresh', () => HttpResponse.json(authSession({ tenant: undefined, role: undefined, permissions: [] }))))
+
+    const { router, heading } = await open('/financeiro?mes=2026-11')
+
+    expect(heading).toBe('Escolha a loja')
+    expect(router.currentRoute.value.query).toEqual({ redirect: '/financeiro?mes=2026-11' })
+  })
+
+  it('lets a member with no store selected open the store picker', async () => {
+    server.use(http.post('*/auth/refresh', () => HttpResponse.json(authSession({ tenant: undefined, role: undefined, permissions: [] }))))
+
+    const { heading } = await open('/lojas')
+
+    expect(heading).toBe('Escolha a loja')
   })
 
   it('opens public routes for anyone', async () => {

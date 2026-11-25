@@ -2,8 +2,9 @@ import { logIn } from '@encomendo/api'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { createPinia, setActivePinia } from 'pinia'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { lastStore } from '../lastStore'
 import { altaRpm, authSession, gate, problem } from '../testing/fixtures'
 import { useSessionStore } from './session'
 
@@ -13,9 +14,20 @@ beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => {
   server.resetHandlers()
   Reflect.deleteProperty(navigator, 'locks')
+  localStorage.clear()
 })
 afterAll(() => server.close())
-beforeEach(() => setActivePinia(createPinia()))
+// Every store the tests create is disposed afterwards, closing its BroadcastChannel,
+// so no announcement from one test can reach the next.
+const pinias: ReturnType<typeof createPinia>[] = []
+function freshPinia() {
+  const pinia = createPinia()
+  pinias.push(pinia)
+  setActivePinia(pinia)
+  return pinia
+}
+beforeEach(() => freshPinia())
+afterEach(() => pinias.splice(0).forEach((pinia) => useSessionStore(pinia).$dispose()))
 
 const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0))
 const refreshTo = (session = authSession({ accessToken: 'access-2' })) => http.post('*/auth/refresh', () => HttpResponse.json(session))
@@ -89,8 +101,176 @@ describe('useSessionStore: the session it holds', () => {
     const state = JSON.stringify(session.$state)
     expect(state).not.toContain('secret-access-token')
     expect(state).not.toContain('secret-refresh-token')
-    expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
+    const stored = JSON.stringify({ ...localStorage, ...sessionStorage })
+    expect(stored).not.toContain('secret-access-token')
+    expect(stored).not.toContain('secret-refresh-token')
+  })
+
+  it('remembers the store on this device, for the next login', () => {
+    useSessionStore().start(authSession())
+
+    expect(lastStore()).toBe(altaRpm.id)
+  })
+})
+
+describe('useSessionStore: switchTo', () => {
+  it('moves the session to another store, in its turn', async () => {
+    const other = { ...altaRpm, id: '0190f3c4-5e1a-7b2c-8d3e-00000000cafe', name: 'Moto Peças Sul', slug: 'motopecas' }
+    let body: unknown
+    server.use(
+      http.post('*/auth/switch-tenant', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(authSession({ accessToken: 'access-other', tenant: other }))
+      }),
+    )
+    const session = useSessionStore()
+    session.start(authSession())
+
+    await session.switchTo(other.id)
+
+    expect(body).toEqual({ tenantId: other.id })
+    expect(lastStore()).toBe(other.id)
+  })
+
+  it('stops acting in either store as soon as the switch is done, until the page loads the new one', async () => {
+    // Nothing meant for the old store may run with the new store's token in this page.
+    server.use(
+      http.post('*/auth/switch-tenant', () => HttpResponse.json(authSession({ accessToken: 'access-other' }))),
+      refreshTo(),
+    )
+    const session = useSessionStore()
+    session.start(authSession())
+
+    await session.switchTo(altaRpm.id)
+
+    expect(session.ended).toBe('switched')
+    expect(session.accessToken()).toBeNull()
+    expect(session.scope()).toBeNull()
+    await expect(session.refresh()).resolves.toBe(false)
+  })
+
+  it('refreshes once after a 403, so a store the member lost leaves the list', async () => {
+    server.use(
+      http.post('*/auth/switch-tenant', () => problem(403, 'forbidden', 'Sem acesso')),
+      refreshTo(authSession({ memberships: [] })),
+    )
+    const session = useSessionStore()
+    session.start(authSession())
+
+    await expect(session.switchTo(altaRpm.id)).rejects.toMatchObject({ status: 403 })
+
+    expect(session.memberships).toEqual([])
+    expect(session.ended).toBeNull()
+  })
+
+  it('refreshes once after a 401 and ends the session when that is refused too', async () => {
+    server.use(
+      http.post('*/auth/switch-tenant', () => problem(401, 'unauthenticated', 'Sessão expirada')),
+      refused(401, 'unauthenticated'),
+    )
+    const session = useSessionStore()
+    session.start(authSession())
+
+    await expect(session.switchTo(altaRpm.id)).rejects.toMatchObject({ status: 401 })
+
+    expect(session.ended).toBe('expired')
+  })
+})
+
+describe('useSessionStore: scope', () => {
+  it('names the user and the store the session acts for', () => {
+    const session = useSessionStore()
+
+    session.start(authSession())
+
+    expect(session.scope()).toBe(`${authSession().user.id}@${altaRpm.id}`)
+  })
+
+  it('is empty when signed out', () => {
+    expect(useSessionStore().scope()).toBeNull()
+  })
+})
+
+describe('useSessionStore: other tabs', () => {
+  const bruno = authSession({
+    accessToken: 'access-bruno',
+    user: { id: '0190f3c4-5e1a-7b2c-8d3e-00000000beef', name: 'Bruno Lima', email: 'bruno@example.com' },
+  })
+
+  /** tab opens the app in another tab: its own Pinia, the same BroadcastChannel. */
+  function tab() {
+    freshPinia()
+    return useSessionStore()
+  }
+
+  /**
+   * delivered resolves once the test's own listener heard the announcement,
+   * plus a little slack for the other tabs. Only the test that checks that
+   * nothing happens needs it; the others wait for the state they expect.
+   */
+  async function delivered() {
+    await vi.waitFor(() => expect(heard.length).toBeGreaterThan(0))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+
+  let listener: BroadcastChannel
+  let heard: unknown[]
+  beforeEach(() => {
+    heard = []
+    listener = new BroadcastChannel('encomendo-session')
+    listener.onmessage = (event: MessageEvent) => heard.push(event.data)
+  })
+  afterEach(() => listener.close())
+
+  it('ends here, as replaced, when another tab logs in as someone else', async () => {
+    server.use(http.post('*/auth/login', () => HttpResponse.json(bruno)))
+    const here = tab()
+    here.start(authSession())
+
+    await tab().begin((client) => logIn(client, { email: 'bruno@example.com', password: 'segredo-forte' }))
+    await vi.waitFor(() => expect(here.ended).toBe('replaced'))
+  })
+
+  it('ends here, as replaced, when another tab switches store', async () => {
+    const other = { ...altaRpm, id: '0190f3c4-5e1a-7b2c-8d3e-00000000cafe' }
+    server.use(http.post('*/auth/switch-tenant', () => HttpResponse.json(authSession({ tenant: other }))))
+    const here = tab()
+    here.start(authSession())
+    const there = tab()
+    there.start(authSession())
+
+    await there.switchTo(other.id)
+    await vi.waitFor(() => expect(here.ended).toBe('replaced'))
+  })
+
+  it('ends here, as logged out, when another tab logs out', async () => {
+    server.use(http.post('*/auth/logout', () => new HttpResponse(null, { status: 204 })))
+    const here = tab()
+    here.start(authSession())
+    const there = tab()
+    there.start(authSession())
+
+    await there.logOut()
+    await vi.waitFor(() => expect(here.ended).toBe('logged_out'))
+  })
+
+  it('carries on when another tab logs in as the same member in the same store', async () => {
+    server.use(http.post('*/auth/login', () => HttpResponse.json(authSession({ accessToken: 'access-there' }))))
+    const here = tab()
+    here.start(authSession())
+
+    await tab().begin((client) => logIn(client, { email: 'ana@altarpm.com.br', password: 'segredo-forte' }))
+    await delivered()
+
+    expect(here.ended).toBeNull()
+    expect(here.isSignedIn).toBe(true)
+  })
+
+  it('tells other tabs only whose session it is, never a token', async () => {
+    server.use(http.post('*/auth/login', () => HttpResponse.json(bruno)))
+
+    await tab().begin((client) => logIn(client, { email: 'bruno@example.com', password: 'segredo-forte' }))
+    await vi.waitFor(() => expect(heard).toEqual([{ userId: bruno.user.id, tenantId: altaRpm.id }]))
   })
 })
 

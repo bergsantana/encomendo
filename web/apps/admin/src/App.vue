@@ -19,7 +19,8 @@ const route = useRoute()
 const router = useRouter()
 
 watch(ended, (reason) => {
-  if (reason === null) return
+  // A switch leaves through the store picker, which knows where to go.
+  if (reason === null || reason === 'switched') return
   const query = reason === 'expired' ? { redirect: pathWithoutFragment(route.fullPath) } : {}
   loadPage(router.resolve({ name: 'login', query }).href)
 })

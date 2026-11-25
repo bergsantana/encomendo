@@ -15,6 +15,13 @@ describe('safeRedirect', () => {
     ['another site', 'https://evil.example/entrar'],
     ['a protocol-relative URL', '//evil.example'],
     ['a backslash trick', '/\\evil.example'],
+    // URL parsers drop tabs and line breaks, so these become "//evil.example" when loaded.
+    ['a tab before a second slash', '/\t/evil.example/entrar'],
+    ['a line feed before a second slash', '/\n/evil.example'],
+    ['a carriage return before a backslash', '/\r\\evil.example'],
+    ['a tab before a backslash', '/\t\\evil.example'],
+    ['any other control character', '/hoje\u0000'],
+    ['a backslash anywhere', '/hoje\\x'],
     ['a script URL', 'javascript:alert(1)'],
     ['a relative path', 'hoje'],
     ['an empty value', ''],

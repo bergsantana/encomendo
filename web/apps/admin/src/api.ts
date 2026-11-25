@@ -15,5 +15,6 @@ export const api = createHttpClient({
   session: {
     accessToken: () => useSessionStore().accessToken(),
     refresh: () => useSessionStore().refresh(),
+    scope: () => useSessionStore().scope(),
   },
 })

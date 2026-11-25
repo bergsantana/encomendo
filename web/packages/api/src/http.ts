@@ -58,11 +58,19 @@ export interface SessionHooks {
    * refresh trades the refresh cookie for a new access token and resolves
    * whether there is a token to retry with: false once the session is over,
    * e.g. when /auth/refresh refuses with 400, 401 or 403. Offline, 429 and
-   * 5xx must reject with their own error and keep the session (ADR 0012). Concurrent calls must share one refresh:
-   * the refresh token rotates on every use, and two refreshes in flight
-   * revoke the whole session family (ADR 0010, ADR 0013).
+   * 5xx must reject with their own error and keep the session (ADR 0012).
+   * Concurrent calls must share one refresh: the refresh token rotates on
+   * every use, and two refreshes in flight revoke the whole session family
+   * (ADR 0010, ADR 0013).
    */
   refresh(): Promise<boolean>
+  /**
+   * scope names the session a call is made for, such as the user and the
+   * store, or null when signed out. A call is retried only under the scope it
+   * was sent with, so a write meant for one store never runs in another
+   * after a switch, nor as another user after a login elsewhere (ADR 0012).
+   */
+  scope(): string | null
 }
 
 /** HttpClientOptions configure one client; the admin and store apps each build their own. */
@@ -154,8 +162,9 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     const session = anonymous ? undefined : options.session
 
     const sent = session?.accessToken() ?? null
+    const sentFor = session?.scope() ?? null
     let response = await send(call, sent)
-    if (response.status === 401 && session !== undefined && (await renew(session, sent))) {
+    if (response.status === 401 && session !== undefined && (await renew(session, sent)) && session.scope() === sentFor) {
       response = await send(call, session.accessToken())
     }
 

@@ -95,6 +95,20 @@ describe('BaseInput', () => {
     expect(wrapper.find('svg').exists()).toBe(true) // an icon, so the error is not color alone
   })
 
+  it('shows a hint under the field and links it for screen readers', () => {
+    const wrapper = field({ hint: 'Pelo menos 8 caracteres.' })
+    const describedBy = wrapper.get('input').attributes('aria-describedby') ?? ''
+
+    expect(wrapper.get(`#${describedBy}`).text()).toBe('Pelo menos 8 caracteres.')
+  })
+
+  it('links both the hint and the error when there are both', () => {
+    const wrapper = field({ hint: 'Pelo menos 8 caracteres.', error: 'Informe uma senha.' })
+    const ids = (wrapper.get('input').attributes('aria-describedby') ?? '').split(' ')
+
+    expect(ids.map((id) => wrapper.get(`#${id}`).text())).toEqual(['Informe uma senha.', 'Pelo menos 8 caracteres.'])
+  })
+
   it('marks a required field for the browser and for screen readers', () => {
     const input = field({ required: true }).get('input')
 

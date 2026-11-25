@@ -6,11 +6,14 @@ import {
   type Permission,
   refreshSession,
   type Session,
+  switchTenant,
 } from '@encomendo/api'
 import { defineStore } from 'pinia'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef } from 'vue'
 
 import { authClient } from '../authClient'
+import { rememberStore } from '../lastStore'
+import { type CookieOwner, openSessionChannel } from './sessionChannel'
 
 /** The Web Lock every tab holds around calls that set the refresh cookie, so tabs take turns (ADR 0010). */
 const refreshLockName = 'encomendo-refresh'
@@ -20,9 +23,11 @@ const refreshLockName = 'encomendo-refresh'
  * refused the refresh, or the refresh came back for another user or store.
  * That last one happens when another tab logged in or switched store (the
  * refresh cookie is shared), and when the member was removed from the store
- * (their refresh returns a session without it, ADR 0010).
+ * (their refresh returns a session without it, ADR 0010). `switched` means
+ * this tab moved to another store and is about to load it with a full page
+ * load; until then nothing may run in this page under either store.
  */
-export type SessionEnd = 'logged_out' | 'expired' | 'replaced'
+export type SessionEnd = 'logged_out' | 'expired' | 'replaced' | 'switched'
 
 /**
  * useSessionStore holds the signed-in member's session: the access token,
@@ -47,6 +52,8 @@ export const useSessionStore = defineStore('session', () => {
   let refreshing: Promise<boolean> | null = null
   let restoring: Promise<void> | null = null
   const takeTurn = turnTaker()
+  const otherTabs = openSessionChannel(onOtherTab)
+  onScopeDispose(() => otherTabs.close())
 
   const isSignedIn = computed(() => token.value !== null)
   const user = computed(() => current.value?.user ?? null)
@@ -69,6 +76,7 @@ export const useSessionStore = defineStore('session', () => {
     }
     ended.value = null
     restoreError.value = null
+    if (auth.tenant !== undefined) rememberStore(auth.tenant.id)
   }
 
   /** end forgets the session in this tab and records why. It does not call the API; logOut does. */
@@ -84,21 +92,63 @@ export const useSessionStore = defineStore('session', () => {
     return token.value
   }
 
+  /** scope names whom calls are made for, user and store, so the HTTP client never retries one under another (ADR 0012). */
+  function scope(): string | null {
+    const session = current.value
+    return session === null ? null : `${session.user.id}@${session.tenant?.id ?? ''}`
+  }
+
   /** can reports whether the role holds a permission. It only hides UI: the backend checks every call. */
   function can(permission: Permission): boolean {
     return granted.value.has(permission)
   }
 
   /**
-   * begin runs a call that sets the refresh cookie (login now; sign-up,
-   * store switch and invitations later) in its turn with every other such
-   * call, so no refresh answer can land after it and overwrite its cookie,
-   * then starts the session it returns. The call gets the /auth client and
-   * must use only that: a call through `api` that met a 401 would wait for a
-   * refresh, and the refresh would wait for this very turn.
+   * begin runs a call that sets the refresh cookie (login, sign-up, store
+   * switch, and invitations later) in its turn with every other such call,
+   * so no refresh answer can land after it and overwrite its cookie, then
+   * starts the session it returns and tells the other tabs. The call gets the
+   * /auth client and must use only that: a call through `api` that met a 401
+   * would wait for a refresh, and the refresh would wait for this very turn.
    */
   async function begin(call: (client: HttpClient) => Promise<AuthSession>): Promise<void> {
-    start(await takeTurn(() => call(authClient)))
+    const auth = await takeTurn(() => call(authClient))
+    start(auth)
+    otherTabs.announce({ userId: auth.user.id, tenantId: auth.tenant?.id ?? null })
+  }
+
+  /**
+   * switchTo moves the session to another store the member belongs to, in
+   * its turn like `begin`. Once the server has switched, this tab's session
+   * ends as `switched`: the caller loads the new store with a full page load,
+   * and until then nothing may run in this page under either store. A
+   * refusal refreshes once, so a store the member lost leaves the list (403)
+   * and a dead session ends (401; the contract says refresh, then log in).
+   */
+  async function switchTo(tenantId: string): Promise<void> {
+    let auth: AuthSession
+    try {
+      auth = await takeTurn(() => switchTenant(authClient, tenantId))
+    } catch (error) {
+      // After the turn, so the refresh can take its own.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) await refresh().catch(() => undefined)
+      throw error
+    }
+    end('switched')
+    if (auth.tenant !== undefined) rememberStore(auth.tenant.id)
+    otherTabs.announce({ userId: auth.user.id, tenantId: auth.tenant?.id ?? null })
+  }
+
+  /**
+   * onOtherTab ends this tab's session when another tab says the shared
+   * cookie now holds a different session (or none), so this tab stops
+   * showing and acting on a session that is no longer the browser's.
+   */
+  function onOtherTab(owner: CookieOwner): void {
+    const mine = current.value
+    if (mine === null) return
+    if (owner.userId === mine.user.id && owner.tenantId === (mine.tenant?.id ?? null)) return
+    end(owner.userId === null ? 'logged_out' : 'replaced')
   }
 
   /**
@@ -184,6 +234,7 @@ export const useSessionStore = defineStore('session', () => {
   async function logOut(): Promise<void> {
     await takeTurn(() => revokeSession(authClient, token.value))
     end('logged_out')
+    otherTabs.announce({ userId: null, tenantId: null })
   }
 
   return {
@@ -199,7 +250,9 @@ export const useSessionStore = defineStore('session', () => {
     end,
     accessToken,
     can,
+    scope,
     begin,
+    switchTo,
     refresh,
     restore,
     logOut,

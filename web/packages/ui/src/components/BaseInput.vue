@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * BaseInput is the labelled text field. Its error sits right under it, with
- * an icon and linked by aria-describedby, so screen readers read it with the
- * field and it never relies on color alone.
+ * BaseInput is the labelled text field. Its error and its hint sit right
+ * under it, linked by aria-describedby, so screen readers read them with the
+ * field; the error has an icon, so it never relies on color alone.
  */
 import { IconAlertCircle } from '@tabler/icons-vue'
 import { computed, useId, useTemplateRef } from 'vue'
@@ -16,16 +16,21 @@ const props = withDefaults(
     autocomplete?: string
     /** pt-BR message for a field the user must fix; marks the field invalid. */
     error?: string | null
+    /** pt-BR help that stays under the field, such as a password rule. */
+    hint?: string | null
     required?: boolean
   }>(),
-  { type: 'text', autocomplete: 'off', error: null, required: false },
+  { type: 'text', autocomplete: 'off', error: null, hint: null, required: false },
 )
 
 const model = defineModel<string>({ required: true })
 
 const id = useId()
 const errorId = `${id}-error`
+const hintId = `${id}-hint`
 const invalid = computed(() => props.error !== null && props.error !== '')
+const hasHint = computed(() => props.hint !== null && props.hint !== '')
+const describedBy = computed(() => [invalid.value ? errorId : null, hasHint.value ? hintId : null].filter((part) => part !== null).join(' ') || undefined)
 const input = useTemplateRef<HTMLInputElement>('input')
 
 defineExpose({
@@ -50,7 +55,7 @@ defineExpose({
       :required="required"
       :aria-required="required ? 'true' : undefined"
       :aria-invalid="invalid ? 'true' : undefined"
-      :aria-describedby="invalid ? errorId : undefined"
+      :aria-describedby="describedBy"
     >
     <p
       v-if="invalid"
@@ -62,6 +67,13 @@ defineExpose({
         aria-hidden="true"
       />
       {{ error }}
+    </p>
+    <p
+      v-if="hasHint"
+      :id="hintId"
+      class="enc-field__hint"
+    >
+      {{ hint }}
     </p>
   </div>
 </template>
@@ -93,5 +105,9 @@ defineExpose({
   gap: 4px;
   margin: 0;
   color: var(--enc-status-alert-text);
+}
+.enc-field__hint {
+  margin: 0;
+  color: var(--enc-ink-secondary);
 }
 </style>
