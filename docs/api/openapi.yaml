@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: Encomendo API
+  version: 0.1.0
+  description: |
+    The contract between the Go backend and the web and Android clients.
+    Written by hand; backend HTTP tests validate responses against it, and the
+    web types in web/packages/api/src/types are generated from it.
+
+    Errors are RFC 9457 problem details with a stable `code`.
+servers:
+  - url: http://localhost:8081
+    description: Local stack (make dev-up)
+
+tags:
+  - name: health
+    description: Probes for the orchestrator and the load balancer.
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: getLiveness
+      summary: The process is up and serving HTTP.
+      description: Never checks dependencies, so a database outage does not restart the process.
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /readyz:
+    get:
+      tags: [health]
+      operationId: getReadiness
+      summary: Every dependency (Postgres, Redis) answers.
+      responses:
+        "200":
+          description: Ready for traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "503":
+          description: A dependency is failing. Only check names are returned.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok]
+    Problem:
+      type: object
+      description: RFC 9457 problem details. Branch on `code`, never on `title`.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          description: Short pt-BR summary.
+        status:
+          type: integer
+        code:
+          type: string
+          description: Stable machine-readable code. New codes may be added; existing ones never change.
+          enum: [invalid, not_found, method_not_allowed, conflict, forbidden, internal, not_ready]
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldIssue"
+    FieldIssue:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+          description: pt-BR text the client may show next to the field.

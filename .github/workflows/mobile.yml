@@ -1,0 +1,49 @@
+name: mobile
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: mobile
+
+# Android only. iOS jobs (macOS runner, xcodebuild) are added with
+# docs/architecture.md section 8.5.
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Lint and tests (detekt, ktlint, Android lint, host tests)
+        run: ./gradlew check --continue
+      - name: Debug APK
+        run: ./gradlew :androidApp:assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: encomendo-debug-apk
+          path: mobile/androidApp/build/outputs/apk/debug/*.apk
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: mobile-reports
+          path: mobile/**/build/reports

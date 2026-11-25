@@ -1,0 +1,84 @@
+/*
+ * Repair Shop design system tokens, shared by the admin app and the store page.
+ * Calm, "a well-kept workshop": graphite does actions, color only means status.
+ * Source: docs/product/design-document.md, Visual identity.
+ */
+:root {
+  /* Ground and surfaces */
+  --enc-ground: #f5f4f0;
+  --enc-surface: #ffffff;
+  --enc-hairline: #e3e1da;
+  --enc-radius-card: 8px;
+  --enc-radius-badge: 4px;
+
+  /* Text */
+  --enc-ink: #1b1d20;
+  --enc-ink-secondary: #545860;
+
+  /* Actions */
+  --enc-primary: #1b1d20;
+  --enc-primary-text: #ffffff;
+  --enc-secondary-border: #7d796f;
+
+  /* Accent: logo mark, current selection and focus only. Never text, never status. */
+  --enc-accent: #ffc800;
+
+  /* Status: always shown with an icon and a word. */
+  --enc-status-planned-fill: #e5e9ee;
+  --enc-status-planned-text: #36414d;
+  --enc-status-waiting-fill: #fde9d6;
+  --enc-status-waiting-text: #7a3300;
+  --enc-status-assembly-fill: #e1edf9;
+  --enc-status-assembly-text: #0a4478;
+  --enc-status-ready-fill: #dff1e3;
+  --enc-status-ready-text: #145226;
+  --enc-status-alert-fill: #fbe3e3;
+  --enc-status-alert-text: #981418;
+  --enc-status-delivered-fill: #e5ebe7;
+  --enc-status-delivered-text: #36423a;
+  --enc-status-neutral-fill: var(--enc-ground);
+  --enc-status-neutral-text: var(--enc-ink-secondary);
+
+  /* Type */
+  --enc-font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --enc-font-condensed: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --enc-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/* Admin app sizes: 14 px body, 13 px tables, 32 px controls. */
+.enc-density-admin {
+  --enc-body-size: 14px;
+  --enc-table-size: 13px;
+  --enc-control-height: 32px;
+}
+
+/* Store page sizes (client phones): 16–17 px body, 48 px controls. */
+.enc-density-store {
+  --enc-body-size: 16px;
+  --enc-control-height: 48px;
+}
+
+body {
+  margin: 0;
+  background: var(--enc-ground);
+  color: var(--enc-ink);
+  font-family: var(--enc-font-sans);
+  font-size: var(--enc-body-size, 14px);
+}
+
+:focus-visible {
+  outline: 2px solid var(--enc-accent);
+  outline-offset: 2px;
+}
+
+/* Money and quantities: ink, bold, tabular figures. */
+.enc-number {
+  color: var(--enc-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Codes such as P-0231. */
+.enc-code {
+  font-family: var(--enc-font-mono);
+}

@@ -1,0 +1,37 @@
+# Local config and secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+mobile/local.properties
+
+# Claude Code worktrees
+.claude/worktrees/
+.claude/settings.local.json
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Backend
+backend/bin/
+backend/*.out
+backend/coverage/
+
+# Web
+node_modules/
+web/**/dist/
+web/**/coverage/
+web/playwright-report/
+web/test-results/
+*.tsbuildinfo
+
+# Mobile
+mobile/.gradle/
+mobile/.kotlin/
+mobile/build/
+mobile/**/build/
+mobile/captures/

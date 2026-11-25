@@ -1,0 +1,95 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - funlen
+    - gocognit
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - revive
+    - unconvert
+  settings:
+    funlen:
+      # The guideline is about 40 lines; the hard limit leaves room for
+      # table setup without inviting long functions.
+      lines: 60
+      statements: 40
+    gocognit:
+      min-complexity: 20
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-strings
+        - name: error-return
+        - name: error-naming
+        - name: receiver-naming
+        - name: var-naming
+        - name: context-as-argument
+        - name: indent-error-flow
+    depguard:
+      rules:
+        # The domain imports only the standard library and other domain packages,
+        # and never logs or speaks HTTP or SQL (docs/architecture.md, rule 2).
+        domain:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**"
+          allow:
+            - $gostd
+            - github.com/bergsantana/encomendo/backend/internal/domain
+          deny:
+            - pkg: log/slog
+              desc: the domain returns errors; adapters log
+            - pkg: net/http
+              desc: HTTP belongs to adapter/http
+            - pkg: database/sql
+              desc: persistence belongs to adapter/postgres
+        # The app layer owns the ports and never reaches into adapters or drivers.
+        app:
+          list-mode: lax
+          files:
+            - "**/internal/app/**"
+          deny:
+            - pkg: github.com/bergsantana/encomendo/backend/internal/adapter
+              desc: app must not import adapters; define a port instead
+            - pkg: gorm.io
+              desc: GORM belongs to adapter/postgres
+            - pkg: github.com/redis/go-redis
+              desc: Redis belongs to adapter/redis
+            - pkg: net/http
+              desc: HTTP belongs to adapter/http
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - funlen
+          - gocognit
+          - gosec
+          - noctx # httptest.NewRequest is the idiomatic test helper
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/bergsantana/encomendo/backend

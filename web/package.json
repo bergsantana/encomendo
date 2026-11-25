@@ -1,0 +1,29 @@
+{
+  "name": "encomendo-web",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "api:types": "openapi-typescript ../docs/api/openapi.yaml -o packages/api/src/types/schema.d.ts",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^26.6.7",
+    "eslint": "^10.15.0",
+    "eslint-plugin-vue": "^10.12.1",
+    "globals": "^17.14.0",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.74.0",
+    "vue-eslint-parser": "^10.4.2"
+  }
+}

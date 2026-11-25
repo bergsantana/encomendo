@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pt-BR is the only language; it lives in the default values folder. -->
+<resources>
+    <string name="hoje_title">Hoje</string>
+    <string name="hoje_placeholder">Em breve: pedidos por data de entrega, o que precisa de você e as compras do dia.</string>
+</resources>

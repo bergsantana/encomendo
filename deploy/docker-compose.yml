@@ -1,0 +1,86 @@
+# Local development and e2e stack.
+#
+#   make dev-up      build and start everything
+#   make dev-down    stop and remove containers (volumes are kept)
+#
+# Ports come from .env so parallel worktrees can run their own stack: set
+# COMPOSE_PROJECT_NAME and distinct *_PORT values per worktree.
+#
+# Admin app:   http://admin.localhost:${WEB_PORT:-8080}
+# Store page:  http://<slug>.localhost:${WEB_PORT:-8080}  (e.g. altarpm.localhost)
+# API:         http://localhost:${API_PORT:-8081}
+
+name: ${COMPOSE_PROJECT_NAME:-encomendo}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres # local only
+      POSTGRES_DB: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Over TCP, which only opens once the init script has finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d encomendo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    entrypoint: ["/migrate"]
+    command: ["up"]
+    environment:
+      MIGRATE_DATABASE_URL: postgres://encomendo_owner:encomendo_owner_dev@postgres:5432/encomendo?sslmode=disable
+      LOG_FORMAT: text
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    environment:
+      APP_ENV: development
+      LOG_FORMAT: text
+      LOG_LEVEL: debug
+      DATABASE_URL: postgres://encomendo_app:encomendo_app_dev@postgres:5432/encomendo?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${API_PORT:-8081}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
