@@ -49,10 +49,14 @@ encomendo/
 ├── web/                     pnpm workspace: admin + store page + shared packages
 ├── mobile/                  Kotlin Multiplatform app: Android in v1, iOS later (management)
 ├── deploy/
-│   ├── docker-compose.yml   postgres, redis, api, web (local dev + e2e)
-│   ├── api.Dockerfile       multi-stage, distroless final image
-│   ├── web.Dockerfile       build + static serve
-│   └── postgres/init.sql    creates encomendo_owner and encomendo_app roles
+│   ├── docker-compose.yml       base stack: postgres, redis, migrate, api, web (CI + e2e)
+│   ├── docker-compose.dev.yml   development overlay: hot reload (ADR 0007)
+│   ├── docker-compose.prod.yml  production stack with Caddy, secrets from env
+│   ├── api.Dockerfile           multi-stage, distroless final image
+│   ├── web.Dockerfile           build + nginx
+│   ├── web.dev.Dockerfile       Vite dev servers
+│   ├── caddy/, web/             Caddyfile; nginx template
+│   └── postgres/                init.sql (dev roles), init-prod.sh, shared grants
 ├── docs/
 │   ├── architecture.md      this document
 │   ├── product/             design-document.md, product-overview.md

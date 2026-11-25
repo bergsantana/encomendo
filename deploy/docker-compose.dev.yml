@@ -1,0 +1,61 @@
+# Development overlay: hot reload on top of docker-compose.yml.
+#
+#   make dev-up      docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build --watch
+#
+# - api: rebuilt when backend/ changes (test files are ignored).
+# - admin, store: Vite dev servers with hot module reload; source is synced
+#   into the container, dependencies are installed in the image.
+# - web (nginx with the built apps) is off here; `make stack-up` starts it,
+#   which is what CI and e2e use.
+#
+# Admin:  http://localhost:${ADMIN_PORT:-5173}
+# Store:  http://<slug>.localhost:${STORE_PORT:-5174}   (e.g. altarpm.localhost)
+# API:    http://localhost:${API_PORT:-8081}
+
+x-web-dev: &web-dev
+  build:
+    context: ..
+    dockerfile: deploy/web.dev.Dockerfile
+  environment:
+    API_URL: http://api:8080
+  depends_on:
+    - api
+  develop:
+    watch:
+      - action: rebuild
+        path: ../web/pnpm-lock.yaml
+      - action: sync
+        path: ../web
+        target: /app
+        ignore:
+          - "**/node_modules/"
+          - "**/dist/"
+          - "**/coverage/"
+          - pnpm-lock.yaml
+
+services:
+  api:
+    develop:
+      watch:
+        - action: rebuild
+          path: ../backend
+          ignore:
+            - "**/*_test.go"
+            - bin/
+            - coverage/
+            - "*.out"
+
+  web:
+    profiles: [static]
+
+  admin:
+    <<: *web-dev
+    command: ["pnpm", "--filter", "@encomendo/admin", "exec", "vite", "--host", "0.0.0.0"]
+    ports:
+      - "${ADMIN_PORT:-5173}:5173"
+
+  store:
+    <<: *web-dev
+    command: ["pnpm", "--filter", "@encomendo/store", "exec", "vite", "--host", "0.0.0.0"]
+    ports:
+      - "${STORE_PORT:-5174}:5174"

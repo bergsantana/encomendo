@@ -8,7 +8,7 @@ How to split the build plan across worktree sessions without collisions. `docs/b
 - A session edits only the area its prompt names. It does not touch the files with one owner per milestone (`CLAUDE.md`, "Working in parallel sessions"), except the session that owns them in the table below.
 - A session that needs a change in a file it does not own writes the change in its PR description. The integration session applies it.
 - Sessions on a wave start only after the previous wave is merged. Sessions inside a wave never depend on each other's unmerged code.
-- Sessions need no running stack: integration tests use testcontainers on random ports. Only a session that runs `make dev-up` needs `scripts/worktree-env.sh <slot>` first (slot 1 to 9).
+- Sessions need no running stack: integration tests use testcontainers on random ports. Only a session that runs `make dev-up` needs `scripts/worktree-env.sh <slot>` first (slot 1 to 9); it gives the worktree its own project name and ports, including the Vite ports.
 - Every PR: `make lint test` (plus `make test-integration` for adapters), the matching reviewer agent, and its build-plan boxes ticked.
 
 ## Milestone 2 — Identity and tenancy

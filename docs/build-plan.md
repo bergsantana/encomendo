@@ -338,3 +338,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | — | Fixed order phases, store-chosen status lists | ADR 0004 |
 | — | Room 3 and the Android-KMP library plugin | ADR 0005 |
 | 2026-11-24 | Workflow tables and preset seed land in milestone 2 | ADR 0006 |
+| 2026-11-24 | Docker Compose for development and deployment, all in `deploy/` | ADR 0007 |

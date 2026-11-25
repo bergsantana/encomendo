@@ -1,0 +1,14 @@
+-- Creates the database and locks it down. Included by init.sql (development, CI)
+-- and init-prod.sh (production) after they create the two roles, so both
+-- environments get the same grants (docs/architecture.md 5.5).
+-- Not named *.sql: the Postgres entrypoint would run it on its own.
+
+CREATE DATABASE encomendo OWNER encomendo_owner;
+
+\connect encomendo
+
+-- Only the owner may create objects; the API gets USAGE in migration 0001.
+ALTER SCHEMA public OWNER TO encomendo_owner;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON DATABASE encomendo FROM PUBLIC;
+GRANT CONNECT ON DATABASE encomendo TO encomendo_app;

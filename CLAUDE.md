@@ -16,7 +16,8 @@ Multi-tenant SaaS for small Brazilian businesses that sell made-to-order product
 ## Commands
 
 ```bash
-make dev-up            # postgres, redis, api, web via docker compose
+make dev-up            # docker compose with hot reload: postgres, redis, api, Vite admin + store
+make stack-up          # built-image stack behind nginx, as CI and e2e run it
 make lint              # all linters
 make test              # unit tests, all apps
 make test-integration  # testcontainers: repos, RLS, cache

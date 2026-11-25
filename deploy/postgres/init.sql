@@ -10,12 +10,4 @@ CREATE ROLE encomendo_owner LOGIN PASSWORD 'encomendo_owner_dev';
 CREATE ROLE encomendo_app LOGIN PASSWORD 'encomendo_app_dev'
   NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
 
-CREATE DATABASE encomendo OWNER encomendo_owner;
-
-\connect encomendo
-
--- Only the owner may create objects; the API gets USAGE in migration 0001.
-ALTER SCHEMA public OWNER TO encomendo_owner;
-REVOKE ALL ON SCHEMA public FROM PUBLIC;
-REVOKE ALL ON DATABASE encomendo FROM PUBLIC;
-GRANT CONNECT ON DATABASE encomendo TO encomendo_app;
+\ir database.sqlinc

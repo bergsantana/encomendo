@@ -14,7 +14,10 @@ COPY web/ ./
 RUN pnpm -r build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
-COPY deploy/web/nginx.conf /etc/nginx/conf.d/default.conf
+# The image entrypoint fills ${ADMIN_HOST} into the template at start.
+COPY deploy/web/nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV ADMIN_HOST=admin.localhost
+ENV NGINX_ENVSUBST_FILTER=^ADMIN_HOST$
 COPY --from=build /src/apps/admin/dist /usr/share/nginx/admin
 COPY --from=build /src/apps/store/dist /usr/share/nginx/store
 EXPOSE 8080
