@@ -646,7 +646,7 @@ Rules:
 | `backend.yml` | `backend/**` PR + push to main | lint (gofmt, go vet, golangci-lint) → unit (domain, app, http, `-race`) → integration (testcontainers: repos, RLS, cache) → migrations (up/down/up) → coverage gate → docker build; e2e on PRs to main + nightly |
 | `web.yml` | `web/**` | `pnpm install --frozen-lockfile` → eslint + `vue-tsc --noEmit` → Vitest + coverage → build both apps → Playwright against docker compose |
 | `mobile.yml` | `mobile/**` | Ubuntu: JDK 21 → detekt + ktlint → shared tests on JVM → Android lint → `assembleDebug` (APK artifact) |
-| `security.yml` | Every PR + weekly | govulncheck, CodeQL (Go, JS/TS, Kotlin), gitleaks, dependency review |
+| `security.yml` | Every PR + weekly | govulncheck, gitleaks (no CodeQL or dependency review: ADR 0008) |
 | `release.yml` | Tag `v*` | Build + push images to GHCR, run migrations job, signed release APK on the GitHub release |
 
 - Cache Go modules, pnpm store and Gradle with `actions/setup-*` built-in caching.

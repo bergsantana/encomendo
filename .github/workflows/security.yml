@@ -1,5 +1,9 @@
 name: security
 
+# CodeQL and dependency review are not here: on a private repository they need
+# GitHub Advanced Security (docs/adr/0008-no-ghas.md). Dependabot covers
+# dependency alerts and govulncheck covers Go.
+
 on:
   pull_request:
   push:
@@ -20,47 +24,6 @@ jobs:
           go-version-file: backend/go.mod
           work-dir: backend
 
-  codeql:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - language: go
-            build-mode: autobuild
-          - language: javascript-typescript
-            build-mode: none
-          - language: java-kotlin
-            build-mode: manual
-    steps:
-      - uses: actions/checkout@v7
-      - if: matrix.language == 'go'
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-      - if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 21
-      - if: matrix.language == 'java-kotlin'
-        uses: gradle/actions/setup-gradle@v6
-      - uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-      - if: matrix.language == 'java-kotlin'
-        name: Build Android
-        working-directory: mobile
-        run: ./gradlew :androidApp:assembleDebug
-      - uses: github/codeql-action/analyze@v4
-        with:
-          category: /language:${{ matrix.language }}
-
   gitleaks:
     runs-on: ubuntu-latest
     steps:
@@ -70,12 +33,3 @@ jobs:
       - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  dependency-review:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/dependency-review-action@v3
-        with:
-          fail-on-severity: high

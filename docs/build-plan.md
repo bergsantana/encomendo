@@ -339,3 +339,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | — | Room 3 and the Android-KMP library plugin | ADR 0005 |
 | 2026-11-24 | Workflow tables and preset seed land in milestone 2 | ADR 0006 |
 | 2026-11-24 | Docker Compose for development and deployment, all in `deploy/` | ADR 0007 |
+| 2026-11-24 | Drop CodeQL and dependency review (they need GHAS on a private repo) | ADR 0008 |
