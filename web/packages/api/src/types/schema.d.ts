@@ -120,7 +120,10 @@ export interface paths {
         /**
          * Move the session to another store the user belongs to.
          * @description Rotates the refresh token like `/auth/refresh` and returns a session
-         *     for `tenantId`. Also used right after creating a store.
+         *     for `tenantId`. Also used right after creating a store. The body and
+         *     the membership are checked before anything rotates, so a `400` or
+         *     `403` leaves the refresh token and the current session as they were:
+         *     do not end the session on them.
          */
         post: operations["switchTenant"];
         delete?: never;
@@ -754,7 +757,7 @@ export interface components {
     headers: {
         /** @description The refresh cookie with the new token, when the refresh transport is `cookie`. */
         SetRefreshCookie: string;
-        /** @description Seconds until the limit resets. */
+        /** @description Whole seconds until the limit resets. Sent on every 429. */
         RetryAfter: number;
         /** @description Always `Bearer`. */
         WWWAuthenticate: string;
@@ -891,8 +894,9 @@ export interface operations {
             };
             /**
              * @description `unauthenticated`: the refresh token is missing, unknown, expired,
-             *     revoked or already used. A reused token also revokes its family.
-             *     Send the user to the login screen.
+             *     revoked or already used. A reused token also revokes its family; a
+             *     retry within 2 minutes, while its successor is unused, is not
+             *     reuse (ADR 0013). Send the user to the login screen.
              */
             401: {
                 headers: {

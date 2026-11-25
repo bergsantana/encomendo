@@ -376,7 +376,7 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 | Refresh | Opaque 32 random bytes | 30 days, rotated on every use | httpOnly Secure SameSite=Strict cookie (web; client cookie on `.encomendo.com.br` so one login works on every store page); Keystore (Android) | Server stores only SHA-256 hash + `family_id`, `user_id` or `client_account_id`, `tenant_id` |
 
 - `aud` is `backoffice` (staff, carries `tid` and `role`) or `client` (carries `sub` = client account id, no `tid`). Client tokens are rejected on admin routes and staff tokens on `/api/v1/me/*`.
-- Refresh rotation with reuse detection: a reused refresh token revokes its whole family.
+- Refresh rotation with reuse detection: a reused refresh token revokes its whole family. A retry within 2 minutes, while the token it was rotated to is unused, rotates again instead (ADR 0013). Server failures answer 5xx, never 401.
 - `POST /auth/switch-tenant` issues a new access token for another tenant the user belongs to.
 - `jwt.go` pins the algorithm (reject `none` and HS*), checks `iss`, `aud`, `exp`, `nbf` (30 s leeway), loads keys by `kid`.
 - Logout deletes the refresh family; urgent revocation uses a Redis `jti` denylist until expiry.
@@ -475,7 +475,7 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up.
 | `users` | No | Staff identities; `email citext unique`, `password_hash` |
 | `client_accounts`, `client_identities` | No | Global client accounts; identities: verified email (`citext unique`) or Google `sub` |
 | `client_login_codes` | No | Hashed one-time codes, `expires_at`, attempts |
-| `refresh_tokens` | No | `token_hash`, `family_id`, `tenant_id`, `expires_at`, `used_at`, `revoked_at` |
+| `refresh_tokens` | No | `token_hash`, `family_id`, `user_id` or `client_account_id`, `tenant_id`, `expires_at`, `used_at`, `replaced_by` (ADR 0013), `revoked_at` |
 | `status_workflows`, `workflow_statuses` | No | Global presets, read-only to tenants; `(id, version)` immutable once published; statuses with `key`, `label`, `client_label`, `phase`, `position` |
 | `tenants` | Self | `slug unique` (the subdomain label; reserved words blocked), `niche`, `status`; policy `id = current tenant` |
 | `memberships` | Yes | `(tenant_id, user_id) unique`, `role`; policy also lets a user see their own memberships for tenant switching |
@@ -528,7 +528,7 @@ web/
 
 - Admin menu: Hoje · Pedidos · Compras · Produção · Estoque · Catálogo · Clientes · Financeiro. Produção and Estoque appear only when the tenant turns them on. Fornecedores is a tab inside Compras; Kits is a tab inside Catálogo. The status workflow is chosen in settings, with a preview of its steps.
 - Inside a feature: view → Pinia store → `packages/api`. Components never call `fetch`; views hold no business logic.
-- Access token in memory only; refresh cookie is httpOnly. On load, call `/auth/refresh`.
+- Access token in memory only; refresh cookie is httpOnly. On load, call `/auth/refresh`. The session ends only when `/auth/refresh` answers 400, 401 or 403, as on Android (ADR 0012).
 - `usePermission('order:write')` only hides UI.
 - Status badges show the label from the order's workflow; their color comes from the phase, never from the label (`draft`, `awaiting_deposit`, `confirmed` → A comprar / Planejado; `sourcing` → Aguardando fornecedor / Em produção; `assembling` → Em montagem; `ready` → Pronto; `handed_over` → Entregue; `cancelled` → neutral). Alerts sit on top with their own icon and word.
 - The store page is mobile-first and light (client phone sizes: 16–17 px body, 48 px controls). Login is optional and never blocks ordering or tracking; `Minhas encomendas` is reachable from every store page and at `conta.encomendo.com.br`, served by the same app.
@@ -583,7 +583,7 @@ mobile/
 - Layers: Screen (Compose Multiplatform) → ViewModel exposing `StateFlow<UiState>` → use case in `core:domain` → repository interface → implementation in `core:data` (uses `core:network` and `core:database`).
 - Code goes in `commonMain` unless it touches a platform API; then use `expect` in `commonMain` with a small `actual` implementation in `androidMain`, behind an interface.
 - After login the app opens the management graph, filtered by permissions.
-- Auth bearer plugin refreshes once on 401 and logs out if refresh fails.
+- Auth bearer plugin refreshes once on 401. The session ends only when `/auth/refresh` answers 400, 401 or 403; offline, 429 and 5xx keep it (ADR 0012).
 - Offline: recent orders, the receiving checklist and the production board are cached in Room; writes made offline (including receiving photos) queue and retry with WorkManager and an `Idempotency-Key`.
 - ViewModels obtained with `koinViewModel()`.
 - Tests: kotlin.test, Turbine and coroutines-test in `commonTest` with fakes from `core:testing`; Ktor `MockEngine` for `core:network`; in-memory Room tests; Compose Multiplatform UI tests for order and receiving screens. Shared tests run on the JVM and Android.

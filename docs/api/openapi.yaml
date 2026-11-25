@@ -50,10 +50,29 @@ info:
     alone would not stop them.
 
     Using a refresh token that was already used revokes every token of its
-    family: all devices of that login must sign in again. So clients never
-    refresh twice at once: the web app holds a Web Lock
-    (`navigator.locks`, name `encomendo-refresh`) around `/auth/refresh` so
-    tabs take turns, and Android holds a mutex. There is no grace window.
+    family: all devices of that login must sign in again. The one exception
+    is a retry (ADR 0013): the same token presented again within 2 minutes
+    of its first use, while the token it was rotated to is still unused,
+    rotates again instead, so an answer lost on a weak connection does not
+    end the session. Clients still never refresh twice at once: the web app
+    holds a Web Lock (`navigator.locks`, name `encomendo-refresh`) around
+    `/auth/refresh` so tabs take turns, and Android holds a mutex.
+
+    ## When a session ends (ADR 0012, ADR 0013)
+
+    Both apps end the session only when `/auth/refresh` itself answers
+    `400`, `401` or `403`. Offline, timeouts, `429` and `5xx` keep it: show
+    "no connection" and try again later.
+
+    - On `/api/*`, `401 unauthenticated` always means the access token is
+      missing, bad or expired: refresh once and retry. `403` means a missing
+      permission (`forbidden`) or no store selected (`tenant_required`).
+    - A `401 invalid_credentials` from `/auth/login` or
+      `/auth/invitations/accept` is a form error and never calls for a
+      refresh.
+    - A server or dependency failure answers `500 internal` or
+      `503 not_ready`, never 401.
+    - Every `429` carries `Retry-After` in seconds.
 
     Permissions in the session only drive what the apps show. The backend
     checks every call. A role change takes effect at the next refresh, at
@@ -202,8 +221,9 @@ paths:
         "401":
           description: |
             `unauthenticated`: the refresh token is missing, unknown, expired,
-            revoked or already used. A reused token also revokes its family.
-            Send the user to the login screen.
+            revoked or already used. A reused token also revokes its family; a
+            retry within 2 minutes, while its successor is unused, is not
+            reuse (ADR 0013). Send the user to the login screen.
           content:
             application/problem+json:
               schema:
@@ -218,7 +238,10 @@ paths:
       summary: Move the session to another store the user belongs to.
       description: |
         Rotates the refresh token like `/auth/refresh` and returns a session
-        for `tenantId`. Also used right after creating a store.
+        for `tenantId`. Also used right after creating a store. The body and
+        the membership are checked before anything rotates, so a `400` or
+        `403` leaves the refresh token and the current session as they were:
+        do not end the session on them.
       security:
         - refreshCookie: []
         - {}
@@ -704,7 +727,8 @@ components:
       schema:
         type: string
     RetryAfter:
-      description: Seconds until the limit resets.
+      description: Whole seconds until the limit resets. Sent on every 429.
+      required: true
       schema:
         type: integer
         minimum: 1
