@@ -7,6 +7,7 @@
       "Bash(golangci-lint:*)",
       "Bash(pnpm:*)",
       "Bash(./gradlew:*)",
+      "Bash(scripts/mobile-docker.sh:*)",
       "Bash(docker compose:*)",
       "Bash(docker ps:*)",
       "Bash(git status:*)",
@@ -18,6 +19,7 @@
       "Bash(git fetch:*)",
       "Bash(git rebase origin/main)",
       "Bash(git worktree list)"
+      
     ]
   }
 }
