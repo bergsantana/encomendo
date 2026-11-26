@@ -25,11 +25,3 @@ data class Member(
 
     override fun toString(): String = "Member(userId=$userId, role=${role.key})"
 }
-
-/** MemberPage is one page of the team, oldest member first; [nextCursor] is null on the last page. */
-data class MemberPage(
-    /** The members on this page. */
-    val members: List<Member>,
-    /** Where the next page starts, or null when this is the last. */
-    val nextCursor: String?,
-)

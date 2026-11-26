@@ -30,4 +30,28 @@
     <string name="members_removed">%1$s saiu da equipe.</string>
     <string name="members_lost_permission">Você não tem mais permissão para gerenciar a equipe.</string>
     <string name="members_not_on_team">Esta pessoa não faz mais parte da equipe.</string>
+
+    <!-- Invite form. -->
+    <string name="invite_title">Convidar para a equipe</string>
+    <string name="invite_email">E-mail</string>
+    <string name="invite_role">Papel</string>
+    <string name="invite_send">Enviar convite</string>
+    <string name="invite_missing_email">Informe o e-mail.</string>
+    <!-- Any staff form (design document, "Messages any of these screens can show"). -->
+    <string name="invite_check_fields">Confira os campos destacados.</string>
+    <string name="invite_already_member">Esta pessoa já faz parte da equipe.</string>
+    <string name="invite_not_sent">O convite foi salvo, mas o e-mail não saiu. Use "Reenviar" para tentar de novo.</string>
+    <string name="invite_sent">Convite enviado para %1$s.</string>
+
+    <!-- Convites pendentes. -->
+    <string name="invitations_title">Convites pendentes</string>
+    <string name="invitations_valid_until">Vale até %1$s</string>
+    <string name="invitations_resend">Reenviar</string>
+    <string name="invitations_resend_to">Reenviar convite para %1$s</string>
+    <string name="invitations_revoke">Cancelar convite</string>
+    <string name="invitations_revoke_to">Cancelar convite para %1$s</string>
+    <string name="invitations_load_more">Carregar mais convites</string>
+    <string name="invitations_resent">Convite reenviado para %1$s.</string>
+    <string name="invitations_revoked">Convite para %1$s cancelado.</string>
+    <string name="invitations_not_pending">Este convite não está mais pendente.</string>
 </resources>

@@ -31,6 +31,7 @@ kotlin {
             implementation(libs.jetbrains.lifecycle.runtime.compose)
             api(libs.koin.core) // membersModule is a Koin Module
             implementation(libs.koin.compose.viewmodel)
+            implementation(libs.kotlinx.datetime) // "Vale até": an instant from the API as a local date
         }
         commonTest.dependencies {
             implementation(project(":shared:core:testing"))

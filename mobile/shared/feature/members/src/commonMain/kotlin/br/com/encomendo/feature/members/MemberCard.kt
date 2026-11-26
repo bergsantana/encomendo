@@ -74,14 +74,7 @@ internal fun MemberCard(
             } else {
                 Text(text = member.role.label(), style = MaterialTheme.typography.bodyLarge)
             }
-            state.rowError?.takeIf { it.userId == member.userId }?.let { error ->
-                Text(
-                    text = error.message.text(),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.announced(),
-                )
-            }
+            state.errorIn(RowKey.OfMember(member.userId))?.let { RowErrorText(it) }
         }
     }
 }
@@ -99,7 +92,7 @@ private fun MemberControls(
     actions: MembersActions,
 ) {
     // One change at a time: every row waits while one is saved.
-    val enabled = state.savingUserId == null
+    val enabled = state.saving == null
     val question = state.question?.takeIf { it.userId == member.userId }
     val roleFocus = remember { FocusRequester() }
     val removeFocus = remember { FocusRequester() }
@@ -253,4 +246,15 @@ private fun MemberQuestion(
             )
         }
     }
+}
+
+/** Why the last change to a row failed, read out as it appears. */
+@Composable
+internal fun RowErrorText(message: TeamMessage) {
+    Text(
+        text = message.text(),
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.announced(),
+    )
 }

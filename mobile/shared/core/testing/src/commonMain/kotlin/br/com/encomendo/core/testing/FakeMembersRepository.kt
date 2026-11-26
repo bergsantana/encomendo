@@ -1,8 +1,8 @@
 package br.com.encomendo.core.testing
 
 import br.com.encomendo.core.domain.members.Member
-import br.com.encomendo.core.domain.members.MemberPage
 import br.com.encomendo.core.domain.members.MembersRepository
+import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.Role
 
 /**
@@ -18,7 +18,7 @@ class FakeMembersRepository(
     var team: List<Member> = team
 
     /** Answers a page request; the whole [team] by default. */
-    var pageAnswer: suspend (cursor: String?) -> MemberPage = { MemberPage(members = this.team, nextCursor = null) }
+    var pageAnswer: suspend (cursor: String?) -> Page<Member> = { Page(items = this.team, nextCursor = null) }
 
     /** Answers a role change; saves it in [team] by default. */
     var changeAnswer: suspend (userId: String, role: Role) -> Member = { userId, role ->
@@ -49,7 +49,7 @@ class FakeMembersRepository(
     override suspend fun page(
         cursor: String?,
         limit: Int,
-    ): MemberPage {
+    ): Page<Member> {
         pageCalls += cursor
         return pageAnswer(cursor)
     }

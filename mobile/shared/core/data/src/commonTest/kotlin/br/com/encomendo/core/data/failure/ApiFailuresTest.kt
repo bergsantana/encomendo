@@ -39,6 +39,13 @@ class ApiFailuresTest {
     }
 
     @Test
+    fun anInvitationsRefusalsHaveTheirOwnFailures() {
+        assertIs<Failure.AlreadyMember>(ApiError(status = 409, code = ApiErrorCode.AlreadyMember).toFailure())
+        // A 503, yet not a server failure: the invitation was saved, only its email did not go out.
+        assertIs<Failure.EmailNotSent>(ApiError(status = 503, code = ApiErrorCode.EmailUnavailable).toFailure())
+    }
+
+    @Test
     fun somethingGoneIsNotFoundAndKeepsTheServersOwnWords() {
         val failure = ApiError(status = 404, code = ApiErrorCode.NotFound, title = "Não encontrado").toFailure()
 

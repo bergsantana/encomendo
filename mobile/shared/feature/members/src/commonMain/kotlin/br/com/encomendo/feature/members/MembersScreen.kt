@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,13 +24,16 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import br.com.encomendo.core.domain.members.Invitation
 import br.com.encomendo.core.domain.members.Member
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.feature.members.resources.Res
+import br.com.encomendo.feature.members.resources.invitations_load_more
 import br.com.encomendo.feature.members.resources.members_load_more
 import br.com.encomendo.feature.members.resources.members_loading
 import br.com.encomendo.feature.members.resources.members_retry
 import br.com.encomendo.feature.members.resources.members_title
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -50,6 +54,12 @@ fun MembersRoute(
                 onAskRemove = viewModel::onAskRemove,
                 onCancel = viewModel::onCancel,
                 onConfirm = viewModel::onConfirm,
+                onInviteEmailChange = viewModel::onInviteEmailChange,
+                onInviteRoleChange = viewModel::onInviteRoleChange,
+                onSendInvitation = viewModel::onSendInvitation,
+                onResend = viewModel::onResend,
+                onRevoke = viewModel::onRevoke,
+                onLoadMoreInvitations = viewModel::onLoadMoreInvitations,
             )
         }
     MembersScreen(state = state, actions = actions, modifier = modifier)
@@ -64,11 +74,18 @@ data class MembersActions(
     val onAskRemove: (Member) -> Unit,
     val onCancel: () -> Unit,
     val onConfirm: () -> Unit,
+    val onInviteEmailChange: (String) -> Unit,
+    val onInviteRoleChange: (Role) -> Unit,
+    val onSendInvitation: () -> Unit,
+    val onResend: (Invitation) -> Unit,
+    val onRevoke: (Invitation) -> Unit,
+    val onLoadMoreInvitations: () -> Unit,
 )
 
 /**
  * MembersScreen is Equipe: who is on the store's team and with which role,
- * with the role to change and a removal on every row but the owner's
+ * with the role to change and a removal on every row but the owner's, then
+ * the invite form and the pending invitations
  * (docs/product/design-document.md, "Equipe"). What went through and what
  * failed stay above the list, so they show and are read out however far
  * down the row that changed was.
@@ -103,7 +120,8 @@ private fun TeamList(
     modifier: Modifier,
 ) {
     LazyColumn(
-        modifier = modifier.fillMaxWidth(),
+        // The invite form sits at the foot of the list: the keyboard must not cover it (edge to edge, API 30+).
+        modifier = modifier.fillMaxWidth().imePadding(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -112,13 +130,38 @@ private fun TeamList(
         }
         if (state.hasMore) {
             item(key = "more") {
-                OutlinedButton(
-                    onClick = actions.onLoadMore,
-                    enabled = !state.loadingMore,
-                    modifier = Modifier.heightIn(min = TOUCH_TARGET),
-                ) { Text(stringResource(Res.string.members_load_more)) }
+                LoadMoreButton(Res.string.members_load_more, enabled = !state.loadingMore, onClick = actions.onLoadMore)
             }
         }
+        item(key = "invite") { InviteForm(form = state.invite, actions = actions) }
+        if (state.invitations.isNotEmpty()) {
+            item(key = "invitations") { InvitationsTitle() }
+            // Keyed by email: "Reenviar" can give an invitation a new id while its row stays.
+            items(state.invitations, key = { "invitation:${it.key}" }) { invitation ->
+                InvitationCard(invitation = invitation, state = state, actions = actions)
+            }
+            if (state.invitationsHaveMore) {
+                item(key = "more-invitations") {
+                    LoadMoreButton(
+                        Res.string.invitations_load_more,
+                        enabled = !state.loadingMoreInvitations,
+                        onClick = actions.onLoadMoreInvitations,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** "Carregar mais" or "Carregar mais convites", waiting while that page is read. */
+@Composable
+private fun LoadMoreButton(
+    label: StringResource,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.heightIn(min = TOUCH_TARGET)) {
+        Text(stringResource(label))
     }
 }
 

@@ -1,5 +1,6 @@
 package br.com.encomendo.core.navigation
 
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
@@ -126,7 +127,8 @@ private fun ManagementShell(modifier: Modifier) {
             NavHost(
                 navController = navController,
                 startDestination = BackofficeGraph,
-                modifier = Modifier.padding(padding),
+                // Consumed, so a screen's imePadding() does not count the navigation bar twice.
+                modifier = Modifier.padding(padding).consumeWindowInsets(padding),
             ) {
                 backofficeNavGraph(navController)
             }

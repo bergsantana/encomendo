@@ -1,6 +1,7 @@
 package br.com.encomendo.core.domain.members
 
 import br.com.encomendo.core.domain.failure.Failure
+import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.session.SessionRepository
 import kotlinx.coroutines.flow.first
@@ -14,7 +15,7 @@ class ListMembers(
     private val sessions: SessionRepository,
 ) {
     /** Returns the page that starts at [cursor], or the first page. */
-    suspend operator fun invoke(cursor: String? = null): MemberPage =
+    suspend operator fun invoke(cursor: String? = null): Page<Member> =
         sessions.renewingWhenRefused { members.page(cursor = cursor, limit = PAGE_SIZE) }
 
     private companion object {
@@ -61,7 +62,7 @@ class RemoveMember(
 }
 
 /** Runs [call]; when the API refuses it, renews the session before failing, so the screen sees what it may do now. */
-private suspend fun <T> SessionRepository.renewingWhenRefused(call: suspend () -> T): T =
+internal suspend fun <T> SessionRepository.renewingWhenRefused(call: suspend () -> T): T =
     try {
         call()
     } catch (refused: Failure.Forbidden) {
