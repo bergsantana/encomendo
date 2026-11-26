@@ -21,7 +21,13 @@ How to split the build plan across worktree sessions without collisions. `docs/b
 | 2 | `m2-auth` | none | `adapter/auth`: EdDSA JWT with `kid` rotation, refresh rotation with reuse detection and the 2-minute retry window (ADR 0013), Argon2id; the security tests. |
 | 2 | `m2-web-auth` | none | `packages/api` auth client, session store, login, sign-up, tenant picker, forgot password, accept invitation, route guards, members (list, invite, change role, remove). Uses the merged OpenAPI. |
 | 2 | `m2-mobile-auth` | none | Ktor client, `TokenStore`, auth graph, login, sign-up, tenant picker, forgot password, `PermissionGate`, members (list, invite, change role, remove). Refresh transport `body` (ADR 0010). |
-| 3 | `m2-integrate` | `main.go`, `router.go`, `openapi.yaml` | Postgres repositories for identity and tenancy, `authn` middleware, no CORS but a cross-origin refusal on `/auth/*` (ADR 0010), store page middleware before authn and client tokens only on store routes (ADR 0009), 5xx and never 401 when a dependency fails, `Retry-After` on every 429, a native-client test on the cross-origin check (ADR 0013), rate limits, handlers, the new problem codes in `respond/problem.go`, `adapter/notify/smtp.go` and Mailpit in the dev stack (ADR 0011), wiring, contract suites against real adapters, end-to-end "Done when" checks. |
+| 3 | `m2-integrate` (three PRs: 5a, 5b, 5c; see below) | `main.go`, `router.go`, `openapi.yaml` | Postgres repositories for identity and tenancy, `authn` middleware, no CORS but a cross-origin refusal on `/auth/*` (ADR 0010), store page middleware before authn and client tokens only on store routes (ADR 0009), 5xx and never 401 when a dependency fails, `Retry-After` on every 429, a native-client test on the cross-origin check (ADR 0013), rate limits, handlers, the new problem codes in `respond/problem.go`, `adapter/notify/smtp.go` and Mailpit in the dev stack (ADR 0011), wiring, contract suites against real adapters, end-to-end "Done when" checks. |
+
+`m2-integrate` is the largest step, so it runs as three PRs, in this order, each green on its own:
+
+- **5a, data adapters:** the Postgres identity and tenancy repositories, `adapter/inproc`, the Redis denylist, `adapter/notify/smtp.go`, and the system clock and ID generator. No HTTP and no wiring.
+- **5b, HTTP:** the problem codes, `authn`, the cross-origin refusal, the store page middleware, rate limits, the handlers and `openapi.yaml`.
+- **5c, wiring and end to end:** the configuration (keys, SMTP, hosts), `main.go`, Mailpit in the dev stack, and `test/e2e` for the "Done when" checks.
 
 ## Later milestones (plan, refine when you get there)
 
