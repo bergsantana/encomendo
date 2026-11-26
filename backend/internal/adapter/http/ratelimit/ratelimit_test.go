@@ -130,7 +130,7 @@ func TestRules_MatchTheADR(t *testing.T) {
 		"password-reset ip 10 1h0m0s", "password-reset email 5 1h0m0s",
 		"password-reset-confirm ip 30 10m0s", "password-reset-confirm email 10 10m0s",
 		"invitation-preview ip 60 10m0s", "invitation-accept ip 20 10m0s",
-		"create-tenant user 5 24h0m0s",
+		"create-tenant user 10 24h0m0s",
 		"invite store 20 24h0m0s", "invite user 50 24h0m0s", "invite store-email 3 24h0m0s",
 	}
 	rules := ratelimit.Rules()

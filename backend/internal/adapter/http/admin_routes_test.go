@@ -1,0 +1,207 @@
+package http
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/bergsantana/encomendo/backend/internal/adapter/auth"
+	"github.com/bergsantana/encomendo/backend/internal/adapter/http/handler"
+	"github.com/bergsantana/encomendo/backend/internal/adapter/http/middleware"
+	"github.com/bergsantana/encomendo/backend/internal/adapter/http/ratelimit"
+	appidentity "github.com/bergsantana/encomendo/backend/internal/app/identity"
+	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+)
+
+// adminPaths are the nine store and team operations of the contract.
+var adminPaths = []struct{ method, path string }{
+	{"POST", "/api/v1/admin/tenants"},
+	{"GET", "/api/v1/admin/settings"},
+	{"PUT", "/api/v1/admin/settings"},
+	{"GET", "/api/v1/admin/members"},
+	{"DELETE", "/api/v1/admin/members/01936d1e-8b5a-7c2e-9f3a-000000000004"},
+	{"PUT", "/api/v1/admin/members/01936d1e-8b5a-7c2e-9f3a-000000000004/role"},
+	{"GET", "/api/v1/admin/invitations"},
+	{"POST", "/api/v1/admin/invitations"},
+	{"DELETE", "/api/v1/admin/invitations/01936d1e-8b5a-7c2e-9f3a-000000000005"},
+}
+
+// tokens is a fake verifier: "staff" is a staff token for the backoffice
+// audience, "client" a client account's token, which the backoffice
+// audience refuses as the real verifier does.
+type tokens struct{}
+
+func (tokens) Verify(_ context.Context, raw string, aud shared.Audience) (appidentity.AccessClaims, error) {
+	switch {
+	case raw == "staff" && aud == shared.AudienceBackoffice:
+		p, err := shared.NewBackofficePrincipal(shared.UserID(shared.ID{1}), shared.TenantID(shared.ID{2}), shared.RoleOwner)
+		return appidentity.AccessClaims{Principal: p, JTI: shared.ID{3}}, err
+	case raw == "client" && aud == shared.AudienceClient:
+		// A real client token, which only a client route would take.
+		p, err := shared.NewClientPrincipal(shared.ClientAccountID(shared.ID{4}))
+		return appidentity.AccessClaims{Principal: p, JTI: shared.ID{5}}, err
+	}
+	return appidentity.AccessClaims{}, auth.ErrInvalidToken
+}
+
+type openDenylist struct{}
+
+func (openDenylist) Denied(context.Context, shared.ID) (bool, error) { return false, nil }
+
+// tenancyReached records that a call got through; every call refuses with
+// ErrForbidden, which every admin route answers.
+type tenancyReached struct{ calls int }
+
+func (u *tenancyReached) CreateTenant(context.Context, apptenancy.CreateTenantInput) (apptenancy.TenantView, error) {
+	u.calls++
+	return apptenancy.TenantView{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) Settings(context.Context) (apptenancy.SettingsView, error) {
+	u.calls++
+	return apptenancy.SettingsView{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) UpdateSettings(context.Context, apptenancy.UpdateSettingsInput) (apptenancy.SettingsView, error) {
+	u.calls++
+	return apptenancy.SettingsView{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) Members(context.Context, shared.PageRequest) (shared.Page[apptenancy.MemberView], error) {
+	u.calls++
+	return shared.Page[apptenancy.MemberView]{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) ChangeRole(context.Context, apptenancy.ChangeRoleInput) (apptenancy.MemberView, error) {
+	u.calls++
+	return apptenancy.MemberView{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) RemoveMember(context.Context, shared.UserID) error {
+	u.calls++
+	return shared.ErrForbidden
+}
+
+func (u *tenancyReached) Invitations(context.Context, shared.PageRequest) (shared.Page[apptenancy.InvitationView], error) {
+	u.calls++
+	return shared.Page[apptenancy.InvitationView]{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) InviteMember(context.Context, apptenancy.InviteMemberInput) (apptenancy.InvitationView, error) {
+	u.calls++
+	return apptenancy.InvitationView{}, shared.ErrForbidden
+}
+
+func (u *tenancyReached) RevokeInvitation(context.Context, shared.InvitationID) error {
+	u.calls++
+	return shared.ErrForbidden
+}
+
+func adminRouter(t *testing.T, uc apptenancy.UseCases) http.Handler {
+	t.Helper()
+	log := slog.New(slog.DiscardHandler)
+	p, err := ratelimit.NewPseudonyms([]byte(strings.Repeat("k", ratelimit.MinKeyLength)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ten, err := handler.NewTenancy(handler.TenancyDeps{UseCases: uc, Limiter: &countingLimiter{}, Pseudonyms: p, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten},
+		RouterOptions{Authn: middleware.NewAuthn(tokens{}, openDenylist{}, log)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return router
+}
+
+func adminRequest(method, path, token string) *http.Request {
+	body := ""
+	switch {
+	case method == "POST" && path == "/api/v1/admin/tenants":
+		body = `{"name":"Alta RPM","slug":"altarpm"}`
+	case method == "PUT" && path == "/api/v1/admin/settings":
+		body = `{"stockEnabled":true,"productionEnabled":false,"purchaseBeforeDeposit":false,"depositPercent":50,` +
+			`"assemblyDays":3,"safetyMarginDays":2,"whatsappPhone":null,"version":1}`
+	case method == "POST" && path == "/api/v1/admin/invitations":
+		body = `{"email":"a@b.co","role":"staff"}`
+	case method == "PUT":
+		body = `{"role":"staff"}`
+	}
+	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	}
+	return r
+}
+
+// Every admin route has authn for the backoffice audience: no token and a
+// client account's token are both 401, and nothing runs behind them.
+func TestRouter_AdminRoutesNeedAStaffToken(t *testing.T) {
+	t.Parallel()
+
+	for _, rt := range adminPaths {
+		for _, token := range []string{"", "client", "forged"} {
+			t.Run(rt.method+" "+rt.path+" "+token, func(t *testing.T) {
+				t.Parallel()
+
+				uc := &tenancyReached{}
+				rec := httptest.NewRecorder()
+				adminRouter(t, uc).ServeHTTP(rec, adminRequest(rt.method, rt.path, token))
+
+				if rec.Code != http.StatusUnauthorized || uc.calls != 0 {
+					t.Errorf("answer %d with %d use-case calls, want 401 and none", rec.Code, uc.calls)
+				}
+			})
+		}
+	}
+}
+
+// adminPaths must list every admin route, or a new one would escape the
+// authn checks above.
+func TestRouter_AdminPathsListEveryRoute(t *testing.T) {
+	t.Parallel()
+
+	if n := len(adminRoutes(&handler.Tenancy{})); len(adminPaths) != n {
+		t.Fatalf("adminPaths lists %d routes, the router mounts %d", len(adminPaths), n)
+	}
+}
+
+func TestRouter_AdminRoutesServeStaff(t *testing.T) {
+	t.Parallel()
+
+	for _, rt := range adminPaths {
+		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
+			t.Parallel()
+
+			uc := &tenancyReached{}
+			rec := httptest.NewRecorder()
+			adminRouter(t, uc).ServeHTTP(rec, adminRequest(rt.method, rt.path, "staff"))
+
+			if uc.calls != 1 || rec.Code != http.StatusForbidden {
+				t.Errorf("answer %d with %d use-case calls, want the use case's 403", rec.Code, uc.calls)
+			}
+		})
+	}
+}
+
+func TestNewRouter_RefusesAdminWithoutAuthn(t *testing.T) {
+	t.Parallel()
+
+	log := slog.New(slog.DiscardHandler)
+	p, _ := ratelimit.NewPseudonyms([]byte(strings.Repeat("k", ratelimit.MinKeyLength)))
+	ten, err := handler.NewTenancy(handler.TenancyDeps{UseCases: &tenancyReached{}, Limiter: &countingLimiter{}, Pseudonyms: p, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten}, RouterOptions{}); err == nil {
+		t.Error("the admin routes were mounted without authn")
+	}
+}
