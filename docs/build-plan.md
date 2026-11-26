@@ -124,8 +124,8 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 ### Done when
 
 - [x] A staff token cannot read another tenant's rows through the API or the database; an expired or tampered token is rejected on every route (`backend/test/e2e`: another store's token reaches nothing through the admin routes; expired, tampered, `alg: none`, unknown-key and wrong-audience tokens are 401 on every protected operation in `openapi.yaml`; the database half is the RLS suite)
-- [ ] Sign-up → create tenant → log in works on web and Android against the same endpoints
-- [ ] Members: invite, change role and remove on web and Android
+- [ ] Sign-up → create tenant → log in works on web and Android against the same endpoints (partial: the web half passes against the real stack in `web/e2e/admin.spec.ts`, step 2.8; Android in step 2.11)
+- [ ] Members: invite, change role and remove on web and Android (partial: the web half passes against the real stack, step 2.8; Android in step 2.11)
 - [x] Coverage gate (90% domain + app, 80% overall) passes with real code behind it (the CI `coverage` job, on every milestone 2 PR)
 
 ---
