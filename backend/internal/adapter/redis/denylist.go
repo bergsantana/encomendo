@@ -17,8 +17,9 @@ import (
 // a jti is looked up before any tenant is known.
 const denyKeyPrefix = "g:auth:deny:"
 
-// denyTimeout bounds a write to the denylist. The revoke in Postgres has
-// committed by then, so a slow Redis must not hold up the answer (ADR 0013).
+// denyTimeout bounds each denylist call. On a write the revoke in Postgres
+// has committed already, so a slow Redis must not hold up the answer; on a
+// read it turns a hung Redis into a quick 503 (ADR 0013).
 const denyTimeout = 2 * time.Second
 
 // Denylist stops access tokens before they expire, keeping the jtis of
@@ -63,6 +64,10 @@ func (d *Denylist) Deny(ctx context.Context, jtis []shared.ID, until time.Time) 
 // returns an error: a denylist that cannot be read fails closed, never
 // open and never as a 401 (ADR 0013).
 func (d *Denylist) Denied(ctx context.Context, jti shared.ID) (bool, error) {
+	// Bounded like a write, so a hung Redis answers 503 quickly instead of
+	// holding every request for the socket timeout.
+	ctx, cancel := context.WithTimeout(ctx, denyTimeout)
+	defer cancel()
 	n, err := d.rdb.Exists(ctx, denyKeyPrefix+jti.String()).Result()
 	if err != nil {
 		return false, fmt.Errorf("read denylist: %w", err)

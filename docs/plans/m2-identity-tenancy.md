@@ -156,10 +156,13 @@ Parallel sessions ended on 2026-11-25. The single milestone 2 session owns `back
   - **Switch** validates the body and the membership before rotating (ADR 0013).
   - Login, refresh and switch read memberships under the user-only scope (PR #31 handoff).
   - **Router:** mount `/auth/*` with its middleware, and make the fallback keep problem+json.
+    - On every `/auth` route the order is cross-origin check, deadline, then the per-IP limit (`middleware.RateLimits.ByIP`), so a cross-site page cannot spend its visitors' budgets (ADR 0021). A router test checks the order.
+    - Per-email limits run in the handler after decoding, with `ratelimit.Pseudonyms.Email` on the parsed `identity.Email`.
     - Wrap each method-qualified route (`POST /auth/login`) in the cross-origin check, never a `/auth/` prefix. Otherwise `GET /auth/login` answers `400` for its `Content-Type` instead of `405`.
     - Every 401 carries `WWW-Authenticate: Bearer`, `invalid_credentials` included, so the handler tests must not expect it absent on `/auth/login`.
   - **`openapi.yaml`:**
     - add 503 with `Retry-After` on `signUp`, `logIn`, `confirmPasswordReset` and `acceptInvitation`, and 409 `email_taken` on `acceptInvitation` (PR #31 handoff);
+    - say on `signUp` that it is limited per email too (ADR 0021);
     - add the cross-origin answers that 2.1 built to every `/auth/*` operation: 403 `forbidden` on all of them (only `switchTenant` lists a 403 today), and 400 `invalid` for a wrong `Content-Type` on `logOut` and `previewInvitation`, the two that list no 400. `logOut`'s "always answers 204" then needs "after the cross-origin check" (ADR 0010, amended in 2.1).
 - **Tests:**
   - handler tests with fake use cases, validated against `openapi.yaml`. This needs `kin-openapi` as a test-only dependency, justified in the PR;
@@ -249,7 +252,8 @@ Parallel sessions ended on 2026-11-25. The single milestone 2 session owns `back
     - the signing seed, verify-only seeds and issuer;
     - the cookie name;
     - the admin origin;
-    - trusted proxy CIDRs (ADR 0021);
+    - trusted proxy CIDRs (ADR 0021): `ratelimit.DefaultTrustedProxies()` in development and test only. Outside them, refuse an empty list. Unmap or refuse IPv4-mapped prefixes such as `::ffff:10.0.0.0/104`, which never match;
+    - the pseudonym key of the rate limits, derived as `HMAC-SHA256(reset-code key, "encomendo rate-limit email v1")` and passed to `ratelimit.NewPseudonyms` (ADR 0021);
     - SMTP settings and `RequireTLS`;
     - the reset-code HMAC key.
   - **Refusals outside `development` and `test`:**
@@ -267,6 +271,11 @@ Parallel sessions ended on 2026-11-25. The single milestone 2 session owns `back
     - Mailpit;
     - the fixed dev seed;
     - Redis `maxmemory-policy noeviction`, with a comment that the dev Redis has no persistence (PR #31 handoff).
+  - **Production proxies (ADR 0021):**
+    - give the compose network a fixed subnet, and Caddy and nginx fixed addresses in it;
+    - list exactly those addresses as trusted proxies in `deploy/prod.env.example`;
+    - enable IPv6 on that network, or run Caddy on the host network, so IPv6 clients do not all arrive from the bridge gateway;
+    - log a warning when the client address found is itself trusted.
   - **nginx** (asked by the web session): `Referrer-Policy: same-origin`, and `Cache-Control: no-store` on `index.html`.
 - **Tests:**
   - config tests for each refusal and each default;

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -85,5 +86,38 @@ func TestDenylist_DeniedFailsClosed(t *testing.T) {
 
 	if err == nil || denied {
 		t.Errorf("Denied = %v, %v; want an error, and not a pass", denied, err)
+	}
+}
+
+// A hung Redis fails a denylist read within denyTimeout, as an error: the
+// authn middleware answers 503 quickly instead of holding every request.
+func TestDenied_HungRedisFailsQuickly(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { _ = conn.Close() }) // held open, never answered
+		}
+	}()
+	c, err := Open(config.Redis{URL: "redis://" + ln.Addr().String() + "/0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	d := NewDenylist(c, slog.New(slog.DiscardHandler))
+
+	start := time.Now()
+	denied, err := d.Denied(context.Background(), shared.ID{})
+	if took := time.Since(start); err == nil || denied || took > denyTimeout+time.Second {
+		t.Errorf("Denied = %v, %v after %v; want an error within %v", denied, err, took, denyTimeout)
 	}
 }
