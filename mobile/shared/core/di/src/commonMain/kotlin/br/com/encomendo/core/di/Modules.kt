@@ -1,6 +1,7 @@
 package br.com.encomendo.core.di
 
 import br.com.encomendo.core.data.session.ApiAuthRepository
+import br.com.encomendo.core.data.session.ApiPasswordResetRepository
 import br.com.encomendo.core.data.session.ApiTenancyRepository
 import br.com.encomendo.core.data.session.LastStore
 import br.com.encomendo.core.data.session.SessionKeeper
@@ -9,6 +10,7 @@ import br.com.encomendo.core.data.session.createSessionApiClient
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.database.buildDatabase
 import br.com.encomendo.core.domain.session.AuthRepository
+import br.com.encomendo.core.domain.session.PasswordResetRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.TenancyRepository
 import br.com.encomendo.core.navigation.ScreenHandover
@@ -94,6 +96,7 @@ val dataModule: Module =
         }
         single { SessionKeeper(auth = get(), store = get(), turns = get()) }
         single<TenancyRepository> { ApiTenancyRepository(tenancy = get(), keeper = get()) }
+        single<PasswordResetRepository> { ApiPasswordResetRepository(get()) }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */

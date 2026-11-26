@@ -33,6 +33,7 @@ import br.com.encomendo.feature.auth.resources.login_password_show
 import br.com.encomendo.feature.auth.resources.login_password_show_description
 import br.com.encomendo.feature.auth.resources.password_hint
 import br.com.encomendo.feature.auth.resources.signup_name
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -67,9 +68,12 @@ internal fun FormBanner(error: FormError?) {
         text = error.message(),
         color = MaterialTheme.colorScheme.error,
         style = MaterialTheme.typography.bodyLarge,
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier = Modifier.announced(),
     )
 }
+
+/** Announces the text when it appears or changes, for text that shows after a tap. */
+internal fun Modifier.announced(): Modifier = semantics { liveRegion = LiveRegionMode.Polite }
 
 /** The person's name, for a new account ("Nome"). */
 @Composable
@@ -92,11 +96,17 @@ internal fun NameField(
     )
 }
 
-/** The account's email ("E-mail"), offered the device's saved logins. */
+/**
+ * The account's email ("E-mail"), offered the device's saved logins. With
+ * [onDone] the keyboard's action sends the form, for a form with no field
+ * after this one; without it, the action moves to the next field.
+ */
 @Composable
 internal fun EmailField(
     field: FieldUi,
     onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onDone: (() -> Unit)? = null,
 ) {
     val focus = LocalFocusManager.current
     OutlinedTextField(
@@ -108,17 +118,22 @@ internal fun EmailField(
         singleLine = true,
         enabled = field.enabled,
         keyboardOptions =
-            KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false),
-        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }),
+            KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = if (onDone == null) ImeAction.Next else ImeAction.Done,
+                autoCorrectEnabled = false,
+            ),
+        keyboardActions =
+            KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }, onDone = { onDone?.invoke() }),
         modifier =
-            Modifier.fillMaxWidth().semantics {
+            modifier.fillMaxWidth().semantics {
                 contentType = ContentType.Username + ContentType.EmailAddress
             },
     )
 }
 
 /**
- * The password ("Senha"), with Mostrar/Ocultar: gloves make typos. A
+ * The password ("Senha", or [label]), with Mostrar/Ocultar: gloves make typos. A
  * [new] password carries the rule as its hint ("Pelo menos 8 caracteres.")
  * and is offered to the device's password manager to save.
  */
@@ -128,12 +143,13 @@ internal fun PasswordField(
     visible: Boolean,
     new: Boolean,
     actions: PasswordActions,
+    label: StringResource = Res.string.login_password,
 ) {
     val hint = if (new) stringResource(Res.string.password_hint) else null
     OutlinedTextField(
         value = field.value,
         onValueChange = actions.onChange,
-        label = { Text(stringResource(Res.string.login_password)) },
+        label = { Text(stringResource(label)) },
         isError = field.issue != null,
         // The rule stays under a new password even when it was refused, as on the web: that is when it helps.
         supportingText =
@@ -168,8 +184,8 @@ internal fun PasswordField(
 
 /** A field's issue, announced when it appears: the field lost focus while the form was sent. */
 @Composable
-private fun Issue(text: String) {
-    Text(text = text, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+internal fun Issue(text: String) {
+    Text(text = text, modifier = Modifier.announced())
 }
 
 @Composable

@@ -41,6 +41,7 @@ internal fun ApiError.toFailure(): Failure =
         code == ApiErrorCode.Forbidden -> Failure.Forbidden(title = title, cause = this)
         code == ApiErrorCode.SlugTaken -> Failure.AlreadyTaken(field = "slug", cause = this)
         code == ApiErrorCode.EmailTaken -> Failure.AlreadyTaken(field = "email", cause = this)
+        code == ApiErrorCode.InvalidCode -> Failure.WrongCode(cause = this)
         else -> Failure.Unexpected(status = status, code = code.value, title = title, cause = this)
     }
 

@@ -18,6 +18,8 @@ import androidx.navigation.compose.rememberNavController
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.ui.LocalGrantedPermissions
 import br.com.encomendo.feature.auth.AccountBarRoute
+import br.com.encomendo.feature.auth.ForgotPasswordRoute
+import br.com.encomendo.feature.auth.LoginNavigation
 import br.com.encomendo.feature.auth.LoginRoute
 import br.com.encomendo.feature.auth.SignUpRoute
 import br.com.encomendo.feature.auth.StorePickerRoute
@@ -100,11 +102,33 @@ private fun ManagementShell(modifier: Modifier) {
     }
 }
 
-/** Login and sign-up, and later forgot password (`feature/auth`); the store picker has its own state. */
+/** Login, sign-up and Esqueci a senha (`feature/auth`); the store picker has its own state. */
 fun NavGraphBuilder.authNavGraph(navController: NavController) {
     navigation<AuthGraph>(startDestination = LoginDestination) {
-        composable<LoginDestination> {
-            LoginRoute(onCreateAccount = { navController.navigate(SignUpDestination) { launchSingleTop = true } })
+        composable<LoginDestination> { entry ->
+            // Set by Esqueci a senha on its way back, so the login says the password changed.
+            val passwordChanged by entry.savedStateHandle
+                .getStateFlow(
+                    PASSWORD_CHANGED,
+                    false,
+                ).collectAsStateWithLifecycle()
+            LoginRoute(
+                LoginNavigation(
+                    onCreateAccount = { navController.navigate(SignUpDestination) { launchSingleTop = true } },
+                    onForgotPassword = { navController.navigate(ForgotPasswordDestination) { launchSingleTop = true } },
+                    passwordChanged = passwordChanged,
+                    onNoticeShown = { entry.savedStateHandle[PASSWORD_CHANGED] = false },
+                ),
+            )
+        }
+        composable<ForgotPasswordDestination> {
+            ForgotPasswordRoute(
+                onBackToLogin = { navController.popBackStack() },
+                onPasswordChanged = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set(PASSWORD_CHANGED, true)
+                    navController.popBackStack()
+                },
+            )
         }
         composable<SignUpDestination> {
             SignUpRoute(onHaveAccount = { navController.popBackStack() })
@@ -127,3 +151,6 @@ fun NavGraphBuilder.backofficeNavGraph(navController: NavController) {
         }
     }
 }
+
+/** The login's saved-state key for "the password was just reset". */
+private const val PASSWORD_CHANGED = "password_changed"

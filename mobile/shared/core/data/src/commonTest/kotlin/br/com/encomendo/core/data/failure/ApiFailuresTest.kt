@@ -54,6 +54,11 @@ class ApiFailuresTest {
     }
 
     @Test
+    fun aWrongResetCodeIsAWrongCode() {
+        assertIs<Failure.WrongCode>(ApiError(400, ApiErrorCode.InvalidCode).toFailure())
+    }
+
+    @Test
     fun codesTheAppDoesNotHandleAreUnexpected() {
         val failure = ApiError(status = 409, code = ApiErrorCode("plan_limit_reached")).toFailure()
 

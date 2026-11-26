@@ -17,6 +17,10 @@ data object LoginDestination
 @Serializable
 data object SignUpDestination
 
+/** Esqueci a senha: a new password with a code sent by email. */
+@Serializable
+data object ForgotPasswordDestination
+
 /** The management graph, opened after a staff login. */
 @Serializable
 data object BackofficeGraph
