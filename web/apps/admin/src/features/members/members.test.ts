@@ -5,13 +5,17 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { button, closeApps, field, link, openApp, submitForm } from '../../testing/app'
-import { authSession, gate, problem } from '../../testing/fixtures'
+import { loadPage } from '../../pageLoad'
+import { altaRpm, authSession, gate, problem } from '../../testing/fixtures'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
 
 const server = setupServer()
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
-afterEach(() => server.resetHandlers())
+afterEach(() => {
+  server.resetHandlers()
+  vi.mocked(loadPage).mockClear()
+})
 afterAll(() => server.close())
 enableAutoUnmount(afterEach)
 afterEach(closeApps)
@@ -542,6 +546,34 @@ describe('when the team cannot be read', () => {
     await vi.waitFor(() => expect(wrapper.find('[role=alert]').exists()).toBe(true))
 
     expect(wrapper.get('[role=alert]').text()).toBe('Você não tem mais permissão para gerenciar a equipe.')
+  })
+
+  it('goes back to the store picker, saying so, when the store is suspended', async () => {
+    // The same for every screen in the store: the HTTP client reports it (ADR 0022).
+    signedInAs('owner', manage)
+    server.use(
+      http.get('*/api/v1/admin/members', () => problem(403, 'tenant_suspended', 'Esta loja está suspensa. Fale com o suporte do Encomendo.')),
+      http.get('*/api/v1/admin/invitations', () => problem(403, 'tenant_suspended', 'Esta loja está suspensa. Fale com o suporte do Encomendo.')),
+    )
+
+    await openApp('/equipe')
+    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledWith('/lojas?suspended=1'))
+  })
+
+  it('says so when the access token expires and the refresh finds the store suspended', async () => {
+    // The refreshed session has no store and marks it (ADR 0022): not "replaced by another login".
+    const suspended = { tenant: altaRpm, role: 'owner' as const, status: 'suspended' as const }
+    server.use(
+      http.post('*/auth/refresh', () => HttpResponse.json(authSession({ role: 'owner', permissions: manage })), { once: true }),
+      http.post('*/auth/refresh', () => HttpResponse.json(authSession({ tenant: undefined, role: undefined, permissions: [], memberships: [suspended] }))),
+      http.get('*/api/v1/admin/members', () => problem(401, 'unauthenticated', 'Sessão expirada')),
+      http.get('*/api/v1/admin/invitations', () => problem(401, 'unauthenticated', 'Sessão expirada')),
+    )
+
+    await openApp('/equipe')
+
+    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledWith('/lojas?suspended=1'))
+    expect(loadPage).not.toHaveBeenCalledWith(expect.stringContaining('/entrar'))
   })
 
   it('leaves for Hoje when a change is refused because the role changed meanwhile', async () => {

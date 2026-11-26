@@ -11,7 +11,8 @@ declare module 'vue-router' {
     /**
      * requiresStore sends a member with no store selected (right after
      * sign-up, or with several stores and none chosen) to the store picker.
-     * Store routes would answer `tenant_required` anyway (ADR 0010).
+     * Store routes would answer `tenant_required` anyway (ADR 0010). A
+     * suspended store counts as none: it is never entered (ADR 0022).
      */
     requiresStore?: boolean
     /**
@@ -60,7 +61,7 @@ export function createAuthGuard(routes: AuthGuardRoutes): NavigationGuard {
     const back = { redirect: pathWithoutFragment(to.fullPath) }
 
     if ((permissions.length > 0 || needs(to, 'requiresAuth')) && !session.isSignedIn) return { name: routes.login, query: back }
-    if (needs(to, 'requiresStore') && session.tenant === null) return { name: routes.storePicker, query: back }
+    if (needs(to, 'requiresStore') && (session.tenant === null || session.tenantSuspended)) return { name: routes.storePicker, query: back }
     if (!permissions.every((permission) => session.can(permission))) return { name: routes.home }
     return true
   }

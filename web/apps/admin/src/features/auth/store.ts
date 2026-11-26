@@ -16,7 +16,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { api } from '../../api'
 import { authClient } from '../../authClient'
 import { type FieldCheck, type FormMessages, useForm } from '../../composables/useForm'
-import { errorMessage } from '../../errorMessage'
+import { errorMessage, storeSuspendedMessage } from '../../errorMessage'
 import { lastStore } from '../../lastStore'
 import { useSessionStore } from '../../stores/session'
 
@@ -163,9 +163,27 @@ export const useAuthStore = defineStore('auth', () => {
     return form.attempt(checks, signUpMessages, () => session.begin((client) => requestAccount(client, { name, email, password })))
   }
 
-  /** chooseStore resolves true once the session has moved to that store. */
+  /**
+   * chooseStore resolves true once the session has moved to that store. A
+   * suspended store is never entered: it says so without calling the API
+   * (ADR 0022). A switch the API still refuses as suspended says the same.
+   */
   function chooseStore(tenantId: string): Promise<boolean> {
+    if (isSuspended(tenantId)) {
+      showSuspended()
+      return Promise.resolve(false)
+    }
     return form.attempt([], switchMessages, () => session.switchTo(tenantId))
+  }
+
+  function isSuspended(tenantId: string): boolean {
+    return session.memberships.some((membership) => membership.tenant.id === tenantId && membership.status === 'suspended')
+  }
+
+  /** showSuspended puts the suspended-store message above the store picker, where the member lands from a store that was suspended. */
+  function showSuspended(): void {
+    form.clear()
+    form.error.value = storeSuspendedMessage
   }
 
   /** createStore resolves true once the store exists, owned by the member, and the session has moved to it. */
@@ -316,6 +334,7 @@ export const useAuthStore = defineStore('auth', () => {
     logIn,
     signUp,
     chooseStore,
+    showSuspended,
     createStore,
     requestReset,
     resendReset,

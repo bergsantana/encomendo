@@ -3,9 +3,11 @@
  * StorePickerView is where a member without a store selected lands: right
  * after sign-up (create the first store) or with several stores (choose one).
  * Opening a store is a full page load, so nothing of another store stays in
- * memory.
+ * memory. A suspended store stays in the list, marked "Suspensa": choosing it
+ * says so and stays here. The page also says so when it is opened from a
+ * store that was just suspended (`?suspended=1`, ADR 0022).
  */
-import { BaseButton, BaseInput } from '@encomendo/ui'
+import { BaseButton, BaseInput, SuspendedBadge } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -40,7 +42,11 @@ const linkHint = computed(() => {
   return looksValid ? `Sua loja ficará em ${link}.${storeDomain}.` : 'Use de 3 a 40 letras minúsculas, números e hífens.'
 })
 
-onMounted(() => auth.clearErrors())
+onMounted(() => {
+  auth.clearErrors()
+  // Only while a store is still suspended, so a reload after a reactivation shows nothing stale.
+  if (route.query.suspended === '1' && memberships.value.some((membership) => membership.status === 'suspended')) auth.showSuspended()
+})
 
 function openStore(): void {
   // Through the router, whose links never leave this origin, then a full page load.
@@ -81,11 +87,16 @@ async function create(): Promise<void> {
       >
         <BaseButton
           :disabled="submitting"
+          :aria-describedby="membership.status === 'suspended' ? `suspended-${membership.tenant.id}` : undefined"
           @click="choose(membership.tenant.id)"
         >
           {{ membership.tenant.name }}
         </BaseButton>
         <span class="store__address">{{ membership.tenant.slug }}.{{ storeDomain }}</span>
+        <SuspendedBadge
+          v-if="membership.status === 'suspended'"
+          :id="`suspended-${membership.tenant.id}`"
+        />
       </li>
     </ul>
     <form

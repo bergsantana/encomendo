@@ -87,6 +87,13 @@ export interface HttpClientOptions {
   session?: SessionHooks
   /** timeoutMs is how long a call may take before it fails like a lost connection. Defaults to 30 s. */
   timeoutMs?: number
+  /**
+   * onProblem sees every problem answer (a non-2xx response, not a lost
+   * connection) to a call that is not `anonymous`, just before the call
+   * throws it. The app uses it for answers that mean the same on any screen,
+   * such as `tenant_suspended` (ADR 0022). If it throws, the error is ignored and the call still throws the ApiError.
+   */
+  onProblem?: (error: ApiError) => void
 }
 
 // The same timeout as Android. ADR 0013 sizes its 2-minute refresh retry
@@ -157,6 +164,15 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     }
   }
 
+  // A hook that throws must never replace the real error the caller needs.
+  function notify(failure: ApiError): void {
+    try {
+      options.onProblem?.(failure)
+    } catch {
+      // Ignored on purpose: see above.
+    }
+  }
+
   async function request<T>(method: string, path: string, body: unknown, requestOptions: RequestOptions = {}): Promise<T> {
     assertPath(path)
     const { anonymous = false, ...init } = requestOptions
@@ -170,7 +186,11 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
       response = await send(call, session.accessToken())
     }
 
-    if (!response.ok) throw new ApiError(response.status, await readProblem(response), retryAfter(response))
+    if (!response.ok) {
+      const failure = new ApiError(response.status, await readProblem(response), retryAfter(response))
+      if (!anonymous) notify(failure)
+      throw failure
+    }
     return readBody<T>(response)
   }
 

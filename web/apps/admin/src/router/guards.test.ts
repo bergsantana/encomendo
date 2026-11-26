@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from 'vue-router'
 
-import { authSession, problem } from '../testing/fixtures'
+import { altaRpm, authSession, problem } from '../testing/fixtures'
 import { createAuthGuard } from './guards'
 
 const page = (title: string) => defineComponent({ render: () => h('h1', title) })
@@ -100,6 +100,17 @@ describe('createAuthGuard', () => {
 
     expect(heading).toBe('Escolha a loja')
     expect(router.currentRoute.value.query).toEqual({ redirect: '/financeiro?mes=2026-11' })
+  })
+
+  it('never opens a suspended store, even one the session names, and sends the member to the picker', async () => {
+    // The API never selects one (ADR 0022); the app does not rely on that.
+    const suspended = { tenant: altaRpm, role: 'owner' as const, status: 'suspended' as const }
+    server.use(http.post('*/auth/refresh', () => HttpResponse.json(authSession({ memberships: [suspended] }))))
+
+    const { router, heading } = await open('/financeiro')
+
+    expect(heading).toBe('Escolha a loja')
+    expect(router.currentRoute.value.name).toBe('stores')
   })
 
   it('lets a member with no store selected open the store picker', async () => {

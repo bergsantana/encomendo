@@ -265,3 +265,116 @@ describe('choosing a store', () => {
     expect(wrapper.findAll('a').map((a) => a.text())).not.toContain('Trocar de loja')
   })
 })
+
+describe('a suspended store (ADR 0022)', () => {
+  const suspendedMoto = { tenant: motoPecas, role: 'staff' as const, status: 'suspended' as const }
+  const ownsAltaRpm = { tenant: altaRpm, role: 'owner' as const, status: 'active' as const }
+  const message = 'Esta loja está suspensa. Fale com o suporte do Encomendo.'
+
+  it('stays in the list marked "Suspensa", beside its link, and only that store is marked', async () => {
+    cookieHolds(storeless([ownsAltaRpm, suspendedMoto]))
+
+    const { wrapper } = await openApp('/lojas')
+
+    const items = wrapper.findAll('li')
+    expect(items.map((item) => item.text())).toEqual([
+      expect.stringContaining('Alta RPM'),
+      expect.stringContaining('Moto Peças Sul'),
+    ])
+    expect(items[0]?.text()).not.toContain('Suspensa')
+    expect(items[1]?.text()).toContain('motopecas.encomendo.com.br')
+    expect(items[1]?.text()).toContain('Suspensa')
+    // The word is also what the button is described by, for screen readers.
+    const described = items[1]?.get('button').attributes('aria-describedby')
+    expect(wrapper.get(`#${described}`).text()).toBe('Suspensa')
+  })
+
+  it('refuses to enter it, says why and stays on the picker, without calling the API', async () => {
+    cookieHolds(storeless([ownsAltaRpm, suspendedMoto]))
+    let switches = 0
+    server.use(
+      http.post('*/auth/switch-tenant', () => {
+        switches += 1
+        return HttpResponse.json(authSession())
+      }),
+    )
+    const { wrapper, router } = await openApp('/lojas')
+
+    await button(wrapper, 'Moto Peças Sul').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role=alert]').text()).toBe(message)
+    expect(switches).toBe(0)
+    expect(loadPage).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.name).toBe('stores')
+  })
+
+  it('says the same when the API still answers tenant_suspended to the switch, and marks the store afterwards', async () => {
+    // The store was suspended after this list was read.
+    server.use(
+      http.post('*/auth/refresh', () => HttpResponse.json(storeless([ownsAltaRpm, { ...suspendedMoto, status: 'active' }])), { once: true }),
+      http.post('*/auth/refresh', () => HttpResponse.json(storeless([ownsAltaRpm, suspendedMoto]))),
+      http.post('*/auth/switch-tenant', () => problem(403, 'tenant_suspended', 'Qualquer título')),
+    )
+    const { wrapper } = await openApp('/lojas')
+
+    await button(wrapper, 'Moto Peças Sul').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role=alert]').text()).toBe(message)
+    expect(wrapper.findAll('li')[1]?.text()).toContain('Suspensa')
+    expect(loadPage).not.toHaveBeenCalled()
+  })
+
+  it('still enters the other stores', async () => {
+    cookieHolds(storeless([ownsAltaRpm, suspendedMoto]))
+    server.use(http.post('*/auth/switch-tenant', () => HttpResponse.json(authSession())))
+    const { wrapper } = await openApp('/lojas')
+
+    await button(wrapper, 'Alta RPM').trigger('click')
+    await flushPromises()
+
+    expect(loadPage).toHaveBeenCalledWith('/hoje')
+  })
+
+  it('says so when the member lands here from a store that was just suspended', async () => {
+    cookieHolds(storeless([{ ...ownsAltaRpm, status: 'suspended' }]))
+
+    const { wrapper } = await openApp('/lojas?suspended=1')
+
+    expect(wrapper.get('h1').text()).toBe('Escolha a loja')
+    expect(wrapper.get('[role=alert]').text()).toBe(message)
+    expect(wrapper.get('li').text()).toContain('Suspensa')
+  })
+
+  it('shows nothing stale when the store was reactivated before the page reloaded', async () => {
+    cookieHolds(storeless([ownsAltaRpm]))
+
+    const { wrapper } = await openApp('/lojas?suspended=1')
+
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(wrapper.get('li').text()).not.toContain('Suspensa')
+  })
+
+  it('does not open a remembered last store: a login with it lands on the picker', async () => {
+    // The API answers a session without a store (ADR 0022); the app goes where that leads.
+    cookieHolds(null)
+    localStorage.setItem('encomendo.lastStore', altaRpm.id)
+    let hint: unknown
+    server.use(
+      http.post('*/auth/login', async ({ request }) => {
+        hint = await request.json()
+        return HttpResponse.json(storeless([{ ...ownsAltaRpm, status: 'suspended' }]))
+      }),
+    )
+    const { wrapper, router } = await openApp('/entrar')
+
+    await submitForm(wrapper, { 'E-mail': 'ana@altarpm.com.br', Senha: 'segredo-forte' })
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('stores'))
+    await flushPromises()
+
+    expect(hint).toMatchObject({ tenantId: altaRpm.id })
+    expect(wrapper.get('h1').text()).toBe('Escolha a loja')
+    expect(loadPage).not.toHaveBeenCalled()
+  })
+})

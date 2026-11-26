@@ -6,6 +6,7 @@ import BaseButton from './components/BaseButton.vue'
 import BaseInput from './components/BaseInput.vue'
 import BaseSelect from './components/BaseSelect.vue'
 import StatusBadge from './components/StatusBadge.vue'
+import SuspendedBadge from './components/SuspendedBadge.vue'
 import { isPhase, phases, toneForPhase } from './phase'
 
 describe('toneForPhase', () => {
@@ -193,5 +194,15 @@ describe('BaseInput', () => {
 
     expect(email?.attributes('id')).toBeTruthy()
     expect(email?.attributes('id')).not.toBe(password?.attributes('id'))
+  })
+})
+
+describe('SuspendedBadge', () => {
+  it('says "Suspensa" with an icon hidden from screen readers, so it is never color alone', () => {
+    const wrapper = mount(SuspendedBadge, { attrs: { id: 'suspended-1' } })
+
+    expect(wrapper.text()).toBe('Suspensa')
+    expect(wrapper.attributes('id')).toBe('suspended-1')
+    expect(wrapper.get('svg').attributes('aria-hidden')).toBe('true')
   })
 })

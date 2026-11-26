@@ -21,14 +21,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 21 | 26 | In progress: backend contract, database, domain, auth adapter, data adapters, HTTP handlers, the suspended-store check, configuration, wiring and the backend e2e checks (plan steps 2.1 to 2.7); web auth client, every auth screen and Equipe; mobile API client, session, every auth screen and Equipe |
+| 2 | Identity and tenancy | 22 | 26 | In progress: backend contract, database, domain, auth adapter, data adapters, HTTP handlers, the suspended-store check, configuration, wiring and the backend e2e checks (plan steps 2.1 to 2.7); web auth client, every auth screen and Equipe; mobile API client, session, every auth screen and Equipe |
 | 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **43** | **121** | **about 36%** |
+|   | **All milestones** | **44** | **121** | **about 36%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -118,7 +118,7 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 ### Suspended stores (added 2026-11-26, ADR 0022)
 
 - [x] Backend: a suspended store is refused on every tenant-scoped admin route (403 `tenant_suspended`), never selected by login, refresh or switch, and shown in the membership list with `status`
-- [ ] Web: "Escolha a loja" marks a suspended store "Suspensa", and `tenant_suspended` shows the message and goes back to the picker
+- [x] Web: "Escolha a loja" marks a suspended store "Suspensa", and `tenant_suspended` shows the message and goes back to the picker
 - [ ] Android: the same
 
 ### Done when
