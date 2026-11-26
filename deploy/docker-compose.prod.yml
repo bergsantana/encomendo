@@ -33,7 +33,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}"]
+    # At the memory cap a full Redis refuses writes (noeviction) rather
+    # than dropping denylisted tokens (ADR 0013). Size the cap to the host.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:?}"]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -63,6 +65,19 @@ services:
       LOG_LEVEL: info
       DATABASE_URL: postgres://encomendo_app:${ENCOMENDO_APP_PASSWORD}@postgres:5432/encomendo?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      AUTH_SIGNING_SEED: ${AUTH_SIGNING_SEED:?}
+      AUTH_VERIFY_SEEDS: ${AUTH_VERIFY_SEEDS:-}
+      AUTH_ISSUER: https://${API_HOST}
+      AUTH_RESET_CODE_KEY: ${AUTH_RESET_CODE_KEY:?}
+      ADMIN_ORIGIN: https://${ADMIN_HOST}
+      API_HOST: ${API_HOST}
+      SMTP_ADDR: ${SMTP_ADDR:?}
+      SMTP_FROM: ${SMTP_FROM:?}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # Exactly Caddy and nginx: no other address may set X-Forwarded-For
+      # (ADR 0021).
+      TRUSTED_PROXIES: 172.30.0.10,172.30.0.11,fd00:30::10,fd00:30::11
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -72,6 +87,10 @@ services:
   web:
     image: ${IMAGE_REPO}/web:${VERSION}
     restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.11
+        ipv6_address: fd00:30::11
     environment:
       ADMIN_HOST: ${ADMIN_HOST:?set ADMIN_HOST, e.g. admin.encomendo.com.br}
     depends_on:
@@ -80,6 +99,10 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.30.0.10
+        ipv6_address: fd00:30::10
     ports:
       - "80:80"
       - "443:443"
@@ -94,6 +117,22 @@ services:
     depends_on:
       - web
       - api
+
+# A fixed subnet, so the API can trust Caddy and nginx by address alone
+# (ADR 0021). IPv6 is on so IPv6 clients reach Caddy with their own address
+# instead of the bridge gateway's, which would put them all under one
+# rate-limit key; the host's Docker needs ip6tables (deploy/README.md).
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      # Dynamic addresses come only from the upper halves, so no other
+      # container can take the proxies' fixed addresses.
+      config:
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
+        - subnet: fd00:30::/64
+          ip_range: fd00:30::8000/113
 
 volumes:
   postgres-data:

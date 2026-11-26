@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bergsantana/encomendo/backend/internal/adapter/http/middleware"
 	"github.com/bergsantana/encomendo/backend/internal/platform/config"
 )
 
@@ -17,6 +18,16 @@ type Server struct {
 	srv             *http.Server
 	shutdownTimeout time.Duration
 	log             *slog.Logger
+}
+
+// CheckTimeouts returns an error when the server would cut a connection
+// before an /auth call can answer: its write timeout must outlast the /auth
+// deadline, or a busy hasher's 503 never reaches the client (ADR 0019).
+func CheckTimeouts(cfg config.HTTP) error {
+	if cfg.WriteTimeout <= middleware.AuthDeadline {
+		return fmt.Errorf("HTTP_WRITE_TIMEOUT (%v) must be longer than the /auth deadline (%v)", cfg.WriteTimeout, middleware.AuthDeadline)
+	}
+	return nil
 }
 
 // NewServer returns a Server for handler with the configured timeouts.

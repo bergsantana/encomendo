@@ -1,0 +1,19 @@
+# gitleaks configuration: the default rules, plus an allowlist of exactly
+# the two fixed development keys.
+#
+# They are public on purpose. The local and CI stacks run with them
+# (deploy/docker-compose.yml, .env.example), and the API refuses both
+# outside development: the signing seed by its kid (adapter/auth.LoadKeys,
+# ADR 0019) and the reset-code key by its bytes (platform/config, ADR
+# 0011), each with tests. Any other value that looks like a secret still
+# fails the scan.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fixed development keys, refused outside development"
+regexes = [
+  '''augERHUoTDTq1K69k5GLuA1cZM6mNFE3RPy9bYzpj08=''',
+  '''AxEa9VTpecLRcumgvGFhpYTkZR2pF4jzai/nIen2Dtk=''',
+]

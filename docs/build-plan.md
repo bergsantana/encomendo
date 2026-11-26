@@ -21,14 +21,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 17 | 26 | In progress: backend contract, database, domain, auth adapter, data adapters, HTTP handlers and the suspended-store check (plan steps 2.1 to 2.5); web auth client, every auth screen and Equipe; mobile API client, session, every auth screen and Equipe |
+| 2 | Identity and tenancy | 19 | 26 | In progress: backend contract, database, domain, auth adapter, data adapters, HTTP handlers, the suspended-store check, configuration and wiring (plan steps 2.1 to 2.6); web auth client, every auth screen and Equipe; mobile API client, session, every auth screen and Equipe |
 | 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **39** | **121** | **about 32%** |
+|   | **All milestones** | **41** | **121** | **about 34%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -96,8 +96,8 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 - [x] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id (ADR 0019; rotation and reuse detection live in `app/identity`, run here on the real tokens)
 - [x] Migrations `0002_identity` (with `password_reset_codes`), `0003_workflows` (ADR 0006), `0004_tenancy` (with `invitations`, ADR 0011), `0005_rls_helpers`, `0006_platform`, `0007_rls_policies` (numbered as they land, ADR 0014)
 - [x] `adapter/postgres`: `TxManager` that sets `app.tenant_id`, `errors.go` mapping, identity and tenancy repositories (`TxManager` with all three settings and savepoints, `errors.go`, the outbox publisher, and the identity and tenancy repositories on GORM models, all passing their port contracts; the locks of ADR 0013 tested with overlapping requests)
-- [ ] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes; signing keys from config, with the development key refused outside `development` and `test` (ADR 0019) (partial: steps 2.1 to 2.3 built the problem codes, `authn`, the cross-origin refusal, the `/auth` deadline, the rate limits of ADR 0021, the nine `/auth` handlers and the nine tenancy and members handlers, mounted in the router behind their middleware and checked against `openapi.yaml`; the suspended-store check, configuration and wiring follow)
-- [ ] `adapter/notify/smtp.go` for invitations and password reset codes; Mailpit in the dev stack (ADR 0011) (partial: `smtp.go` done, tested against an in-process SMTP server, with a require-TLS setting; Mailpit, the SMTP settings and refusing `RequireTLS=false` and an `http` admin origin outside development come with step 5c)
+- [x] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes; signing keys from config, with the development key refused outside `development` and `test` (ADR 0019) (plan steps 2.1 to 2.6: the middleware, the rate limits of ADR 0021, the eighteen handlers checked against `openapi.yaml`, the suspended-store check of ADR 0022, and the configuration that refuses every local-only setting outside development)
+- [x] `adapter/notify/smtp.go` for invitations and password reset codes; Mailpit in the dev stack (ADR 0011) (Mailpit in the base stack at `MAILPIT_PORT`; `SMTP_REQUIRE_TLS=false` and an `http` admin origin are refused outside development)
 - [x] OpenAPI: `/auth/*`, tenancy and members endpoints (ADRs 0010, 0011)
 - [x] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse) (the RLS suite with the user-scope policies of ADR 0010; the auth tests in `adapter/auth`, with forged and tampered tokens and fuzzing)
 - [x] Contract suites for the identity and tenancy ports, run against fakes and real adapters (the fakes, the Postgres repositories, the inproc ports, the argon2id hasher, the secret generator and the token issuer)

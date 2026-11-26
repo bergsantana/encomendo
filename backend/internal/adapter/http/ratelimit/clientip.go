@@ -7,20 +7,6 @@ import (
 	"strings"
 )
 
-// DefaultTrustedProxies are the private and loopback ranges, where the
-// compose networks of Caddy, nginx and the API live. They are safe only
-// while the API's own port is not published (ADR 0021).
-func DefaultTrustedProxies() []netip.Prefix {
-	return []netip.Prefix{
-		netip.MustParsePrefix("10.0.0.0/8"),
-		netip.MustParsePrefix("172.16.0.0/12"),
-		netip.MustParsePrefix("192.168.0.0/16"),
-		netip.MustParsePrefix("127.0.0.0/8"),
-		netip.MustParsePrefix("fc00::/7"),
-		netip.MustParsePrefix("::1/128"),
-	}
-}
-
 // ClientIP finds the client's address behind trusted proxies (ADR 0021).
 type ClientIP struct {
 	trusted []netip.Prefix
@@ -75,6 +61,11 @@ func (c ClientIP) Value(r *http.Request) string {
 	if !ok {
 		return ""
 	}
+	return ValueOf(addr)
+}
+
+// ValueOf is the key value for a client address, as Value gives it.
+func ValueOf(addr netip.Addr) string {
 	if addr.Is4() {
 		return addr.String()
 	}

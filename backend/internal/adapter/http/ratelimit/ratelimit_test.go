@@ -12,6 +12,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/ratelimit"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/platform/config"
 )
 
 func TestClientIP_Of(t *testing.T) {
@@ -45,7 +46,7 @@ func TestClientIP_Of(t *testing.T) {
 		{name: "an entry with a port stops the walk", remote: "172.18.0.6:40000", xff: []string{"203.0.113.7:443"}, want: "172.18.0.6"},
 		{name: "a bracketed entry stops the walk", remote: "172.18.0.6:40000", xff: []string{"[2001:db8::1]:443"}, want: "172.18.0.6"},
 	}
-	ip := ratelimit.NewClientIP(ratelimit.DefaultTrustedProxies())
+	ip := ratelimit.NewClientIP(config.DefaultTrustedProxies())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -68,7 +69,7 @@ func TestClientIP_UnreadablePeer(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
 	r.RemoteAddr = "not an address"
-	ip := ratelimit.NewClientIP(ratelimit.DefaultTrustedProxies())
+	ip := ratelimit.NewClientIP(config.DefaultTrustedProxies())
 	if _, ok := ip.Of(r); ok {
 		t.Error("Of read an address from nothing")
 	}
@@ -97,7 +98,7 @@ func TestClientIP_ValueKeysIPv6OnItsSlash64(t *testing.T) {
 	if v := value("203.0.113.7:1"); v != "203.0.113.7" {
 		t.Errorf("IPv4 value = %q", v)
 	}
-	behind := ratelimit.NewClientIP(ratelimit.DefaultTrustedProxies())
+	behind := ratelimit.NewClientIP(config.DefaultTrustedProxies())
 	r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
 	r.RemoteAddr = "172.18.0.6:40000"
 	r.Header.Set("X-Forwarded-For", "2001:db8:1:2::7, 172.18.0.5")
@@ -213,5 +214,23 @@ func TestPseudonyms(t *testing.T) {
 	store := shared.TenantID(id)
 	if got := p.StoreEmail(store, email(t, "ANA@example.com")); got != store.String()+":"+v {
 		t.Errorf("StoreEmail = %q", got)
+	}
+}
+
+// The pseudonym key is derived from the reset-code key, apart from it and
+// the same on every instance (ADR 0021).
+func TestDerivePseudonymKey(t *testing.T) {
+	t.Parallel()
+
+	reset := bytes.Repeat([]byte{7}, 32)
+	k := ratelimit.DerivePseudonymKey(reset)
+	if len(k) < ratelimit.MinKeyLength || bytes.Equal(k, reset) || !bytes.Equal(k, ratelimit.DerivePseudonymKey(reset)) {
+		t.Errorf("DerivePseudonymKey = %x", k)
+	}
+	if bytes.Equal(k, ratelimit.DerivePseudonymKey(bytes.Repeat([]byte{8}, 32))) {
+		t.Error("two reset keys derive one pseudonym key")
+	}
+	if _, err := ratelimit.NewPseudonyms(k); err != nil {
+		t.Errorf("the derived key is refused: %v", err)
 	}
 }

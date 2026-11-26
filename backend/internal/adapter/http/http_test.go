@@ -135,3 +135,18 @@ func TestServer_RunReportsListenErrors(t *testing.T) {
 		t.Errorf("Run error = %v, want listen error", err)
 	}
 }
+
+// A write timeout at or under the /auth deadline would cut the connection
+// before a busy /auth call sends its 503 (ADR 0019).
+func TestCheckTimeouts(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		write time.Duration
+		ok    bool
+	}{{30 * time.Second, true}, {middleware.AuthDeadline + time.Second, true}, {middleware.AuthDeadline, false}, {5 * time.Second, false}} {
+		if err := CheckTimeouts(config.HTTP{WriteTimeout: tt.write}); (err == nil) != tt.ok {
+			t.Errorf("CheckTimeouts(%v) = %v, want ok=%v", tt.write, err, tt.ok)
+		}
+	}
+}
