@@ -107,7 +107,7 @@ func (o *Order) Advance(to workflow.StatusKey, by shared.Principal, now time.Tim
 - Repositories get the transaction from `ctx` through `conn.go`. They never take a `*gorm.DB` or a transaction parameter.
 - `SkipDefaultTransaction: true`. The TxManager owns transactions.
 - No `gorm.Model` embed and no `DeletedAt`, so there is no hidden soft-delete filter.
-- `Updates(struct)` skips zero values. Use `Select("*")` or a map when a field must become 0, "" or false.
+- `Updates(struct)` skips zero values. Use a map, or `Select` with the column names, when a field must become 0, "" or false. Never `Select("*")`: `encomendo_app` may update only some columns.
 - Optimistic locking: `Where("version = ?", v)`, and return `shared.ErrVersionConflict` (it matches `shared.ErrConflict`) when `RowsAffected == 0`. The API answers `409 version_conflict`.
 - `Preload` only what the use case returns. Use `Raw` only where the builder gets unclear (reports, stock sums), with bound parameters, never `fmt.Sprintf` into SQL.
 - Map Postgres errors in `errors.go`: 23505 → conflict, 23503 → invalid reference, 40001 → retryable conflict.

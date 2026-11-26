@@ -137,6 +137,10 @@ Each context also has `errors.go` for its sentinel errors and a `_test.go` per f
 | Monte o seu / Kit pronto | custom order / `Kit` |
 | Entrega / Retirada | `Handover`: `delivery` / `pickup` |
 | Lista de status da loja | `workflow.StatusWorkflow` (statuses with a `workflow.Phase`) |
+| Equipe, membro, papel: Dono / Admin / Funcionário / Visualizador | `tenancy.Membership`, `shared.Role`: `owner` / `admin` / `staff` / `viewer` (ADR 0017) |
+| Convite (para a equipe) | `tenancy.Invitation` (ADR 0011) |
+| Esqueci a senha, código | password reset code in `identity` (ADR 0011) |
+| Loja suspensa ("Suspensa") | `tenancy.StatusSuspended`, `tenancy.ErrTenantSuspended` (ADR 0022) |
 
 **Domain rules to encode:**
 
@@ -702,3 +706,4 @@ Build security and tenancy first. Each milestone ends with all tests green in CI
 - Store page SEO: is a Vite SPA enough, or does the store page need server rendering?
 - Custom domains per tenant (`loja.cliente.com.br`) in v1, or only `{slug}.encomendo.com.br`?
 - Status workflows: presets only in v1, or may a store later rename statuses or build its own list? Confirm the preset wording with real shops.
+- Plans and billing: does a store have a plan, with limits and a price, and what happens when it is not paid? No product document defines plans yet, so `domain/tenancy` has none (decided 2026-11-26; milestone 2 left it out). A suspension (ADR 0022) is per store today; whether it should also stop the person is decided with billing.

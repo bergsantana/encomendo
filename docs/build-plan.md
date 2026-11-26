@@ -21,14 +21,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 22 | 26 | In progress: backend contract, database, domain, auth adapter, data adapters, HTTP handlers, the suspended-store check, configuration, wiring and the backend e2e checks (plan steps 2.1 to 2.7); web auth client, every auth screen and Equipe; mobile API client, session, every auth screen and Equipe |
+| 2 | Identity and tenancy | 25 | 26 | Almost done: everything is built and checked against the real stack on web and Android; the Android suspended-store box ticks with #47 |
 | 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
-| 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **44** | **121** | **about 36%** |
+| 8 | Hardening | 0 | 9 | Not started |
+|   | **All milestones** | **47** | **122** | **about 39%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -90,7 +90,7 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 ### Backend
 
 - [x] `domain/shared`: typed IDs (UUIDv7), `Money`, `Page`, `Principal`, `Role`
-- [ ] `domain/identity` (user, client account, email, password policy, password reset code, role, permission) and `domain/tenancy` (tenant, membership, invitation, settings, plan), with tests (partial: everything but the tenant plan, which no product document defines yet; see `domain/tenancy/doc.go`)
+- [x] `domain/identity` (user, client account, email, password policy, password reset code, role, permission) and `domain/tenancy` (tenant, membership, invitation, settings), with tests (the tenant plan moved to billing, an open question in `docs/architecture.md` section 12: no product document defines plans; decided by the user on 2026-11-26)
 - [x] `app/shared`: `TxManager` and `Scope`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`, `authz.Require`; fakes and their contract suites (ADR 0009)
 - [x] `app/identity` and `app/tenancy` services with fakes: Register, Login, Refresh, Logout, SwitchTenant, password reset, accept invitation, CreateTenant, InviteMember, RevokeInvitation, ChangeRole, RemoveMember, UpdateSettings
 - [x] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id (ADR 0019; rotation and reuse detection live in `app/identity`, run here on the real tokens)
@@ -124,8 +124,8 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 ### Done when
 
 - [x] A staff token cannot read another tenant's rows through the API or the database; an expired or tampered token is rejected on every route (`backend/test/e2e`: another store's token reaches nothing through the admin routes; expired, tampered, `alg: none`, unknown-key and wrong-audience tokens are 401 on every protected operation in `openapi.yaml`; the database half is the RLS suite)
-- [ ] Sign-up → create tenant → log in works on web and Android against the same endpoints (partial: the web half passes against the real stack in `web/e2e/admin.spec.ts`, step 2.8; Android in step 2.11)
-- [ ] Members: invite, change role and remove on web and Android (partial: the web half passes against the real stack, step 2.8; Android in step 2.11)
+- [x] Sign-up → create tenant → log in works on web and Android against the same endpoints (web: `web/e2e/admin.spec.ts` against the real stack, step 2.8; Android: walked on an emulator in Docker against the same stack, step 2.11, with `scripts/android-emulator-docker.sh`)
+- [x] Members: invite, change role and remove on web and Android (web: step 2.8; Android: invite, change role and remove walked on the emulator against the real stack, step 2.11)
 - [x] Coverage gate (90% domain + app, 80% overall) passes with real code behind it (the CI `coverage` job, on every milestone 2 PR)
 
 ---
@@ -300,6 +300,7 @@ Goal: a client opens `{slug}.encomendo.com.br`, builds an order, pays the deposi
 - [ ] Nightly mutation testing on `internal/domain`
 - [ ] Load test of store page reads
 - [ ] Backup and restore drill, written up in `docs/`
+- [ ] Store names sort the way Portuguese sorts them: a pt-BR collation in the repository and the fake, and the order stated in the port contract suite (milestone 2 kept byte order: "Água" after "Zebra"; decided by the user on 2026-11-26)
 
 ---
 
@@ -358,6 +359,9 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | Migrations take the next free number when they land; M2 platform and policies are 0006 and 0007 | ADR 0014 |
 | 2026-11-25 | Android keeps the whole session (store, role, permissions) sealed with its tokens | ADR 0015 |
 | 2026-11-25 | Android logout clears the device first, then tells the server without waiting | ADR 0016 |
+| 2026-11-26 | Client IP behind the proxies, rate-limit numbers, keys and failing open | ADR 0021 |
+| 2026-11-26 | A suspended store is refused on every admin request at once and shown in the picker as "Suspensa" | ADR 0022 |
+| 2026-11-26 | The tenant plan moves to billing, an open question; milestone 2 has none | `docs/architecture.md` section 12 |
 | 2026-11-25 | Fake transactions undo the writes of repository fakes on failure; secrets are drawn through `appshared.SecretGenerator` | ADR 0009 (amended) |
 | 2026-11-25 | `tenancy.Lookup` also uses invitations up for `identity`; accepting runs in three transactions | ADR 0011 (refined) |
 | 2026-11-25 | Android requests stay in the store they were made for: same-scope retries, tokens only to screens of their scope | ADR 0018 |
