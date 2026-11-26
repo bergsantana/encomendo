@@ -56,7 +56,10 @@ func run() error {
 		handler.Check{Name: "postgres", Run: db.Ping},
 		handler.Check{Name: "redis", Run: cache.Ping},
 	)
-	router := apihttp.NewRouter(log, apihttp.Handlers{Health: health}, apihttp.RouterOptions{HSTS: cfg.HTTP.HSTS})
+	router, err := apihttp.NewRouter(log, apihttp.Handlers{Health: health}, apihttp.RouterOptions{HSTS: cfg.HTTP.HSTS})
+	if err != nil {
+		return err
+	}
 
 	log.Info("starting api", "env", cfg.Env)
 	return apihttp.NewServer(cfg.HTTP, router, log).Run(ctx)

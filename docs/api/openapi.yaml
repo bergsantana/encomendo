@@ -138,7 +138,7 @@ paths:
       summary: Create a staff account and log in.
       description: |
         The new session has no store. Create one with `POST /api/v1/admin/tenants`,
-        or join one through an invitation. Rate-limited per IP.
+        or join one through an invitation. Rate-limited per IP and per email.
       requestBody:
         required: true
         content:
@@ -158,6 +158,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/login:
     post:
@@ -189,6 +193,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/refresh:
     post:
@@ -230,6 +238,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/switch-tenant:
     post:
@@ -259,11 +271,15 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: "`forbidden`: the user does not belong to that store (or it does not exist)."
+          description: |
+            `forbidden`: the user does not belong to that store (or it does
+            not exist), or a browser call came from another origin (ADR 0010).
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/logout:
     post:
@@ -273,7 +289,10 @@ paths:
       description: |
         Revokes the refresh token's whole family and clears the cookie. When
         an access token is sent too, it stops working at once instead of at
-        its expiry. Always answers 204, even for an unknown or missing token.
+        its expiry. Every refresh token sent is revoked, each cookie and a
+        body token alike, so logout always works. Always answers 204, even
+        for an unknown or missing token, once the call passes the
+        cross-origin check; `400` is only for a body that is not valid JSON.
       security:
         - refreshCookie: []
         - bearerAuth: []
@@ -290,6 +309,12 @@ paths:
           headers:
             Set-Cookie:
               $ref: "#/components/headers/SetRefreshCookie"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/password-reset:
     post:
@@ -317,6 +342,10 @@ paths:
           $ref: "#/components/responses/Invalid"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/password-reset/confirm:
     post:
@@ -347,6 +376,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/invitations/preview:
     post:
@@ -380,6 +413,12 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /auth/invitations/accept:
     post:
@@ -419,13 +458,20 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "409":
-          description: "`already_member`: the account already belongs to this store."
+          description: |
+            `already_member`: the account already belongs to this store.
+            `email_taken`: an account with the invited email was created
+            meanwhile; open the link again to accept with its password.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/tenants:
     post:
@@ -465,6 +511,8 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/settings:
     get:
@@ -485,6 +533,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
     put:
       tags: [tenancy]
       operationId: updateSettings
@@ -516,6 +566,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/members:
     get:
@@ -541,6 +593,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/members/{userId}:
     delete:
@@ -568,6 +622,8 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "404":
           $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/members/{userId}/role:
     put:
@@ -607,6 +663,8 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "404":
           $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/invitations:
     get:
@@ -632,6 +690,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
     post:
       tags: [members]
       operationId: inviteMember
@@ -682,6 +742,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
   /api/v1/admin/invitations/{invitationId}:
     delete:
@@ -702,6 +764,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
 
 components:
   securitySchemes:
@@ -778,6 +842,30 @@ components:
             $ref: "#/components/schemas/AuthSession"
     Invalid:
       description: "`invalid`: the input breaks a rule; `errors` lists the fields."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    CrossOrigin:
+      description: |
+        `forbidden`: a browser call from another origin, or whose
+        `Sec-Fetch-Site` is not `same-origin` (ADR 0010). Native clients,
+        which send neither header, never get it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServerFailure:
+      description: |
+        `internal`: the server failed. `not_ready`: a dependency is down or
+        busy, such as every password-hashing slot taken; wait `Retry-After`
+        seconds. Never a 401: keep the session and try again (ADR 0013).
+      headers:
+        Retry-After:
+          description: With `503 not_ready`, whole seconds to wait.
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/problem+json:
           schema:
