@@ -60,4 +60,18 @@ class MembershipDto(
     val tenant: TenantSummaryDto,
     /** The role key, for example `owner`. */
     val role: String,
-)
+    /**
+     * `active` or `suspended` (ADR 0022). Kept as a string so a value added later decodes; the
+     * mapping treats anything but [SUSPENDED] as active, and the server refuses what it must.
+     */
+    val status: String = ACTIVE,
+) {
+    /** The values of the contract's `Membership.status` the app tells apart. */
+    companion object {
+        /** The store works. */
+        const val ACTIVE = "active"
+
+        /** The platform suspended the store. */
+        const val SUSPENDED = "suspended"
+    }
+}

@@ -4,9 +4,11 @@ import app.cash.turbine.test
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.failure.InputIssue
 import br.com.encomendo.core.domain.session.CreateStore
+import br.com.encomendo.core.domain.session.DismissStoreSuspension
 import br.com.encomendo.core.domain.session.LogOut
 import br.com.encomendo.core.domain.session.Membership
 import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.ObserveStoreSuspension
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.session.Session
 import br.com.encomendo.core.domain.session.SwitchStore
@@ -14,6 +16,7 @@ import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.testing.AltaRpm
 import br.com.encomendo.core.testing.FakeAuthRepository
 import br.com.encomendo.core.testing.FakeSessionRepository
+import br.com.encomendo.core.testing.FakeStoreSuspensionNotice
 import br.com.encomendo.core.testing.FakeTenancyRepository
 import br.com.encomendo.core.testing.testSession
 import br.com.encomendo.core.ui.failure.FailureMessage
@@ -127,6 +130,122 @@ class StorePickerViewModelTest {
 
             assertEquals(FormError.NotAMember, viewModel.uiState.value.error)
             assertNull(viewModel.uiState.value.opening)
+        }
+
+    @Test
+    fun marksASuspendedStoreAndKeepsItInTheList() =
+        runTest(main) {
+            val viewModel = picker(session = oneSuspended())
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    StoreChoice(AltaRpm.id, "Alta RPM", "alta-rpm", suspended = false),
+                    StoreChoice(motoPecas.id, "Moto Peças", "moto-pecas", suspended = true),
+                ),
+                viewModel.uiState.value.stores,
+            )
+        }
+
+    @Test
+    fun aSuspendedStoreIsNeverEntered() =
+        runTest(main) {
+            // ADR 0022: choosing it says why, and stays on the picker. No call is needed to know.
+            val tenancy = FakeTenancyRepository()
+            val viewModel = picker(session = oneSuspended(), tenancy = tenancy)
+            runCurrent()
+
+            viewModel.onChoose(motoPecas.id)
+            advanceUntilIdle()
+
+            assertEquals(emptyList(), tenancy.switches)
+            assertEquals(FormError.General(FailureMessage.StoreSuspended), viewModel.uiState.value.error)
+            assertNull(viewModel.uiState.value.opening)
+            assertFalse(viewModel.uiState.value.busy)
+        }
+
+    @Test
+    fun aStoreSuspendedSinceTheListWasReadAnswersWithTheSameWords() =
+        runTest(main) {
+            val viewModel =
+                picker(
+                    session = twoStores(),
+                    tenancy = FakeTenancyRepository(switchAnswer = { throw Failure.StoreSuspended() }),
+                )
+
+            viewModel.onChoose(motoPecas.id)
+            advanceUntilIdle()
+
+            assertEquals(FormError.General(FailureMessage.StoreSuspended), viewModel.uiState.value.error)
+            assertNull(viewModel.uiState.value.opening)
+        }
+
+    @Test
+    fun choosingAnotherStoreClearsTheSuspendedMessage() =
+        runTest(main) {
+            val tenancy = FakeTenancyRepository()
+            val viewModel = picker(session = oneSuspended(), tenancy = tenancy)
+            runCurrent()
+            viewModel.onChoose(motoPecas.id)
+            runCurrent()
+
+            viewModel.onChoose(AltaRpm.id)
+            runCurrent()
+
+            assertEquals(listOf(AltaRpm.id), tenancy.switches)
+            assertNull(viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun sendsHereFromASuspendedStoreWithTheMessage() =
+        runTest(main) {
+            // A screen inside the store learned of the suspension (ADR 0022); the session renewed without a
+            // store, and the picker says why the user is here.
+            val notice = FakeStoreSuspensionNotice().apply { raise(motoPecas.id) }
+            val viewModel = picker(session = oneSuspended(), notice = notice)
+            runCurrent()
+
+            assertEquals(FormError.General(FailureMessage.StoreSuspended), viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun theNoticeWaitsForAnActionAndThenGoes() =
+        runTest(main) {
+            val notice = FakeStoreSuspensionNotice().apply { raise(motoPecas.id) }
+            val viewModel = picker(session = oneSuspended(), notice = notice)
+            runCurrent()
+
+            viewModel.onChoose(AltaRpm.id)
+            runCurrent()
+
+            assertNull(notice.raisedFor.value)
+            assertNull(viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun saysNothingAboutSuspensionWhenNothingRaisedIt() =
+        runTest(main) {
+            // Logging in to a list with a suspended store is not news: the mark is enough.
+            val viewModel = picker(session = oneSuspended())
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun aNoticeForAStoreThatIsNotSuspendedSaysNothing() =
+        runTest(main) {
+            // A notice left by a renewal that failed offline, then a list where that store works again,
+            // or one for a store this list does not have, must not blame another store.
+            val forActiveStore = FakeStoreSuspensionNotice().apply { raise(AltaRpm.id) }
+            val forUnknownStore = FakeStoreSuspensionNotice().apply { raise("0190f3c4-0000-7000-8000-0000000000ff") }
+
+            val first = picker(session = oneSuspended(), notice = forActiveStore)
+            val second = picker(session = oneSuspended(), notice = forUnknownStore)
+            runCurrent()
+
+            assertNull(first.uiState.value.error)
+            assertNull(second.uiState.value.error)
         }
 
     @Test
@@ -402,18 +521,27 @@ class StorePickerViewModelTest {
         session: Session,
         tenancy: FakeTenancyRepository = FakeTenancyRepository(),
         auth: FakeAuthRepository = FakeAuthRepository(),
+        notice: FakeStoreSuspensionNotice = FakeStoreSuspensionNotice(),
     ): StorePickerViewModel =
         StorePickerViewModel(
             observeSession = ObserveSession(FakeSessionRepository(session)),
             switchStore = SwitchStore(tenancy),
             createStore = CreateStore(tenancy),
             logOut = LogOut(auth),
+            observeSuspension = ObserveStoreSuspension(notice),
+            dismissSuspension = DismissStoreSuspension(notice),
         )
 
     private fun filledForm(tenancy: FakeTenancyRepository): StorePickerViewModel =
         picker(session = testSession(tenant = null), tenancy = tenancy).apply {
             onNameChange("Alta RPM")
             onSlugChange("alta-rpm")
+        }
+
+    /** No store selected; the second of two stores is suspended. */
+    private fun oneSuspended(): Session =
+        twoStores().let { session ->
+            session.copy(memberships = session.memberships.map { it.copy(suspended = it.tenant.id == motoPecas.id) })
         }
 
     private fun twoStores(): Session =

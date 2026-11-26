@@ -8,6 +8,7 @@ import br.com.encomendo.core.domain.session.Session
 import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.domain.session.User
 import br.com.encomendo.core.network.auth.AuthSessionDto
+import br.com.encomendo.core.network.auth.MembershipDto
 import br.com.encomendo.core.network.auth.TenantSummaryDto
 import br.com.encomendo.core.security.SessionTokens
 import br.com.encomendo.core.security.StoredSession
@@ -22,7 +23,14 @@ internal fun AuthSessionDto.toStoredSession(): StoredSession =
                 tenant = tenant?.toTenant(),
                 role = role?.let(::Role),
                 permissions = GrantedPermissions(permissions.map(::Permission)),
-                memberships = memberships.map { Membership(it.tenant.toTenant(), Role(it.role)) },
+                memberships =
+                    memberships.map {
+                        Membership(
+                            it.tenant.toTenant(),
+                            Role(it.role),
+                            suspended = it.status == MembershipDto.SUSPENDED,
+                        )
+                    },
             ),
     )
 

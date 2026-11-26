@@ -102,7 +102,7 @@ class ApiMembersRepositoryTest {
         turns.screensServe(testSession().scope)
         val client =
             createSessionApiClient(MockEngine(handler), ApiClientConfig(baseUrl = "https://api.test"), store, turns)
-        return ApiMembersRepository(MembersApi(client))
+        return ApiMembersRepository(MembersApi(client), storeCalls(store, client, turns))
     }
 
     private companion object {

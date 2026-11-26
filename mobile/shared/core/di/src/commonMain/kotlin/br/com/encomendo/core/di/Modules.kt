@@ -1,10 +1,12 @@
 package br.com.encomendo.core.di
 
+import br.com.encomendo.core.data.failure.StoreCalls
 import br.com.encomendo.core.data.members.ApiInvitationsRepository
 import br.com.encomendo.core.data.members.ApiMembersRepository
 import br.com.encomendo.core.data.session.ApiAuthRepository
 import br.com.encomendo.core.data.session.ApiPasswordResetRepository
 import br.com.encomendo.core.data.session.ApiTenancyRepository
+import br.com.encomendo.core.data.session.InMemoryStoreSuspensionNotice
 import br.com.encomendo.core.data.session.LastStore
 import br.com.encomendo.core.data.session.SessionKeeper
 import br.com.encomendo.core.data.session.TokenSessionRepository
@@ -16,6 +18,7 @@ import br.com.encomendo.core.domain.members.MembersRepository
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.PasswordResetRepository
 import br.com.encomendo.core.domain.session.SessionRepository
+import br.com.encomendo.core.domain.session.StoreSuspensionNotice
 import br.com.encomendo.core.domain.session.TenancyRepository
 import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.navigation.navigationModule
@@ -104,8 +107,16 @@ val dataModule: Module =
         single { SessionKeeper(auth = get(), store = get(), turns = get()) }
         single<TenancyRepository> { ApiTenancyRepository(tenancy = get(), keeper = get()) }
         single<PasswordResetRepository> { ApiPasswordResetRepository(get()) }
-        single<MembersRepository> { ApiMembersRepository(get()) }
-        single<InvitationsRepository> { ApiInvitationsRepository(get()) }
+        // One per process: the picker reads what the store's own calls raised (ADR 0022).
+        single {
+            InMemoryStoreSuspensionNotice().also { notice ->
+                get<CoroutineScope>(AppScope).launch { notice.follow(get<TokenStore>().session) }
+            }
+        }
+        single<StoreSuspensionNotice> { get<InMemoryStoreSuspensionNotice>() }
+        single { StoreCalls(tokens = get(), keeper = get(), notice = get(), renewals = get(AppScope)) }
+        single<MembersRepository> { ApiMembersRepository(api = get(), calls = get()) }
+        single<InvitationsRepository> { ApiInvitationsRepository(api = get(), calls = get()) }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */

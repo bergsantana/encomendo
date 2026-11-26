@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.CreateStore
+import br.com.encomendo.core.domain.session.DismissStoreSuspension
 import br.com.encomendo.core.domain.session.LogOut
 import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.ObserveStoreSuspension
 import br.com.encomendo.core.domain.session.SwitchStore
 import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.channels.Channel
@@ -30,23 +32,29 @@ class StorePickerViewModel(
     private val switchStore: SwitchStore,
     private val createStore: CreateStore,
     private val logOut: LogOut,
+    observeSuspension: ObserveStoreSuspension,
+    private val dismissSuspension: DismissStoreSuspension,
 ) : ViewModel() {
     private val form = MutableStateFlow(StorePickerUiState())
     private val once = Channel<PickerEffect>(Channel.BUFFERED)
 
     /** The picker as the screen shows it. */
     val uiState: StateFlow<StorePickerUiState> =
-        combine(observeSession(), form) { session, local ->
+        combine(observeSession(), form, observeSuspension()) { session, local, suspendedStoreId ->
+            val stores =
+                session?.memberships.orEmpty().map {
+                    StoreChoice(it.tenant.id, it.tenant.name, it.tenant.slug, it.suspended)
+                }
             local.copy(
-                stores =
-                    session?.memberships.orEmpty().map {
-                        StoreChoice(
-                            it.tenant.id,
-                            it.tenant.name,
-                            it.tenant.slug,
-                        )
-                    },
+                stores = stores,
                 currentStoreId = session?.tenant?.id,
+                // A store of the user's turned out suspended while they worked in it, and this is why
+                // they are here (ADR 0022). Only that store counts: a notice for any other says nothing.
+                error =
+                    local.error
+                        ?: suspendedMessage.takeIf {
+                            suspendedStoreId != null && stores.any { it.id == suspendedStoreId && it.suspended }
+                        },
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, StorePickerUiState())
 
@@ -64,11 +72,21 @@ class StorePickerViewModel(
     /** The user chose the store [tenantId]. Does nothing while something runs. */
     fun onChoose(tenantId: String) {
         if (form.value.busy) return
-        if (tenantId == uiState.value.currentStoreId) {
+        dismissSuspension()
+        val chosen =
+            uiState.value.stores
+                .orEmpty()
+                .firstOrNull { it.id == tenantId }
+        when {
+            // A suspended store is never entered (ADR 0022): no switch, the picker says why.
+            chosen?.suspended == true -> form.update { it.copy(error = suspendedMessage) }
             // The session wouldn't change, so the root would never take the picker away.
-            once.trySend(PickerEffect.Close)
-            return
+            tenantId == uiState.value.currentStoreId -> once.trySend(PickerEffect.Close)
+            else -> open(tenantId)
         }
+    }
+
+    private fun open(tenantId: String) {
         form.update { it.copy(opening = tenantId, error = null) }
         viewModelScope.launch {
             try {
@@ -84,6 +102,7 @@ class StorePickerViewModel(
     fun onCreate() {
         val typed = form.value
         if (!typed.canCreate) return
+        dismissSuspension()
         val nameIssue = FieldProblem.Missing.takeIf { typed.name.isBlank() }
         val slugIssue = FieldProblem.Missing.takeIf { typed.slug.isBlank() }
         if (nameIssue != null || slugIssue != null) {
@@ -103,6 +122,7 @@ class StorePickerViewModel(
     /** The user tapped Sair. */
     fun onLogOut() {
         if (form.value.busy) return
+        dismissSuspension()
         form.update { it.copy(loggingOut = true, logOutFailed = false) }
         viewModelScope.launch {
             try {
@@ -113,6 +133,9 @@ class StorePickerViewModel(
         }
     }
 }
+
+/** The words for a suspended store, whether the user chose it or was sent here from inside it. */
+private val suspendedMessage = FormError.General(FailureMessage.StoreSuspended)
 
 /** Choosing a store: only a lost membership has words of its own; the create form stays as it was. */
 private fun StorePickerUiState.showingChoice(failure: Failure): StorePickerUiState =

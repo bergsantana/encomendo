@@ -49,6 +49,48 @@ class SessionMappingTest {
     }
 
     @Test
+    fun marksASuspendedMembership() {
+        val motoPecas = TenantSummaryDto(id = "t-2", name = "Moto Peças", slug = "moto-pecas")
+        val dto =
+            AuthSessionDto(
+                accessToken = "access",
+                refreshToken = "refresh",
+                user = user,
+                permissions = emptyList(),
+                memberships =
+                    listOf(
+                        MembershipDto(altaRpm, "owner", "active"),
+                        MembershipDto(motoPecas, "owner", "suspended"),
+                    ),
+            )
+
+        val memberships = dto.toStoredSession().session.memberships
+
+        assertEquals(listOf(false, true), memberships.map { it.suspended })
+    }
+
+    @Test
+    fun aStatusTheAppDoesNotKnowIsActive() {
+        // The server refuses what it must (ADR 0022); the app never locks someone out on a guess.
+        val dto =
+            AuthSessionDto(
+                accessToken = "access",
+                refreshToken = "refresh",
+                user = user,
+                permissions = emptyList(),
+                memberships = listOf(MembershipDto(altaRpm, "owner", "archived")),
+            )
+
+        assertEquals(
+            listOf(false),
+            dto
+                .toStoredSession()
+                .session.memberships
+                .map { it.suspended },
+        )
+    }
+
+    @Test
     fun mapsASessionWithoutAStore() {
         val dto =
             AuthSessionDto(

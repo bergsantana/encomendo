@@ -9,6 +9,7 @@ import br.com.encomendo.core.domain.session.Membership
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.session.TenantSummary
+import br.com.encomendo.core.testing.AltaRpm
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
 import br.com.encomendo.core.testing.testSession
@@ -67,6 +68,26 @@ class TokenStoreTest {
             val read = tokenStore(dataStore).read()
             assertEquals(session.session, read?.session)
             assertEquals(session.session, tokenStore(dataStore).session.first())
+        }
+
+    @Test
+    fun keepsWhichStoresAreSuspended() =
+        runTest {
+            // The picker marks them "Suspensa" offline too (ADR 0022).
+            val store = tokenStore()
+            val base = testSession(tenant = null)
+            val suspended = base.copy(memberships = listOf(Membership(AltaRpm, Role("owner"), suspended = true)))
+
+            store.write(StoredSession(session.tokens, suspended))
+
+            assertEquals(
+                listOf(true),
+                store
+                    .read()
+                    ?.session
+                    ?.memberships
+                    ?.map { it.suspended },
+            )
         }
 
     @Test
@@ -183,6 +204,33 @@ class TokenStoreTest {
             assertEquals(Role("owner"), read.session.role)
             assertTrue(read.session.permissions.allows(Permission("order:read")))
             assertEquals(listOf(Membership(tenant, Role("owner"))), read.session.memberships)
+        }
+
+    @Test
+    fun aMembershipStoredBeforeSuspensionsExistReadsAsNotSuspended() =
+        runTest {
+            // Written by an app version without the `suspended` key (ADR 0022): the device must stay
+            // signed in, and no store reads as suspended until the next renewal says so.
+            val dataStore = temporaryPreferencesDataStore(backgroundScope)
+            val blob =
+                """
+                {"access":"a","refresh":"r","user":{"id":"u-1","name":"Ana Souza","email":"ana@altarpm.com.br"},
+                 "memberships":[
+                   {"tenant":{"id":"t-1","name":"Alta RPM","slug":"alta-rpm"},"role":"owner"},
+                   {"tenant":{"id":"t-2","name":"Moto Peças","slug":"moto-pecas"},"role":"staff","suspended":true}]}
+                """.trimIndent()
+            dataStore.edit {
+                it[
+                    byteArrayPreferencesKey(
+                        "session",
+                    ),
+                ] = FakeSecretCipher().seal(blob.encodeToByteArray())
+            }
+
+            val read = assertNotNull(tokenStore(dataStore).read())
+
+            // The second row also pins the key's name: renaming it would hide every suspension.
+            assertEquals(listOf(false, true), read.session.memberships.map { it.suspended })
         }
 
     @Test

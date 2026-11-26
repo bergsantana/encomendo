@@ -9,7 +9,8 @@ interface TenancyRepository {
     /**
      * Spends the refresh token for a session in [tenantId] and keeps it, even
      * when the caller is cancelled once the request is sent. On a refusal
-     * (`Failure.Forbidden`: no longer a member) the session stays as it was
+     * (`Failure.Forbidden`: no longer a member; `Failure.StoreSuspended`: the
+     * store is suspended, ADR 0022) the session stays as it was
      * (ADR 0013). A 401 is the refresh token itself refused, which a refresh
      * would only confirm, so the session ends at once (ADR 0012).
      */

@@ -22,8 +22,9 @@ class ApiTenancyRepository(
             try {
                 keeper.switchTo(tenantId).session
             } catch (error: ApiError) {
-                // The user probably lost that store: renew once, so the picker's list drops it, as the
-                // web does. The 403 itself left the refresh token and the store as they were (ADR 0013).
+                // The user probably lost that store, or it was suspended (`tenant_suspended` is a 403 too):
+                // renew once, so the picker's list drops or marks it, as the web does. The 403 itself left
+                // the refresh token and the store as they were (ADR 0013, ADR 0022).
                 if (error.status == FORBIDDEN) keeper.renew()
                 throw error
             }

@@ -32,6 +32,14 @@ class ApiFailuresTest {
     }
 
     @Test
+    fun aSuspendedStoreIsNotJustForbidden() {
+        // Also a 403, but the screens word it for the store and go back to the picker (ADR 0022).
+        val failure = ApiError(status = 403, code = ApiErrorCode.TenantSuspended, title = "Loja suspensa").toFailure()
+
+        assertIs<Failure.StoreSuspended>(failure)
+    }
+
+    @Test
     fun aRefusalIsForbiddenAndKeepsTheServersOwnWords() {
         val failure = ApiError(status = 403, code = ApiErrorCode.Forbidden, title = "Sem permissão").toFailure()
 

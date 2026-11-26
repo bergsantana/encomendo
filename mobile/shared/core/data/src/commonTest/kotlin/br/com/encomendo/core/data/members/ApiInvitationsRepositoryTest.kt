@@ -117,14 +117,10 @@ class ApiInvitationsRepositoryTest {
                 StandardTestDispatcher(testScheduler),
             )
         store.write(StoredSession(SessionTokens("access", "refresh"), testSession()))
+        val turns = SessionTurns()
         val client =
-            createSessionApiClient(
-                MockEngine(handler),
-                ApiClientConfig(baseUrl = "https://api.test"),
-                store,
-                SessionTurns(),
-            )
-        return ApiInvitationsRepository(MembersApi(client))
+            createSessionApiClient(MockEngine(handler), ApiClientConfig(baseUrl = "https://api.test"), store, turns)
+        return ApiInvitationsRepository(MembersApi(client), storeCalls(store, client, turns))
     }
 
     private companion object {

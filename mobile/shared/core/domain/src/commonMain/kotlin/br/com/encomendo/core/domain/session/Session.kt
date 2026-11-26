@@ -57,6 +57,11 @@ data class Membership(
     val tenant: TenantSummary,
     /** The user's role in it. */
     val role: Role,
+    /**
+     * Whether the platform suspended the store (ADR 0022). The picker lists it, marked "Suspensa", and
+     * does not open it. False for anything the API did not say was suspended.
+     */
+    val suspended: Boolean = false,
 )
 
 /**
