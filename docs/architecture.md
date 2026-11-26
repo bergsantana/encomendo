@@ -302,6 +302,7 @@ internal/adapter/
 │   │   ├── authn.go           verifies JWT, puts Principal in ctx
 │   │   ├── storefront.go      resolves the tenant from the Host subdomain ({slug}.encomendo.com.br)
 │   │   └── ratelimit.go       Redis-backed, per IP + per user
+│   ├── ratelimit/             rules, keys, pseudonyms and the client IP behind proxies (ADR 0021)
 │   ├── respond/
 │   │   ├── json.go            Decode (size limit, DisallowUnknownFields) / Encode
 │   │   └── problem.go         domain errors → RFC 9457 problem+json + status code
