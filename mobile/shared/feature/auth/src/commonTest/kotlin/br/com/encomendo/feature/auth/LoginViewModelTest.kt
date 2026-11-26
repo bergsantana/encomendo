@@ -7,6 +7,7 @@ import br.com.encomendo.core.domain.session.LogIn
 import br.com.encomendo.core.domain.session.Session
 import br.com.encomendo.core.testing.FakeAuthRepository
 import br.com.encomendo.core.testing.testSession
+import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -180,7 +181,7 @@ class LoginViewModelTest {
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(FormError.Offline, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Offline), viewModel.uiState.value.error)
         }
 
     @Test
@@ -191,7 +192,10 @@ class LoginViewModelTest {
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(FormError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
+            assertEquals(
+                FormError.General(FailureMessage.RateLimited(retryAfterSeconds = 30)),
+                viewModel.uiState.value.error,
+            )
         }
 
     @Test
@@ -221,7 +225,7 @@ class LoginViewModelTest {
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(FormError.ServerUnavailable, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.ServerUnavailable), viewModel.uiState.value.error)
         }
 
     @Test
@@ -232,7 +236,7 @@ class LoginViewModelTest {
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(FormError.Refused("Conta bloqueada"), viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Refused("Conta bloqueada")), viewModel.uiState.value.error)
         }
 
     @Test
@@ -244,7 +248,7 @@ class LoginViewModelTest {
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(FormError.Unexpected, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Unexpected), viewModel.uiState.value.error)
         }
 
     @Test
@@ -284,7 +288,10 @@ class LoginViewModelTest {
             viewModel.onPasswordChange("outra")
             viewModel.onEmailChange("ana@altarpm.com.br ")
 
-            assertEquals(FormError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
+            assertEquals(
+                FormError.General(FailureMessage.RateLimited(retryAfterSeconds = 30)),
+                viewModel.uiState.value.error,
+            )
         }
 
     @Test

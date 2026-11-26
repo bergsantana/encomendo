@@ -16,6 +16,7 @@ import br.com.encomendo.core.testing.FakeAuthRepository
 import br.com.encomendo.core.testing.FakeSessionRepository
 import br.com.encomendo.core.testing.FakeTenancyRepository
 import br.com.encomendo.core.testing.testSession
+import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -179,7 +180,11 @@ class StorePickerViewModelTest {
 
             viewModel.onNameChange("Alta RPM Motos")
             runCurrent()
-            assertEquals(FormError.RateLimited(30), viewModel.uiState.value.error, "typing doesn't shorten the wait")
+            assertEquals(
+                FormError.General(FailureMessage.RateLimited(30)),
+                viewModel.uiState.value.error,
+                "typing doesn't shorten the wait",
+            )
 
             tenancy.createAnswer = { _, _ -> throw Failure.AlreadyTaken(field = "slug") }
             viewModel.onCreate()
@@ -225,7 +230,7 @@ class StorePickerViewModelTest {
             viewModel.onCreate()
             advanceUntilIdle()
 
-            assertEquals(FormError.Refused("Sem permissão"), viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Refused("Sem permissão")), viewModel.uiState.value.error)
         }
 
     @Test
@@ -246,7 +251,7 @@ class StorePickerViewModelTest {
             advanceUntilIdle()
 
             assertNull(viewModel.uiState.value.nameIssue)
-            assertEquals(FormError.Unexpected, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Unexpected), viewModel.uiState.value.error)
         }
 
     @Test
@@ -265,7 +270,7 @@ class StorePickerViewModelTest {
             viewModel.onCreate()
             advanceUntilIdle()
 
-            assertEquals(FormError.Refused("Limite de lojas"), viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Refused("Limite de lojas")), viewModel.uiState.value.error)
         }
 
     @Test
@@ -337,7 +342,7 @@ class StorePickerViewModelTest {
             viewModel.onCreate()
             advanceUntilIdle()
 
-            assertEquals(FormError.ServerUnavailable, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.ServerUnavailable), viewModel.uiState.value.error)
         }
 
     @Test
@@ -352,7 +357,7 @@ class StorePickerViewModelTest {
             viewModel.onChoose(motoPecas.id)
             advanceUntilIdle()
 
-            assertEquals(FormError.Offline, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Offline), viewModel.uiState.value.error)
         }
 
     @Test

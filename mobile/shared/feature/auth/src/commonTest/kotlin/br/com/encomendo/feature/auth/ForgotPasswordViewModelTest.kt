@@ -6,6 +6,7 @@ import br.com.encomendo.core.domain.failure.InputIssue
 import br.com.encomendo.core.domain.session.RequestPasswordReset
 import br.com.encomendo.core.domain.session.ResetPassword
 import br.com.encomendo.core.testing.FakePasswordResetRepository
+import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -198,7 +199,7 @@ class ForgotPasswordViewModelTest {
             viewModel.onSendCode()
             advanceUntilIdle()
 
-            assertEquals(FormError.RateLimited(60), viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.RateLimited(60)), viewModel.uiState.value.error)
             assertNull(viewModel.uiState.value.sentTo)
         }
 
@@ -308,7 +309,7 @@ class ForgotPasswordViewModelTest {
             val state = viewModel.uiState.value
             assertEquals("ana@altarpm.com.br", state.sentTo)
             assertEquals(ResetNotice.CodeSent, state.notice, "the first code still works")
-            assertEquals(FormError.Offline, state.error)
+            assertEquals(FormError.General(FailureMessage.Offline), state.error)
             assertFalse(state.submitting)
         }
 

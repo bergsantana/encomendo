@@ -7,6 +7,7 @@ import br.com.encomendo.core.domain.session.CreateStore
 import br.com.encomendo.core.domain.session.LogOut
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.SwitchStore
+import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -118,7 +119,7 @@ private fun StorePickerUiState.showingChoice(failure: Failure): StorePickerUiSta
     when (failure) {
         is Failure.Forbidden -> copy(error = FormError.NotAMember)
         // An input issue here is about no field of the form: don't mark one.
-        is Failure.InvalidInput, is Failure.AlreadyTaken -> copy(error = FormError.Unexpected)
+        is Failure.InvalidInput, is Failure.AlreadyTaken -> copy(error = FormError.General(FailureMessage.Unexpected))
         else -> copy(error = failure.toFormError())
     }
 

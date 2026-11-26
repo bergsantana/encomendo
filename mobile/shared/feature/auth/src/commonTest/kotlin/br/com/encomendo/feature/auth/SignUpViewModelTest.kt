@@ -7,6 +7,7 @@ import br.com.encomendo.core.domain.session.Session
 import br.com.encomendo.core.domain.session.SignUp
 import br.com.encomendo.core.testing.FakeAuthRepository
 import br.com.encomendo.core.testing.testSession
+import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -123,7 +124,7 @@ class SignUpViewModelTest {
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(FormError.Offline, viewModel.uiState.value.error)
+            assertEquals(FormError.General(FailureMessage.Offline), viewModel.uiState.value.error)
         }
 
     @Test
@@ -135,7 +136,10 @@ class SignUpViewModelTest {
 
             viewModel.onNameChange("Ana")
 
-            assertEquals(FormError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
+            assertEquals(
+                FormError.General(FailureMessage.RateLimited(retryAfterSeconds = 30)),
+                viewModel.uiState.value.error,
+            )
         }
 
     @Test
