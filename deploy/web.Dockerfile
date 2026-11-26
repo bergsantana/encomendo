@@ -13,7 +13,7 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm -r build
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 # The image entrypoint fills ${ADMIN_HOST} into the template at start.
 COPY deploy/web/nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV ADMIN_HOST=admin.localhost
