@@ -3,6 +3,7 @@ package br.com.encomendo.core.di
 import br.com.encomendo.core.data.session.ApiAuthRepository
 import br.com.encomendo.core.data.session.ApiTenancyRepository
 import br.com.encomendo.core.data.session.LastStore
+import br.com.encomendo.core.data.session.SessionKeeper
 import br.com.encomendo.core.data.session.TokenSessionRepository
 import br.com.encomendo.core.data.session.createSessionApiClient
 import br.com.encomendo.core.database.EncomendoDatabase
@@ -87,11 +88,12 @@ val dataModule: Module =
                 get<CoroutineScope>(AppScope).launch { lastStore.follow(sessions) }
             }
         }
-        single<SessionRepository> { TokenSessionRepository(get()) }
+        single<SessionRepository> { TokenSessionRepository(tokens = get(), keeper = get()) }
         single<AuthRepository> {
             ApiAuthRepository(api = get(), store = get(), appScope = get(AppScope), lastStore = get())
         }
-        single<TenancyRepository> { ApiTenancyRepository(auth = get(), tenancy = get(), store = get(), turns = get()) }
+        single { SessionKeeper(auth = get(), store = get(), turns = get()) }
+        single<TenancyRepository> { ApiTenancyRepository(tenancy = get(), keeper = get()) }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */

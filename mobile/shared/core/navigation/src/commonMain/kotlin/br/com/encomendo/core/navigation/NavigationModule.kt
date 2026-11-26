@@ -1,6 +1,7 @@
 package br.com.encomendo.core.navigation
 
 import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.RenewSession
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.factoryOf
 import org.koin.core.module.dsl.viewModelOf
@@ -10,5 +11,6 @@ import org.koin.dsl.module
 val navigationModule: Module =
     module {
         factoryOf(::ObserveSession)
+        factoryOf(::RenewSession)
         viewModelOf(::RootViewModel)
     }

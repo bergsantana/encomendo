@@ -64,7 +64,7 @@ internal class BearerRefresh<S : BearerCredentials>(
                 try {
                     refresher.refresh(client, stored)
                 } catch (error: ApiError) {
-                    if (error.status !in SESSION_ENDING_STATUSES) throw error
+                    if (!error.refusesRefreshToken) throw error
                     signOut(stored)
                     return@take null
                 }
@@ -87,9 +87,6 @@ internal class BearerRefresh<S : BearerCredentials>(
     private fun String.signature(): String = substringAfterLast('.')
 
     private companion object {
-        /** The server looked at the refresh token and said no; anything else may pass. */
-        val SESSION_ENDING_STATUSES = setOf(400, 401, 403)
-
         /**
          * Enough for every request a burst of screens has in flight. Eviction fails safe: a
          * token forgotten only turns its retry into a 401.

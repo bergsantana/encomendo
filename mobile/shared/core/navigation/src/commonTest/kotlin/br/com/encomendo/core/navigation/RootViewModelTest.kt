@@ -10,10 +10,12 @@ import app.cash.turbine.test
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Permission
+import br.com.encomendo.core.domain.session.RenewSession
 import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.domain.session.scope
 import br.com.encomendo.core.testing.FakeSessionRepository
 import br.com.encomendo.core.testing.testSession
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -43,6 +45,44 @@ class RootViewModelTest {
 
     @AfterTest
     fun restoreMain() = Dispatchers.resetMain()
+
+    @Test
+    fun renewsTheSessionOnceWhenTheAppStarts() =
+        runTest(main) {
+            // ADR 0010: each launch brings the role and store the server has now, without waiting for a
+            // 401. The root survives rotation; a new session, or coming back from the background, renews
+            // nothing more.
+            val sessions = FakeSessionRepository(testSession())
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                awaitItem()
+                sessions.state.value = testSession(tenant = motoPecas)
+                awaitItem()
+            }
+            advanceTimeBy(STOPPED_LONG_ENOUGH_MILLIS) // the session flow stops, as in the background
+            viewModel.uiState.test {
+                awaitItem()
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            assertEquals(1, sessions.renewals)
+        }
+
+    @Test
+    fun theStoredSessionOpensWithoutWaitingForTheRenewal() =
+        runTest(main) {
+            // Offline cold start (ADR 0012, ADR 0015): the app opens with what it had while the renewal waits.
+            val sessions = FakeSessionRepository(testSession()).apply { renewalGate = CompletableDeferred() }
+            val viewModel = rootViewModel(sessions)
+
+            viewModel.uiState.test {
+                skipItems(1) // Loading
+                assertIs<RootUiState.SignedIn>(awaitItem())
+            }
+            assertEquals(1, sessions.renewals)
+        }
 
     @Test
     fun waitsForTheStoredSessionBeforeChoosingAGraph() =
@@ -391,7 +431,7 @@ class RootViewModelTest {
     private fun rootViewModel(
         sessions: FakeSessionRepository,
         handover: ScreenHandover = ScreenHandover { },
-    ) = RootViewModel(ObserveSession(sessions), handover)
+    ) = RootViewModel(ObserveSession(sessions), RenewSession(sessions), handover)
 
     private fun probeIn(owner: ViewModelStoreOwner): ProbeViewModel =
         ViewModelProvider
