@@ -37,7 +37,7 @@ test('logging in opens Hoje with the main menu', async ({ page }) => {
         tenant: store,
         role: 'owner',
         permissions: ['order:read', 'order:write'],
-        memberships: [{ tenant: store, role: 'owner' }],
+        memberships: [{ tenant: store, role: 'owner', status: 'active' }],
       },
     }),
   )

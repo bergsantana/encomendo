@@ -219,6 +219,21 @@ func (f *Memberships) Add(user shared.UserID, m appidentity.Membership) {
 	f.byUser[user] = append(f.byUser[user], m)
 }
 
+// Suspend marks tenant suspended in every membership of it, as the
+// platform's SQL would (ADR 0022).
+func (f *Memberships) Suspend(tenant shared.TenantID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for user, ms := range f.byUser {
+		for i := range ms {
+			if ms[i].Tenant.ID == tenant {
+				ms[i].Tenant.Suspended = true
+			}
+		}
+		f.byUser[user] = ms
+	}
+}
+
 // Remove takes user out of tenant.
 func (f *Memberships) Remove(user shared.UserID, tenant shared.TenantID) {
 	f.mu.Lock()
@@ -295,6 +310,19 @@ func (f *Invitations) Add(hash shared.SecretHash, p appidentity.PendingInvitatio
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.pending[invitationKey{p.Tenant.ID, hash}] = p
+}
+
+// Suspend marks every pending invitation to tenant as being for a
+// suspended store, as the platform's SQL would (ADR 0022).
+func (f *Invitations) Suspend(tenant shared.TenantID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, p := range f.pending {
+		if k.tenant == tenant {
+			p.Tenant.Suspended = true
+			f.pending[k] = p
+		}
+	}
 }
 
 // AddMember marks user as already in tenant's team.

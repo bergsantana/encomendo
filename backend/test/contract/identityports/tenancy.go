@@ -28,6 +28,8 @@ type TenancyHarness struct {
 	NewUser func(t *testing.T, email string) shared.UserID
 	// AddMember makes user a member of store with role.
 	AddMember func(t *testing.T, store shared.TenantID, user shared.UserID, role shared.Role)
+	// Suspend suspends store, as the platform does by SQL (ADR 0022).
+	Suspend func(t *testing.T, store shared.TenantID)
 	// Invite creates a pending invitation of email to store, sent by its
 	// owner and expiring at expires, and returns the hash of its link's
 	// secret.
@@ -94,6 +96,16 @@ func RunMembershipsContract(t *testing.T, newHarness func(t *testing.T) TenancyH
 		return nil
 	})
 	_ = gama // a store the user is not in
+
+	// A suspended store stays in the list, marked (ADR 0022).
+	h.Suspend(t, beta.ID)
+	scoped(t, h.Tx, appshared.Scope{UserID: user}, func(ctx context.Context) error {
+		ms, err := h.Memberships.MembershipsOf(ctx, user)
+		if err != nil || len(ms) != 2 || ms[0].Tenant.Suspended || !ms[1].Tenant.Suspended || ms[1].Tenant.ID != beta.ID {
+			t.Errorf("after suspending Beta: %+v, %v; want Alfa active and Beta marked suspended", ms, err)
+		}
+		return nil
+	})
 }
 
 // RunInvitationsContract checks that a pending invitation is found and used
@@ -104,6 +116,7 @@ func RunInvitationsContract(t *testing.T, newHarness func(t *testing.T) TenancyH
 	t.Run("invisible from another store's scope", func(t *testing.T) { invitationsOtherScope(t, newHarness(t)) })
 	t.Run("expired is not pending", func(t *testing.T) { invitationsExpired(t, newHarness(t)) })
 	t.Run("another email or a member is refused", func(t *testing.T) { invitationsRefused(t, newHarness(t)) })
+	t.Run("a suspended store is marked", func(t *testing.T) { invitationsSuspended(t, newHarness(t)) })
 }
 
 func invitationsJoin(t *testing.T, h TenancyHarness) {
@@ -176,6 +189,23 @@ func invitationsRefused(t *testing.T, h TenancyHarness) {
 		}
 		if _, err := h.Invitations.PendingInvitation(ctx, store.ID, hash, h.Now); err != nil {
 			t.Errorf("the refused joins used the invitation up: %v", err)
+		}
+		return nil
+	})
+}
+
+// invitationsSuspended: an invitation to a suspended store still reads, with
+// its store marked, so identity can refuse it (ADR 0022).
+func invitationsSuspended(t *testing.T, h TenancyHarness) {
+	store := h.NewStore(t, "Pausada")
+	email := h.NewEmail(t)
+	hash := h.Invite(t, store.ID, email, shared.RoleStaff, h.Now.Add(time.Hour))
+	h.Suspend(t, store.ID)
+
+	scoped(t, h.Tx, appshared.Scope{TenantID: store.ID}, func(ctx context.Context) error {
+		inv, err := h.Invitations.PendingInvitation(ctx, store.ID, hash, h.Now)
+		if err != nil || !inv.Tenant.Suspended {
+			t.Errorf("PendingInvitation = %+v, %v; want the store marked suspended", inv, err)
 		}
 		return nil
 	})

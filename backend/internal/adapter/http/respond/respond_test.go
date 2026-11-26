@@ -99,6 +99,7 @@ func TestError_MapsDomainErrors(t *testing.T) {
 		{"invalid principal", shared.ErrInvalidPrincipal, 401, CodeUnauthenticated},
 		{"invalid credentials", identity.ErrInvalidCredentials, 401, CodeInvalidCredentials},
 		{"tenant required", authz.ErrTenantRequired, 403, CodeTenantRequired},
+		{"tenant suspended", fmt.Errorf("switch: %w", tenancy.ErrTenantSuspended), 403, CodeTenantSuspended},
 		{"scope mismatch", authz.ErrScopeMismatch, 403, CodeForbidden},
 		{"owner fixed", tenancy.ErrOwnerFixed, 403, CodeForbidden},
 		{"version conflict", fmt.Errorf("save settings: %w", shared.ErrVersionConflict), 409, CodeVersionConflict},
@@ -373,7 +374,7 @@ func TestCodes_AreInTheContract(t *testing.T) {
 	codes := []string{
 		CodeInvalid, CodeNotFound, CodeConflict, CodeForbidden, CodeInternal, CodeNotReady, CodeMethodNotAllowed,
 		CodeUnauthenticated, CodeInvalidCredentials, CodeTenantRequired, CodeVersionConflict, CodeRateLimited,
-		CodeEmailTaken, CodeSlugTaken, CodeAlreadyMember, CodeInvalidCode, CodeEmailUnavailable,
+		CodeEmailTaken, CodeSlugTaken, CodeAlreadyMember, CodeInvalidCode, CodeEmailUnavailable, CodeTenantSuspended,
 	}
 	for _, code := range codes {
 		if !listed[code] {

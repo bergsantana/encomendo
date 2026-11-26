@@ -34,6 +34,9 @@ type RouterOptions struct {
 	// Authn checks the access token on /api/v1/admin/*. Required when
 	// Handlers.Tenancy is set.
 	Authn *middleware.Authn
+	// Stores refuses a suspended store on every tenant-scoped admin route
+	// (ADR 0022). Required when Handlers.Tenancy is set.
+	Stores middleware.StoreChecker
 }
 
 // NewRouter returns the API handler: every route, wrapped in the middleware
@@ -45,8 +48,8 @@ func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) (http.Handler, 
 	if h.Auth != nil && (opts.AuthGuard == nil || opts.RateLimits == nil) {
 		return nil, errors.New("router: the /auth routes need the cross-origin check and the rate limits")
 	}
-	if h.Tenancy != nil && opts.Authn == nil {
-		return nil, errors.New("router: the admin routes need authn")
+	if h.Tenancy != nil && (opts.Authn == nil || opts.Stores == nil) {
+		return nil, errors.New("router: the admin routes need authn and the suspended-store check")
 	}
 	mux := http.NewServeMux()
 
@@ -56,7 +59,7 @@ func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) (http.Handler, 
 		mountAuth(mux, h.Auth, opts)
 	}
 	if h.Tenancy != nil {
-		mountAdmin(mux, h.Tenancy, opts.Authn)
+		mountAdmin(mux, h, opts.Authn, middleware.ActiveStore(opts.Stores, log))
 	}
 
 	return middleware.Chain(withProblemFallback(mux),
@@ -106,8 +109,11 @@ func mountAuth(mux *http.ServeMux, a *handler.Auth, opts RouterOptions) {
 	}
 }
 
-// adminRoutes are the store and team operations of the contract.
-func adminRoutes(t *handler.Tenancy) map[string]http.HandlerFunc {
+// adminRoutes are every /api/v1/admin operation of every handler group. A
+// new group adds its routes here, never through a mount of its own, so each
+// one gets authn and the suspended-store check (ADR 0022).
+func adminRoutes(h Handlers) map[string]http.HandlerFunc {
+	t := h.Tenancy
 	return map[string]http.HandlerFunc{
 		"POST /api/v1/admin/tenants":                      t.CreateTenant,
 		"GET /api/v1/admin/settings":                      t.Settings,
@@ -121,14 +127,24 @@ func adminRoutes(t *handler.Tenancy) map[string]http.HandlerFunc {
 	}
 }
 
+// worksInAStore reports whether an admin route acts in the selected store,
+// so the suspended-store check runs on it. Creating a store works without
+// one.
+func worksInAStore(pattern string) bool { return pattern != "POST /api/v1/admin/tenants" }
+
 // mountAdmin mounts every admin route behind authn for the backoffice
 // audience: a client account's token is a 401 here, and so is none
-// (docs/architecture.md section 5.1). Bearer tokens are not sent by the
-// browser on its own, so these routes need no cross-origin check.
-func mountAdmin(mux *http.ServeMux, t *handler.Tenancy, authn *middleware.Authn) {
+// (docs/architecture.md section 5.1). Every route that works in a store
+// then refuses a suspended one (ADR 0022). Bearer tokens are not sent by
+// the browser on its own, so these routes need no cross-origin check.
+func mountAdmin(mux *http.ServeMux, h Handlers, authn *middleware.Authn, activeStore middleware.Middleware) {
 	staff := authn.Require(shared.AudienceBackoffice)
-	for pattern, h := range adminRoutes(t) {
-		mux.Handle(pattern, staff(h))
+	for pattern, h := range adminRoutes(h) {
+		mws := []middleware.Middleware{staff}
+		if worksInAStore(pattern) {
+			mws = append(mws, activeStore)
+		}
+		mux.Handle(pattern, middleware.Chain(h, mws...))
 	}
 }
 

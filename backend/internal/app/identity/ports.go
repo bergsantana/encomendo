@@ -194,6 +194,9 @@ type TenantSummary struct {
 	ID   shared.TenantID
 	Name string
 	Slug string
+	// Suspended is set when the platform suspended the store: it is shown
+	// in the store picker but never selected (ADR 0022).
+	Suspended bool
 }
 
 // Membership is one store a user belongs to, with their role there.

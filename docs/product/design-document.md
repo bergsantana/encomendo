@@ -168,6 +168,10 @@ The exact wording of the screens that start, move and end a staff session. Web a
 **Lojas (store picker)**
 
 - With stores: title "Escolha a loja", one button per store with its link `{slug}.encomendo.com.br` beside it, then "Criar outra loja".
+- A suspended store (the platform suspends a store; decided by the user on 2026-11-26, ADR 0022):
+  - stays in the list with "Suspensa" beside it, and cannot be entered;
+  - choosing it shows "Esta loja está suspensa. Fale com o suporte do Encomendo." and stays on the picker;
+  - when a screen inside the store learns that the store was suspended, it shows the same message and goes back to the picker.
 - Without stores: title "Crie sua loja".
 - Create form: fields "Nome da loja" and "Link da loja", button "Criar loja"; "Sair" below.
   - Link hint: "Use de 3 a 40 letras minúsculas, números e hífens." until the link is valid, then "Sua loja ficará em {link}.encomendo.com.br."

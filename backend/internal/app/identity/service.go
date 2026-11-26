@@ -117,10 +117,11 @@ func userView(u *identity.User) UserView {
 	return UserView{ID: u.ID(), Name: u.Name().String(), Email: u.Email().String()}
 }
 
-// find returns the membership in tenant, if any.
+// find returns the membership in tenant, if any, and only when the store is
+// not suspended: a session never selects a suspended store (ADR 0022).
 func find(ms []Membership, tenant shared.TenantID) (Membership, bool) {
 	for _, m := range ms {
-		if m.Tenant.ID == tenant && !tenant.IsZero() {
+		if m.Tenant.ID == tenant && !tenant.IsZero() && !m.Tenant.Suspended {
 			return m, true
 		}
 	}

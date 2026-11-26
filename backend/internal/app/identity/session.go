@@ -190,12 +190,14 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (AuthResult, error) 
 }
 
 // chooseAtLogin selects the hinted store when the user is in it, else the
-// only store, else none.
+// only store, else none. A suspended store is never selected (ADR 0022):
+// not by a hint, and not as the only store. A user with one active and one
+// suspended store still has two stores, so gets the picker.
 func chooseAtLogin(ms []Membership, hint shared.TenantID) Membership {
 	if m, ok := find(ms, hint); ok {
 		return m
 	}
-	if len(ms) == 1 {
+	if len(ms) == 1 && !ms[0].Tenant.Suspended {
 		return ms[0]
 	}
 	return Membership{}

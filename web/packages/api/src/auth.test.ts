@@ -34,7 +34,7 @@ const session: AuthSession = {
   tenant: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d00', name: 'Alta RPM', slug: 'altarpm' },
   role: 'owner',
   permissions: ['order:read', 'order:write'],
-  memberships: [{ tenant: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d00', name: 'Alta RPM', slug: 'altarpm' }, role: 'owner' }],
+  memberships: [{ tenant: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d00', name: 'Alta RPM', slug: 'altarpm' }, role: 'owner', status: 'active' }],
 }
 
 /** A client with a live session, to prove the auth calls never use it. */

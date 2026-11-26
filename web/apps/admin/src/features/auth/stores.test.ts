@@ -189,8 +189,8 @@ describe('creating the first store', () => {
 })
 
 describe('choosing a store', () => {
-  const ownsAltaRpm = { tenant: altaRpm, role: 'owner' as const }
-  const both = [ownsAltaRpm, { tenant: motoPecas, role: 'staff' as const }]
+  const ownsAltaRpm = { tenant: altaRpm, role: 'owner' as const, status: 'active' as const }
+  const both = [ownsAltaRpm, { tenant: motoPecas, role: 'staff' as const, status: 'active' as const }]
 
   it('lists the member’s stores and opens the chosen one where they were going', async () => {
     cookieHolds(storeless(both))
