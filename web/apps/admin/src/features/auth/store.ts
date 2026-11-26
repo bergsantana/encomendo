@@ -109,6 +109,33 @@ export const useAuthStore = defineStore('auth', () => {
     return session.restoreError === null ? null : errorMessage(session.restoreError)
   })
 
+  /**
+   * restoreFailed says the server could not answer on load, so the session in
+   * the cookie may still be good and is worth asking for again. Not after a
+   * 429: its message asks to wait, and every retry would count against it.
+   */
+  const restoreFailed = computed(
+    () => form.error.value === null && session.restoreError !== null && session.restoreError.code !== 'rate_limited',
+  )
+  const retrying = ref(false)
+
+  /**
+   * retryRestore asks the server again for the session in the refresh
+   * cookie, and resolves whether the tab is now signed in. Logging in again
+   * instead would start a new login and leave the one in the cookie unused.
+   * A click while it waits does nothing.
+   */
+  async function retryRestore(): Promise<boolean> {
+    if (retrying.value) return false
+    retrying.value = true
+    try {
+      await session.restore()
+      return session.isSignedIn
+    } finally {
+      retrying.value = false
+    }
+  }
+
   /** logIn resolves true once signed in, opening the store this device used last. */
   function logIn(credentials: Credentials): Promise<boolean> {
     const email = credentials.email.trim()
@@ -276,6 +303,9 @@ export const useAuthStore = defineStore('auth', () => {
     submitting: form.submitting,
     fieldErrors: form.fieldErrors,
     formError,
+    restoreFailed,
+    retrying,
+    retryRestore,
     notice,
     resetEmail,
     resetNotice,

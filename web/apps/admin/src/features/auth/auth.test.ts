@@ -165,6 +165,84 @@ describe('login', () => {
     expect(wrapper.get('h1').text()).toBe('Entrar')
     expect(wrapper.get('[role=alert]').text()).toBe('O servidor não respondeu. Tente de novo em instantes.')
   })
+
+  it('tries the session again on request, and opens the page once the server answers', async () => {
+    // Typing the password would start a new login; the one in the cookie may still be good.
+    server.use(
+      http.post('*/auth/refresh', () => problem(503, 'not_ready', 'Serviço indisponível'), { once: true }),
+      http.post('*/auth/refresh', () => HttpResponse.json(authSession())),
+    )
+    const { wrapper, router } = await openApp('/hoje')
+
+    await button(wrapper, 'Tentar de novo').trigger('click')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('hoje'))
+  })
+
+  it('keeps saying why when the server still cannot answer, and keeps focus on the button', async () => {
+    server.use(http.post('*/auth/refresh', () => problem(503, 'not_ready', 'Serviço indisponível')))
+    const { wrapper, router } = await openApp('/hoje')
+    const retry = button(wrapper, 'Tentar de novo')
+    ;(retry.element as HTMLButtonElement).focus()
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(wrapper.get('[role=alert]').text()).toBe('O servidor não respondeu. Tente de novo em instantes.')
+    expect(document.activeElement).toBe(button(wrapper, 'Tentar de novo').element)
+  })
+
+  it('says it is trying again while it waits for the server', async () => {
+    const answer = gate()
+    server.use(
+      http.post('*/auth/refresh', () => problem(503, 'not_ready', 'Serviço indisponível'), { once: true }),
+      http.post('*/auth/refresh', async () => {
+        await answer.opened
+        return problem(503, 'not_ready', 'Serviço indisponível')
+      }),
+    )
+    const { wrapper } = await openApp('/hoje')
+
+    await button(wrapper, 'Tentar de novo').trigger('click')
+
+    expect(wrapper.get('[role=status]').text()).toBe('Tentando de novo…')
+    // The message goes while asking, so it is announced again if the server still fails.
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    answer.open()
+    await flushPromises()
+    expect(wrapper.find('[role=alert]').exists()).toBe(true)
+  })
+
+  it('leaves the login form when the retry finds there is no session after all', async () => {
+    server.use(
+      http.post('*/auth/refresh', () => problem(503, 'not_ready', 'Serviço indisponível'), { once: true }),
+      http.post('*/auth/refresh', () => problem(401, 'unauthenticated', 'Sessão expirada')),
+    )
+    const { wrapper, router } = await openApp('/hoje')
+
+    await button(wrapper, 'Tentar de novo').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+
+  it('offers no retry after too many attempts, since the message asks to wait', async () => {
+    server.use(http.post('*/auth/refresh', () => problem(429, 'rate_limited', 'Muitas tentativas', { 'Retry-After': '30' })))
+
+    const { wrapper } = await openApp('/hoje')
+
+    expect(wrapper.get('[role=alert]').text()).toBe('Muitas tentativas. Tente de novo em 30 segundos.')
+    expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+
+  it('offers no retry when there simply is no session', async () => {
+    const { wrapper } = await openApp('/entrar')
+
+    expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
 })
 
 describe('the session in the menu', () => {

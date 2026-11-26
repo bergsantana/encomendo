@@ -207,6 +207,9 @@ export const useSessionStore = defineStore('session', () => {
    */
   function restore(): Promise<void> {
     if (isSignedIn.value) return Promise.resolve()
+    // A new attempt clears the old reason, so a failure that comes back is
+    // shown, and announced, again.
+    if (restoring === null) restoreError.value = null
     restoring ??= refresh().then(
       () => {
         restoreError.value = null
