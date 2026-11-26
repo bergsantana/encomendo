@@ -10,6 +10,7 @@
 # Admin app:   http://admin.localhost:${WEB_PORT:-8080}
 # Store page:  http://<slug>.localhost:${WEB_PORT:-8080}  (e.g. altarpm.localhost)
 # API:         http://localhost:${API_PORT:-8081}
+# Mail:        http://localhost:${MAILPIT_PORT:-8025}  (Mailpit catches every email)
 
 name: ${COMPOSE_PROJECT_NAME:-encomendo}
 
@@ -35,7 +36,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No persistence locally. noeviction matches production, where a memory
+    # cap is set: Redis never drops keys, so denylisted tokens never come
+    # back early (ADR 0013).
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -67,6 +71,18 @@ services:
       LOG_LEVEL: debug
       DATABASE_URL: postgres://encomendo_app:encomendo_app_dev@postgres:5432/encomendo?sslmode=disable
       REDIS_URL: redis://redis:6379/0
+      # Fixed development keys, refused outside development (ADR 0019).
+      AUTH_SIGNING_SEED: augERHUoTDTq1K69k5GLuA1cZM6mNFE3RPy9bYzpj08=
+      AUTH_RESET_CODE_KEY: AxEa9VTpecLRcumgvGFhpYTkZR2pF4jzai/nIen2Dtk=
+      # Plain HTTP locally, so not the __Host- cookie (ADR 0010).
+      AUTH_REFRESH_COOKIE: encomendo_refresh
+      ADMIN_ORIGIN: http://admin.localhost:${WEB_PORT:-8080}
+      # TRUSTED_PROXIES is unset, so the private ranges are trusted: the API
+      # port is published here, and a client on it can pick its own
+      # rate-limit key. Accepted for local stacks only (ADR 0021).
+      SMTP_ADDR: mailpit:1025
+      SMTP_FROM: nao-responda@encomendo.localhost
+      SMTP_REQUIRE_TLS: "false" # Mailpit only
     ports:
       - "${API_PORT:-8081}:8080"
     depends_on:
@@ -74,6 +90,14 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  mailpit:
+    image: axllent/mailpit:v1.34
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025" # web UI and API (the e2e tests read links here)
+      - "${MAILPIT_SMTP_PORT:-1025}:1025" # SMTP, for an API run on the host
 
   web:
     build:

@@ -79,6 +79,18 @@ func (r Rule) Key(value string) string {
 	return "g:rl:" + r.Name + ":" + r.Kind + ":" + value
 }
 
+// pseudonymLabel separates the pseudonym key from the reset-code key it is
+// derived from, so the two uses stay apart (ADR 0021).
+const pseudonymLabel = "encomendo rate-limit email v1"
+
+// DerivePseudonymKey derives the pseudonym key from the reset-code key:
+// HMAC-SHA256(resetCodeKey, label). It needs no secret of its own.
+func DerivePseudonymKey(resetCodeKey []byte) []byte {
+	m := hmac.New(sha256.New, resetCodeKey)
+	m.Write([]byte(pseudonymLabel))
+	return m.Sum(nil)
+}
+
 // MinKeyLength is the shortest key Pseudonyms accepts: shorter, and an HMAC
 // of a known address list could be brute-forced.
 const MinKeyLength = 32

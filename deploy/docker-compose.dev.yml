@@ -35,6 +35,9 @@ x-web-dev: &web-dev
 
 services:
   api:
+    environment:
+      # The Vite admin app is its own origin here.
+      ADMIN_ORIGIN: http://localhost:${ADMIN_PORT:-5173}
     develop:
       watch:
         - action: rebuild

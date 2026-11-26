@@ -16,6 +16,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/respond"
 	appidentity "github.com/bergsantana/encomendo/backend/internal/app/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/platform/config"
 )
 
 const adminOrigin = "https://admin.encomendo.com.br"
@@ -118,7 +119,7 @@ func authRouter(t *testing.T, uc appidentity.UseCases, l *countingLimiter) http.
 	}
 	router, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Auth: a}, RouterOptions{
 		AuthGuard:  guard,
-		RateLimits: middleware.NewRateLimits(l, ratelimit.NewClientIP(ratelimit.DefaultTrustedProxies()), p, log),
+		RateLimits: middleware.NewRateLimits(l, ratelimit.NewClientIP(config.DefaultTrustedProxies()), p, log),
 	})
 	if err != nil {
 		t.Fatal(err)
