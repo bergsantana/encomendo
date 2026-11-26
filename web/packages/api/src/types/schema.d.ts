@@ -53,7 +53,7 @@ export interface paths {
         /**
          * Create a staff account and log in.
          * @description The new session has no store. Create one with `POST /api/v1/admin/tenants`,
-         *     or join one through an invitation. Rate-limited per IP.
+         *     or join one through an invitation. Rate-limited per IP and per email.
          */
         post: operations["signUp"];
         delete?: never;
@@ -145,7 +145,10 @@ export interface paths {
          * End this login on every device that shares it.
          * @description Revokes the refresh token's whole family and clears the cookie. When
          *     an access token is sent too, it stops working at once instead of at
-         *     its expiry. Always answers 204, even for an unknown or missing token.
+         *     its expiry. Every refresh token sent is revoked, each cookie and a
+         *     body token alike, so logout always works. Always answers 204, even
+         *     for an unknown or missing token, once the call passes the
+         *     cross-origin check; `400` is only for a body that is not valid JSON.
          */
         post: operations["logOut"];
         delete?: never;
@@ -695,6 +698,34 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /**
+         * @description `forbidden`: a browser call from another origin, or whose
+         *     `Sec-Fetch-Site` is not `same-origin` (ADR 0010). Native clients,
+         *     which send neither header, never get it.
+         */
+        CrossOrigin: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `internal`: the server failed. `not_ready`: a dependency is down or
+         *     busy, such as every password-hashing slot taken; wait `Retry-After`
+         *     seconds. Never a 401: keep the session and try again (ADR 0013).
+         */
+        ServerFailure: {
+            headers: {
+                /** @description With `503 not_ready`, whole seconds to wait. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description `unauthenticated`: no token, or an expired, tampered or wrong-audience one. Refresh once, then log in. */
         Unauthenticated: {
             headers: {
@@ -830,6 +861,7 @@ export interface operations {
         responses: {
             201: components["responses"]["AuthSession"];
             400: components["responses"]["Invalid"];
+            403: components["responses"]["CrossOrigin"];
             /** @description `email_taken`: an account with this email already exists. */
             409: {
                 headers: {
@@ -840,6 +872,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     logIn: {
@@ -866,7 +899,9 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            403: components["responses"]["CrossOrigin"];
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     refreshSession: {
@@ -906,7 +941,9 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            403: components["responses"]["CrossOrigin"];
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     switchTenant: {
@@ -925,7 +962,10 @@ export interface operations {
             200: components["responses"]["AuthSession"];
             400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
-            /** @description `forbidden`: the user does not belong to that store (or it does not exist). */
+            /**
+             * @description `forbidden`: the user does not belong to that store (or it does
+             *     not exist), or a browser call came from another origin (ADR 0010).
+             */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -934,6 +974,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     logOut: {
@@ -957,6 +998,9 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["Invalid"];
+            403: components["responses"]["CrossOrigin"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     requestPasswordReset: {
@@ -980,7 +1024,9 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["Invalid"];
+            403: components["responses"]["CrossOrigin"];
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     confirmPasswordReset: {
@@ -1016,7 +1062,9 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            403: components["responses"]["CrossOrigin"];
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     previewInvitation: {
@@ -1041,6 +1089,8 @@ export interface operations {
                     "application/json": components["schemas"]["InvitationPreview"];
                 };
             };
+            400: components["responses"]["Invalid"];
+            403: components["responses"]["CrossOrigin"];
             /** @description `not_found`: unknown, expired, revoked or already used (the same answer for each). */
             404: {
                 headers: {
@@ -1051,6 +1101,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     acceptInvitation: {
@@ -1077,6 +1128,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            403: components["responses"]["CrossOrigin"];
             /**
              * @description `not_found`: unknown, expired, revoked or already used, or its
              *     sender can no longer manage the team (the same answer for each).
@@ -1089,7 +1141,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description `already_member`: the account already belongs to this store. */
+            /**
+             * @description `already_member`: the account already belongs to this store.
+             *     `email_taken`: an account with the invited email was created
+             *     meanwhile; open the link again to accept with its password.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1099,6 +1155,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     createTenant: {
@@ -1135,6 +1192,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     getSettings: {
@@ -1157,6 +1215,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     updateSettings: {
@@ -1185,6 +1244,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     listMembers: {
@@ -1212,6 +1272,7 @@ export interface operations {
             400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     removeMember: {
@@ -1243,6 +1304,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     changeMemberRole: {
@@ -1281,6 +1343,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     listInvitations: {
@@ -1308,6 +1371,7 @@ export interface operations {
             400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     inviteMember: {
@@ -1357,6 +1421,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
     revokeInvitation: {
@@ -1380,6 +1445,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
         };
     };
 }

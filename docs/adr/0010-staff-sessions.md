@@ -42,6 +42,7 @@ ADR 0003 fixes the token formats. Writing the `/auth/*` contract left several qu
 
   There is no grace window for parallel refreshes. ADR 0013 adds a 2-minute retry window for an answer lost after the server rotated the token.
 - **Logout** revokes the family, clears the cookie, adds the access token's `jti` to the Redis denylist when one is sent, and always answers 204.
+  - *Amended in step 2.3:* the transport refusals, `400` for a cookie and a body token together and `401` for more than one cookie, apply to refresh and switch only. Logout revokes the family of every well-formed token it is sent, each cookie and the body token, at most four, because logout must always work and a planted token is only the planter's own session. It clears the cookie only after every revoke has succeeded, so a client can retry after a failure.
 
 ### CSRF and CORS
 

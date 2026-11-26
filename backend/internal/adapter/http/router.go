@@ -1,40 +1,98 @@
 package http
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/handler"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/middleware"
+	"github.com/bergsantana/encomendo/backend/internal/adapter/http/ratelimit"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/respond"
 )
 
 // Handlers are the handlers the router mounts. Each milestone adds its own.
+// A nil group is not mounted.
 type Handlers struct {
 	Health *handler.Health
+	Auth   *handler.Auth
 }
 
 // RouterOptions configure the middleware stack.
 type RouterOptions struct {
 	HSTS bool
+	// AuthGuard is the cross-origin check of /auth/* (middleware.CrossOrigin,
+	// built in main because it validates the admin origin). Required when
+	// Handlers.Auth is set.
+	AuthGuard middleware.Middleware
+	// RateLimits applies the per-IP rules (ADR 0021). Required when
+	// Handlers.Auth is set.
+	RateLimits *middleware.RateLimits
 }
 
 // NewRouter returns the API handler: every route, wrapped in the middleware
 // stack. Order matters: the request ID is set first so every log line has it,
-// and Logging wraps Recover so a recovered panic is logged as a 500.
-func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) http.Handler {
+// and Logging wraps Recover so a recovered panic is logged as a 500. It
+// returns an error for /auth handlers without their cross-origin check or
+// rate limits, which would mount routes that fail every request or none.
+func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) (http.Handler, error) {
+	if h.Auth != nil && (opts.AuthGuard == nil || opts.RateLimits == nil) {
+		return nil, errors.New("router: the /auth routes need the cross-origin check and the rate limits")
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", h.Health.Live)
 	mux.HandleFunc("GET /readyz", h.Health.Ready)
+	if h.Auth != nil {
+		mountAuth(mux, h.Auth, opts)
+	}
 
 	return middleware.Chain(withProblemFallback(mux),
 		middleware.RequestID,
 		middleware.Logging(log),
 		middleware.Recover(log),
 		middleware.SecurityHeaders(opts.HSTS),
-	)
+	), nil
+}
+
+// authRoute is one /auth operation and the per-IP rule in front of it, if
+// any.
+type authRoute struct {
+	pattern string
+	rule    *ratelimit.Rule
+	handle  http.HandlerFunc
+}
+
+// authRoutes are the nine /auth operations of the contract. Switching and
+// logout have no per-IP limit (ADR 0021).
+func authRoutes(a *handler.Auth) []authRoute {
+	return []authRoute{
+		{"POST /auth/signup", &ratelimit.SignUpByIP, a.SignUp},
+		{"POST /auth/login", &ratelimit.LogInByIP, a.LogIn},
+		{"POST /auth/refresh", &ratelimit.RefreshByIP, a.Refresh},
+		{"POST /auth/switch-tenant", nil, a.SwitchTenant},
+		{"POST /auth/logout", nil, a.LogOut},
+		{"POST /auth/password-reset", &ratelimit.PasswordResetByIP, a.RequestPasswordReset},
+		{"POST /auth/password-reset/confirm", &ratelimit.PasswordResetConfirmByIP, a.ConfirmPasswordReset},
+		{"POST /auth/invitations/preview", &ratelimit.InvitationPreviewByIP, a.PreviewInvitation},
+		{"POST /auth/invitations/accept", &ratelimit.InvitationAcceptByIP, a.AcceptInvitation},
+	}
+}
+
+// mountAuth mounts each /auth operation on its own method and path, so a
+// wrong method answers 405 before any check runs. The order in front of each
+// one matters: the cross-origin check first, so a cross-site page cannot
+// spend its visitors' rate-limit budgets; then the deadline; then the
+// per-IP limit, before the body is read (ADRs 0010, 0019 and 0021).
+func mountAuth(mux *http.ServeMux, a *handler.Auth, opts RouterOptions) {
+	for _, rt := range authRoutes(a) {
+		mws := []middleware.Middleware{opts.AuthGuard, middleware.Deadline(middleware.AuthDeadline)}
+		if rt.rule != nil {
+			mws = append(mws, opts.RateLimits.ByIP(*rt.rule))
+		}
+		mux.Handle(rt.pattern, middleware.Chain(rt.handle, mws...))
+	}
 }
 
 // routeMethods are the methods checked when a request matches no route, to

@@ -102,6 +102,9 @@ func NewPseudonyms(key []byte) (Pseudonyms, error) {
 	return Pseudonyms{key: append([]byte(nil), key...)}, nil
 }
 
+// IsZero reports whether p is the zero Pseudonyms, which has no key.
+func (p Pseudonyms) IsZero() bool { return len(p.key) == 0 }
+
 // Email returns the value for email, from its lower-cased key, so changing
 // the case of an email never buys more attempts (ADR 0010).
 func (p Pseudonyms) Email(email identity.Email) string { return p.of("email", email.Key()) }

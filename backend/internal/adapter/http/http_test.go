@@ -19,7 +19,11 @@ import (
 func testRouter() http.Handler {
 	log := slog.New(slog.DiscardHandler)
 	health := handler.NewHealth(log, time.Second, handler.Check{Name: "postgres", Run: func(context.Context) error { return nil }})
-	return NewRouter(log, Handlers{Health: health}, RouterOptions{HSTS: true})
+	router, err := NewRouter(log, Handlers{Health: health}, RouterOptions{HSTS: true})
+	if err != nil {
+		panic(err)
+	}
+	return router
 }
 
 func TestRouter_Routes(t *testing.T) {
