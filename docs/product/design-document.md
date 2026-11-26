@@ -43,7 +43,7 @@ A comprar → Enviada ao fornecedor → Em produção / em trânsito → Recebid
 
 - A purchase only goes out after the deposit is paid (the owner can change this).
 - Every purchase line points to one order and one client (or to stock, see Product direction).
-- A ready kit has a fixed price. Swapping an item: kit price − removed item + new item, both at single-item price; the kit discount stays and the date is recalculated.
+- A ready kit has a fixed price. On each kit the owner chooses what a swap does: keep the discount (kit price − removed item + new item, both at single-item price; the default) or lose it (the sum of single-item prices). Either way the date is recalculated.
 - The client never sees suppliers, costs or "Pode atrasar"; the owner warns him by WhatsApp when the date changes.
 - The supplier message never carries the client's name or phone.
 - A client account sees its orders from every store, but a store never sees a client's orders at other stores.
@@ -290,10 +290,13 @@ This was a quick scan of the main players, not a full market study.
 
 ### Assumptions to confirm
 
+Confirmed on 2026-11-26 (ADR 0023):
+
 - Deposit is 50% by default.
 - Assembly 3 days and safety margin 2 days by default, editable per kit and per order.
-- Swapping an item inside a kit keeps the kit discount.
+- Kit swap: the owner chooses per kit whether a swap keeps the discount.
 - The client never sees "Pode atrasar"; the owner warns by WhatsApp.
+- Produção and Estoque stay hidden until the store turns them on.
 
 ### Next steps
 

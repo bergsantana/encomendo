@@ -136,13 +136,13 @@ Goal: the owner can describe what they sell, where it comes from and what it cos
 
 ### Backend
 
-- [ ] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (swap price rule tested)
+- [ ] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (each kit keeps or loses its discount on a swap, both modes tested; ADR 0023)
 - [ ] `domain/supplier`: supplier, supplier item (lead time, cost, backup supplier)
 - [ ] `app/catalog` and `app/supplier` services, cached queries, fakes
 - [ ] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`)
 - [ ] Migrations for catalog and suppliers, with RLS policies and tests
 - [ ] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
-- [ ] `adapter/storage`: local and S3-compatible photo storage
+- [ ] `adapter/storage`: local and S3-compatible photo storage (Cloudflare R2 in production, ADR 0023)
 - [ ] HTTP handlers, OpenAPI entries, and the "clients never see costs or suppliers" visibility test
 
 ### Web
@@ -196,7 +196,7 @@ Goal: the core of the product. An order moves through its store's status list, a
 - [ ] Every preset workflow has tests for each allowed and forbidden move and each phase guard
 - [ ] Changing a delivery date returns a `wa.me` link and nothing is sent automatically
 
-**Blocked on an open question:** payments are recorded manually first or integrate PIX from this milestone (architecture section 12). Build the manual path unless told otherwise, and ask before touching PIX.
+**Answered (ADR 0023):** the owner records payments by hand, with no PIX in v1. Stores pick one of the four presets and cannot rename statuses. The deposit is 50% by default, assembly 3 days and safety margin 2 days.
 
 ---
 
@@ -280,13 +280,13 @@ Goal: a client opens `{slug}.encomendo.com.br`, builds an order, pays the deposi
 
 ### Delivery
 
-- [ ] Wildcard DNS and TLS for `*.encomendo.com.br`
+- [ ] Wildcard DNS and TLS for `*.encomendo.com.br` (Cloudflare DNS, Caddy DNS-01 with the Cloudflare module, ADR 0023)
 
 ### Done when
 
 - [ ] A client places an order with no account, tracks it by link, and later adds it to Minhas encomendas
 
-**Blocked on open questions:** store page SEO (Vite SPA or server rendering) and custom domains per tenant (architecture section 12). Ask before building either.
+**Answered (ADR 0023):** the store page is a Vite SPA, and the server fills in each store's title, description and Open Graph tags. A store page is only `{slug}.encomendo.com.br`, with no custom domains in v1. Google sign-in ships with the email code.
 
 ---
 
@@ -329,14 +329,14 @@ Decided in ADR 0006: ship `0003_workflows` (tables and seed) in milestone 2.
 
 ## Open questions
 
-Do not decide these silently. Copied from `docs/architecture.md` section 12.
+Do not decide these silently. Copied from `docs/architecture.md` section 12. All four were answered on 2026-11-26 (ADR 0023).
 
-| Question | Blocks |
+| Question | Answer |
 | --- | --- |
-| Payments: record manually first, or PIX from milestone 4? | Milestone 4 |
-| Store page SEO: is a Vite SPA enough? | Milestone 7 |
-| Custom domains per tenant in v1? | Milestone 7 |
-| Status workflows: presets only, or can stores rename or build their own? Confirm the preset wording with real shops. | Milestone 4 |
+| Payments: record manually first, or PIX from milestone 4? | Recorded by hand; no PIX in v1 |
+| Store page SEO: is a Vite SPA enough? | Vite SPA, with the store's title, description and Open Graph tags set by the server |
+| Custom domains per tenant in v1? | No; `{slug}.encomendo.com.br` only |
+| Status workflows: presets only, or can stores rename or build their own? Confirm the preset wording with real shops. | Presets only; the wording is still to be checked with real shops |
 
 ## Decisions log
 
@@ -363,3 +363,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | Android requests stay in the store they were made for: same-scope retries, tokens only to screens of their scope | ADR 0018 |
 | 2026-11-25 | Ed25519 seeds named by thumbprint, rotated in three deploys, never printed; `at+jwt` with a one-string `aud` and at most 15 minutes; argon2id at RFC 9106's second option, within a memory budget and a 3-second wait | ADR 0019 |
 | 2026-11-25 | The Android management menu is a navigation drawer, its entries in the web's order and filtered by permission; a screen whose permission goes leaves for Hoje | ADR 0020 |
+| 2026-11-26 | v1 scope for milestones 3–7: payments by hand, preset workflows only, Vite SPA with server-set meta tags, subdomains only, per-kit swap discount, R2 photos, Cloudflare DNS-01, Google sign-in in M7 | ADR 0023 |

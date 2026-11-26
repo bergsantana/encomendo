@@ -142,7 +142,7 @@ Each context also has `errors.go` for its sentinel errors and a `_test.go` per f
 
 - Aggregates protect their invariants: constructors validate, fields are unexported, state changes go through methods.
 - **Sourcing belongs to each catalog item**, not the tenant: `catalog.SourcingMode` is `to_order`, `stock` or `in_house`. One order can mix all three. Tenant settings turn `stock_enabled` and `production_enabled` on or off; when off, that mode is unavailable and its menu is hidden.
-- **Kits:** a ready kit has a fixed price and marks which items the client may swap. A swap costs kit price − removed item + new item, both at single-item price; the kit discount stays and the date is recalculated (`kit_swap.go`).
+- **Kits:** a ready kit has a fixed price and marks which items the client may swap. Each kit says what a swap does to its discount (ADR 0023). By default the discount stays: kit price − removed item + new item, both at single-item price. Otherwise the swapped kit costs the sum of its items' single-item prices. Either way the date is recalculated (`kit_swap.go`).
 - **Status workflows (each store picks one).** The order lifecycle has fixed **phases** in code, and each store chooses a **status list** that names the steps its clients and staff see:
   - `workflow.Phase` (`phase.go`): `draft → awaiting_deposit → confirmed → sourcing → assembling → ready → handed_over`, plus `cancelled`. Phases carry every rule; statuses carry only names and order.
   - A `workflow.StatusWorkflow` is an ordered list of `WorkflowStatus{key, label (pt-BR), client label (pt-BR, plain words for the store page), phase}`. Several statuses may share a phase (for example "Compras" and "Itens chegando" are both `sourcing`), and phases never go backwards along the list.
@@ -697,6 +697,8 @@ Build security and tenancy first. Each milestone ends with all tests green in CI
 - Never weaken a rule in section 2 to make something easier; if a rule blocks you, stop and explain the trade-off.
 
 ### Open questions (do not decide silently — ask)
+
+All four below were answered on 2026-11-26 in ADR 0023: payments recorded by hand, a Vite SPA with server-set meta tags, subdomains only, and preset workflows only. They stay listed for history.
 
 - Payments: record deposits and balances manually first, or integrate PIX from milestone 4?
 - Store page SEO: is a Vite SPA enough, or does the store page need server rendering?
