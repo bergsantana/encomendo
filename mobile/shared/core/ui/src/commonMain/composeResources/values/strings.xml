@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pt-BR is the only language; it lives in the default values folder. -->
+<resources>
+    <!-- Messages any staff screen can show (design document, "Account and store screens (staff)"),
+         the same as the web admin's errorMessage.ts. -->
+    <string name="failure_offline">Sem conexão com o servidor. Confira a internet e tente de novo.</string>
+    <string name="failure_server">O servidor não respondeu. Tente de novo em instantes.</string>
+    <plurals name="failure_rate_limited_seconds">
+        <item quantity="one">Muitas tentativas. Tente de novo em %1$d segundo.</item>
+        <item quantity="other">Muitas tentativas. Tente de novo em %1$d segundos.</item>
+    </plurals>
+    <plurals name="failure_rate_limited_minutes">
+        <item quantity="one">Muitas tentativas. Tente de novo em %1$d minuto.</item>
+        <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
+    </plurals>
+    <!-- Not in the design document: a failure on the device, with no server words to show. -->
+    <string name="failure_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
+</resources>

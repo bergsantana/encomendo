@@ -18,7 +18,8 @@ kotlin {
             libs.versions.android.minSdk
                 .get()
                 .toInt()
-        withHostTestBuilder {}
+        androidResources { enable = true } // Compose Multiplatform string resources
+        withHostTestBuilder {} // runs commonTest on the JVM
     }
 
     sourceSets {
@@ -28,9 +29,14 @@ kotlin {
             api(libs.compose.foundation)
             api(libs.compose.ui)
             api(libs.compose.material3)
+            implementation(libs.compose.components.resources)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "br.com.encomendo.core.ui.resources"
 }

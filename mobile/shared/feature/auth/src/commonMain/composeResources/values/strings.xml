@@ -10,18 +10,8 @@
     <string name="login_password_hide_description">Ocultar senha</string>
     <string name="login_submit">Entrar</string>
     <string name="login_submitting">Entrando…</string>
-    <!-- Same wording as the web admin (web/apps/admin/src/errorMessage.ts, features/auth/store.ts). -->
+    <!-- Same wording as the web admin (features/auth/store.ts). Offline, 5xx and rate limits are core:ui's. -->
     <string name="login_error_wrong_credentials">E-mail ou senha incorretos.</string>
-    <string name="login_error_offline">Sem conexão com o servidor. Confira a internet e tente de novo.</string>
-    <string name="login_error_server">O servidor não respondeu. Tente de novo em instantes.</string>
-    <plurals name="login_error_rate_limited_seconds">
-        <item quantity="one">Muitas tentativas. Tente de novo em %1$d segundo.</item>
-        <item quantity="other">Muitas tentativas. Tente de novo em %1$d segundos.</item>
-    </plurals>
-    <plurals name="login_error_rate_limited_minutes">
-        <item quantity="one">Muitas tentativas. Tente de novo em %1$d minuto.</item>
-        <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
-    </plurals>
     <string name="login_create_account">Criar conta</string>
     <string name="login_forgot_password">Esqueci a senha</string>
     <string name="login_password_changed">Senha alterada. Entre com a nova senha.</string>
@@ -29,8 +19,6 @@
     <string name="login_missing_password">Informe sua senha.</string>
     <!-- Any staff form (design document, "Account and store screens (staff)"). -->
     <string name="form_check_fields">Confira os campos destacados.</string>
-    <!-- Not in the design document: a failure on the device, with no server words to show. -->
-    <string name="form_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
 
     <!-- Criar conta (design document, "Account and store screens (staff)"). -->
     <string name="signup_title">Criar conta</string>

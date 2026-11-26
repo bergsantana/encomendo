@@ -1,6 +1,8 @@
 package br.com.encomendo.feature.auth
 
 import br.com.encomendo.core.domain.failure.Failure
+import br.com.encomendo.core.ui.failure.FailureMessage
+import br.com.encomendo.core.ui.failure.toFailureMessage
 
 /**
  * FormError is a problem with a whole staff form, shown above it. Each case
@@ -17,24 +19,10 @@ sealed interface FormError {
     /** Store picker: the user no longer belongs to the store they chose. */
     data object NotAMember : FormError
 
-    /** The call never reached the server. */
-    data object Offline : FormError
-
-    /** The server failed or did not answer (a 5xx). */
-    data object ServerUnavailable : FormError
-
-    /** Too many attempts; [retryAfterSeconds] is the wait, or null when the server gave none. */
-    data class RateLimited(
-        val retryAfterSeconds: Int?,
+    /** Any other failure, in the words every staff screen has for it: offline, a 5xx, a rate limit, a refusal. */
+    data class General(
+        val message: FailureMessage,
     ) : FormError
-
-    /** Any other refusal, in the server's own pt-BR words. */
-    data class Refused(
-        val title: String,
-    ) : FormError
-
-    /** Nothing better to say: a failure on the device, or an answer the app cannot use. */
-    data object Unexpected : FormError
 }
 
 /** FieldProblem is what is wrong with one field, shown under it. */
@@ -61,26 +49,20 @@ sealed interface FieldProblem {
  */
 internal fun Failure.toFormError(): FormError =
     when (this) {
-        is Failure.Offline -> FormError.Offline
-        is Failure.RateLimited -> FormError.RateLimited(retryAfterSeconds)
         is Failure.InvalidInput, is Failure.AlreadyTaken, is Failure.WrongCode -> FormError.CheckFields
         is Failure.WrongCredentials -> FormError.WrongCredentials
-        is Failure.Forbidden -> refusedIn(title)
-        is Failure.Unexpected -> if (isServerFailure(status)) FormError.ServerUnavailable else refusedIn(title)
+        is Failure.Offline, is Failure.RateLimited, is Failure.Forbidden, is Failure.Unexpected ->
+            FormError.General(toFailureMessage())
     }
-
-/** The server's own words, or a general error when it sent none: never an empty banner. */
-private fun refusedIn(title: String?): FormError =
-    title?.takeIf { it.isNotBlank() }?.let(FormError::Refused) ?: FormError.Unexpected
 
 /**
  * The form error to keep while the user types: a rate limit's wait, which
  * typing doesn't shorten, and "check the fields" while [stillMarked] is.
  */
 internal fun FormError?.afterTyping(stillMarked: FieldProblem?): FormError? =
-    when (this) {
-        is FormError.RateLimited -> this
-        FormError.CheckFields -> takeIf { stillMarked != null }
+    when {
+        this is FormError.General && message is FailureMessage.RateLimited -> this
+        this == FormError.CheckFields -> takeIf { stillMarked != null }
         else -> null
     }
 
