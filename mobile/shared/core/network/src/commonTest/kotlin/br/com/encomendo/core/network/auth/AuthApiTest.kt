@@ -71,6 +71,38 @@ class AuthApiTest {
         }
 
     @Test
+    fun aMembershipSaysWhetherItsStoreIsSuspended() =
+        runTest {
+            val api = authApi { respondJson(SESSION_JSON) }
+
+            val session = api.refresh("refresh-old")
+
+            assertEquals(listOf("active", "suspended"), session.memberships.map { it.status })
+        }
+
+    @Test
+    fun aMembershipWithoutOrWithAnUnknownStatusStillDecodes() =
+        runTest {
+            // An older server sends none; a newer one may add values. Neither fails the whole session.
+            val api =
+                authApi {
+                    respondJson(
+                        NO_STORE_JSON.replace(
+                            """"memberships": []""",
+                            """"memberships": [
+                              {"tenant": {"id": "t-1", "name": "Alta RPM", "slug": "alta-rpm"}, "role": "owner"},
+                              {"tenant": {"id": "t-2", "name": "Moto Peças", "slug": "moto-pecas"}, "role": "staff",
+                               "status": "archived"}]""",
+                        ),
+                    )
+                }
+
+            val session = api.refresh("refresh-old")
+
+            assertEquals(listOf("active", "archived"), session.memberships.map { it.status })
+        }
+
+    @Test
     fun refreshReadsASessionWithoutAStore() =
         runTest {
             val api = authApi { respondJson(NO_STORE_JSON) }
@@ -396,6 +428,23 @@ class AuthApiTest {
             assertEquals(ApiErrorCode.Forbidden, error.code)
         }
 
+    @Test
+    fun aSuspendedStoreIsRefusedWithItsOwnCode() =
+        runTest {
+            val api =
+                authApi {
+                    respondProblem(
+                        HttpStatusCode.Forbidden,
+                        """{"title":"Esta loja está suspensa.","status":403,"code":"tenant_suspended"}""",
+                    )
+                }
+
+            val error = assertFailsWith<ApiError> { api.switchTenant(refreshToken = "refresh-old", tenantId = "x") }
+
+            assertEquals(ApiErrorCode.TenantSuspended, error.code)
+            assertEquals(ApiErrorCode("tenant_suspended"), error.code)
+        }
+
     private fun authApi(handler: MockRequestHandler): AuthApi =
         AuthApi(
             createApiClient(
@@ -421,8 +470,8 @@ class AuthApiTest {
               "role": "owner",
               "permissions": ["order:read", "order:write"],
               "memberships": [
-                {"tenant": {"id": "0190f3c4-0000-7000-8000-000000000001", "name": "Alta RPM", "slug": "alta-rpm"}, "role": "owner"},
-                {"tenant": {"id": "0190f3c4-0000-7000-8000-000000000002", "name": "Moto Peças", "slug": "moto-pecas"}, "role": "staff"}
+                {"tenant": {"id": "0190f3c4-0000-7000-8000-000000000001", "name": "Alta RPM", "slug": "alta-rpm"}, "role": "owner", "status": "active"},
+                {"tenant": {"id": "0190f3c4-0000-7000-8000-000000000002", "name": "Moto Peças", "slug": "moto-pecas"}, "role": "staff", "status": "suspended"}
               ],
               "plan": "added later"
             }

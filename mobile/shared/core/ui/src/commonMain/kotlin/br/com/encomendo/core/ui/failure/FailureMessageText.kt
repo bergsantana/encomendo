@@ -6,6 +6,7 @@ import br.com.encomendo.core.ui.resources.failure_offline
 import br.com.encomendo.core.ui.resources.failure_rate_limited_minutes
 import br.com.encomendo.core.ui.resources.failure_rate_limited_seconds
 import br.com.encomendo.core.ui.resources.failure_server
+import br.com.encomendo.core.ui.resources.failure_store_suspended
 import br.com.encomendo.core.ui.resources.failure_unexpected
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -16,6 +17,7 @@ fun FailureMessage.text(): String =
     when (this) {
         FailureMessage.Offline -> stringResource(Res.string.failure_offline)
         FailureMessage.ServerUnavailable -> stringResource(Res.string.failure_server)
+        FailureMessage.StoreSuspended -> stringResource(Res.string.failure_store_suspended)
         FailureMessage.Unexpected -> stringResource(Res.string.failure_unexpected)
         is FailureMessage.Refused -> title
         is FailureMessage.RateLimited -> rateLimitText(retryAfterSeconds)

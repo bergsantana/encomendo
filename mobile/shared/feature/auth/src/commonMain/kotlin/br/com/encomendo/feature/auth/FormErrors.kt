@@ -54,6 +54,7 @@ internal fun Failure.toFormError(): FormError =
         is Failure.Offline,
         is Failure.RateLimited,
         is Failure.Forbidden,
+        is Failure.StoreSuspended,
         is Failure.NotFound,
         is Failure.AlreadyMember,
         is Failure.EmailNotSent,
