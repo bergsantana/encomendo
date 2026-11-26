@@ -29,6 +29,8 @@ How to split the build plan across worktree sessions without collisions. `docs/b
 - **5b, HTTP:** the problem codes, `authn`, the cross-origin refusal, the store page middleware, rate limits, the handlers and `openapi.yaml`.
 - **5c, wiring and end to end:** the configuration (keys, SMTP, hosts), `main.go`, Mailpit in the dev stack, and `test/e2e` for the "Done when" checks.
 
+After 5a merged, the rest of milestone 2 was re-planned as steps 2.1 to 2.11 in `docs/plans/m2-identity-tenancy.md`, which replaces 5b and 5c above. The store page middleware moved to milestone 7 there.
+
 ## Later milestones (plan, refine when you get there)
 
 - **M3:** `m3-contract` (OpenAPI, then) → `m3-catalog`, `m3-supplier`, `m3-web-catalogo`, `m3-mobile-catalogo` → `m3-integrate`. The catalog and supplier migrations, numbered as they land (ADR 0014), go to one session.
