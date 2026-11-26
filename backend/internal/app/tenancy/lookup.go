@@ -40,10 +40,12 @@ type TenantSummary struct {
 	ID   shared.TenantID
 	Name string
 	Slug string
+	// Suspended is set when the platform suspended the store (ADR 0022).
+	Suspended bool
 }
 
 func summary(t *tenancy.Tenant) TenantSummary {
-	return TenantSummary{ID: t.ID(), Name: t.Name().String(), Slug: t.Slug().String()}
+	return TenantSummary{ID: t.ID(), Name: t.Name().String(), Slug: t.Slug().String(), Suspended: t.Suspended()}
 }
 
 // StoreRole is one store a user belongs to, with their role.

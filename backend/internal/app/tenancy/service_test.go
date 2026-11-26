@@ -308,3 +308,58 @@ func TestUpdateSettings_OnlyTheOwner(t *testing.T) {
 		t.Errorf("admin: %v, want ErrForbidden", err)
 	}
 }
+
+// CheckStore refuses a suspended store, passes an active one, and leaves a
+// session without a store to the use cases' tenant_required (ADR 0022).
+func TestService_CheckStore(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	active, owner := h.newStore(t, "ativa")
+	paused, pausedOwner := h.newStore(t, "pausada")
+	h.store.Suspend(paused)
+
+	if err := h.svc.CheckStore(as(t, owner, active, shared.RoleOwner)); err != nil {
+		t.Errorf("active store: %v", err)
+	}
+	if err := h.svc.CheckStore(as(t, pausedOwner, paused, shared.RoleOwner)); !errors.Is(err, tenancy.ErrTenantSuspended) {
+		t.Errorf("suspended store: %v, want ErrTenantSuspended", err)
+	}
+	if err := h.svc.CheckStore(as(t, owner, shared.TenantID{}, "")); err != nil {
+		t.Errorf("no store selected: %v, want nil", err)
+	}
+	if err := h.svc.CheckStore(context.Background()); !errors.Is(err, shared.ErrUnauthenticated) {
+		t.Errorf("no caller: %v", err)
+	}
+}
+
+// A status that cannot be read fails the check, so the request fails closed.
+func TestService_CheckStoreFailsClosed(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "falha")
+	h.store.Fail("TenantByID", errBoom)
+
+	err := h.svc.CheckStore(as(t, owner, store, shared.RoleOwner))
+	if !errors.Is(err, errBoom) || !errors.Is(err, shared.ErrUnavailable) {
+		t.Errorf("CheckStore = %v, want the read's failure as ErrUnavailable (a 503)", err)
+	}
+}
+
+// Suspended reaches the summaries identity reads through the lookup.
+func TestLookup_MembershipsCarrySuspension(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "marcada")
+	h.store.Suspend(store)
+
+	ctx := appshared.WithScope(context.Background(), appshared.Scope{UserID: owner})
+	var roles []apptenancy.StoreRole
+	err := h.tx.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+		roles, err = h.lookup.MembershipsOf(ctx, owner)
+		return err
+	})
+	if err != nil || len(roles) != 1 || !roles[0].Tenant.Suspended {
+		t.Errorf("MembershipsOf = %+v, %v; want the store marked suspended", roles, err)
+	}
+}

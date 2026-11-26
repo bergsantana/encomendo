@@ -57,6 +57,12 @@ func tenancyHarness(t *testing.T) identityports.TenancyHarness {
 			}
 			return shared.UserID(id)
 		},
+		Suspend: func(t *testing.T, store shared.TenantID) {
+			// Only the platform suspends a store, by SQL (ADR 0022).
+			if _, err := s.DB().ExecContext(t.Context(), `UPDATE tenants SET status = 'suspended' WHERE id = $1`, store.String()); err != nil {
+				t.Fatal(err)
+			}
+		},
 		AddMember: func(_ *testing.T, store shared.TenantID, user shared.UserID, role shared.Role) {
 			s.Member(store, user, role)
 		},

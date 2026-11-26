@@ -83,10 +83,13 @@ type TenantSummary struct {
 	Slug string `json:"slug"`
 }
 
-// Membership is the Membership schema.
+// Membership is the Membership schema. Status is "suspended" for a store
+// the platform suspended: the picker shows it, marked, and cannot enter it
+// (ADR 0022).
 type Membership struct {
 	Tenant TenantSummary `json:"tenant"`
 	Role   string        `json:"role"`
+	Status string        `json:"status"`
 }
 
 // Session is the Session schema: tenant and role are absent when no store
@@ -146,7 +149,11 @@ func NewSession(s appidentity.SessionView) Session {
 		out.Permissions = append(out.Permissions, string(p))
 	}
 	for _, m := range s.Memberships {
-		out.Memberships = append(out.Memberships, Membership{Tenant: newTenant(m.Tenant), Role: string(m.Role)})
+		status := "active"
+		if m.Tenant.Suspended {
+			status = "suspended"
+		}
+		out.Memberships = append(out.Memberships, Membership{Tenant: newTenant(m.Tenant), Role: string(m.Role), Status: status})
 	}
 	return out
 }

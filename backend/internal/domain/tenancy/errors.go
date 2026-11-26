@@ -22,6 +22,10 @@ var (
 	// expired, revoked or used. The cases are never told apart: 404
 	// not_found (ADR 0011).
 	ErrInvitationNotPending = fmt.Errorf("tenancy: invitation unknown, expired, revoked or used: %w", shared.ErrNotFound)
+	// ErrTenantSuspended means the store is suspended: nothing in it may be
+	// used or joined until the platform lifts the suspension. 403
+	// tenant_suspended (ADR 0022).
+	ErrTenantSuspended = fmt.Errorf("tenancy: store suspended: %w", shared.ErrForbidden)
 )
 
 // Errors for records built from missing or malformed parts. Input reaches

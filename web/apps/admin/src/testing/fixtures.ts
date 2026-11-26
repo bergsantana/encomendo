@@ -14,7 +14,7 @@ export function authSession(overrides: Partial<AuthSession> = {}): AuthSession {
     tenant: altaRpm,
     role: 'owner',
     permissions: ['order:read', 'order:write'],
-    memberships: [{ tenant: altaRpm, role: 'owner' }],
+    memberships: [{ tenant: altaRpm, role: 'owner', status: 'active' }],
     ...overrides,
   }
 }

@@ -124,6 +124,37 @@ func mustExist(what string, err error) error {
 	return fmt.Errorf("%s: %w", what, err)
 }
 
+// CheckStore returns tenancy.ErrTenantSuspended when the caller's selected
+// store is suspended, and nil when it is active or none is selected. The
+// router calls it before every tenant-scoped admin route (ADR 0022); it is
+// not on UseCases, which the handlers call. It reads the status uncached,
+// under the caller's own scope, because only SQL suspends a store and no
+// event could clear a cache. A failed read is
+// an ErrUnavailable, a 503 the client retries, so the request fails closed
+// as it does when the denylist cannot be read (ADR 0013).
+func (s *Service) CheckStore(ctx context.Context) error {
+	by, err := authz.RequireUser(ctx)
+	if err != nil {
+		return err
+	}
+	if !by.HasTenant() {
+		return nil // the use case answers tenant_required
+	}
+	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		t, err := s.tenants.TenantByID(ctx, by.TenantID())
+		if errors.Is(err, shared.ErrNotFound) {
+			return mustExist("read store status", err) // a valid token names a store that exists: a bug
+		}
+		if err != nil {
+			return fmt.Errorf("read store status: %w: %w", shared.ErrUnavailable, err)
+		}
+		if t.Suspended() {
+			return tenancy.ErrTenantSuspended
+		}
+		return nil
+	})
+}
+
 // Settings returns the selected store's settings. Every role may read them
 // (settings:read), because the apps hide Produção and Estoque when they are
 // off.

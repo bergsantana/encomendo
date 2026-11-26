@@ -61,7 +61,7 @@ func (i *IdentityInvitations) JoinByInvitation(ctx context.Context, j appidentit
 }
 
 func tenantSummary(t apptenancy.TenantSummary) appidentity.TenantSummary {
-	return appidentity.TenantSummary{ID: t.ID, Name: t.Name, Slug: t.Slug}
+	return appidentity.TenantSummary{ID: t.ID, Name: t.Name, Slug: t.Slug, Suspended: t.Suspended}
 }
 
 // TenancyUsers implements apptenancy.UserDirectory over identity's

@@ -62,6 +62,13 @@ func fakeTenancy(*testing.T) TenancyHarness {
 			members.Add(user, appidentity.Membership{Tenant: stores[store], Role: role})
 			invites.AddMember(store, user)
 		},
+		Suspend: func(_ *testing.T, store shared.TenantID) {
+			s := stores[store]
+			s.Suspended = true
+			stores[store] = s
+			members.Suspend(store)
+			invites.Suspend(store)
+		},
 		Invite: func(t *testing.T, store shared.TenantID, email string, role shared.Role, expires time.Time) shared.SecretHash {
 			addr, err := identity.ParseEmail(email)
 			if err != nil {

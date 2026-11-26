@@ -38,6 +38,8 @@ const (
 	CodeAlreadyMember      = "already_member"
 	CodeInvalidCode        = "invalid_code"
 	CodeEmailUnavailable   = "email_unavailable"
+	// CodeTenantSuspended is a suspended store (ADR 0022).
+	CodeTenantSuspended = "tenant_suspended"
 )
 
 // StatusClientClosedRequest is the status logged for a request whose client
@@ -182,6 +184,9 @@ func problemFor(err error) Problem {
 		return Problem{Status: http.StatusUnauthorized, Code: CodeUnauthenticated, Title: "Sessão inválida. Entre de novo."}
 	case errors.Is(err, authz.ErrTenantRequired):
 		return Problem{Status: http.StatusForbidden, Code: CodeTenantRequired, Title: "Escolha a loja."}
+	case errors.Is(err, tenancy.ErrTenantSuspended):
+		// The wording the user chose (docs/product/design-document.md).
+		return Problem{Status: http.StatusForbidden, Code: CodeTenantSuspended, Title: "Esta loja está suspensa. Fale com o suporte do Encomendo."}
 	case errors.Is(err, shared.ErrForbidden):
 		return Problem{Status: http.StatusForbidden, Code: CodeForbidden, Title: "Acesso negado"}
 	case errors.Is(err, shared.ErrConflict):

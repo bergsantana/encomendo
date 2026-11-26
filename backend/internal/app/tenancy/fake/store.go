@@ -123,6 +123,16 @@ func (s *Store) TenantByID(ctx context.Context, id shared.TenantID) (*tenancy.Te
 	return tenancy.RestoreTenant(r)
 }
 
+// Suspend sets a store's status to suspended, as the platform does by SQL
+// (ADR 0022). It is a test helper; no use case suspends a store.
+func (s *Store) Suspend(id shared.TenantID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.tenants[id]
+	r.Status = tenancy.StatusSuspended
+	s.tenants[id] = r
+}
+
 // memberStore is the store picker policy: with no tenant set, a user sees
 // the stores they belong to.
 func (s *Store) memberStore(scope appshared.Scope, id shared.TenantID) bool {

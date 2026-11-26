@@ -672,3 +672,28 @@ func TestAuth_PerEmailLimits(t *testing.T) {
 }
 
 func discardLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+// A suspended store shows in the picker's list with its status, and is
+// not the selected store (ADR 0022).
+func TestAuth_SessionMarksASuspendedStore(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, handler.HostRefreshCookie)
+	paused := appidentity.TenantSummary{ID: tenantID, Name: "Alta RPM", Slug: "altarpm", Suspended: true}
+	f.uc.res.Session = appidentity.SessionView{
+		User:        appidentity.UserView{ID: userID, Name: "Ana", Email: "ana@example.com"},
+		Permissions: []identity.Permission{},
+		Memberships: []appidentity.Membership{{Tenant: paused, Role: shared.RoleOwner}},
+	}
+	rec := f.call(t, "/auth/login", bodyFor("/auth/login", ""))
+	ms, _ := body(t, rec)["memberships"].([]any)
+	if len(ms) != 1 || ms[0].(map[string]any)["status"] != "suspended" {
+		t.Errorf("memberships = %v, want the store marked suspended", ms)
+	}
+	f.uc.res = session()
+	rec = f.call(t, "/auth/login", bodyFor("/auth/login", ""))
+	ms, _ = body(t, rec)["memberships"].([]any)
+	if len(ms) != 1 || ms[0].(map[string]any)["status"] != "active" {
+		t.Errorf("memberships = %v, want the store marked active", ms)
+	}
+}

@@ -437,7 +437,7 @@ export interface components {
              * @description Stable machine-readable code. New codes may be added; existing ones never change.
              * @enum {string}
              */
-            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable";
+            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended";
             detail?: string;
             instance?: string;
             errors?: components["schemas"]["FieldIssue"][];
@@ -510,6 +510,12 @@ export interface components {
         Membership: {
             tenant: components["schemas"]["TenantSummary"];
             role: components["schemas"]["Role"];
+            /**
+             * @description `suspended`: the platform suspended the store. The picker shows
+             *     it, marked "Suspensa", and cannot enter it (ADR 0022).
+             * @enum {string}
+             */
+            status: "active" | "suspended";
         };
         Session: {
             user: components["schemas"]["User"];
@@ -739,6 +745,8 @@ export interface components {
         /**
          * @description `forbidden`: the role lacks the permission. `tenant_required`: the
          *     session has no store selected; open the store picker.
+         *     `tenant_suspended`: the store is suspended; show its message and
+         *     open the store picker (ADR 0022).
          */
         Forbidden: {
             headers: {
@@ -965,6 +973,8 @@ export interface operations {
             /**
              * @description `forbidden`: the user does not belong to that store (or it does
              *     not exist), or a browser call came from another origin (ADR 0010).
+             *     `tenant_suspended`: the store is suspended (ADR 0022). Either way
+             *     the session stays as it was.
              */
             403: {
                 headers: {
@@ -1090,7 +1100,19 @@ export interface operations {
                 };
             };
             400: components["responses"]["Invalid"];
-            403: components["responses"]["CrossOrigin"];
+            /**
+             * @description `tenant_suspended`: the store of the invitation is suspended
+             *     (ADR 0022). `forbidden`: a browser call from another origin
+             *     (ADR 0010).
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description `not_found`: unknown, expired, revoked or already used (the same answer for each). */
             404: {
                 headers: {
@@ -1128,7 +1150,19 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            403: components["responses"]["CrossOrigin"];
+            /**
+             * @description `tenant_suspended`: the store of the invitation is suspended
+             *     (ADR 0022). `forbidden`: a browser call from another origin
+             *     (ADR 0010).
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /**
              * @description `not_found`: unknown, expired, revoked or already used, or its
              *     sender can no longer manage the team (the same answer for each).
@@ -1294,7 +1328,11 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthenticated"];
-            /** @description `forbidden`: no `members:manage`, or the target is the owner. */
+            /**
+             * @description `forbidden`: no `members:manage`, or the target is the owner.
+             *     `tenant_required`: no store selected. `tenant_suspended`: the
+             *     store is suspended (ADR 0022).
+             */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1333,7 +1371,11 @@ export interface operations {
             };
             400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
-            /** @description `forbidden`: no `members:manage`, or the target is the owner. */
+            /**
+             * @description `forbidden`: no `members:manage`, or the target is the owner.
+             *     `tenant_required`: no store selected. `tenant_suspended`: the
+             *     store is suspended (ADR 0022).
+             */
             403: {
                 headers: {
                     [name: string]: unknown;

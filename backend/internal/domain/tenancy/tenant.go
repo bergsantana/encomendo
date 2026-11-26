@@ -119,6 +119,9 @@ func (t *Tenant) Slug() Slug { return t.slug }
 // Status returns whether the store works.
 func (t *Tenant) Status() Status { return t.status }
 
+// Suspended reports whether the platform suspended the store (ADR 0022).
+func (t *Tenant) Suspended() bool { return t.status == StatusSuspended }
+
 // Version returns the version the store was read or created at.
 func (t *Tenant) Version() int { return t.version }
 

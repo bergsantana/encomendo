@@ -32,6 +32,8 @@ type Harness struct {
 	// Now is a recent time, at the store's precision (microseconds for
 	// Postgres); every timestamp is built from it.
 	Now time.Time
+	// Suspend suspends a store, as the platform does by SQL (ADR 0022).
+	Suspend func(t *testing.T, id shared.TenantID)
 }
 
 func (h Harness) in(t *testing.T, s appshared.Scope, fn func(ctx context.Context) error) {
@@ -132,6 +134,15 @@ func tenantsReadBack(t *testing.T, h Harness) {
 		}
 		if _, err := h.Tenants.SettingsOf(ctx, other.ID()); !errors.Is(err, shared.ErrNotFound) {
 			t.Errorf("another store's settings: %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+	// The status CheckStore reads, in the store's own scope (ADR 0022).
+	h.Suspend(t, tn.ID())
+	h.in(t, appshared.Scope{TenantID: tn.ID(), UserID: h.NewUser(t)}, func(ctx context.Context) error {
+		got, err := h.Tenants.TenantByID(ctx, tn.ID())
+		if err != nil || got.Status() != tenancy.StatusSuspended || !got.Suspended() {
+			t.Errorf("TenantByID after a suspension = %+v, %v; want it suspended", got, err)
 		}
 		return nil
 	})

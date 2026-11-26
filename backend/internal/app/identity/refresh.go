@@ -8,6 +8,7 @@ import (
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
 
 // errRotationRace means the presented token changed under its family's
@@ -25,8 +26,8 @@ const maxRotationAttempts = 2
 // call before anything rotates.
 type pickStore func(ms []Membership, issued shared.TenantID) (Membership, error)
 
-// keepStore keeps the token's store while the user still belongs to it, and
-// selects none otherwise (ADR 0010).
+// keepStore keeps the token's store while the user still belongs to it and
+// it is not suspended, and selects none otherwise (ADRs 0010 and 0022).
 func keepStore(ms []Membership, issued shared.TenantID) (Membership, error) {
 	m, _ := find(ms, issued) // not a member any more: a session without a store
 	return m, nil
@@ -42,17 +43,19 @@ func keepStore(ms []Membership, issued shared.TenantID) (Membership, error) {
 //   - a malformed, unknown, expired or revoked token is
 //     shared.ErrUnauthenticated and changes nothing.
 //
-// The role is read again from the membership; a removed member's session
-// has no store. A store failure is returned as it is, never as
-// ErrUnauthenticated.
+// The role is read again from the membership; a removed member's session,
+// and one whose store was suspended (ADR 0022), has no store. A store
+// failure is returned as it is, never as ErrUnauthenticated.
 func (s *Service) Refresh(ctx context.Context, in RefreshInput) (AuthResult, error) {
 	return s.rotate(ctx, in.RefreshToken, keepStore)
 }
 
 // SwitchTenant is Refresh into another store the user belongs to. It
-// returns a ValidationError on "tenantId" for no store and an error matching
-// shared.ErrForbidden when the user is not a member; both leave the token as
-// it was, so the client keeps its session (ADR 0013). Reuse still revokes.
+// returns a ValidationError on "tenantId" for no store, an error matching
+// shared.ErrForbidden when the user is not a member, and
+// tenancy.ErrTenantSuspended (which matches ErrForbidden too) when the store
+// is suspended (ADR 0022). Each leaves the token as it was, so the client
+// keeps its session (ADR 0013). Reuse still revokes.
 func (s *Service) SwitchTenant(ctx context.Context, in SwitchTenantInput) (AuthResult, error) {
 	if in.TenantID.IsZero() {
 		return AuthResult{}, shared.NewValidationError(shared.FieldError{Field: "tenantId", Message: "Escolha uma loja."})
@@ -60,6 +63,11 @@ func (s *Service) SwitchTenant(ctx context.Context, in SwitchTenantInput) (AuthR
 	return s.rotate(ctx, in.RefreshToken, func(ms []Membership, _ shared.TenantID) (Membership, error) {
 		if m, ok := find(ms, in.TenantID); ok {
 			return m, nil
+		}
+		for _, m := range ms {
+			if m.Tenant.ID == in.TenantID {
+				return Membership{}, fmt.Errorf("switch to store %v: %w", in.TenantID, tenancy.ErrTenantSuspended)
+			}
 		}
 		return Membership{}, fmt.Errorf("switch to store %v: not a member: %w", in.TenantID, shared.ErrForbidden)
 	})

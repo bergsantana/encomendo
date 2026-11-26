@@ -35,7 +35,7 @@ Work from the contract inward, then outward to the clients. Each step ends with 
 
 - Request and response DTOs and mappers in `adapter/http/handler/dto/`.
 - The handler decodes (size limit, `DisallowUnknownFields`), calls one use case, maps and responds. No business rules.
-- Register the route in `router.go` (ask its owner if it isn't you).
+- Register the route in `router.go` (ask its owner if it isn't you). An `/api/v1/admin` route goes into `adminRoutes`, never a mount of its own: that is where every admin route gets authn and the suspended-store check (ADR 0022).
 - `httptest` tests with a fake use case: success, validation error, 401, 403, 404, 409 where it applies. Validate the response against `openapi.yaml`. For store page and client routes, add the client-visibility check (no internal fields).
 
 ## 6. Web

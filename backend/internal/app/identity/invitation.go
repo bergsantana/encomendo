@@ -43,6 +43,10 @@ func (s *Service) readInvitation(ctx context.Context, tok tenancy.InvitationToke
 	if err != nil {
 		return PendingInvitation{}, nil, fmt.Errorf("read invitation: %w", err)
 	}
+	if inv.Tenant.Suspended {
+		// Joining writes into the store, so a suspended one refuses it.
+		return PendingInvitation{}, nil, fmt.Errorf("read invitation: %w", tenancy.ErrTenantSuspended)
+	}
 	u, err := s.users.UserByEmail(ctx, inv.Email)
 	if errors.Is(err, shared.ErrNotFound) {
 		return inv, nil, nil

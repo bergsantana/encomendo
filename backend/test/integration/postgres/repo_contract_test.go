@@ -81,6 +81,12 @@ func TestTenancyRepositories_Contract(t *testing.T) {
 			NewUser:  func(*testing.T) shared.UserID { return s.User() },
 			NewSlug:  func(*testing.T) string { return fmt.Sprintf("loja-%s%d", hex(pgtest.NewID())[:20], uniq.Add(1)) },
 			Workflow: wf, Now: storeNow(),
+			Suspend: func(t *testing.T, id shared.TenantID) {
+				// Only the platform suspends a store, by SQL (ADR 0022).
+				if _, err := s.DB().ExecContext(t.Context(), `UPDATE tenants SET status = 'suspended' WHERE id = $1`, id.String()); err != nil {
+					t.Fatal(err)
+				}
+			},
 		}
 	})
 }

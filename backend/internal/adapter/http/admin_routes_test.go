@@ -16,6 +16,7 @@ import (
 	appidentity "github.com/bergsantana/encomendo/backend/internal/app/identity"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
 
 // adminPaths are the nine store and team operations of the contract.
@@ -104,6 +105,16 @@ func (u *tenancyReached) RevokeInvitation(context.Context, shared.InvitationID) 
 
 func adminRouter(t *testing.T, uc apptenancy.UseCases) http.Handler {
 	t.Helper()
+	return adminRouterWith(t, uc, activeStores{})
+}
+
+// activeStores is a StoreChecker for which every store is active.
+type activeStores struct{}
+
+func (activeStores) CheckStore(context.Context) error { return nil }
+
+func adminRouterWith(t *testing.T, uc apptenancy.UseCases, stores middleware.StoreChecker) http.Handler {
+	t.Helper()
 	log := slog.New(slog.DiscardHandler)
 	p, err := ratelimit.NewPseudonyms([]byte(strings.Repeat("k", ratelimit.MinKeyLength)))
 	if err != nil {
@@ -114,7 +125,7 @@ func adminRouter(t *testing.T, uc apptenancy.UseCases) http.Handler {
 		t.Fatal(err)
 	}
 	router, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten},
-		RouterOptions{Authn: middleware.NewAuthn(tokens{}, openDenylist{}, log)})
+		RouterOptions{Authn: middleware.NewAuthn(tokens{}, openDenylist{}, log), Stores: stores})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +180,7 @@ func TestRouter_AdminRoutesNeedAStaffToken(t *testing.T) {
 func TestRouter_AdminPathsListEveryRoute(t *testing.T) {
 	t.Parallel()
 
-	if n := len(adminRoutes(&handler.Tenancy{})); len(adminPaths) != n {
+	if n := len(adminRoutes(Handlers{Tenancy: &handler.Tenancy{}})); len(adminPaths) != n {
 		t.Fatalf("adminPaths lists %d routes, the router mounts %d", len(adminPaths), n)
 	}
 }
@@ -201,7 +212,60 @@ func TestNewRouter_RefusesAdminWithoutAuthn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten}, RouterOptions{}); err == nil {
-		t.Error("the admin routes were mounted without authn")
+	h := Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten}
+	for name, opts := range map[string]RouterOptions{
+		"no authn":                 {Stores: activeStores{}},
+		"no suspended-store check": {Authn: middleware.NewAuthn(tokens{}, openDenylist{}, log)},
+	} {
+		if _, err := NewRouter(log, h, opts); err == nil {
+			t.Errorf("the admin routes were mounted with %s", name)
+		}
+	}
+}
+
+// suspended is a StoreChecker for a suspended store that counts its calls.
+type suspended struct{ calls *int }
+
+func (s suspended) CheckStore(context.Context) error {
+	*s.calls++
+	return tenancy.ErrTenantSuspended
+}
+
+// Every admin route that acts in a store refuses a suspended one before
+// its use case runs; creating a store does not need one (ADR 0022).
+func TestRouter_AdminRoutesRefuseASuspendedStore(t *testing.T) {
+	t.Parallel()
+
+	for _, rt := range adminPaths {
+		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
+			t.Parallel()
+
+			uc, checks := &tenancyReached{}, 0
+			rec := httptest.NewRecorder()
+			adminRouterWith(t, uc, suspended{calls: &checks}).ServeHTTP(rec, adminRequest(rt.method, rt.path, "staff"))
+
+			if rt.method == "POST" && rt.path == "/api/v1/admin/tenants" {
+				if checks != 0 || uc.calls != 1 {
+					t.Errorf("creating a store ran %d checks and %d use cases, want none and one", checks, uc.calls)
+				}
+				return
+			}
+			if checks != 1 || uc.calls != 0 || rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"tenant_suspended"`) {
+				t.Errorf("answer %d %s after %d checks and %d use cases; want 403 tenant_suspended and no use case",
+					rec.Code, rec.Body.String(), checks, uc.calls)
+			}
+		})
+	}
+}
+
+// The check runs after authn: without a valid token it never runs.
+func TestRouter_StoreCheckRunsAfterAuthn(t *testing.T) {
+	t.Parallel()
+
+	checks := 0
+	rec := httptest.NewRecorder()
+	adminRouterWith(t, &tenancyReached{}, suspended{calls: &checks}).ServeHTTP(rec, adminRequest("GET", "/api/v1/admin/settings", ""))
+	if rec.Code != http.StatusUnauthorized || checks != 0 {
+		t.Errorf("answer %d after %d checks, want 401 before any check", rec.Code, checks)
 	}
 }
