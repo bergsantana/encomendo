@@ -1,5 +1,6 @@
 package br.com.encomendo.core.domain.members
 
+import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.Role
 
 /**
@@ -13,7 +14,7 @@ interface MembersRepository {
     suspend fun page(
         cursor: String?,
         limit: Int,
-    ): MemberPage
+    ): Page<Member>
 
     /**
      * Gives [userId] the role [role] and returns the member as saved. Throws

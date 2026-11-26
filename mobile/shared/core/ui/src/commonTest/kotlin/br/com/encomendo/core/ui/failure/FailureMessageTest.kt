@@ -67,6 +67,8 @@ class FailureMessageTest {
                 Failure.AlreadyTaken("slug"),
                 Failure.WrongCode(),
                 Failure.WrongCredentials(),
+                Failure.AlreadyMember(),
+                Failure.EmailNotSent(),
             )
         failures.forEach { assertEquals(FailureMessage.Unexpected, it.toFailureMessage(), it.message) }
     }

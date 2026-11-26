@@ -136,6 +136,85 @@ class MembersApiTest {
             assertEquals(ApiErrorCode.NotFound, error.code)
         }
 
+    @Test
+    fun listsThePendingInvitations() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                membersApi { request ->
+                    requests += request
+                    respondJson("""{"items": [$INVITATION_JSON], "nextCursor": "i2"}""")
+                }
+
+            val page = api.invitations(cursor = null, limit = 100)
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Get, request.method)
+            assertEquals("/api/v1/admin/invitations", request.url.encodedPath)
+            assertEquals("100", request.url.parameters["limit"])
+            val invitation = page.items.single()
+            assertEquals(INVITATION_ID, invitation.id)
+            assertEquals("carla@altarpm.com.br", invitation.email)
+            assertEquals("viewer", invitation.role)
+            assertEquals("2026-12-02T12:00:00Z", invitation.expiresAt)
+            assertEquals("i2", page.nextCursor)
+        }
+
+    @Test
+    fun invitesByEmailWithARole() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                membersApi { request ->
+                    requests += request
+                    respondJson(INVITATION_JSON, HttpStatusCode.Created)
+                }
+
+            val invitation = api.invite(email = "carla@altarpm.com.br", role = "viewer")
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/api/v1/admin/invitations", request.url.encodedPath)
+            assertEquals(
+                """{"email":"carla@altarpm.com.br","role":"viewer"}""",
+                request.body.toByteArray().decodeToString(),
+            )
+            assertEquals(INVITATION_ID, invitation.id)
+        }
+
+    @Test
+    fun cancelsAnInvitation() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                membersApi { request ->
+                    requests += request
+                    respond("", HttpStatusCode.NoContent)
+                }
+
+            api.revoke(invitationId = INVITATION_ID)
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Delete, request.method)
+            assertEquals("/api/v1/admin/invitations/$INVITATION_ID", request.url.encodedPath)
+        }
+
+    @Test
+    fun anEmailThatDidNotGoOutIsAnApiError() =
+        runTest {
+            val api =
+                membersApi {
+                    respondProblem(
+                        HttpStatusCode.ServiceUnavailable,
+                        """{"title":"E-mail indisponível","status":503,"code":"email_unavailable"}""",
+                    )
+                }
+
+            val error = assertFailsWith<ApiError> { api.invite(email = "carla@altarpm.com.br", role = "viewer") }
+
+            assertEquals(ApiErrorCode.EmailUnavailable, error.code)
+        }
+
     private fun membersApi(handler: MockRequestHandler): MembersApi =
         MembersApi(
             createApiClient(
@@ -153,6 +232,13 @@ class MembersApiTest {
     private companion object {
         const val ANA_ID = "0190f3c4-0000-7000-8000-0000000000aa"
         const val BRUNO_ID = "0190f3c4-0000-7000-8000-0000000000bb"
+        const val INVITATION_ID = "0190f3c4-0000-7000-8000-0000000000e1"
+
+        /** An Invitation as docs/api/openapi.yaml describes it. */
+        const val INVITATION_JSON = """
+            {"id": "$INVITATION_ID", "email": "carla@altarpm.com.br", "role": "viewer",
+             "invitedAt": "2026-11-25T12:00:00Z", "expiresAt": "2026-12-02T12:00:00Z"}
+        """
 
         /** Members as docs/api/openapi.yaml describes them. */
         const val ANA_JSON = """

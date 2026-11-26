@@ -51,6 +51,19 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("not found", cause)
 
+    /** Inviting someone who is on the store's team already. */
+    class AlreadyMember(
+        cause: Throwable? = null,
+    ) : Failure("already member", cause)
+
+    /**
+     * The invitation was saved, but its email did not go out. Sending it
+     * again replaces the link and tries the email once more.
+     */
+    class EmailNotSent(
+        cause: Throwable? = null,
+    ) : Failure("email not sent", cause)
+
     /** A password reset code that is wrong, expired, used up or never sent: the server says the same for each. */
     class WrongCode(
         cause: Throwable? = null,

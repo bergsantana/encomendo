@@ -1,6 +1,7 @@
 package br.com.encomendo.core.domain.members
 
 import br.com.encomendo.core.domain.failure.Failure
+import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.session.Session
@@ -130,10 +131,10 @@ class MembersTest {
         override suspend fun page(
             cursor: String?,
             limit: Int,
-        ): MemberPage {
+        ): Page<Member> {
             pages += cursor to limit
             answer()
-            return MemberPage(members = listOf(ANA_AS_ADMIN, BRUNO), nextCursor = null)
+            return Page(items = listOf(ANA_AS_ADMIN, BRUNO), nextCursor = null)
         }
 
         override suspend fun changeRole(

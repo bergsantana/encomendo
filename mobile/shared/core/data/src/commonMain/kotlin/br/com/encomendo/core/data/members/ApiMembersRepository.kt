@@ -2,8 +2,8 @@ package br.com.encomendo.core.data.members
 
 import br.com.encomendo.core.data.failure.asFailures
 import br.com.encomendo.core.domain.members.Member
-import br.com.encomendo.core.domain.members.MemberPage
 import br.com.encomendo.core.domain.members.MembersRepository
+import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.network.members.MemberDto
 import br.com.encomendo.core.network.members.MembersApi
@@ -15,10 +15,10 @@ class ApiMembersRepository(
     override suspend fun page(
         cursor: String?,
         limit: Int,
-    ): MemberPage =
+    ): Page<Member> =
         asFailures {
             val page = api.list(cursor = cursor, limit = limit)
-            MemberPage(members = page.items.map { it.toMember() }, nextCursor = page.nextCursor)
+            Page(items = page.items.map { it.toMember() }, nextCursor = page.nextCursor)
         }
 
     override suspend fun changeRole(

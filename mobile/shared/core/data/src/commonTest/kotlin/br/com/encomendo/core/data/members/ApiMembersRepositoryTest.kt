@@ -44,7 +44,7 @@ class ApiMembersRepositoryTest {
 
             val page = members.page(cursor = null, limit = 100)
 
-            assertEquals(listOf(BRUNO), page.members)
+            assertEquals(listOf(BRUNO), page.items)
             assertNull(page.nextCursor)
         }
 

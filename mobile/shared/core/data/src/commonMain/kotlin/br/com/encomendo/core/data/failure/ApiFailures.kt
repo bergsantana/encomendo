@@ -40,6 +40,9 @@ internal fun ApiError.toFailure(): Failure =
         code == ApiErrorCode.InvalidCredentials -> Failure.WrongCredentials(cause = this)
         code == ApiErrorCode.Forbidden -> Failure.Forbidden(title = title, cause = this)
         code == ApiErrorCode.NotFound -> Failure.NotFound(title = title, cause = this)
+        code == ApiErrorCode.AlreadyMember -> Failure.AlreadyMember(cause = this)
+        // A 503 like a server failure, but the invitation is saved: the screen says so.
+        code == ApiErrorCode.EmailUnavailable -> Failure.EmailNotSent(cause = this)
         code == ApiErrorCode.SlugTaken -> Failure.AlreadyTaken(field = "slug", cause = this)
         code == ApiErrorCode.EmailTaken -> Failure.AlreadyTaken(field = "email", cause = this)
         code == ApiErrorCode.InvalidCode -> Failure.WrongCode(cause = this)

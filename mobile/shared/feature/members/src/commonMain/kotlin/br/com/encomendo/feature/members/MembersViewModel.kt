@@ -4,40 +4,65 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.members.ChangeMemberRole
+import br.com.encomendo.core.domain.members.Invitation
+import br.com.encomendo.core.domain.members.InviteMember
+import br.com.encomendo.core.domain.members.ListInvitations
 import br.com.encomendo.core.domain.members.ListMembers
 import br.com.encomendo.core.domain.members.Member
-import br.com.encomendo.core.domain.members.MemberPage
 import br.com.encomendo.core.domain.members.RemoveMember
+import br.com.encomendo.core.domain.members.RevokeInvitation
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Role
-import br.com.encomendo.core.ui.failure.toFailureMessage
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** MembersUseCases are what Equipe does through the API, so [MembersViewModel] takes them as one input. */
+class MembersUseCases(
+    val listMembers: ListMembers,
+    val changeMemberRole: ChangeMemberRole,
+    val removeMember: RemoveMember,
+    val listInvitations: ListInvitations,
+    val inviteMember: InviteMember,
+    val revokeInvitation: RevokeInvitation,
+)
+
 /**
- * MembersViewModel backs Equipe: it reads the team, drafts and saves roles,
- * and removes members, asking first where the design document says so. One
- * change runs at a time. The use cases renew the session after a change to
- * one's own row or a refusal; the app then leaves Equipe if its permission
- * went (docs/product/design-document.md, "Equipe").
+ * MembersViewModel backs Equipe, as the web's single members store: the team
+ * and its roles, removals, the invite form and the pending invitations
+ * (docs/product/design-document.md, "Equipe"). It asks first where the
+ * design document says so, and runs one change to a row at a time. The two
+ * lists share their messages: a row that is no longer what the screen shows
+ * says so at the top, and both lists are read again. The use cases renew the
+ * session after a change to one's own row or a refusal; the app then leaves
+ * Equipe if its permission went.
  */
+@Suppress("TooManyFunctions") // One function per thing the user can do on Equipe, as the web's members store.
 class MembersViewModel(
     observeSession: ObserveSession,
-    private val listMembers: ListMembers,
-    private val changeMemberRole: ChangeMemberRole,
-    private val removeMember: RemoveMember,
+    private val useCases: MembersUseCases,
 ) : ViewModel() {
     private val team = MutableStateFlow(MembersUiState())
+    private val membersPager = Pager(viewModelScope) { cursor -> useCases.listMembers(cursor) }
+    private val invitationsPager = Pager(viewModelScope) { cursor -> useCases.listInvitations(cursor) }
 
-    // Where the next page starts, and the reads under way; read and replaced on the main thread only.
-    private var nextCursor: String? = null
-    private var reading: Job? = null
-    private var readCount = 0
-    private var readingMore: Job? = null
+    private val nextMembers =
+        PageReader<Member>(
+            onStart = { team.update { it.clearingMessages().copy(loadingMore = true) } },
+            onPage = { page -> team.update { it.showingNextPage(page) } },
+            onFailure = { failure -> team.update { it.copy(error = failure.toTeamMessage()) } },
+            onEnd = { team.update { it.copy(loadingMore = false) } },
+        )
+
+    private val nextInvitations =
+        PageReader<Invitation>(
+            onStart = { team.update { it.clearingMessages().copy(loadingMoreInvitations = true) } },
+            onPage = { page -> team.update { it.showingNextInvitations(page) } },
+            onFailure = { failure -> team.update { it.copy(error = failure.toTeamMessage()) } },
+            onEnd = { team.update { it.copy(loadingMoreInvitations = false) } },
+        )
 
     /** The screen as it shows now. */
     val uiState: StateFlow<MembersUiState> = team.asStateFlow()
@@ -47,30 +72,22 @@ class MembersViewModel(
         viewModelScope.launch {
             observeSession().collect { session -> team.update { it.copy(signedInUserId = session?.user?.id) } }
         }
-        readFirstPage()
+        readLists()
     }
 
     /** "Tentar de novo" after the team could not be read. */
     fun onRetry() {
-        if (!team.value.loading) readFirstPage()
+        if (!team.value.loading) readLists()
     }
 
-    /** "Carregar mais": the next page of the team. Problems show at the top. */
+    /** "Carregar mais": the team's next page. Problems show at the top. */
     fun onLoadMore() {
-        val cursor = nextCursor.takeUnless { team.value.loading || team.value.loadingMore } ?: return
-        team.update { it.clearingMessages().copy(loadingMore = true) }
-        readingMore =
-            viewModelScope.launch {
-                try {
-                    val page = listMembers(cursor)
-                    nextCursor = page.nextCursor
-                    team.update { it.showingNextPage(page) }
-                } catch (failure: Failure) {
-                    team.update { it.copy(error = failure.toTeamMessage()) }
-                } finally {
-                    team.update { it.copy(loadingMore = false) }
-                }
-            }
+        membersPager.readNext(nextMembers)
+    }
+
+    /** "Carregar mais convites": the invitations' next page. Problems show at the top. */
+    fun onLoadMoreInvitations() {
+        invitationsPager.readNext(nextInvitations)
     }
 
     /**
@@ -92,7 +109,7 @@ class MembersViewModel(
     /** "Alterar papel": saves [member]'s draft; on one's own row it asks first. */
     fun onSaveRole(member: Member) {
         val state = team.value
-        val role = state.drafts[member.userId]?.takeIf { state.savingUserId == null } ?: return
+        val role = state.drafts[member.userId]?.takeIf { state.saving == null } ?: return
         if (state.isMe(member)) {
             team.update { it.copy(question = Question(member.userId, QuestionKind.OwnRole)) }
         } else {
@@ -102,7 +119,7 @@ class MembersViewModel(
 
     /** "Remover": asks first, whoever it is. */
     fun onAskRemove(member: Member) {
-        if (!member.canChange || team.value.savingUserId != null) return
+        if (!member.canChange || team.value.saving != null) return
         team.update { it.copy(question = Question(member.userId, QuestionKind.Removal)) }
     }
 
@@ -118,7 +135,7 @@ class MembersViewModel(
     /** "Confirmar" or "Confirmar remoção": makes the change the question was about. */
     fun onConfirm() {
         val state = team.value
-        val question = state.question?.takeIf { state.savingUserId == null } ?: return
+        val question = state.question?.takeIf { state.saving == null } ?: return
         team.update { it.copy(question = null) }
         val member = state.members.firstOrNull { it.userId == question.userId } ?: return
         when (question.kind) {
@@ -127,11 +144,78 @@ class MembersViewModel(
         }
     }
 
+    /** The invite form's email changed; its marks go, but not a rate limit's wait. */
+    fun onInviteEmailChange(email: String) {
+        team.update { it.copy(invite = it.invite.typed(email)) }
+    }
+
+    /** The invite form's role changed: any role but the owner's. */
+    fun onInviteRoleChange(role: Role) {
+        if (role in Role.Invitable) team.update { it.copy(invite = it.invite.copy(role = role)) }
+    }
+
+    /** "Enviar convite". An empty email is marked, never sent. */
+    fun onSendInvitation() {
+        val form = team.value.invite.takeUnless { it.sending } ?: return
+        if (form.email.isBlank()) {
+            team.update {
+                it.copy(
+                    invite =
+                        form
+                            .copy(
+                                emailIssue = EmailIssue.Missing,
+                                error = TeamMessage.CheckFields,
+                            ).focusingEmail(),
+                )
+            }
+            return
+        }
+        team.update { it.clearingMessages().copy(invite = form.copy(emailIssue = null, error = null, sending = true)) }
+        viewModelScope.launch {
+            try {
+                val sent = useCases.inviteMember(email = form.email, role = form.role)
+                team.update { state ->
+                    val invite = state.invite.sent(sentTo = form.email)
+                    state.listing(sent).copy(invite = invite, notice = TeamNotice.InvitationSent(sent))
+                }
+            } catch (failure: Failure) {
+                team.update { it.copy(invite = it.invite.refused(failure)) }
+                // The invitation is saved even though its email did not go out: list it.
+                if (failure is Failure.EmailNotSent) readInvitations()
+            } finally {
+                team.update { it.copy(invite = it.invite.copy(sending = false)) }
+            }
+        }
+    }
+
+    /** "Reenviar": the invitation again, with a new link and expiry. */
+    fun onResend(invitation: Invitation) {
+        if (team.value.saving != null) return
+        saving(RowKey.OfInvitation(invitation.key)) {
+            val renewed = useCases.inviteMember(email = invitation.email, role = invitation.role)
+            team.update { it.listing(renewed).copy(notice = TeamNotice.InvitationResent(renewed)) }
+        }
+    }
+
+    /** "Cancelar convite": its link stops working. */
+    fun onRevoke(invitation: Invitation) {
+        if (team.value.saving != null) return
+        saving(RowKey.OfInvitation(invitation.key)) {
+            useCases.revokeInvitation(invitation)
+            team.update { state ->
+                state.copy(
+                    invitations = state.invitations.filter { it.id != invitation.id },
+                    notice = TeamNotice.InvitationRevoked(invitation),
+                )
+            }
+        }
+    }
+
     private fun change(
         member: Member,
         role: Role,
-    ) = saving(member) {
-        val changed = changeMemberRole(member, role)
+    ) = saving(RowKey.OfMember(member.userId)) {
+        val changed = useCases.changeMemberRole(member, role)
         team.update { state ->
             state.copy(
                 members = state.members.map { if (it.userId == changed.userId) changed else it },
@@ -142,8 +226,8 @@ class MembersViewModel(
     }
 
     private fun remove(member: Member) =
-        saving(member) {
-            removeMember(member)
+        saving(RowKey.OfMember(member.userId)) {
+            useCases.removeMember(member)
             team.update { state ->
                 state.copy(
                     members = state.members.filter { it.userId != member.userId },
@@ -154,96 +238,62 @@ class MembersViewModel(
         }
 
     /**
-     * Runs one [change] to [member]'s row. A failure shows in the row; a row
-     * gone meanwhile is said at the top instead, and the team is read again.
+     * Runs one [change] to [row]. A failure shows in the row. A row that is
+     * no longer what the screen shows (gone, or the person joined) says so at
+     * the top instead, since it changes when the lists are read again.
      */
     private fun saving(
-        member: Member,
+        row: RowKey,
         change: suspend () -> Unit,
     ) {
-        team.update { it.clearingMessages().copy(savingUserId = member.userId) }
+        team.update { it.clearingMessages().copy(saving = row) }
         viewModelScope.launch {
             try {
                 change()
-            } catch (_: Failure.NotFound) {
-                team.update { it.copy(error = TeamMessage.NotOnTeam) }
-                readFirstPage(keepError = true)
             } catch (failure: Failure) {
-                team.update { it.copy(rowError = RowError(member.userId, failure.toTeamMessage())) }
+                val stale = failure.staleIn(row)
+                team.update { state ->
+                    if (stale !=
+                        null
+                    ) {
+                        state.copy(error = stale)
+                    } else {
+                        state.copy(rowError = RowError(row, failure.toTeamMessage()))
+                    }
+                }
+                // An invitation sent again without its email still has a new link and expiry.
+                if (stale != null || failure is Failure.EmailNotSent) readLists(keepError = true)
             } finally {
-                team.update { it.copy(savingUserId = null) }
+                team.update { it.copy(saving = null) }
             }
         }
     }
 
     /**
-     * Reads the team from the start. [keepError] keeps the message at the
+     * Reads both lists from the start. [keepError] keeps the message at the
      * top, which a failed re-read must not hide.
      */
-    private fun readFirstPage(keepError: Boolean = false) {
-        // A page asked for before this read would follow a list that is no longer on screen.
-        reading?.cancel()
-        readingMore?.cancel()
-        // Only the latest read says it is done: a cancelled one may finish after its replacement started.
-        val read = ++readCount
-        team.update { it.copy(loading = true, error = it.error.takeIf { keepError }) }
-        reading =
-            viewModelScope.launch {
-                try {
-                    val page = listMembers()
-                    nextCursor = page.nextCursor
-                    team.update { it.showingFirstPage(page) }
-                } catch (failure: Failure) {
-                    team.update { it.copy(error = if (keepError) it.error else failure.toTeamMessage()) }
-                } finally {
-                    if (read == readCount) team.update { it.copy(loading = false) }
-                }
-            }
+    private fun readLists(keepError: Boolean = false) {
+        team.update { it.copy(loading = true, loadingMore = false, error = it.error.takeIf { keepError }) }
+        membersPager.readFirst(firstMembers(keepError))
+        readInvitations(keepError)
     }
-}
 
-/** True when [member]'s role may be drafted: not the owner, no change being saved, no question open on the row. */
-private fun MembersUiState.mayDraft(member: Member): Boolean =
-    member.canChange && savingUserId == null && question?.userId != member.userId
-
-/** The next page added after the rows on screen; a member already listed is not listed twice. */
-private fun MembersUiState.showingNextPage(page: MemberPage): MembersUiState {
-    val listed = members.mapTo(HashSet()) { it.userId }
-    return copy(members = members + page.members.filter { it.userId !in listed }, hasMore = page.nextCursor != null)
-}
-
-/**
- * The team read again from its first page. A draft stays only for a row
- * still there with the role it had, as the web's row keeps its draft until
- * a saved or re-read role replaces it. A question goes with its row, and a
- * question about one's own role goes with its draft.
- */
-private fun MembersUiState.showingFirstPage(page: MemberPage): MembersUiState {
-    val before = members.associateBy { it.userId }
-    val kept =
-        drafts.filter { (userId, _) ->
-            val now = page.members.firstOrNull { it.userId == userId }
-            now != null && now.role == before[userId]?.role
-        }
-    return copy(
-        members = page.members,
-        hasMore = page.nextCursor != null,
-        drafts = kept,
-        question =
-            question?.takeIf { asked ->
-                page.members.any { it.userId == asked.userId } &&
-                    (asked.kind == QuestionKind.Removal || asked.userId in kept)
-            },
-    )
-}
-
-/** Each change starts afresh: the last change's notice and errors go. */
-private fun MembersUiState.clearingMessages(): MembersUiState = copy(notice = null, error = null, rowError = null)
-
-/** Equipe's words for [this] failure: its own for a lost permission and a member gone, every screen's otherwise. */
-internal fun Failure.toTeamMessage(): TeamMessage =
-    when (this) {
-        is Failure.Forbidden -> TeamMessage.LostPermission
-        is Failure.NotFound -> TeamMessage.NotOnTeam
-        else -> TeamMessage.General(toFailureMessage())
+    private fun readInvitations(keepError: Boolean = true) {
+        team.update { it.copy(loadingMoreInvitations = false) }
+        invitationsPager.readFirst(
+            PageReader(
+                onPage = { page -> team.update { it.showingFirstInvitations(page) } },
+                onFailure = { failure -> team.update { it.failedToRead(failure, keepError) } },
+                onEnd = {},
+            ),
+        )
     }
+
+    private fun firstMembers(keepError: Boolean) =
+        PageReader<Member>(
+            onPage = { page -> team.update { it.showingFirstPage(page) } },
+            onFailure = { failure -> team.update { it.failedToRead(failure, keepError) } },
+            onEnd = { team.update { it.copy(loading = false) } },
+        )
+}

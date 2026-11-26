@@ -31,7 +31,8 @@ sealed interface FailureMessage {
 
 /**
  * Returns the message any staff screen shows for this failure. Wrong input,
- * a taken value, a wrong code and wrong credentials are
+ * a taken value, a wrong code, wrong credentials, someone already on the
+ * team and an invitation whose email did not go out are
  * [FailureMessage.Unexpected] here: a screen that can get them has words of
  * its own, next to its fields, and handles them before calling this.
  */
@@ -46,6 +47,8 @@ fun Failure.toFailureMessage(): FailureMessage =
         is Failure.AlreadyTaken,
         is Failure.WrongCode,
         is Failure.WrongCredentials,
+        is Failure.AlreadyMember,
+        is Failure.EmailNotSent,
         -> FailureMessage.Unexpected
     }
 

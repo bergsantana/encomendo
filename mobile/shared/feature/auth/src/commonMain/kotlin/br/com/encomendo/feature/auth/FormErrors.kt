@@ -55,6 +55,8 @@ internal fun Failure.toFormError(): FormError =
         is Failure.RateLimited,
         is Failure.Forbidden,
         is Failure.NotFound,
+        is Failure.AlreadyMember,
+        is Failure.EmailNotSent,
         is Failure.Unexpected,
         -> FormError.General(toFailureMessage())
     }

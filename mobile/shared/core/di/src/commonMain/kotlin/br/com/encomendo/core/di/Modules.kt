@@ -1,5 +1,6 @@
 package br.com.encomendo.core.di
 
+import br.com.encomendo.core.data.members.ApiInvitationsRepository
 import br.com.encomendo.core.data.members.ApiMembersRepository
 import br.com.encomendo.core.data.session.ApiAuthRepository
 import br.com.encomendo.core.data.session.ApiPasswordResetRepository
@@ -10,6 +11,7 @@ import br.com.encomendo.core.data.session.TokenSessionRepository
 import br.com.encomendo.core.data.session.createSessionApiClient
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.database.buildDatabase
+import br.com.encomendo.core.domain.members.InvitationsRepository
 import br.com.encomendo.core.domain.members.MembersRepository
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.PasswordResetRepository
@@ -103,6 +105,7 @@ val dataModule: Module =
         single<TenancyRepository> { ApiTenancyRepository(tenancy = get(), keeper = get()) }
         single<PasswordResetRepository> { ApiPasswordResetRepository(get()) }
         single<MembersRepository> { ApiMembersRepository(get()) }
+        single<InvitationsRepository> { ApiInvitationsRepository(get()) }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */

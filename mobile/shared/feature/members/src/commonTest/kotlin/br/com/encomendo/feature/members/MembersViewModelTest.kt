@@ -1,25 +1,14 @@
 package br.com.encomendo.feature.members
 
 import br.com.encomendo.core.domain.failure.Failure
-import br.com.encomendo.core.domain.members.ChangeMemberRole
-import br.com.encomendo.core.domain.members.ListMembers
-import br.com.encomendo.core.domain.members.Member
-import br.com.encomendo.core.domain.members.MemberPage
-import br.com.encomendo.core.domain.members.RemoveMember
-import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.Role
-import br.com.encomendo.core.testing.FakeMembersRepository
-import br.com.encomendo.core.testing.FakeSessionRepository
-import br.com.encomendo.core.testing.testSession
 import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -58,7 +47,7 @@ class MembersViewModelTest {
     fun saysItIsLoadingUntilTheTeamArrives() =
         runTest(main) {
             val gate = CompletableDeferred<Unit>()
-            val team = team { pageAnswer = { gate.await().let { MemberPage(team, null) } } }
+            val team = team { pageAnswer = { gate.await().let { Page(team, null) } } }
 
             assertTrue(team.state().loading, "Carregando a equipe…")
             gate.complete(Unit)
@@ -74,9 +63,9 @@ class MembersViewModelTest {
                         if (cursor ==
                             null
                         ) {
-                            MemberPage(listOf(CARLA, ANA), nextCursor = "c2")
+                            Page(listOf(CARLA, ANA), nextCursor = "c2")
                         } else {
-                            MemberPage(listOf(BRUNO), null)
+                            Page(listOf(BRUNO), null)
                         }
                     }
                 }
@@ -94,7 +83,7 @@ class MembersViewModelTest {
     fun aTeamThatCannotBeReadOffersToTryAgain() =
         runTest(main) {
             var offline = true
-            val team = team { pageAnswer = { if (offline) throw Failure.Offline() else MemberPage(team, null) } }
+            val team = team { pageAnswer = { if (offline) throw Failure.Offline() else Page(team, null) } }
 
             val failed = team.state()
             assertEquals(TeamMessage.General(FailureMessage.Offline), failed.error)
@@ -246,9 +235,9 @@ class MembersViewModelTest {
             team.viewModel.onSaveRole(BRUNO)
 
             val state = team.state()
-            assertEquals(RowError(BRUNO.userId, TeamMessage.LostPermission), state.rowError)
+            assertEquals(RowError(RowKey.OfMember(BRUNO.userId), TeamMessage.LostPermission), state.rowError)
             assertNull(state.error)
-            assertNull(state.savingUserId)
+            assertNull(state.saving)
             assertTrue(state.hasDraft(BRUNO), "the draft stays, to try again")
             assertEquals(1, team.sessions.renewals)
         }
@@ -262,7 +251,10 @@ class MembersViewModelTest {
             team.viewModel.onAskRemove(BRUNO)
             team.viewModel.onConfirm()
 
-            assertEquals(RowError(BRUNO.userId, TeamMessage.General(FailureMessage.Offline)), team.state().rowError)
+            assertEquals(
+                RowError(RowKey.OfMember(BRUNO.userId), TeamMessage.General(FailureMessage.Offline)),
+                team.state().rowError,
+            )
         }
 
     @Test
@@ -318,13 +310,13 @@ class MembersViewModelTest {
 
             team.viewModel.onPickRole(BRUNO, Role.Viewer)
             team.viewModel.onSaveRole(BRUNO)
-            assertEquals(BRUNO.userId, team.state().savingUserId)
+            assertEquals(RowKey.OfMember(BRUNO.userId), team.state().saving)
             team.viewModel.onAskRemove(ANA)
             team.viewModel.onSaveRole(BRUNO)
 
             assertNull(team.state().question, "no question while a change is saved")
             gate.complete(Unit)
-            assertNull(team.state().savingUserId)
+            assertNull(team.state().saving)
             assertEquals(1, team.members.changes.size)
         }
 
@@ -351,7 +343,7 @@ class MembersViewModelTest {
                 team {
                     pageAnswer = { cursor ->
                         if (cursor != null) throw Failure.Offline()
-                        MemberPage(listOf(CARLA, ANA), nextCursor = "c2")
+                        Page(listOf(CARLA, ANA), nextCursor = "c2")
                     }
                 }
             team.state()
@@ -375,10 +367,10 @@ class MembersViewModelTest {
                 team {
                     pageAnswer = { cursor ->
                         if (cursor == null) {
-                            MemberPage(team.take(2), nextCursor = "c2")
+                            Page(team.take(2), nextCursor = "c2")
                         } else {
                             secondPage.await()
-                            MemberPage(team.drop(2), nextCursor = null)
+                            Page(team.drop(2), nextCursor = null)
                         }
                     }
                     changeAnswer = { _, _ -> throw Failure.NotFound() }
@@ -414,7 +406,7 @@ class MembersViewModelTest {
                         reads++
                         if (reads == 2) firstReRead.await()
                         if (reads == 3) lastReRead.await()
-                        MemberPage(team, nextCursor = null)
+                        Page(team, nextCursor = null)
                     }
                     changeAnswer = { _, _ -> throw Failure.NotFound() }
                 }
@@ -447,7 +439,7 @@ class MembersViewModelTest {
             team.viewModel.onPickRole(BRUNO, Role.Viewer)
             team.viewModel.onAskRemove(BRUNO)
             team.viewModel.onSaveRole(BRUNO)
-            assertEquals(BRUNO.userId, team.state().savingUserId)
+            assertEquals(RowKey.OfMember(BRUNO.userId), team.state().saving)
 
             team.viewModel.onConfirm()
             gate.complete(Unit)
@@ -539,64 +531,17 @@ class MembersViewModelTest {
     @Test
     fun theStateInALogCarriesNoPersonalData() =
         runTest(main) {
-            val printed = team().state().toString()
+            val team = team()
+            team.viewModel.onInviteEmailChange("erica@altarpm.com.br")
+            val printed = team.state().toString()
 
-            listOf("Carla", "Ana", "Bruno", "@altarpm").forEach { assertFalse(it in printed, printed) }
+            listOf(
+                "Carla",
+                "Ana",
+                "Bruno",
+                "diego",
+                "erica",
+                "@altarpm",
+            ).forEach { assertFalse(it in printed, printed) }
         }
-
-    /** The screen's ViewModel over [FakeMembersRepository], signed in as Ana, an admin. */
-    private class Team(
-        val scope: TestScope,
-        val viewModel: MembersViewModel,
-        val members: FakeMembersRepository,
-        val sessions: FakeSessionRepository,
-    ) {
-        /** The state once everything queued has run. */
-        fun state(): MembersUiState {
-            scope.runCurrent()
-            return viewModel.uiState.value
-        }
-    }
-
-    private fun TestScope.team(configure: FakeMembersRepository.() -> Unit = {}): Team {
-        val members = FakeMembersRepository(listOf(CARLA, ANA, BRUNO)).apply(configure)
-        val sessions = FakeSessionRepository(testSession(userId = ANA.userId, permissions = setOf("members:manage")))
-        val viewModel =
-            MembersViewModel(
-                observeSession = ObserveSession(sessions),
-                listMembers = ListMembers(members, sessions),
-                changeMemberRole = ChangeMemberRole(members, sessions),
-                removeMember = RemoveMember(members, sessions),
-            )
-        // As the screen does: the state is shared while someone watches it.
-        backgroundScope.launch { viewModel.uiState.collect {} }
-        return Team(this, viewModel, members, sessions)
-    }
-
-    private companion object {
-        val CARLA =
-            Member(
-                userId = "0190f3c4-0000-7000-8000-0000000000cc",
-                name = "Carla Dias",
-                email = "carla@altarpm.com.br",
-                role = Role.Owner,
-            )
-
-        /** The signed-in member (testSession's default user id). */
-        val ANA =
-            Member(
-                userId = "0190f3c4-0000-7000-8000-0000000000aa",
-                name = "Ana Souza",
-                email = "ana@altarpm.com.br",
-                role = Role.Admin,
-            )
-
-        val BRUNO =
-            Member(
-                userId = "0190f3c4-0000-7000-8000-0000000000bb",
-                name = "Bruno Lima",
-                email = "bruno@altarpm.com.br",
-                role = Role.Staff,
-            )
-    }
 }
