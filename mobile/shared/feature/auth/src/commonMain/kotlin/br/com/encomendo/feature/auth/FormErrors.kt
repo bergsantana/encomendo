@@ -45,6 +45,9 @@ sealed interface FieldProblem {
     /** Someone else's already, such as a store's link; each screen words it for its field. */
     data object Taken : FieldProblem
 
+    /** Refused for a reason the screen has words for, such as a wrong reset code. */
+    data object Wrong : FieldProblem
+
     /** Refused by the server, in its own pt-BR words. */
     data class Server(
         val message: String,
@@ -60,7 +63,7 @@ internal fun Failure.toFormError(): FormError =
     when (this) {
         is Failure.Offline -> FormError.Offline
         is Failure.RateLimited -> FormError.RateLimited(retryAfterSeconds)
-        is Failure.InvalidInput, is Failure.AlreadyTaken -> FormError.CheckFields
+        is Failure.InvalidInput, is Failure.AlreadyTaken, is Failure.WrongCode -> FormError.CheckFields
         is Failure.WrongCredentials -> FormError.WrongCredentials
         is Failure.Forbidden -> refusedIn(title)
         is Failure.Unexpected -> if (isServerFailure(status)) FormError.ServerUnavailable else refusedIn(title)

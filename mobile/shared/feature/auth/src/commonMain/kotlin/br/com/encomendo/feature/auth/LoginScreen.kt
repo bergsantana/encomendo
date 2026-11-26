@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -17,31 +18,58 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.encomendo.feature.auth.resources.Res
 import br.com.encomendo.feature.auth.resources.login_create_account
+import br.com.encomendo.feature.auth.resources.login_forgot_password
 import br.com.encomendo.feature.auth.resources.login_missing_email
 import br.com.encomendo.feature.auth.resources.login_missing_password
+import br.com.encomendo.feature.auth.resources.login_password_changed
 import br.com.encomendo.feature.auth.resources.login_submit
 import br.com.encomendo.feature.auth.resources.login_submitting
 import br.com.encomendo.feature.auth.resources.login_title
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-/** LoginRoute connects [LoginViewModel] to [LoginScreen]; [onCreateAccount] opens sign-up. */
+/**
+ * LoginNavigation is where the login leads: sign-up, Esqueci a senha, and back
+ * from a reset with [passwordChanged] set until [onNoticeShown].
+ */
+data class LoginNavigation(
+    val onCreateAccount: () -> Unit,
+    val onForgotPassword: () -> Unit,
+    val passwordChanged: Boolean = false,
+    val onNoticeShown: () -> Unit = {},
+)
+
+/** LoginRoute connects [LoginViewModel] to [LoginScreen]. */
 @Composable
 fun LoginRoute(
-    onCreateAccount: () -> Unit,
+    navigation: LoginNavigation,
     modifier: Modifier = Modifier,
     viewModel: LoginViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(navigation.passwordChanged) {
+        if (navigation.passwordChanged) {
+            viewModel.onPasswordChanged()
+            navigation.onNoticeShown()
+        }
+    }
     // Remembered, so the screen can skip recomposing when only the state changes.
     val actions =
-        remember(viewModel, onCreateAccount) {
+        remember(viewModel, navigation.onCreateAccount, navigation.onForgotPassword) {
             LoginActions(
                 onEmailChange = viewModel::onEmailChange,
                 onPasswordChange = viewModel::onPasswordChange,
                 onPasswordVisibilityToggle = viewModel::onPasswordVisibilityToggle,
                 onSubmit = viewModel::onSubmit,
-                onCreateAccount = onCreateAccount,
+                onCreateAccount = {
+                    viewModel.onLeave()
+                    navigation.onCreateAccount()
+                },
+                onForgotPassword = {
+                    viewModel.onLeave()
+                    navigation.onForgotPassword()
+                },
             )
         }
     LoginScreen(state = state, actions = actions, modifier = modifier)
@@ -54,6 +82,7 @@ data class LoginActions(
     val onPasswordVisibilityToggle: () -> Unit,
     val onSubmit: () -> Unit,
     val onCreateAccount: () -> Unit,
+    val onForgotPassword: () -> Unit,
 )
 
 /**
@@ -72,6 +101,7 @@ fun LoginScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         FormTitle(stringResource(Res.string.login_title))
+        state.notice?.let { Text(stringResource(it.text()), modifier = Modifier.announced()) }
         FormBanner(state.error)
         EmailField(
             field =
@@ -101,6 +131,13 @@ fun LoginScreen(
             onClick = actions.onSubmit,
         )
         TextButton(
+            onClick = actions.onForgotPassword,
+            enabled = !state.submitting,
+            modifier = Modifier.heightIn(min = 56.dp),
+        ) {
+            Text(stringResource(Res.string.login_forgot_password))
+        }
+        TextButton(
             onClick = actions.onCreateAccount,
             enabled = !state.submitting,
             modifier = Modifier.heightIn(min = 56.dp),
@@ -109,3 +146,8 @@ fun LoginScreen(
         }
     }
 }
+
+private fun LoginNotice.text(): StringResource =
+    when (this) {
+        LoginNotice.PasswordChanged -> Res.string.login_password_changed
+    }

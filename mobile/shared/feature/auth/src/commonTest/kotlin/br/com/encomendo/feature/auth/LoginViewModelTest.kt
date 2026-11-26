@@ -81,6 +81,31 @@ class LoginViewModelTest {
         }
 
     @Test
+    fun aChangedPasswordIsAnnouncedUntilTheNextAttempt() =
+        runTest(main) {
+            // "Senha alterada. Entre com a nova senha." after Esqueci a senha (design document).
+            val viewModel = filledIn(FakeAuthRepository(answer = { _, _ -> throw Failure.Offline() }))
+
+            viewModel.onPasswordChanged()
+            assertEquals(LoginNotice.PasswordChanged, viewModel.uiState.value.notice)
+
+            viewModel.onSubmit()
+            assertNull(viewModel.uiState.value.notice)
+        }
+
+    @Test
+    fun aChangedPasswordIsForgottenOnceTheLoginIsLeft() =
+        runTest(main) {
+            // As the web does: the news was for this visit, not for a return from Criar conta.
+            val viewModel = LoginViewModel(LogIn(FakeAuthRepository()))
+            viewModel.onPasswordChanged()
+
+            viewModel.onLeave()
+
+            assertNull(viewModel.uiState.value.notice)
+        }
+
+    @Test
     fun submitsTheTypedCredentials() =
         runTest(main) {
             val auth = FakeAuthRepository()

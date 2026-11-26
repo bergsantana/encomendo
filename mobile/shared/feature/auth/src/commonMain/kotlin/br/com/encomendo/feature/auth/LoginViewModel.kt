@@ -31,6 +31,12 @@ class LoginViewModel(
     fun onPasswordChange(password: String) =
         state.update { it.copy(password = password, passwordIssue = null, error = it.error.afterTyping(it.emailIssue)) }
 
+    /** The password was just reset: say so until the next attempt, or until the user leaves. */
+    fun onPasswordChanged() = state.update { it.copy(notice = LoginNotice.PasswordChanged) }
+
+    /** The user left for Criar conta or Esqueci a senha. The notice was for this visit, as on the web. */
+    fun onLeave() = state.update { it.copy(notice = null) }
+
     /** The user tapped Mostrar or Ocultar on the password field. */
     fun onPasswordVisibilityToggle() = state.update { it.copy(passwordVisible = !it.passwordVisible) }
 
@@ -41,6 +47,7 @@ class LoginViewModel(
     fun onSubmit() {
         val form = state.value
         if (!form.canSubmit) return
+        state.update { it.copy(notice = null) }
         val emailIssue = FieldProblem.Missing.takeIf { form.email.isBlank() }
         val passwordIssue = FieldProblem.Missing.takeIf { form.password.isEmpty() }
         if (emailIssue != null || passwordIssue != null) {

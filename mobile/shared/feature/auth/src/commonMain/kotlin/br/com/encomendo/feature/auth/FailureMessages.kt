@@ -30,16 +30,19 @@ internal fun FormError.message(): String =
 
 /**
  * The text under a field for [this] problem: [missing] when it was left
- * empty, [taken] when it is someone else's, the server's words otherwise.
+ * empty, [taken] when it is someone else's, [wrong] when it was refused for a
+ * reason the screen has words for, the server's words otherwise.
  */
 @Composable
 internal fun FieldProblem.text(
     missing: StringResource,
     taken: StringResource? = null,
+    wrong: StringResource? = null,
 ): String =
     when (this) {
         FieldProblem.Missing -> stringResource(missing)
         FieldProblem.Taken -> stringResource(requireNotNull(taken) { "a field that can be taken needs its words" })
+        FieldProblem.Wrong -> stringResource(requireNotNull(wrong) { "a field that can be wrong needs its words" })
         is FieldProblem.Server -> message
     }
 

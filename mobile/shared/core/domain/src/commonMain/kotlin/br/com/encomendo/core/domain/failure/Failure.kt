@@ -42,6 +42,11 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("already taken: $field", cause)
 
+    /** A password reset code that is wrong, expired, used up or never sent: the server says the same for each. */
+    class WrongCode(
+        cause: Throwable? = null,
+    ) : Failure("wrong code", cause)
+
     /** The email and password match no account. The server never says which one was wrong. */
     class WrongCredentials(
         cause: Throwable? = null,

@@ -57,6 +57,35 @@ class AuthApi(
             }.session()
 
     /**
+     * Asks for a 6-digit code by email to reset a forgotten password. The
+     * server answers the same whether or not [email] has an account (ADR 0011).
+     */
+    suspend fun requestPasswordReset(email: String) {
+        client.post("/auth/password-reset") {
+            withoutBearer()
+            contentType(ContentType.Application.Json)
+            setBody(PasswordResetRequest(email))
+        }
+    }
+
+    /**
+     * Sets [password] with the emailed [code]. Every session of the account
+     * ends; the user then logs in with it. A wrong, expired or used-up code
+     * throws ApiError with code `invalid_code`.
+     */
+    suspend fun confirmPasswordReset(
+        email: String,
+        code: String,
+        password: String,
+    ) {
+        client.post("/auth/password-reset/confirm") {
+            withoutBearer()
+            contentType(ContentType.Application.Json)
+            setBody(PasswordResetConfirmRequest(email, code, password))
+        }
+    }
+
+    /**
      * Spends [refreshToken] for a session in the store [tenantId] (ADR 0010).
      * Like [refresh], call it only in a `SessionTurns` turn. A 400 or 403
      * leaves the refresh token as it was (ADR 0013); a 401 means it was refused.
@@ -129,6 +158,19 @@ private class SignUpRequest(
     val password: String,
     // No default: ApiJson leaves defaults out, and the server would fall back to the cookie.
     val refreshTransport: String,
+)
+
+@Serializable
+private class PasswordResetRequest(
+    val email: String,
+)
+
+/** Not a data class, so the code and password never reach a log through toString. */
+@Serializable
+private class PasswordResetConfirmRequest(
+    val email: String,
+    val code: String,
+    val password: String,
 )
 
 /** Not a data class, so the token never reaches a log through toString. */

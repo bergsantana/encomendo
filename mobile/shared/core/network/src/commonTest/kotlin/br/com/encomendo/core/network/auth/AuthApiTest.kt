@@ -181,6 +181,63 @@ class AuthApiTest {
         }
 
     @Test
+    fun aPasswordResetCodeIsAskedForByEmailOnly() =
+        runTest {
+            // Always 202, whether or not the email has an account (ADR 0011).
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                authApi { request ->
+                    requests += request
+                    respond("", HttpStatusCode.Accepted)
+                }
+
+            api.requestPasswordReset(email = "ana@altarpm.com.br")
+
+            val request = requests.single()
+            assertEquals("/auth/password-reset", request.url.encodedPath)
+            assertNull(request.headers[HttpHeaders.Authorization])
+            assertEquals("""{"email":"ana@altarpm.com.br"}""", request.body.toByteArray().decodeToString())
+        }
+
+    @Test
+    fun aNewPasswordIsSetWithTheEmailedCode() =
+        runTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                authApi { request ->
+                    requests += request
+                    respond("", HttpStatusCode.NoContent)
+                }
+
+            api.confirmPasswordReset(email = "ana@altarpm.com.br", code = "482913", password = "nova-senha-forte")
+
+            val request = requests.single()
+            assertEquals("/auth/password-reset/confirm", request.url.encodedPath)
+            assertNull(request.headers[HttpHeaders.Authorization])
+            assertEquals(
+                """{"email":"ana@altarpm.com.br","code":"482913","password":"nova-senha-forte"}""",
+                request.body.toByteArray().decodeToString(),
+            )
+        }
+
+    @Test
+    fun aWrongCodeIsAnApiError() =
+        runTest {
+            val api = authApi { respondProblem(HttpStatusCode.BadRequest, """{"status":400,"code":"invalid_code"}""") }
+
+            val error =
+                assertFailsWith<ApiError> {
+                    api.confirmPasswordReset(
+                        email = "ana@altarpm.com.br",
+                        code = "000000",
+                        password = "nova-senha-forte",
+                    )
+                }
+
+            assertEquals(ApiErrorCode.InvalidCode, error.code)
+        }
+
+    @Test
     fun logInAsksForTheRefreshTokenInTheBody() =
         runTest {
             // Android takes the refresh token from the body (ADR 0010), and a login carries no old access token.

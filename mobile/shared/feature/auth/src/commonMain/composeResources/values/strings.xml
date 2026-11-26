@@ -23,6 +23,8 @@
         <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
     </plurals>
     <string name="login_create_account">Criar conta</string>
+    <string name="login_forgot_password">Esqueci a senha</string>
+    <string name="login_password_changed">Senha alterada. Entre com a nova senha.</string>
     <string name="login_missing_email">Informe seu e-mail.</string>
     <string name="login_missing_password">Informe sua senha.</string>
     <!-- Any staff form (design document, "Account and store screens (staff)"). -->
@@ -40,6 +42,24 @@
     <string name="signup_email_taken">Já existe uma conta com este e-mail.</string>
     <!-- The password rule, under every new password. -->
     <string name="password_hint">Pelo menos 8 caracteres.</string>
+
+    <!-- Esqueci a senha (design document, "Account and store screens (staff)"). -->
+    <string name="reset_title">Esqueci a senha</string>
+    <string name="reset_intro">Informe o e-mail da sua conta. Enviaremos um código para você criar uma nova senha.</string>
+    <string name="reset_send_code">Enviar código</string>
+    <string name="reset_sending_code">Enviando código…</string>
+    <string name="reset_code_sent">Se houver uma conta com %1$s, enviamos um código de 6 dígitos. Ele vale por 10 minutos.</string>
+    <string name="reset_code_resent">Se houver uma conta com %1$s, enviamos um novo código. O anterior deixou de valer.</string>
+    <string name="reset_code">Código</string>
+    <string name="reset_new_password">Nova senha</string>
+    <string name="reset_change_password">Alterar senha</string>
+    <string name="reset_changing_password">Alterando senha…</string>
+    <string name="reset_send_another_code">Enviar outro código</string>
+    <string name="reset_use_another_email">Usar outro e-mail</string>
+    <string name="reset_missing_code">Informe os 6 dígitos do código.</string>
+    <string name="reset_missing_password">Informe a nova senha.</string>
+    <string name="reset_wrong_code">Código errado ou vencido. Confira o e-mail ou peça um novo código.</string>
+    <string name="reset_back_to_login">Voltar para o login</string>
 
     <!-- The account bar; Sair and its error as on the web admin (layouts/DashboardLayout.vue, features/auth/store.ts). -->
     <string name="account_menu_description">Conta de %1$s</string>
