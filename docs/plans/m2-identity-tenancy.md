@@ -156,7 +156,11 @@ Parallel sessions ended on 2026-11-25. The single milestone 2 session owns `back
   - **Switch** validates the body and the membership before rotating (ADR 0013).
   - Login, refresh and switch read memberships under the user-only scope (PR #31 handoff).
   - **Router:** mount `/auth/*` with its middleware, and make the fallback keep problem+json.
-  - **`openapi.yaml`:** add 503 with `Retry-After` on `signUp`, `logIn`, `confirmPasswordReset` and `acceptInvitation`, and 409 `email_taken` on `acceptInvitation` (PR #31 handoff).
+    - Wrap each method-qualified route (`POST /auth/login`) in the cross-origin check, never a `/auth/` prefix. Otherwise `GET /auth/login` answers `400` for its `Content-Type` instead of `405`.
+    - Every 401 carries `WWW-Authenticate: Bearer`, `invalid_credentials` included, so the handler tests must not expect it absent on `/auth/login`.
+  - **`openapi.yaml`:**
+    - add 503 with `Retry-After` on `signUp`, `logIn`, `confirmPasswordReset` and `acceptInvitation`, and 409 `email_taken` on `acceptInvitation` (PR #31 handoff);
+    - add the cross-origin answers that 2.1 built to every `/auth/*` operation: 403 `forbidden` on all of them (only `switchTenant` lists a 403 today), and 400 `invalid` for a wrong `Content-Type` on `logOut` and `previewInvitation`, the two that list no 400. `logOut`'s "always answers 204" then needs "after the cross-origin check" (ADR 0010, amended in 2.1).
 - **Tests:**
   - handler tests with fake use cases, validated against `openapi.yaml`. This needs `kin-openapi` as a test-only dependency, justified in the PR;
   - each cookie rule, with the plain-name and production-name cases;
@@ -254,6 +258,7 @@ Parallel sessions ended on 2026-11-25. The single milestone 2 session owns `back
     - the plain cookie name;
     - `RequireTLS=false`;
     - an `http://` admin origin.
+  - **Refused everywhere:** an HTTP write timeout at or under `middleware.AuthDeadline` (10 seconds), which would cut the connection before a busy `/auth` call sends its 503 (step 2.1 review).
   - **`main.go`:**
     - build every repository, `adapter/inproc` port, the denylist, the limiter, the hasher, the issuer, SMTP, the clock, IDs, services and handlers;
     - log the signing kid and every verify-only kid at start;
