@@ -1,5 +1,6 @@
 package br.com.encomendo.core.di
 
+import br.com.encomendo.core.data.members.ApiMembersRepository
 import br.com.encomendo.core.data.session.ApiAuthRepository
 import br.com.encomendo.core.data.session.ApiPasswordResetRepository
 import br.com.encomendo.core.data.session.ApiTenancyRepository
@@ -9,6 +10,7 @@ import br.com.encomendo.core.data.session.TokenSessionRepository
 import br.com.encomendo.core.data.session.createSessionApiClient
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.database.buildDatabase
+import br.com.encomendo.core.domain.members.MembersRepository
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.PasswordResetRepository
 import br.com.encomendo.core.domain.session.SessionRepository
@@ -18,9 +20,11 @@ import br.com.encomendo.core.navigation.navigationModule
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.network.auth.AuthApi
+import br.com.encomendo.core.network.members.MembersApi
 import br.com.encomendo.core.network.tenancy.TenancyApi
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.feature.auth.di.authModule
+import br.com.encomendo.feature.members.di.membersModule
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +78,7 @@ val networkModule: Module =
         single<HttpClient> { createSessionApiClient(engine = get(), config = get(), store = get(), turns = get()) }
         single { AuthApi(get()) }
         single { TenancyApi(get()) }
+        single { MembersApi(get()) }
     }
 
 /** Names the scope that lives as long as the app, for work that must outlive the screen that started it. */
@@ -97,10 +102,11 @@ val dataModule: Module =
         single { SessionKeeper(auth = get(), store = get(), turns = get()) }
         single<TenancyRepository> { ApiTenancyRepository(tenancy = get(), keeper = get()) }
         single<PasswordResetRepository> { ApiPasswordResetRepository(get()) }
+        single<MembersRepository> { ApiMembersRepository(get()) }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */
-val featureModules: List<Module> = listOf(authModule)
+val featureModules: List<Module> = listOf(authModule, membersModule)
 
 /** The modules every platform shares; tests load them with a fake platform module. */
 val commonModules: List<Module> =

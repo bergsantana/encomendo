@@ -51,8 +51,12 @@ internal fun Failure.toFormError(): FormError =
     when (this) {
         is Failure.InvalidInput, is Failure.AlreadyTaken, is Failure.WrongCode -> FormError.CheckFields
         is Failure.WrongCredentials -> FormError.WrongCredentials
-        is Failure.Offline, is Failure.RateLimited, is Failure.Forbidden, is Failure.Unexpected ->
-            FormError.General(toFailureMessage())
+        is Failure.Offline,
+        is Failure.RateLimited,
+        is Failure.Forbidden,
+        is Failure.NotFound,
+        is Failure.Unexpected,
+        -> FormError.General(toFailureMessage())
     }
 
 /**

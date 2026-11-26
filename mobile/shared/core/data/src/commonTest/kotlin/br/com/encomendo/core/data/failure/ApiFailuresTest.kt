@@ -39,6 +39,13 @@ class ApiFailuresTest {
     }
 
     @Test
+    fun somethingGoneIsNotFoundAndKeepsTheServersOwnWords() {
+        val failure = ApiError(status = 404, code = ApiErrorCode.NotFound, title = "Não encontrado").toFailure()
+
+        assertEquals("Não encontrado", assertIs<Failure.NotFound>(failure).title)
+    }
+
+    @Test
     fun aTakenAddressOrEmailNamesItsField() {
         // The screen puts its own words next to the field (web: features/auth/store.ts, fieldByCode).
         assertEquals("slug", assertIs<Failure.AlreadyTaken>(ApiError(409, ApiErrorCode.SlugTaken).toFailure()).field)

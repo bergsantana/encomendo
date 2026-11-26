@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pt-BR is the only language; it lives in the default values folder. -->
+<resources>
+    <!-- The management menu (docs/adr/0020-android-management-menu.md), labels as the web admin's. -->
+    <string name="menu_open">Menu</string>
+    <string name="menu_title">Menu principal</string>
+    <string name="menu_brand">Encomendo</string>
+    <string name="menu_hoje">Hoje</string>
+    <string name="menu_equipe">Equipe</string>
+</resources>

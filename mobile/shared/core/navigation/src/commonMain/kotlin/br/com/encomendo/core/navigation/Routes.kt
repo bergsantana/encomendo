@@ -29,6 +29,10 @@ data object BackofficeGraph
 @Serializable
 data object HojeDestination
 
+/** Equipe: the store's team and roles, for roles with `members:manage`. */
+@Serializable
+data object MembersDestination
+
 /** The store picker, reached from "Trocar de loja" inside the management graph. */
 @Serializable
 data object StorePickerDestination

@@ -21,7 +21,7 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 15 | 23 | In progress: backend contract, database, domain, auth adapter and data adapters done (steps 1 to 5a of 9); web auth client, every auth screen and Equipe; mobile API client, session and every auth screen |
+| 2 | Identity and tenancy | 15 | 23 | In progress: backend contract, database, domain, auth adapter and data adapters done (steps 1 to 5a of 9); web auth client, every auth screen and Equipe; mobile API client, session, every auth screen and Equipe's team (invitations next) |
 | 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
@@ -112,8 +112,8 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 
 - [x] Ktor client with bearer-and-refresh plugin and problem+json mapping (`core:network`; `/auth/refresh` is its `TokenRefresher`, in `core:data`)
 - [x] `TokenStore` (Keystore + DataStore) and auth graph before the management graph (`core:security`, `RootViewModel`)
-- [x] Login, sign-up, tenant picker, forgot password screens, `PermissionGate` (plus logout and creating a store; the gate is fed with the stored session's permissions. Filtering management destinations by permission, web's `meta.permission`, lands with the first gated one, Equipe: Hoje is open to every role)
-- [ ] `feature/members`: list, invite, change role, remove (Equipe is the first destination filtered by permission, as the web's `meta.permission`)
+- [x] Login, sign-up, tenant picker, forgot password screens, `PermissionGate` (plus logout and creating a store; the gate is fed with the stored session's permissions. Management destinations are filtered by permission, as the web's `meta.permission`, in the menu drawer of ADR 0020: Hoje is open to every role, Equipe needs `members:manage`)
+- [ ] `feature/members`: list, invite, change role, remove (partial: the team, its roles and removal, in the menu for `members:manage`, ADR 0020; invitations next)
 
 ### Done when
 
@@ -308,9 +308,9 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | RLS suite | Not started; arrives with the first tenant table in milestone 2 |
 | `docs/api/openapi.yaml` kept in sync | Ahead of the server: milestone 2 `/auth/*`, tenancy and members are specified; only `/healthz` and `/readyz` are served until `m2-integrate` |
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
-| Parity: every management feature on web and Android | Only Hoje, a placeholder on both |
+| Parity: every management feature on web and Android | Hoje, a placeholder on both; Equipe on both, without invitations on Android yet |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | Nothing to leak yet; the test lands with the first store response |
-| ADRs | 0001–0019 written |
+| ADRs | 0001–0020 written |
 
 ## Order of migrations
 
@@ -356,3 +356,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | `tenancy.Lookup` also uses invitations up for `identity`; accepting runs in three transactions | ADR 0011 (refined) |
 | 2026-11-25 | Android requests stay in the store they were made for: same-scope retries, tokens only to screens of their scope | ADR 0018 |
 | 2026-11-25 | Ed25519 seeds named by thumbprint, rotated in three deploys, never printed; `at+jwt` with a one-string `aud` and at most 15 minutes; argon2id at RFC 9106's second option, within a memory budget and a 3-second wait | ADR 0019 |
+| 2026-11-25 | The Android management menu is a navigation drawer, its entries in the web's order and filtered by permission; a screen whose permission goes leaves for Hoje | ADR 0020 |

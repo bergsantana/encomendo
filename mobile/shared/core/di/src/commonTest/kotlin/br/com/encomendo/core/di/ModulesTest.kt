@@ -18,6 +18,7 @@ import br.com.encomendo.core.testing.testSession
 import br.com.encomendo.feature.auth.AccountViewModel
 import br.com.encomendo.feature.auth.LoginViewModel
 import br.com.encomendo.feature.auth.StorePickerViewModel
+import br.com.encomendo.feature.members.MembersViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
@@ -77,6 +78,7 @@ class ModulesTest {
             koin.get<LoginViewModel>()
             koin.get<AccountViewModel>()
             koin.get<StorePickerViewModel>()
+            koin.get<MembersViewModel>()
             koin.get<TenancyRepository>()
             assertSame(
                 koin.get<SessionTurns>(),

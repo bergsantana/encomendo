@@ -42,6 +42,15 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("already taken: $field", cause)
 
+    /**
+     * What the call was about is gone, such as a member someone else removed
+     * meanwhile. [title] is the API's pt-BR summary, null when none.
+     */
+    class NotFound(
+        val title: String? = null,
+        cause: Throwable? = null,
+    ) : Failure("not found", cause)
+
     /** A password reset code that is wrong, expired, used up or never sent: the server says the same for each. */
     class WrongCode(
         cause: Throwable? = null,

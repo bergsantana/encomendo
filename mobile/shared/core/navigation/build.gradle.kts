@@ -19,6 +19,7 @@ kotlin {
             libs.versions.android.minSdk
                 .get()
                 .toInt()
+        androidResources { enable = true } // Compose Multiplatform string resources
         withHostTestBuilder {} // runs commonTest on the JVM
     }
 
@@ -28,6 +29,8 @@ kotlin {
             implementation(project(":shared:core:ui"))
             implementation(project(":shared:feature:auth"))
             implementation(project(":shared:feature:hoje"))
+            implementation(project(":shared:feature:members"))
+            implementation(libs.compose.components.resources)
             implementation(libs.jetbrains.navigation.compose)
             implementation(libs.jetbrains.lifecycle.viewmodel.compose)
             implementation(libs.jetbrains.lifecycle.runtime.compose)
@@ -41,4 +44,8 @@ kotlin {
             implementation(libs.turbine)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "br.com.encomendo.core.navigation.resources"
 }
