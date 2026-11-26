@@ -124,7 +124,7 @@ class StorePickerViewModelTest {
             viewModel.onChoose(motoPecas.id)
             advanceUntilIdle()
 
-            assertEquals(PickerError.NotAMember, viewModel.uiState.value.error)
+            assertEquals(FormError.NotAMember, viewModel.uiState.value.error)
             assertNull(viewModel.uiState.value.opening)
         }
 
@@ -137,7 +137,6 @@ class StorePickerViewModelTest {
             viewModel.onNameChange("Alta RPM")
             viewModel.onSlugChange("Alta-RPM ")
             runCurrent()
-            assertTrue(viewModel.uiState.value.canCreate)
             viewModel.onCreate()
             advanceUntilIdle()
 
@@ -180,31 +179,93 @@ class StorePickerViewModelTest {
 
             viewModel.onNameChange("Alta RPM Motos")
             runCurrent()
-            assertEquals(PickerError.RateLimited(30), viewModel.uiState.value.error, "typing doesn't shorten the wait")
+            assertEquals(FormError.RateLimited(30), viewModel.uiState.value.error, "typing doesn't shorten the wait")
 
             tenancy.createAnswer = { _, _ -> throw Failure.AlreadyTaken(field = "slug") }
             viewModel.onCreate()
             advanceUntilIdle()
-            assertEquals(PickerError.CheckFields, viewModel.uiState.value.error)
+            assertEquals(FormError.CheckFields, viewModel.uiState.value.error)
             viewModel.onSlugChange("altarpm")
             runCurrent()
             assertNull(viewModel.uiState.value.error)
         }
 
     @Test
-    fun cannotCreateUntilBothFieldsAreFilled() =
+    fun emptyFieldsAreMarkedAndNothingIsCreated() =
         runTest(main) {
-            val viewModel = picker(session = testSession(tenant = null))
-            runCurrent()
-            assertFalse(viewModel.uiState.value.canCreate)
-
-            viewModel.onNameChange("Alta RPM")
-            runCurrent()
-            assertFalse(viewModel.uiState.value.canCreate)
-
+            // As every staff form words it (design document, "Account and store screens").
+            val tenancy = FakeTenancyRepository()
+            val viewModel = picker(session = testSession(tenant = null), tenancy = tenancy)
             viewModel.onSlugChange("  ")
-            runCurrent()
-            assertFalse(viewModel.uiState.value.canCreate)
+
+            viewModel.onCreate()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals(FieldProblem.Missing, state.nameIssue)
+            assertEquals(FieldProblem.Missing, state.slugIssue)
+            assertEquals(FormError.CheckFields, state.error)
+            assertEquals(emptyList(), tenancy.created)
+        }
+
+    @Test
+    fun aStoreRefusedOnCreateIsNotWordedAsALostStore() =
+        runTest(main) {
+            // "Você não faz mais parte desta loja." is for choosing a store; creating one shows the API's words.
+            val viewModel =
+                filledForm(
+                    FakeTenancyRepository(createAnswer = {
+                        _,
+                        _,
+                        ->
+                        throw Failure.Forbidden(title = "Sem permissão")
+                    }),
+                )
+
+            viewModel.onCreate()
+            advanceUntilIdle()
+
+            assertEquals(FormError.Refused("Sem permissão"), viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun choosingAStoreNeverMarksTheCreateForm() =
+        runTest(main) {
+            val viewModel =
+                picker(
+                    session = twoStores(),
+                    tenancy =
+                        FakeTenancyRepository(switchAnswer = {
+                            throw Failure.InvalidInput(
+                                listOf(InputIssue(field = "name", message = "Campo estranho.")),
+                            )
+                        }),
+                )
+
+            viewModel.onChoose(motoPecas.id)
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.nameIssue)
+            assertEquals(FormError.Unexpected, viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun anyOtherRefusalShowsTheServersOwnWords() =
+        runTest(main) {
+            val viewModel =
+                filledForm(
+                    FakeTenancyRepository(createAnswer = {
+                        _,
+                        _,
+                        ->
+                        throw Failure.Unexpected(409, "conflict", "Limite de lojas")
+                    }),
+                )
+
+            viewModel.onCreate()
+            advanceUntilIdle()
+
+            assertEquals(FormError.Refused("Limite de lojas"), viewModel.uiState.value.error)
         }
 
     @Test
@@ -224,13 +285,13 @@ class StorePickerViewModelTest {
             advanceUntilIdle()
 
             val failed = viewModel.uiState.value
-            assertTrue(failed.slugTaken)
-            assertEquals(PickerError.CheckFields, failed.error)
+            assertEquals(FieldProblem.Taken, failed.slugIssue)
+            assertEquals(FormError.CheckFields, failed.error)
             assertFalse(failed.creating)
 
             viewModel.onSlugChange("altarpm")
             runCurrent()
-            assertFalse(viewModel.uiState.value.slugTaken, "a new link clears it")
+            assertNull(viewModel.uiState.value.slugIssue, "a new link clears it")
         }
 
     @Test
@@ -255,9 +316,9 @@ class StorePickerViewModelTest {
             advanceUntilIdle()
 
             val failed = viewModel.uiState.value
-            assertEquals("Informe o nome.", failed.nameIssue)
-            assertEquals("Esse link é reservado.", failed.slugIssue)
-            assertEquals(PickerError.CheckFields, failed.error)
+            assertEquals(FieldProblem.Server("Informe o nome."), failed.nameIssue)
+            assertEquals(FieldProblem.Server("Esse link é reservado."), failed.slugIssue)
+            assertEquals(FormError.CheckFields, failed.error)
         }
 
     @Test
@@ -276,7 +337,7 @@ class StorePickerViewModelTest {
             viewModel.onCreate()
             advanceUntilIdle()
 
-            assertEquals(PickerError.ServerUnavailable, viewModel.uiState.value.error)
+            assertEquals(FormError.ServerUnavailable, viewModel.uiState.value.error)
         }
 
     @Test
@@ -291,7 +352,7 @@ class StorePickerViewModelTest {
             viewModel.onChoose(motoPecas.id)
             advanceUntilIdle()
 
-            assertEquals(PickerError.Offline, viewModel.uiState.value.error)
+            assertEquals(FormError.Offline, viewModel.uiState.value.error)
         }
 
     @Test

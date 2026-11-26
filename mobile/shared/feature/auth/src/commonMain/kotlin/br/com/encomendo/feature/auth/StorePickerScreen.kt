@@ -41,19 +41,16 @@ import br.com.encomendo.feature.auth.resources.Res
 import br.com.encomendo.feature.auth.resources.account_log_out
 import br.com.encomendo.feature.auth.resources.account_log_out_failed
 import br.com.encomendo.feature.auth.resources.account_logging_out
-import br.com.encomendo.feature.auth.resources.login_error_offline
-import br.com.encomendo.feature.auth.resources.login_error_server
 import br.com.encomendo.feature.auth.resources.picker_choose_title
 import br.com.encomendo.feature.auth.resources.picker_create
 import br.com.encomendo.feature.auth.resources.picker_create_another
 import br.com.encomendo.feature.auth.resources.picker_create_title
 import br.com.encomendo.feature.auth.resources.picker_creating
-import br.com.encomendo.feature.auth.resources.picker_error_check_fields
-import br.com.encomendo.feature.auth.resources.picker_error_not_member
-import br.com.encomendo.feature.auth.resources.picker_error_unexpected
 import br.com.encomendo.feature.auth.resources.picker_link_hint
 import br.com.encomendo.feature.auth.resources.picker_link_rule
 import br.com.encomendo.feature.auth.resources.picker_link_taken
+import br.com.encomendo.feature.auth.resources.picker_missing_link
+import br.com.encomendo.feature.auth.resources.picker_missing_name
 import br.com.encomendo.feature.auth.resources.picker_opening
 import br.com.encomendo.feature.auth.resources.picker_store_address
 import br.com.encomendo.feature.auth.resources.picker_store_link
@@ -192,7 +189,10 @@ private fun CreateStoreForm(
         onValueChange = actions.onNameChange,
         label = { Text(stringResource(Res.string.picker_store_name)) },
         isError = state.nameIssue != null,
-        supportingText = state.nameIssue?.let { issue -> { Announced(issue) } },
+        supportingText =
+            state.nameIssue?.let { issue ->
+                { Announced(issue.text(missing = Res.string.picker_missing_name)) }
+            },
         singleLine = true,
         enabled = !state.busy,
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
@@ -203,7 +203,7 @@ private fun CreateStoreForm(
         value = state.slug,
         onValueChange = actions.onSlugChange,
         label = { Text(stringResource(Res.string.picker_store_link)) },
-        isError = state.slugTaken || state.slugIssue != null,
+        isError = state.slugIssue != null,
         supportingText = { LinkHint(state) },
         singleLine = true,
         enabled = !state.busy,
@@ -227,8 +227,10 @@ private fun CreateStoreForm(
 @Composable
 private fun LinkHint(state: StorePickerUiState) {
     when {
-        state.slugTaken -> Announced(stringResource(Res.string.picker_link_taken))
-        state.slugIssue != null -> Announced(state.slugIssue)
+        state.slugIssue != null ->
+            Announced(
+                state.slugIssue.text(missing = Res.string.picker_missing_link, taken = Res.string.picker_link_taken),
+            )
         looksLikeAStoreLink(state.slug) -> Text(stringResource(Res.string.picker_link_hint, storeLink(state.slug)))
         else -> Text(stringResource(Res.string.picker_link_rule))
     }
@@ -250,17 +252,6 @@ private fun Announced(
 ) {
     Text(text = text, color = color, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
 }
-
-@Composable
-private fun PickerError.message(): String =
-    when (this) {
-        PickerError.NotAMember -> stringResource(Res.string.picker_error_not_member)
-        PickerError.CheckFields -> stringResource(Res.string.picker_error_check_fields)
-        PickerError.Offline -> stringResource(Res.string.login_error_offline)
-        PickerError.ServerUnavailable -> stringResource(Res.string.login_error_server)
-        PickerError.Unexpected -> stringResource(Res.string.picker_error_unexpected)
-        is PickerError.RateLimited -> rateLimitMessage(retryAfterSeconds)
-    }
 
 /** The picker also opens from the management screens, which follow the workshop's 56 dp targets. */
 private val TARGET = 56.dp

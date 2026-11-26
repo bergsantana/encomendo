@@ -24,6 +24,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+// The wording is the design document's "Account and store screens (staff)", the same as the web's.
 @OptIn(ExperimentalCoroutinesApi::class) // setMain / resetMain / runCurrent / advanceUntilIdle
 class LoginViewModelTest {
     private val main = StandardTestDispatcher()
@@ -35,19 +36,48 @@ class LoginViewModelTest {
     fun restoreMain() = Dispatchers.resetMain()
 
     @Test
-    fun cannotSubmitUntilBothFieldsAreFilled() =
+    fun emptyFieldsAreMarkedAndNothingIsSent() =
+        runTest(main) {
+            val auth = FakeAuthRepository()
+            val viewModel = LoginViewModel(LogIn(auth))
+            viewModel.onEmailChange("   ")
+
+            viewModel.onSubmit()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals(FieldProblem.Missing, state.emailIssue)
+            assertEquals(FieldProblem.Missing, state.passwordIssue)
+            assertEquals(FormError.CheckFields, state.error)
+            assertEquals(emptyList(), auth.logins)
+        }
+
+    @Test
+    fun onlyTheEmptyFieldIsMarked() =
         runTest(main) {
             val viewModel = LoginViewModel(LogIn(FakeAuthRepository()))
-            assertFalse(viewModel.uiState.value.canSubmit)
+            viewModel.onEmailChange("ana@altarpm.com.br")
+
+            viewModel.onSubmit()
+
+            assertNull(viewModel.uiState.value.emailIssue)
+            assertEquals(FieldProblem.Missing, viewModel.uiState.value.passwordIssue)
+        }
+
+    @Test
+    fun typingInAMarkedFieldClearsOnlyItAndTheBannerOnceNoneIsLeft() =
+        runTest(main) {
+            // The banner and the marked fields must agree: it stays while any field is still marked.
+            val viewModel = LoginViewModel(LogIn(FakeAuthRepository()))
+            viewModel.onSubmit()
 
             viewModel.onEmailChange("ana@altarpm.com.br")
-            assertFalse(viewModel.uiState.value.canSubmit)
+            assertNull(viewModel.uiState.value.emailIssue)
+            assertEquals(FieldProblem.Missing, viewModel.uiState.value.passwordIssue)
+            assertEquals(FormError.CheckFields, viewModel.uiState.value.error)
 
             viewModel.onPasswordChange("segredo-forte")
-            assertTrue(viewModel.uiState.value.canSubmit)
-
-            viewModel.onEmailChange("   ")
-            assertFalse(viewModel.uiState.value.canSubmit)
+            assertNull(viewModel.uiState.value.error)
         }
 
     @Test
@@ -104,13 +134,13 @@ class LoginViewModelTest {
     @Test
     fun wrongCredentialsShowAFormErrorAndKeepWhatWasTyped() =
         runTest(main) {
-            val viewModel = filledIn(FakeAuthRepository(answer = { _, _ -> throw Failure.WrongCredentials() }))
+            val viewModel = failingWith(Failure.WrongCredentials())
 
             viewModel.onSubmit()
             advanceUntilIdle()
 
             val state = viewModel.uiState.value
-            assertEquals(LoginError.WrongCredentials, state.error)
+            assertEquals(FormError.WrongCredentials, state.error)
             assertEquals("ana@altarpm.com.br", state.email)
             assertEquals("segredo-forte", state.password)
             assertFalse(state.submitting)
@@ -120,85 +150,76 @@ class LoginViewModelTest {
     @Test
     fun noSignalSaysSo() =
         runTest(main) {
-            val viewModel = filledIn(FakeAuthRepository(answer = { _, _ -> throw Failure.Offline() }))
+            val viewModel = failingWith(Failure.Offline())
 
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(LoginError.Offline, viewModel.uiState.value.error)
+            assertEquals(FormError.Offline, viewModel.uiState.value.error)
         }
 
     @Test
     fun aRateLimitShowsTheWait() =
         runTest(main) {
-            val viewModel =
-                filledIn(
-                    FakeAuthRepository(answer = {
-                        _,
-                        _,
-                        ->
-                        throw Failure.RateLimited(retryAfterSeconds = 30)
-                    }),
-                )
+            val viewModel = failingWith(Failure.RateLimited(retryAfterSeconds = 30))
 
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(LoginError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
+            assertEquals(FormError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
         }
 
     @Test
-    fun fieldIssuesShowNextToTheirFields() =
+    fun fieldsTheServerRefusedShowItsWordsAndTheFormSaysToCheckThem() =
         runTest(main) {
             val issues =
                 listOf(
                     InputIssue(field = "email", message = "Informe um e-mail válido."),
                     InputIssue(field = "password", message = "A senha passa do limite."),
                 )
-            val viewModel = filledIn(FakeAuthRepository(answer = { _, _ -> throw Failure.InvalidInput(issues) }))
+            val viewModel = failingWith(Failure.InvalidInput(issues))
 
             viewModel.onSubmit()
             advanceUntilIdle()
 
             val state = viewModel.uiState.value
-            assertEquals("Informe um e-mail válido.", state.emailIssue)
-            assertEquals("A senha passa do limite.", state.passwordIssue)
-            assertNull(state.error)
-        }
-
-    @Test
-    fun anIssueOnNoFieldOfTheFormIsAGeneralError() =
-        runTest(main) {
-            val issues = listOf(InputIssue(field = "refreshTransport", message = "Valor inválido."))
-            val viewModel = filledIn(FakeAuthRepository(answer = { _, _ -> throw Failure.InvalidInput(issues) }))
-
-            viewModel.onSubmit()
-            advanceUntilIdle()
-
-            assertEquals(LoginError.Unexpected, viewModel.uiState.value.error)
+            assertEquals(FieldProblem.Server("Informe um e-mail válido."), state.emailIssue)
+            assertEquals(FieldProblem.Server("A senha passa do limite."), state.passwordIssue)
+            assertEquals(FormError.CheckFields, state.error)
         }
 
     @Test
     fun aServerFailureSaysTheServerDidNotAnswer() =
         runTest(main) {
-            val viewModel = failingWith(Failure.Unexpected(status = 503, code = "not_ready"))
+            val viewModel = failingWith(Failure.Unexpected(status = 503, code = "not_ready", title = "Indisponível"))
 
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(LoginError.ServerUnavailable, viewModel.uiState.value.error)
+            assertEquals(FormError.ServerUnavailable, viewModel.uiState.value.error)
         }
 
     @Test
-    fun anythingElseIsAGeneralError() =
+    fun anyOtherRefusalShowsTheServersOwnWords() =
         runTest(main) {
-            // A full disk or a broken Keystore: the server is fine, so don't blame it.
+            val viewModel = failingWith(Failure.Unexpected(status = 409, code = "conflict", title = "Conta bloqueada"))
+
+            viewModel.onSubmit()
+            advanceUntilIdle()
+
+            assertEquals(FormError.Refused("Conta bloqueada"), viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun aFailureWithNothingToSayIsAGeneralError() =
+        runTest(main) {
+            // A full disk or a broken Keystore: no server words, and the server is fine, so don't blame it.
             val viewModel = failingWith(Failure.Unexpected(status = 0, code = "storage"))
 
             viewModel.onSubmit()
             advanceUntilIdle()
 
-            assertEquals(LoginError.Unexpected, viewModel.uiState.value.error)
+            assertEquals(FormError.Unexpected, viewModel.uiState.value.error)
         }
 
     @Test
@@ -211,7 +232,11 @@ class LoginViewModelTest {
             advanceUntilIdle()
 
             viewModel.onPasswordChange("outra")
-            assertEquals("Informe um e-mail válido.", viewModel.uiState.value.emailIssue, "only its own field clears")
+            assertEquals(
+                FieldProblem.Server("Informe um e-mail válido."),
+                viewModel.uiState.value.emailIssue,
+                "only its own field clears",
+            )
 
             viewModel.onEmailChange("ana@altarpm.com.br")
             assertNull(viewModel.uiState.value.emailIssue)
@@ -227,22 +252,14 @@ class LoginViewModelTest {
     fun theRateLimitWaitStaysWhileTyping() =
         runTest(main) {
             // Typing doesn't shorten the wait, so the message mustn't vanish as if it had.
-            val viewModel =
-                filledIn(
-                    FakeAuthRepository(answer = {
-                        _,
-                        _,
-                        ->
-                        throw Failure.RateLimited(retryAfterSeconds = 30)
-                    }),
-                )
+            val viewModel = failingWith(Failure.RateLimited(retryAfterSeconds = 30))
             viewModel.onSubmit()
             advanceUntilIdle()
 
             viewModel.onPasswordChange("outra")
             viewModel.onEmailChange("ana@altarpm.com.br ")
 
-            assertEquals(LoginError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
+            assertEquals(FormError.RateLimited(retryAfterSeconds = 30), viewModel.uiState.value.error)
         }
 
     @Test

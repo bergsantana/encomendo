@@ -54,11 +54,11 @@ class StorePickerViewModel(
 
     /** The user typed the store's name. */
     fun onNameChange(name: String) =
-        form.update { it.copy(name = name, nameIssue = null, error = it.errorAfterTyping()) }
+        form.update { it.copy(name = name, nameIssue = null, error = it.error.afterTyping(it.slugIssue)) }
 
     /** The user typed the store's link. */
     fun onSlugChange(slug: String) =
-        form.update { it.copy(slug = slug, slugIssue = null, slugTaken = false, error = it.errorAfterTyping()) }
+        form.update { it.copy(slug = slug, slugIssue = null, error = it.error.afterTyping(it.nameIssue)) }
 
     /** The user chose the store [tenantId]. Does nothing while something runs. */
     fun onChoose(tenantId: String) {
@@ -74,21 +74,27 @@ class StorePickerViewModel(
                 switchStore(tenantId)
                 // Stays busy: the root swaps to that store's screens and clears this ViewModel.
             } catch (failure: Failure) {
-                form.update { it.copy(opening = null).showing(failure) }
+                form.update { it.copy(opening = null).showingChoice(failure) }
             }
         }
     }
 
-    /** The user tapped Criar loja. Does nothing while something runs or a field is empty. */
+    /** The user tapped Criar loja. Marks empty fields instead of sending; does nothing while something runs. */
     fun onCreate() {
         val typed = form.value
         if (!typed.canCreate) return
-        form.update { it.copy(creating = true, error = null, nameIssue = null, slugIssue = null, slugTaken = false) }
+        val nameIssue = FieldProblem.Missing.takeIf { typed.name.isBlank() }
+        val slugIssue = FieldProblem.Missing.takeIf { typed.slug.isBlank() }
+        if (nameIssue != null || slugIssue != null) {
+            form.update { it.copy(nameIssue = nameIssue, slugIssue = slugIssue, error = FormError.CheckFields) }
+            return
+        }
+        form.update { it.copy(creating = true, error = null, nameIssue = null, slugIssue = null) }
         viewModelScope.launch {
             try {
                 createStore(name = typed.name, slug = typed.slug)
             } catch (failure: Failure) {
-                form.update { it.copy(creating = false).showing(failure) }
+                form.update { it.copy(creating = false).showingCreation(failure) }
             }
         }
     }
@@ -107,28 +113,37 @@ class StorePickerViewModel(
     }
 }
 
-/** Typing fixes a field, but doesn't shorten a rate limit's wait. */
-private fun StorePickerUiState.errorAfterTyping(): PickerError? = error as? PickerError.RateLimited
-
-private fun StorePickerUiState.showing(failure: Failure): StorePickerUiState =
+/** Choosing a store: only a lost membership has words of its own; the create form stays as it was. */
+private fun StorePickerUiState.showingChoice(failure: Failure): StorePickerUiState =
     when (failure) {
-        is Failure.Forbidden -> copy(error = PickerError.NotAMember)
-        is Failure.AlreadyTaken -> copy(slugTaken = failure.field == SLUG_FIELD, error = PickerError.CheckFields)
-        is Failure.InvalidInput -> {
-            val name = failure.issues.firstOrNull { it.field == NAME_FIELD }?.message
-            val slug = failure.issues.firstOrNull { it.field == SLUG_FIELD }?.message
-            // An issue on a field the form doesn't show can't be fixed here.
-            if (name == null && slug == null) {
-                copy(error = PickerError.Unexpected)
-            } else {
-                copy(nameIssue = name, slugIssue = slug, error = PickerError.CheckFields)
-            }
-        }
-        is Failure.Offline -> copy(error = PickerError.Offline)
-        is Failure.RateLimited -> copy(error = PickerError.RateLimited(failure.retryAfterSeconds))
-        is Failure.Unexpected ->
-            copy(error = if (isServerFailure(failure.status)) PickerError.ServerUnavailable else PickerError.Unexpected)
-        is Failure.WrongCredentials -> copy(error = PickerError.Unexpected)
+        is Failure.Forbidden -> copy(error = FormError.NotAMember)
+        // An input issue here is about no field of the form: don't mark one.
+        is Failure.InvalidInput, is Failure.AlreadyTaken -> copy(error = FormError.Unexpected)
+        else -> copy(error = failure.toFormError())
+    }
+
+/** Creating a store: fields the server refused are marked, anything else as every form words it. */
+private fun StorePickerUiState.showingCreation(failure: Failure): StorePickerUiState =
+    when (failure) {
+        is Failure.AlreadyTaken ->
+            copy(
+                slugIssue =
+                    if (failure.field ==
+                        SLUG_FIELD
+                    ) {
+                        FieldProblem.Taken
+                    } else {
+                        slugIssue
+                    },
+                error = FormError.CheckFields,
+            )
+        is Failure.InvalidInput ->
+            copy(
+                nameIssue = failure.problemFor(NAME_FIELD),
+                slugIssue = failure.problemFor(SLUG_FIELD),
+                error = FormError.CheckFields,
+            )
+        else -> copy(error = failure.toFormError())
     }
 
 /** The field names of `CreateTenantRequest` in docs/api/openapi.yaml. */

@@ -21,53 +21,29 @@ data class StorePickerUiState(
     val currentStoreId: String? = null,
     val name: String = "",
     val slug: String = "",
-    val nameIssue: String? = null,
-    val slugIssue: String? = null,
-    /** The link belongs to another store; the screen asks for another in its own words. */
-    val slugTaken: Boolean = false,
+    val nameIssue: FieldProblem? = null,
+    val slugIssue: FieldProblem? = null,
     val opening: String? = null,
     val creating: Boolean = false,
     val loggingOut: Boolean = false,
     val logOutFailed: Boolean = false,
-    val error: PickerError? = null,
+    val error: FormError? = null,
 ) {
     /** Whether something runs; every button waits for it. */
     val busy: Boolean get() = opening != null || creating || loggingOut
 
-    /** Whether Criar loja is enabled: both fields filled in and nothing running. */
-    val canCreate: Boolean get() = !busy && name.isNotBlank() && slug.isNotBlank()
+    /** Whether Criar loja can be tapped: whenever nothing runs. Empty fields are marked on tap. */
+    val canCreate: Boolean get() = !busy
 
     /** Leaves out what was typed and the store names, so a logged state carries no business data. */
     override fun toString(): String =
         "StorePickerUiState(stores=${stores?.size}, opening=${opening != null}, creating=$creating, " +
-            "loggingOut=$loggingOut, logOutFailed=$logOutFailed, error=$error, slugTaken=$slugTaken)"
+            "loggingOut=$loggingOut, logOutFailed=$logOutFailed, error=$error, nameIssue=${nameIssue != null}, " +
+            "slugIssue=${slugIssue != null})"
 }
 
 /** PickerEffect is something the picker's screen does once, such as leaving. */
 sealed interface PickerEffect {
     /** Back to the screen the picker was opened from: the store chosen is already open. */
     data object Close : PickerEffect
-}
-
-/** PickerError is a problem with the whole picker, shown under its title. */
-sealed interface PickerError {
-    /** The user no longer belongs to the store they chose. */
-    data object NotAMember : PickerError
-
-    /** The create form has fields to fix; each says what. */
-    data object CheckFields : PickerError
-
-    /** The call never reached the server. */
-    data object Offline : PickerError
-
-    /** Too many attempts; [retryAfterSeconds] is the wait, or null when the server gave none. */
-    data class RateLimited(
-        val retryAfterSeconds: Int?,
-    ) : PickerError
-
-    /** The server failed or did not answer (a 5xx). */
-    data object ServerUnavailable : PickerError
-
-    /** Anything else: an answer the app cannot use, or a failure on the device. */
-    data object Unexpected : PickerError
 }

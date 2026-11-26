@@ -34,10 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.encomendo.feature.auth.resources.Res
 import br.com.encomendo.feature.auth.resources.login_email
-import br.com.encomendo.feature.auth.resources.login_error_offline
-import br.com.encomendo.feature.auth.resources.login_error_server
-import br.com.encomendo.feature.auth.resources.login_error_unexpected
-import br.com.encomendo.feature.auth.resources.login_error_wrong_credentials
+import br.com.encomendo.feature.auth.resources.login_missing_email
+import br.com.encomendo.feature.auth.resources.login_missing_password
 import br.com.encomendo.feature.auth.resources.login_password
 import br.com.encomendo.feature.auth.resources.login_password_hide
 import br.com.encomendo.feature.auth.resources.login_password_hide_description
@@ -96,8 +94,7 @@ fun LoginScreen(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.semantics { heading() },
         )
-        EmailField(state = state, onChange = actions.onEmailChange)
-        PasswordField(state = state, actions = actions)
+        // Above the form, as the design document places it.
         state.error?.let { error ->
             Text(
                 text = error.message(),
@@ -106,6 +103,8 @@ fun LoginScreen(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
+        EmailField(state = state, onChange = actions.onEmailChange)
+        PasswordField(state = state, actions = actions)
         BusyButton(
             label = stringResource(Res.string.login_submit),
             busyLabel = stringResource(Res.string.login_submitting),
@@ -127,7 +126,10 @@ private fun EmailField(
         onValueChange = onChange,
         label = { Text(stringResource(Res.string.login_email)) },
         isError = state.emailIssue != null,
-        supportingText = state.emailIssue?.let { issue -> { Issue(issue) } },
+        supportingText =
+            state.emailIssue?.let { issue ->
+                { Issue(issue.text(missing = Res.string.login_missing_email)) }
+            },
         singleLine = true,
         enabled = !state.submitting,
         keyboardOptions =
@@ -154,7 +156,10 @@ private fun PasswordField(
         onValueChange = actions.onPasswordChange,
         label = { Text(stringResource(Res.string.login_password)) },
         isError = state.passwordIssue != null,
-        supportingText = state.passwordIssue?.let { issue -> { Issue(issue) } },
+        supportingText =
+            state.passwordIssue?.let { issue ->
+                { Issue(issue.text(missing = Res.string.login_missing_password)) }
+            },
         trailingIcon = {
             VisibilityToggle(
                 visible = state.passwordVisible,
@@ -195,13 +200,3 @@ private fun VisibilityToggle(
         Text(stringResource(if (visible) Res.string.login_password_hide else Res.string.login_password_show))
     }
 }
-
-@Composable
-private fun LoginError.message(): String =
-    when (this) {
-        LoginError.WrongCredentials -> stringResource(Res.string.login_error_wrong_credentials)
-        LoginError.Offline -> stringResource(Res.string.login_error_offline)
-        LoginError.ServerUnavailable -> stringResource(Res.string.login_error_server)
-        LoginError.Unexpected -> stringResource(Res.string.login_error_unexpected)
-        is LoginError.RateLimited -> rateLimitMessage(retryAfterSeconds)
-    }
