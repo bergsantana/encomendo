@@ -10,13 +10,15 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/middleware"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/ratelimit"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/http/respond"
+	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
 // Handlers are the handlers the router mounts. Each milestone adds its own.
 // A nil group is not mounted.
 type Handlers struct {
-	Health *handler.Health
-	Auth   *handler.Auth
+	Health  *handler.Health
+	Auth    *handler.Auth
+	Tenancy *handler.Tenancy
 }
 
 // RouterOptions configure the middleware stack.
@@ -29,6 +31,9 @@ type RouterOptions struct {
 	// RateLimits applies the per-IP rules (ADR 0021). Required when
 	// Handlers.Auth is set.
 	RateLimits *middleware.RateLimits
+	// Authn checks the access token on /api/v1/admin/*. Required when
+	// Handlers.Tenancy is set.
+	Authn *middleware.Authn
 }
 
 // NewRouter returns the API handler: every route, wrapped in the middleware
@@ -40,12 +45,18 @@ func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) (http.Handler, 
 	if h.Auth != nil && (opts.AuthGuard == nil || opts.RateLimits == nil) {
 		return nil, errors.New("router: the /auth routes need the cross-origin check and the rate limits")
 	}
+	if h.Tenancy != nil && opts.Authn == nil {
+		return nil, errors.New("router: the admin routes need authn")
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", h.Health.Live)
 	mux.HandleFunc("GET /readyz", h.Health.Ready)
 	if h.Auth != nil {
 		mountAuth(mux, h.Auth, opts)
+	}
+	if h.Tenancy != nil {
+		mountAdmin(mux, h.Tenancy, opts.Authn)
 	}
 
 	return middleware.Chain(withProblemFallback(mux),
@@ -92,6 +103,32 @@ func mountAuth(mux *http.ServeMux, a *handler.Auth, opts RouterOptions) {
 			mws = append(mws, opts.RateLimits.ByIP(*rt.rule))
 		}
 		mux.Handle(rt.pattern, middleware.Chain(rt.handle, mws...))
+	}
+}
+
+// adminRoutes are the store and team operations of the contract.
+func adminRoutes(t *handler.Tenancy) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"POST /api/v1/admin/tenants":                      t.CreateTenant,
+		"GET /api/v1/admin/settings":                      t.Settings,
+		"PUT /api/v1/admin/settings":                      t.UpdateSettings,
+		"GET /api/v1/admin/members":                       t.Members,
+		"DELETE /api/v1/admin/members/{userId}":           t.RemoveMember,
+		"PUT /api/v1/admin/members/{userId}/role":         t.ChangeRole,
+		"GET /api/v1/admin/invitations":                   t.Invitations,
+		"POST /api/v1/admin/invitations":                  t.InviteMember,
+		"DELETE /api/v1/admin/invitations/{invitationId}": t.RevokeInvitation,
+	}
+}
+
+// mountAdmin mounts every admin route behind authn for the backoffice
+// audience: a client account's token is a 401 here, and so is none
+// (docs/architecture.md section 5.1). Bearer tokens are not sent by the
+// browser on its own, so these routes need no cross-origin check.
+func mountAdmin(mux *http.ServeMux, t *handler.Tenancy, authn *middleware.Authn) {
+	staff := authn.Require(shared.AudienceBackoffice)
+	for pattern, h := range adminRoutes(t) {
+		mux.Handle(pattern, staff(h))
 	}
 }
 

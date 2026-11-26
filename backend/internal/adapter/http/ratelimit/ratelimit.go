@@ -57,7 +57,7 @@ var (
 	PasswordResetConfirmByEmail = Rule{Name: "password-reset-confirm", Kind: KindEmail, Limit: 10, Window: 10 * time.Minute}
 	InvitationPreviewByIP       = Rule{Name: "invitation-preview", Kind: KindIP, Limit: 60, Window: 10 * time.Minute}
 	InvitationAcceptByIP        = Rule{Name: "invitation-accept", Kind: KindIP, Limit: 20, Window: 10 * time.Minute}
-	CreateTenantByUser          = Rule{Name: "create-tenant", Kind: KindUser, Limit: 5, Window: 24 * time.Hour}
+	CreateTenantByUser          = Rule{Name: "create-tenant", Kind: KindUser, Limit: 10, Window: 24 * time.Hour}
 	InviteByStore               = Rule{Name: "invite", Kind: KindStore, Limit: 20, Window: 24 * time.Hour}
 	InviteByUser                = Rule{Name: "invite", Kind: KindUser, Limit: 50, Window: 24 * time.Hour}
 	InviteByStoreEmail          = Rule{Name: "invite", Kind: KindStoreEmail, Limit: 3, Window: 24 * time.Hour}

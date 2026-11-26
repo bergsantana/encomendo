@@ -265,7 +265,7 @@ export interface paths {
          *     default settings (deposit 50%, assembly 3 days, safety margin 2
          *     days, BRL) and the default status workflow (ADR 0006). The current
          *     session does not change: call `/auth/switch-tenant` with the new id.
-         *     Limited to 5 stores per user per day.
+         *     Limited to 10 attempts per user per day, a taken address included.
          */
         post: operations["createTenant"];
         delete?: never;
