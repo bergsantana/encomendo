@@ -31,11 +31,15 @@ import br.com.encomendo.feature.auth.resources.account_switch_store
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
-/** AccountBarRoute connects [AccountViewModel] to [AccountBar]; [onSwitchStore] opens the store picker. */
+/**
+ * AccountBarRoute connects [AccountViewModel] to [AccountBar]; [onSwitchStore]
+ * opens the store picker, and [navigationIcon] sits before the store's name.
+ */
 @Composable
 fun AccountBarRoute(
     onSwitchStore: () -> Unit,
     modifier: Modifier = Modifier,
+    navigationIcon: @Composable () -> Unit = {},
     viewModel: AccountViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -51,7 +55,7 @@ fun AccountBarRoute(
                 onLogOut = viewModel::onLogOut,
             )
         }
-    AccountBar(state = state, actions = actions, modifier = modifier)
+    AccountBar(state = state, actions = actions, modifier = modifier, navigationIcon = navigationIcon)
 }
 
 /** AccountActions are what the user can do on [AccountBar]. */
@@ -66,7 +70,8 @@ data class AccountActions(
  * AccountBar tops every management screen: the store's name, and the
  * signed-in person's name, which opens the account menu with Trocar de loja
  * (two stores or more) and Sair, as the
- * foot of the web admin's menu does.
+ * foot of the web admin's menu does. [navigationIcon] is the shell's: the
+ * button that opens the management menu.
  */
 @OptIn(ExperimentalMaterial3Api::class) // TopAppBar
 @Composable
@@ -74,8 +79,10 @@ fun AccountBar(
     state: AccountUiState,
     actions: AccountActions,
     modifier: Modifier = Modifier,
+    navigationIcon: @Composable () -> Unit = {},
 ) {
     TopAppBar(
+        navigationIcon = navigationIcon,
         title = { Text(text = state.storeName.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         actions = { AccountMenu(state = state, actions = actions) },
         modifier = modifier,

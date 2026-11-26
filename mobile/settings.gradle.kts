@@ -29,4 +29,5 @@ include(
     ":shared:core:di",
     ":shared:feature:auth",
     ":shared:feature:hoje",
+    ":shared:feature:members",
 )

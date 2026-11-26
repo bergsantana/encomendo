@@ -40,6 +40,7 @@ fun Failure.toFailureMessage(): FailureMessage =
         is Failure.Offline -> FailureMessage.Offline
         is Failure.RateLimited -> FailureMessage.RateLimited(retryAfterSeconds)
         is Failure.Forbidden -> refusedIn(title)
+        is Failure.NotFound -> refusedIn(title)
         is Failure.Unexpected -> if (isServerFailure) FailureMessage.ServerUnavailable else refusedIn(title)
         is Failure.InvalidInput,
         is Failure.AlreadyTaken,

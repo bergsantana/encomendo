@@ -35,6 +35,16 @@ class FailureMessageTest {
     }
 
     @Test
+    fun somethingGoneIsWordedByTheServerUnlessTheScreenHasWords() {
+        // Equipe has its own ("Esta pessoa não faz mais parte da equipe."); any other screen shows the API's.
+        assertEquals(
+            FailureMessage.Refused("Não encontrado"),
+            Failure.NotFound(title = "Não encontrado").toFailureMessage(),
+        )
+        assertEquals(FailureMessage.Unexpected, Failure.NotFound().toFailureMessage())
+    }
+
+    @Test
     fun aServerFailureNeverShowsItsTitle() {
         assertEquals(
             FailureMessage.ServerUnavailable,

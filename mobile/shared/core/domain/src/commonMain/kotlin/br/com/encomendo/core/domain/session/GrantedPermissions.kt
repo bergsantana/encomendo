@@ -11,7 +11,13 @@ import kotlin.jvm.JvmInline
 value class Permission(
     /** The permission key as the API sends it; compared exactly. */
     val key: String,
-)
+) {
+    /** The permissions the app's menu and screens ask for, named as in docs/api/openapi.yaml (`Permission`). */
+    companion object {
+        /** Read and change the team: Equipe. */
+        val MembersManage = Permission("members:manage")
+    }
+}
 
 /**
  * GrantedPermissions is what the signed-in user may do in the current tenant.

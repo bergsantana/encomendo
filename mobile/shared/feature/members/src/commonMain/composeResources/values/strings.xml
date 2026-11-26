@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pt-BR is the only language; it lives in the default values folder.
+     Equipe and Roles in docs/product/design-document.md, the same text as the web admin. -->
+<resources>
+    <string name="members_title">Equipe</string>
+    <string name="members_loading">Carregando a equipe…</string>
+    <string name="members_load_more">Carregar mais</string>
+    <string name="members_retry">Tentar de novo</string>
+    <string name="members_name_you">%1$s (você)</string>
+
+    <!-- Roles (ADR 0017). -->
+    <string name="role_owner">Dono</string>
+    <string name="role_admin">Admin</string>
+    <string name="role_staff">Funcionário</string>
+    <string name="role_viewer">Visualizador</string>
+    <string name="members_role_of">Papel de %1$s</string>
+
+    <string name="members_change_role">Alterar papel</string>
+    <string name="members_change_role_of">Alterar papel de %1$s</string>
+    <string name="members_remove">Remover</string>
+    <string name="members_remove_of">Remover %1$s</string>
+    <string name="members_ask_own_role">Você deixará de gerenciar a equipe.</string>
+    <string name="members_ask_remove">Remover %1$s da equipe?</string>
+    <string name="members_ask_remove_self">Você sairá da equipe e perderá o acesso a esta loja.</string>
+    <string name="members_cancel">Cancelar</string>
+    <string name="members_confirm">Confirmar</string>
+    <string name="members_confirm_remove">Confirmar remoção</string>
+
+    <string name="members_role_changed">%1$s agora é %2$s.</string>
+    <string name="members_removed">%1$s saiu da equipe.</string>
+    <string name="members_lost_permission">Você não tem mais permissão para gerenciar a equipe.</string>
+    <string name="members_not_on_team">Esta pessoa não faz mais parte da equipe.</string>
+</resources>

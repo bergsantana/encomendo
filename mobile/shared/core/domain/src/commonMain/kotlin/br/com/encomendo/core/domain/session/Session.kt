@@ -68,4 +68,22 @@ data class Membership(
 value class Role(
     /** The role key as the API sends it. */
     val key: String,
-)
+) {
+    /** The four roles of docs/product/design-document.md, "Roles" (ADR 0017). */
+    companion object {
+        /** Dono: one per store; their role never changes and they are never removed. */
+        val Owner = Role("owner")
+
+        /** Admin: runs the store and its team, except the owner. */
+        val Admin = Role("admin")
+
+        /** Funcionário: orders, receiving and production. */
+        val Staff = Role("staff")
+
+        /** Visualizador: reads only. */
+        val Viewer = Role("viewer")
+
+        /** The roles a member can be given or invited with, in the web's order: every one but [Owner]. */
+        val Invitable: List<Role> = listOf(Admin, Staff, Viewer)
+    }
+}
