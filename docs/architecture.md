@@ -328,12 +328,13 @@ internal/adapter/
 │   ├── ratelimiter.go         sliding window (Lua script in a .lua file)
 │   └── idempotency.go         Idempotency-Key storage for POST endpoints
 ├── auth/
+│   ├── keys.go                Ed25519 key set, kid = RFC 7638 thumbprint, keys print as their kid (ADR 0019)
 │   ├── jwt.go                 issue/verify access tokens (EdDSA, kid rotation)
-│   ├── refresh.go             opaque refresh tokens: 32 random bytes, stored as SHA-256
+│   ├── secrets.go             SecretGenerator: 32 random bytes from crypto/rand for refresh tokens, invitation links and reset codes (stored as SHA-256 in domain/shared.Secret; reset codes as HMAC in domain/identity)
 │   ├── tracking.go            opaque order tracking tokens: 32 random bytes, stored as SHA-256
 │   ├── email_code.go          one-time client login codes: 6 digits, 10 min, stored hashed, attempt limit
 │   ├── google.go              verifies Google ID tokens (OIDC: issuer, audience, signature via JWKS)
-│   └── argon2id.go            PasswordHasher port
+│   └── argon2id.go            PasswordHasher port (RFC 9106 costs, a memory budget of 4 hashes, a 3 s wait; ADR 0019)
 ├── inproc/
 │   ├── stock_reserver.go      order.StockReserver backed by inventory.UseCases
 │   └── workflow_source.go     order.WorkflowSource backed by workflow queries + tenant settings
@@ -378,7 +379,7 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 - `aud` is `backoffice` (staff, carries `tid` and `role`) or `client` (carries `sub` = client account id, no `tid`). Client tokens are rejected on admin routes and staff tokens on `/api/v1/me/*`.
 - Refresh rotation with reuse detection: a reused refresh token revokes its whole family. A retry within 2 minutes, while the token it was rotated to is unused, rotates again instead (ADR 0013). Server failures answer 5xx, never 401.
 - `POST /auth/switch-tenant` issues a new access token for another tenant the user belongs to.
-- `jwt.go` pins the algorithm (reject `none` and HS*), checks `iss`, `aud`, `exp`, `nbf` (30 s leeway), loads keys by `kid`.
+- `jwt.go` pins the algorithm (reject `none` and HS*), checks `typ` (`at+jwt`), `iss`, `aud`, `exp`, `iat`, `nbf` (30 s leeway) and a lifetime of at most 15 minutes, loads keys by `kid`. Key format, rotation, leaks and the argon2id costs: ADR 0019.
 - Logout deletes the refresh family; urgent revocation uses a Redis `jti` denylist until expiry.
 - Login rate-limited per IP and per email; passwords hashed with argon2id.
 

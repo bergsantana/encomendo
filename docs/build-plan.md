@@ -21,14 +21,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | # | Milestone | Done | Total | State |
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
-| 2 | Identity and tenancy | 9 | 23 | In progress: backend contract, database and domain done (steps 1 to 3 of 7); web auth client and every auth screen; mobile API client, session, auth graph, login, logout and store picker |
+| 2 | Identity and tenancy | 12 | 23 | In progress: backend contract, database, domain and auth adapter done (steps 1 to 4 of 7); web auth client, every auth screen and Equipe; mobile API client, session, auth graph, login, logout and store picker |
 | 3 | Catalog and suppliers | 0 | 14 | Not started |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 8 | Not started |
-|   | **All milestones** | **31** | **118** | **about 26%** |
+|   | **All milestones** | **34** | **118** | **about 29%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -93,14 +93,14 @@ Goal: a business owner can sign up, own a tenant, invite staff and log in on web
 - [ ] `domain/identity` (user, client account, email, password policy, password reset code, role, permission) and `domain/tenancy` (tenant, membership, invitation, settings, plan), with tests (partial: everything but the tenant plan, which no product document defines yet; see `domain/tenancy/doc.go`)
 - [x] `app/shared`: `TxManager` and `Scope`, `Cache`, `Clock`, `IDGenerator`, `EventPublisher`, `authz.Require`; fakes and their contract suites (ADR 0009)
 - [x] `app/identity` and `app/tenancy` services with fakes: Register, Login, Refresh, Logout, SwitchTenant, password reset, accept invitation, CreateTenant, InviteMember, RevokeInvitation, ChangeRole, RemoveMember, UpdateSettings
-- [ ] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id
+- [x] `adapter/auth`: EdDSA JWT with `kid` rotation, opaque refresh tokens with rotation and reuse detection, Argon2id (ADR 0019; rotation and reuse detection live in `app/identity`, run here on the real tokens)
 - [x] Migrations `0002_identity` (with `password_reset_codes`), `0003_workflows` (ADR 0006), `0004_tenancy` (with `invitations`, ADR 0011), `0005_rls_helpers`, `0006_platform`, `0007_rls_policies` (numbered as they land, ADR 0014)
 - [ ] `adapter/postgres`: `TxManager` that sets `app.tenant_id`, `errors.go` mapping, identity and tenancy repositories (partial: `TxManager` with all three settings and savepoints, `errors.go` and the outbox publisher, passing their port contracts; the repositories come with `m2-integrate`)
-- [ ] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes
+- [ ] HTTP: `authn` middleware, cross-origin refusal on `/auth` (no CORS, ADR 0010), rate limits, auth, tenancy and members handlers, new problem codes; signing keys from config, with the development key refused outside `development` and `test` (ADR 0019)
 - [ ] `adapter/notify/smtp.go` for invitations and password reset codes; Mailpit in the dev stack (ADR 0011)
 - [x] OpenAPI: `/auth/*`, tenancy and members endpoints (ADRs 0010, 0011)
-- [ ] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse) (partial: the RLS suite is done, with the user-scope policies of ADR 0010; the auth tests come with `m2-auth`)
-- [ ] Contract suites for the identity and tenancy ports, run against fakes and real adapters (partial: the suites run against the fakes; the Postgres repositories, the inproc ports and the argon2id hasher run them in `m2-auth` and `m2-integrate`)
+- [x] RLS test suite (five cases per tenant table) and auth security tests (expired, wrong `aud`, `alg: none`, unknown `kid`, refresh reuse) (the RLS suite with the user-scope policies of ADR 0010; the auth tests in `adapter/auth`, with forged and tampered tokens and fuzzing)
+- [ ] Contract suites for the identity and tenancy ports, run against fakes and real adapters (partial: the suites run against the fakes, and the argon2id hasher and the secret generator pass theirs; the Postgres repositories and the inproc ports run them in `m2-integrate`)
 
 ### Web
 
@@ -310,7 +310,7 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
 | Parity: every management feature on web and Android | Only Hoje, a placeholder on both |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | Nothing to leak yet; the test lands with the first store response |
-| ADRs | 0001–0018 written |
+| ADRs | 0001–0019 written |
 
 ## Order of migrations
 
@@ -355,3 +355,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12.
 | 2026-11-25 | Fake transactions undo the writes of repository fakes on failure; secrets are drawn through `appshared.SecretGenerator` | ADR 0009 (amended) |
 | 2026-11-25 | `tenancy.Lookup` also uses invitations up for `identity`; accepting runs in three transactions | ADR 0011 (refined) |
 | 2026-11-25 | Android requests stay in the store they were made for: same-scope retries, tokens only to screens of their scope | ADR 0018 |
+| 2026-11-25 | Ed25519 seeds named by thumbprint, rotated in three deploys, never printed; `at+jwt` with a one-string `aud` and at most 15 minutes; argon2id at RFC 9106's second option, within a memory budget and a 3-second wait | ADR 0019 |

@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
@@ -135,10 +136,30 @@ type AccessClaims struct {
 	ExpiresAt time.Time
 }
 
+// ErrIncompleteAccessClaims means claims an issuer must refuse to sign: no
+// principal, no jti, or a lifetime that is not more than zero and at most
+// identity.AccessTokenLifetime. It matches no sentinel: only a bug builds
+// such claims, and the denylist's window holds only if no access token
+// lives longer (identity.DenylistWindow).
+var ErrIncompleteAccessClaims = errors.New("identity: access claims need a principal, a jti and a lifetime of at most identity.AccessTokenLifetime")
+
+// CheckAccessClaims returns ErrIncompleteAccessClaims for claims an issuer
+// must refuse, and nil otherwise. Every AccessTokenIssuer calls it, the fake
+// included, so the use case tests see the real refusals.
+func CheckAccessClaims(c AccessClaims) error {
+	lifetime := c.ExpiresAt.Sub(c.IssuedAt)
+	if c.Principal.IsZero() || c.JTI.IsZero() || lifetime <= 0 || lifetime > identity.AccessTokenLifetime {
+		return ErrIncompleteAccessClaims
+	}
+	return nil
+}
+
 // AccessTokenIssuer signs access tokens (adapter/auth/jwt.go: EdDSA with a
 // kid).
 type AccessTokenIssuer interface {
-	// Issue returns the signed token for claims.
+	// Issue returns the signed token for claims, a different one for each
+	// jti. It returns ErrIncompleteAccessClaims when CheckAccessClaims
+	// refuses claims, and any other error only when signing fails.
 	Issue(ctx context.Context, claims AccessClaims) (string, error)
 }
 
