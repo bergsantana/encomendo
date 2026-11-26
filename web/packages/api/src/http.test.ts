@@ -312,6 +312,42 @@ describe('createHttpClient with a session', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
+  it('shows every problem answer to onProblem before throwing it, except for anonymous calls and lost connections', async () => {
+    const seen: string[] = []
+    const watched = createHttpClient({ baseUrl: base, onProblem: (error) => seen.push(error.code) })
+    server.use(
+      http.get(`${base}/api/v1/admin/members`, () =>
+        HttpResponse.json({ type: 'about:blank', title: 'Esta loja está suspensa.', status: 403, code: 'tenant_suspended' }, { status: 403, headers: problem }),
+      ),
+      http.post(`${base}/auth/switch-tenant`, () =>
+        HttpResponse.json({ type: 'about:blank', title: 'Esta loja está suspensa.', status: 403, code: 'tenant_suspended' }, { status: 403, headers: problem }),
+      ),
+      http.get(`${base}/api/v1/admin/offline`, () => HttpResponse.error()),
+    )
+
+    await expect(watched.get('/api/v1/admin/members')).rejects.toMatchObject({ status: 403, code: 'tenant_suspended' })
+    await expect(watched.post('/auth/switch-tenant', {}, { anonymous: true })).rejects.toMatchObject({ code: 'tenant_suspended' })
+    await expect(watched.get('/api/v1/admin/offline')).rejects.toMatchObject({ status: 0 })
+
+    expect(seen).toEqual(['tenant_suspended'])
+  })
+
+  it('throws the real ApiError even when onProblem throws', async () => {
+    const hostile = createHttpClient({
+      baseUrl: base,
+      onProblem: () => {
+        throw new Error('hook failed')
+      },
+    })
+    server.use(
+      http.get(`${base}/api/v1/admin/members`, () =>
+        HttpResponse.json({ type: 'about:blank', title: 'Sem permissão', status: 403, code: 'forbidden' }, { status: 403, headers: problem }),
+      ),
+    )
+
+    await expect(hostile.get('/api/v1/admin/members')).rejects.toMatchObject({ name: 'ApiError', status: 403, code: 'forbidden' })
+  })
+
   it('passes a failed refresh on to the caller', async () => {
     server.use(orders())
     const offline = new ApiError(0, { title: 'Sem conexão com o servidor' })

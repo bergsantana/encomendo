@@ -4,7 +4,8 @@
  * for login with a full page load, so no store keeps data the next session
  * should not see. Only an expired session comes back to the same page after
  * signing in; after a logout, or when another tab's login took over the
- * cookie, the next person starts on Hoje.
+ * cookie, the next person starts on Hoje. A suspended store (ADR 0022) leaves
+ * for the store picker instead, which says why.
  */
 import { storeToRefs } from 'pinia'
 import { watch } from 'vue'
@@ -21,6 +22,10 @@ const router = useRouter()
 watch(ended, (reason) => {
   // A switch leaves through the store picker, which knows where to go.
   if (reason === null || reason === 'switched') return
+  if (reason === 'suspended') {
+    loadPage(router.resolve({ name: 'stores', query: { suspended: '1' } }).href)
+    return
+  }
   const query = reason === 'expired' ? { redirect: pathWithoutFragment(route.fullPath) } : {}
   loadPage(router.resolve({ name: 'login', query }).href)
 })

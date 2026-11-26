@@ -26,8 +26,10 @@ const refreshLockName = 'encomendo-refresh'
  * (their refresh returns a session without it, ADR 0010). `switched` means
  * this tab moved to another store and is about to load it with a full page
  * load; until then nothing may run in this page under either store.
+ * `suspended` means the API answered `tenant_suspended` to a call in this
+ * page: the page then loads the store picker, which says so (ADR 0022).
  */
-export type SessionEnd = 'logged_out' | 'expired' | 'replaced' | 'switched'
+export type SessionEnd = 'logged_out' | 'expired' | 'replaced' | 'switched' | 'suspended'
 
 /**
  * useSessionStore holds the signed-in member's session: the access token,
@@ -60,6 +62,16 @@ export const useSessionStore = defineStore('session', () => {
   const tenant = computed(() => current.value?.tenant ?? null)
   const role = computed(() => current.value?.role ?? null)
   const memberships = computed(() => current.value?.memberships ?? [])
+  /**
+   * tenantSuspended says the selected store is suspended. The API never
+   * selects one (ADR 0022), so this is a second line of defence: the app
+   * must never open a suspended store.
+   */
+  const tenantSuspended = computed(() => {
+    const selected = current.value?.tenant
+    if (selected === undefined) return false
+    return memberships.value.some((membership) => membership.tenant.id === selected.id && membership.status === 'suspended')
+  })
   const granted = computed(() => new Set<Permission>(current.value?.permissions ?? []))
 
   /** start begins a session, or replaces it after a refresh. Calls that log in go through `begin`. */
@@ -76,7 +88,7 @@ export const useSessionStore = defineStore('session', () => {
     }
     ended.value = null
     restoreError.value = null
-    if (auth.tenant !== undefined) rememberStore(auth.tenant.id)
+    if (auth.tenant !== undefined && !tenantSuspended.value) rememberStore(auth.tenant.id)
   }
 
   /** end forgets the session in this tab and records why. It does not call the API; logOut does. */
@@ -85,6 +97,19 @@ export const useSessionStore = defineStore('session', () => {
     token.value = null
     current.value = null
     ended.value = reason
+  }
+
+  /**
+   * storeSuspended handles a `tenant_suspended` answer to a call inside the
+   * store: it ends this tab's session as `suspended`, so nothing more runs
+   * under that store, and App loads the store picker. The refresh cookie
+   * stays: the next refresh returns a session without a store and with the
+   * store marked suspended. Several calls in flight may all report it; only
+   * the first one counts.
+   */
+  function storeSuspended(): void {
+    if (current.value === null) return
+    end('suspended')
   }
 
   /** accessToken returns the token for the HTTP client, or null when signed out. */
@@ -179,7 +204,7 @@ export const useSessionStore = defineStore('session', () => {
       const auth = await takeTurn(() => (generation === startedFrom ? refreshSession(authClient) : Promise.resolve(null)))
       // A login, logout or store switch made during the refresh wins (ADR 0012).
       if (auth === null || generation !== startedFrom) return isSignedIn.value
-      if (changedHands(auth)) end('replaced')
+      if (changedHands(auth)) end(storeWasSuspended(auth) ? 'suspended' : 'replaced')
       else start(auth)
     } catch (error) {
       if (!isRefusal(error)) throw error
@@ -197,6 +222,18 @@ export const useSessionStore = defineStore('session', () => {
     const before = current.value
     if (before === null) return false
     return auth.user.id !== before.user.id || auth.tenant?.id !== before.tenant?.id
+  }
+
+  /**
+   * storeWasSuspended reports a refresh that took this member's selected
+   * store away because it is now suspended (ADR 0022: the refreshed session
+   * has no store and marks it). The member then reaches the picker with the
+   * suspended message, not as if another login had replaced the session.
+   */
+  function storeWasSuspended(auth: AuthSession): boolean {
+    const before = current.value
+    if (before?.tenant === undefined || auth.user.id !== before.user.id || auth.tenant !== undefined) return false
+    return auth.memberships.some((membership) => membership.tenant.id === before.tenant?.id && membership.status === 'suspended')
   }
 
   /**
@@ -258,8 +295,10 @@ export const useSessionStore = defineStore('session', () => {
     tenant,
     role,
     memberships,
+    tenantSuspended,
     start,
     end,
+    storeSuspended,
     accessToken,
     can,
     scope,

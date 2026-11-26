@@ -113,6 +113,65 @@ describe('useSessionStore: the session it holds', () => {
   })
 })
 
+describe('useSessionStore: suspended stores (ADR 0022)', () => {
+  const suspendedRpm = { tenant: altaRpm, role: 'owner' as const, status: 'suspended' as const }
+
+  it('reads the status of each membership', () => {
+    const session = useSessionStore()
+
+    session.start(authSession({ tenant: undefined, role: undefined, permissions: [], memberships: [suspendedRpm] }))
+
+    expect(session.memberships.map((membership) => membership.status)).toEqual(['suspended'])
+    expect(session.tenantSuspended).toBe(false)
+  })
+
+  it('says when the selected store is a suspended one, and does not remember it as the last store', () => {
+    const session = useSessionStore()
+
+    session.start(authSession({ memberships: [suspendedRpm] }))
+
+    expect(session.tenantSuspended).toBe(true)
+    expect(lastStore()).toBeUndefined()
+  })
+
+  it('ends the session as suspended when a call inside the store learns of it, once', () => {
+    const session = useSessionStore()
+    session.start(authSession())
+
+    session.storeSuspended()
+    session.end('expired')
+    session.storeSuspended()
+
+    expect(session.ended).toBe('expired')
+    expect(session.accessToken()).toBeNull()
+  })
+
+  it('records suspended as the reason, and stops acting in the store', async () => {
+    const session = useSessionStore()
+    session.start(authSession())
+
+    session.storeSuspended()
+
+    expect(session.ended).toBe('suspended')
+    expect(session.scope()).toBeNull()
+    await expect(session.refresh()).resolves.toBe(false)
+  })
+
+  it('refreshes once after a suspended store refuses a switch, so the picker marks it', async () => {
+    server.use(
+      http.post('*/auth/switch-tenant', () => problem(403, 'tenant_suspended', 'Esta loja está suspensa.')),
+      refreshTo(authSession({ tenant: undefined, role: undefined, permissions: [], memberships: [suspendedRpm] })),
+    )
+    const session = useSessionStore()
+    session.start(authSession({ tenant: undefined, role: undefined, permissions: [] }))
+
+    await expect(session.switchTo(altaRpm.id)).rejects.toMatchObject({ code: 'tenant_suspended' })
+
+    expect(session.memberships[0]?.status).toBe('suspended')
+    expect(session.ended).toBeNull()
+  })
+})
+
 describe('useSessionStore: switchTo', () => {
   it('moves the session to another store, in its turn', async () => {
     const other = { ...altaRpm, id: '0190f3c4-5e1a-7b2c-8d3e-00000000cafe', name: 'Moto Peças Sul', slug: 'motopecas' }
