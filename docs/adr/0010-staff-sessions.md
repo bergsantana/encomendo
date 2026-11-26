@@ -50,6 +50,7 @@ ADR 0003 fixes the token formats. Writing the `/auth/*` contract left several qu
   - `Content-Type` must be `application/json`, parsed as a media type, with a JSON body.
   - A browser request whose `Origin` is not the admin origin is `403 forbidden`, and so is one whose `Sec-Fetch-Site` is `same-site` or `cross-site`.
   - Native clients send neither header and pass.
+  - *Amended in step 2.1:* `Sec-Fetch-Site` passes only as `same-origin` or `none`. Any other value, an unknown one included, is `403`, so the check fails closed. A missing or wrong `Content-Type` is `400 invalid`, naming the header, and is checked after the origin, so a cross-site form gets the `403`. Every `/auth/*` operation documents both answers (step 2.3).
 - **Client accounts (milestone 7)** log in from store pages and `conta.encomendo.com.br`, on those hosts' own origin. Their endpoints get their own path prefix with their own same-origin rule. The staff rule is never widened to `*.encomendo.com.br`.
 
 ### Permissions and limits
