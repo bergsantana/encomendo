@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * ApiAuthRepository logs in and out through the `/auth` endpoints and keeps
+ * ApiAuthRepository logs in, signs up and logs out through the `/auth` endpoints and keeps
  * the session in [store], tokens and all, in one write (ADR 0015). Nothing
  * is stored unless the whole login worked. A login asks for the store this
  * device used last ([lastStore]).
@@ -35,6 +35,21 @@ class ApiAuthRepository(
             val stored = api.logIn(email = email, password = password, tenantId = lastStore.read()).toStoredSession()
             store.write(stored)
             stored.session
+        }
+
+    override suspend fun signUp(
+        name: String,
+        email: String,
+        password: String,
+    ): Session =
+        asFailures {
+            // Not cancellable: once sent the account may exist, and dropping its session would leave the
+            // user unable to sign up again with that email.
+            withContext(NonCancellable) {
+                val stored = api.signUp(name = name, email = email, password = password).toStoredSession()
+                store.write(stored)
+                stored.session
+            }
         }
 
     override suspend fun logOut() =

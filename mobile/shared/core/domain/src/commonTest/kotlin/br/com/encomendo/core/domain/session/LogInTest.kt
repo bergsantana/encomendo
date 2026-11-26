@@ -65,6 +65,12 @@ class LogInTest {
             return session
         }
 
+        override suspend fun signUp(
+            name: String,
+            email: String,
+            password: String,
+        ): Session = error("LogIn never signs up")
+
         override suspend fun logOut() = error("LogIn never logs out")
     }
 }

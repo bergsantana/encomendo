@@ -40,6 +40,23 @@ class AuthApi(
             }.session()
 
     /**
+     * Creates a staff account and returns its session, with no store yet and
+     * its refresh token in the body. An email already in use throws ApiError
+     * with code `email_taken`.
+     */
+    suspend fun signUp(
+        name: String,
+        email: String,
+        password: String,
+    ): AuthSessionDto =
+        client
+            .post("/auth/signup") {
+                withoutBearer()
+                contentType(ContentType.Application.Json)
+                setBody(SignUpRequest(name, email, password, refreshTransport = BODY_TRANSPORT))
+            }.session()
+
+    /**
      * Spends [refreshToken] for a session in the store [tenantId] (ADR 0010).
      * Like [refresh], call it only in a `SessionTurns` turn. A 400 or 403
      * leaves the refresh token as it was (ADR 0013); a 401 means it was refused.
@@ -100,6 +117,16 @@ private class LoginRequest(
     val password: String,
     /** The store used last on this device; left out when null. */
     val tenantId: String?,
+    // No default: ApiJson leaves defaults out, and the server would fall back to the cookie.
+    val refreshTransport: String,
+)
+
+/** Not a data class, so the password never reaches a log through toString. */
+@Serializable
+private class SignUpRequest(
+    val name: String,
+    val email: String,
+    val password: String,
     // No default: ApiJson leaves defaults out, and the server would fall back to the cookie.
     val refreshTransport: String,
 )

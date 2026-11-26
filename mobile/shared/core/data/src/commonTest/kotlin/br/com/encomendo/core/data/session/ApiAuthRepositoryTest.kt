@@ -49,6 +49,64 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
 class ApiAuthRepositoryTest {
     @Test
+    fun aSignUpKeepsTheNewAccountsSessionWithoutAStore() =
+        runTest {
+            // The root then opens the store picker: "Crie sua loja" (ADR 0010).
+            val store = tokenStore()
+            val auth = repository(store) { respondJson(NO_STORE_SESSION_JSON, HttpStatusCode.Created) }
+
+            val session = auth.signUp(name = "Ana Souza", email = "ana@altarpm.com.br", password = "segredo-forte")
+
+            assertNull(session.tenant)
+            assertEquals(SessionTokens(accessToken = "access-new", refreshToken = "refresh-new"), store.read()?.tokens)
+            assertEquals(session, store.read()?.session)
+        }
+
+    @Test
+    fun aSignUpTheScreenGaveUpOnStillKeepsTheNewAccount() =
+        runTest {
+            // Back while "Criando conta…": the server may have created the account already. Dropping its
+            // session would leave the user locked out of a retry ("Já existe uma conta com este e-mail.").
+            val store = tokenStore()
+            val reached = CompletableDeferred<Unit>()
+            val answer = CompletableDeferred<Unit>()
+            val auth =
+                repository(store) {
+                    reached.complete(Unit)
+                    answer.await()
+                    respondJson(NO_STORE_SESSION_JSON, HttpStatusCode.Created)
+                }
+
+            val screen =
+                launch { auth.signUp(name = "Ana Souza", email = "ana@altarpm.com.br", password = "segredo-forte") }
+            reached.await()
+            screen.cancel()
+            answer.complete(Unit)
+            screen.join() // DataStore writes on a real IO thread
+
+            assertEquals("refresh-new", store.read()?.tokens?.refreshToken)
+        }
+
+    @Test
+    fun anEmailInUseIsMarkedOnTheEmailField() =
+        runTest {
+            val store = tokenStore()
+            val auth =
+                repository(store) {
+                    respondProblem(
+                        HttpStatusCode.Conflict,
+                        """{"title":"E-mail em uso","status":409,"code":"email_taken"}""",
+                    )
+                }
+
+            val failure =
+                assertFailsWith<Failure.AlreadyTaken> { auth.signUp("Ana", "ana@altarpm.com.br", "segredo-forte") }
+
+            assertEquals("email", failure.field)
+            assertNull(store.read())
+        }
+
+    @Test
     fun aLoginKeepsTheWholeSessionWithItsTokens() =
         runTest {
             val store = tokenStore()
@@ -380,8 +438,10 @@ class ApiAuthRepositoryTest {
             lastStore = lastStore,
         )
 
-    private fun MockRequestHandleScope.respondJson(body: String): HttpResponseData =
-        respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+    private fun MockRequestHandleScope.respondJson(
+        body: String,
+        status: HttpStatusCode = HttpStatusCode.OK,
+    ): HttpResponseData = respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
 
     private fun MockRequestHandleScope.respondProblem(
         status: HttpStatusCode,
@@ -434,6 +494,18 @@ class ApiAuthRepositoryTest {
     }
 
     private companion object {
+        const val NO_STORE_SESSION_JSON = """
+            {
+              "accessToken": "access-new",
+              "tokenType": "Bearer",
+              "expiresIn": 900,
+              "refreshToken": "refresh-new",
+              "user": {"id": "0190f3c4-0000-7000-8000-0000000000aa", "name": "Ana Souza", "email": "ana@altarpm.com.br"},
+              "permissions": [],
+              "memberships": []
+            }
+        """
+
         const val SESSION_JSON = """
             {
               "accessToken": "access-new",

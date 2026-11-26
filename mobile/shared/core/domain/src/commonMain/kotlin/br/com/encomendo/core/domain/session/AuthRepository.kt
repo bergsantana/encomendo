@@ -17,6 +17,18 @@ interface AuthRepository {
     ): Session
 
     /**
+     * Creates a staff account and keeps its session, which has no store yet:
+     * the app then offers to create one. Throws `Failure`:
+     * [br.com.encomendo.core.domain.failure.Failure.AlreadyTaken] on the
+     * `email` field when the email has an account already.
+     */
+    suspend fun signUp(
+        name: String,
+        email: String,
+        password: String,
+    ): Session
+
+    /**
      * Forgets the session on this device at once, then asks the server to end
      * it, without waiting: leaving works offline. Throws `Failure` only when
      * the device cannot forget it; the session then stays as it was.
