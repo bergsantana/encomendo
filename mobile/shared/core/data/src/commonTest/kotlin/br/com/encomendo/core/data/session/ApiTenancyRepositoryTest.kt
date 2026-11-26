@@ -1,6 +1,8 @@
 package br.com.encomendo.core.data.session
 
 import br.com.encomendo.core.domain.failure.Failure
+import br.com.encomendo.core.domain.session.Membership
+import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.session.TenantSummary
 import br.com.encomendo.core.domain.session.scope
 import br.com.encomendo.core.network.ApiClientConfig
@@ -94,20 +96,64 @@ class ApiTenancyRepositoryTest {
         }
 
     @Test
-    fun aRefusedSwitchKeepsTheSession() =
+    fun aRefusedSwitchKeepsTheStoreAndRenewsTheListOfStores() =
         runTest {
-            // ADR 0013: a 400 or 403 from switch-tenant leaves the refresh token and the session as they were.
-            val store = tokenStore().apply { write(signedIn) }
+            // ADR 0013: a 403 from switch-tenant leaves the refresh token and the store as they were. The
+            // store was probably lost, so the session is renewed once and the list drops it, as on the web.
+            val bothStores =
+                signedIn.copy(
+                    session =
+                        signedIn.session.copy(
+                            memberships = signedIn.session.memberships + Membership(MOTO_PECAS, Role("staff")),
+                        ),
+                )
+            val store = tokenStore().apply { write(bothStores) }
+            val calls = mutableListOf<String>()
             val tenancy =
-                repository(store) {
-                    respondProblem(
-                        HttpStatusCode.Forbidden,
-                        """{"title":"Sem acesso","status":403,"code":"forbidden"}""",
-                    )
+                repository(store) { request ->
+                    calls += request.url.encodedPath
+                    if (request.url.encodedPath == "/auth/switch-tenant") {
+                        respondProblem(
+                            HttpStatusCode.Forbidden,
+                            """{"title":"Sem acesso","status":403,"code":"forbidden"}""",
+                        )
+                    } else {
+                        respondJson(refreshedSession())
+                    }
                 }
 
             assertFailsWith<Failure.Forbidden> { tenancy.switchTo(MOTO_PECAS.id) }
 
+            assertEquals(listOf("/auth/switch-tenant", "/auth/refresh"), calls)
+            assertEquals(SessionTokens("access-refreshed", "refresh-refreshed"), store.read()?.tokens)
+            assertEquals(AltaRpm, store.read()?.session?.tenant)
+            assertEquals(
+                listOf(AltaRpm),
+                store
+                    .read()
+                    ?.session
+                    ?.memberships
+                    ?.map { it.tenant },
+            )
+        }
+
+    @Test
+    fun anInvalidSwitchRenewsNothing() =
+        runTest {
+            val store = tokenStore().apply { write(signedIn) }
+            val calls = mutableListOf<String>()
+            val tenancy =
+                repository(store) { request ->
+                    calls += request.url.encodedPath
+                    respondProblem(
+                        HttpStatusCode.BadRequest,
+                        """{"title":"Dados inválidos","status":400,"code":"invalid"}""",
+                    )
+                }
+
+            assertFailsWith<Failure.InvalidInput> { tenancy.switchTo("not-a-store") }
+
+            assertEquals(listOf("/auth/switch-tenant"), calls)
             assertEquals(signedIn, store.read())
         }
 
@@ -290,7 +336,7 @@ class ApiTenancyRepositoryTest {
     ): Wired {
         val client =
             createSessionApiClient(MockEngine(handler), ApiClientConfig(baseUrl = "https://api.test"), store, turns)
-        return Wired(ApiTenancyRepository(AuthApi(client), TenancyApi(client), store, turns), client)
+        return Wired(ApiTenancyRepository(TenancyApi(client), SessionKeeper(AuthApi(client), store, turns)), client)
     }
 
     private fun MockRequestHandleScope.respondJson(body: String): HttpResponseData =

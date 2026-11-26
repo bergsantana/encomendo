@@ -107,3 +107,12 @@ data class FieldIssue(
     /** pt-BR text the UI may show next to the field. */
     val message: String,
 )
+
+/**
+ * True when this answer to `/auth/refresh` or `/auth/switch-tenant` means the
+ * server looked at the refresh token and refused it: 400, 401 or 403. Only
+ * these end the session; offline, 429 and 5xx keep it (ADR 0012, ADR 0013).
+ */
+val ApiError.refusesRefreshToken: Boolean get() = status in SESSION_ENDING_STATUSES
+
+private val SESSION_ENDING_STATUSES = setOf(400, 401, 403)

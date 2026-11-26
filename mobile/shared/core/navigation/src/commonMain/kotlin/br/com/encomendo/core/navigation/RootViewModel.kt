@@ -6,12 +6,14 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewModelScope
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.ObserveSession
+import br.com.encomendo.core.domain.session.RenewSession
 import br.com.encomendo.core.domain.session.Session
 import br.com.encomendo.core.domain.session.scope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /**
  * RootUiState says which graph the app shows. A signed-in or signed-out state
@@ -63,10 +65,16 @@ sealed interface RootUiState {
  */
 class RootViewModel(
     observeSession: ObserveSession,
+    renewSession: RenewSession,
     private val handover: ScreenHandover,
 ) : ViewModel() {
     // Read and replaced on the main thread only, by the session flow below.
     private var current: SessionScreens? = null
+
+    init {
+        // Once per launch (ADR 0010): the root survives rotation, and a relaunch renews again.
+        viewModelScope.launch { renewSession() }
+    }
 
     /** The graph to show. */
     val uiState: StateFlow<RootUiState> =
