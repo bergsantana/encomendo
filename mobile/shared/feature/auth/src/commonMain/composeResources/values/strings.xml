@@ -60,6 +60,7 @@
     <string name="picker_create_title">Crie sua loja</string>
     <string name="picker_create_another">Criar outra loja</string>
     <string name="picker_store_address">%1$s.encomendo.com.br</string>
+    <string name="picker_store_suspended">Suspensa</string>
     <string name="picker_opening">Abrindo…</string>
     <string name="picker_store_name">Nome da loja</string>
     <string name="picker_store_link">Link da loja</string>

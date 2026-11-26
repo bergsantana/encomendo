@@ -1,8 +1,10 @@
 package br.com.encomendo.feature.auth.di
 
 import br.com.encomendo.core.domain.session.CreateStore
+import br.com.encomendo.core.domain.session.DismissStoreSuspension
 import br.com.encomendo.core.domain.session.LogIn
 import br.com.encomendo.core.domain.session.LogOut
+import br.com.encomendo.core.domain.session.ObserveStoreSuspension
 import br.com.encomendo.core.domain.session.RequestPasswordReset
 import br.com.encomendo.core.domain.session.ResetPassword
 import br.com.encomendo.core.domain.session.SignUp
@@ -29,6 +31,8 @@ val authModule: Module =
         factoryOf(::RequestPasswordReset)
         factoryOf(::ResetPassword)
         factoryOf(::LogOut)
+        factoryOf(::ObserveStoreSuspension)
+        factoryOf(::DismissStoreSuspension)
         factoryOf(::SwitchStore)
         // A new one per picker: it remembers a store created but not yet opened, for the retry.
         factoryOf(::CreateStore)

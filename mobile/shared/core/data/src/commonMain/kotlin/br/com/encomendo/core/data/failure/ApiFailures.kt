@@ -38,6 +38,14 @@ internal fun ApiError.toFailure(): Failure =
                 cause = this,
             )
         code == ApiErrorCode.InvalidCredentials -> Failure.WrongCredentials(cause = this)
+        else -> toRefusalFailure()
+    }
+
+/** Maps the answers a screen words by their code: who may do what, what is gone, what is taken. */
+private fun ApiError.toRefusalFailure(): Failure =
+    when {
+        // A 403 like Forbidden, so it comes first: the screens word it for the store, not for the role.
+        code == ApiErrorCode.TenantSuspended -> Failure.StoreSuspended(cause = this)
         code == ApiErrorCode.Forbidden -> Failure.Forbidden(title = title, cause = this)
         code == ApiErrorCode.NotFound -> Failure.NotFound(title = title, cause = this)
         code == ApiErrorCode.AlreadyMember -> Failure.AlreadyMember(cause = this)

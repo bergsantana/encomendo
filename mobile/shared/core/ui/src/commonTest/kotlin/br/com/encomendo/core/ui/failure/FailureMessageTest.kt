@@ -27,6 +27,12 @@ class FailureMessageTest {
     }
 
     @Test
+    fun aSuspendedStoreHasFixedWordsNotTheServers() {
+        // The design document fixes them (ADR 0022); the server's title is never what the screen shows.
+        assertEquals(FailureMessage.StoreSuspended, Failure.StoreSuspended().toFailureMessage())
+    }
+
+    @Test
     fun aRefusalWithoutWordsIsAGeneralError() {
         // Never an empty message.
         assertEquals(FailureMessage.Unexpected, Failure.Unexpected(409, "conflict", title = "  ").toFailureMessage())

@@ -138,6 +138,47 @@ class ApiTenancyRepositoryTest {
         }
 
     @Test
+    fun aSwitchIntoASuspendedStoreRenewsAndKeepsTheStoreOpen() =
+        runTest {
+            // ADR 0022: the 403 `tenant_suspended` leaves the token and the store as they were (ADR 0013);
+            // the renewal is what lets the picker mark the store.
+            val bothStores =
+                signedIn.copy(
+                    session =
+                        signedIn.session.copy(
+                            memberships = signedIn.session.memberships + Membership(MOTO_PECAS, Role("staff")),
+                        ),
+                )
+            val store = tokenStore().apply { write(bothStores) }
+            val calls = mutableListOf<String>()
+            val tenancy =
+                repository(store) { request ->
+                    calls += request.url.encodedPath
+                    if (request.url.encodedPath == "/auth/switch-tenant") {
+                        respondProblem(
+                            HttpStatusCode.Forbidden,
+                            """{"title":"Esta loja está suspensa.","status":403,"code":"tenant_suspended"}""",
+                        )
+                    } else {
+                        respondJson(refreshedWithASuspendedStore())
+                    }
+                }
+
+            assertFailsWith<Failure.StoreSuspended> { tenancy.switchTo(MOTO_PECAS.id) }
+
+            assertEquals(listOf("/auth/switch-tenant", "/auth/refresh"), calls)
+            assertEquals(AltaRpm, store.read()?.session?.tenant)
+            assertEquals(
+                listOf(AltaRpm.id to false, MOTO_PECAS.id to true),
+                store
+                    .read()
+                    ?.session
+                    ?.memberships
+                    ?.map { it.tenant.id to it.suspended },
+            )
+        }
+
+    @Test
     fun anInvalidSwitchRenewsNothing() =
         runTest {
             val store = tokenStore().apply { write(signedIn) }
@@ -366,6 +407,19 @@ class ApiTenancyRepositoryTest {
          "tenant": {"id": "${AltaRpm.id}", "name": "Alta RPM", "slug": "alta-rpm"},
          "role": "owner", "permissions": [],
          "memberships": [{"tenant": {"id": "${AltaRpm.id}", "name": "Alta RPM", "slug": "alta-rpm"}, "role": "owner"}]}
+        """
+
+    private fun refreshedWithASuspendedStore(): String =
+        """
+        {"accessToken": "access-refreshed", "tokenType": "Bearer", "expiresIn": 900, "refreshToken": "refresh-refreshed",
+         "user": {"id": "0190f3c4-0000-7000-8000-0000000000aa", "name": "Ana Souza", "email": "ana@altarpm.com.br"},
+         "tenant": {"id": "${AltaRpm.id}", "name": "Alta RPM", "slug": "alta-rpm"},
+         "role": "owner", "permissions": [],
+         "memberships": [
+           {"tenant": {"id": "${AltaRpm.id}", "name": "Alta RPM", "slug": "alta-rpm"}, "role": "owner", "status": "active"},
+           {"tenant": {"id": "${MOTO_PECAS.id}", "name": "Moto Peças", "slug": "moto-pecas"}, "role": "staff",
+            "status": "suspended"}
+         ]}
         """
 
     private companion object {

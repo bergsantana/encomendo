@@ -36,6 +36,14 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("forbidden", cause)
 
+    /**
+     * The store is suspended (ADR 0022), so nothing in it can be done or opened. Unlike
+     * [Forbidden], the words are fixed by the design document, so no title is kept.
+     */
+    class StoreSuspended(
+        cause: Throwable? = null,
+    ) : Failure("store suspended", cause)
+
     /** The value of [field] (`email`, `slug` …) is someone else's already; the screen asks for another. */
     class AlreadyTaken(
         val field: String,

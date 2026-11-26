@@ -71,6 +71,12 @@ value class ApiErrorCode(
         /** The session has no store selected; open the store picker. */
         val TenantRequired = ApiErrorCode("tenant_required")
 
+        /**
+         * The selected store is suspended (ADR 0022): every admin call and a switch into it answer 403 with
+         * this code. Show the store's message and go back to the store picker.
+         */
+        val TenantSuspended = ApiErrorCode("tenant_suspended")
+
         /** Someone saved first; reload and apply the change again. */
         val VersionConflict = ApiErrorCode("version_conflict")
 

@@ -2,6 +2,7 @@ package br.com.encomendo.feature.auth
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -22,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
@@ -55,6 +57,7 @@ import br.com.encomendo.feature.auth.resources.picker_opening
 import br.com.encomendo.feature.auth.resources.picker_store_address
 import br.com.encomendo.feature.auth.resources.picker_store_link
 import br.com.encomendo.feature.auth.resources.picker_store_name
+import br.com.encomendo.feature.auth.resources.picker_store_suspended
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -167,7 +170,24 @@ private fun StoreButton(
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(text = store.name, style = MaterialTheme.typography.titleMedium)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = store.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // Word, not only color: the store stays in the list but cannot be entered (ADR 0022).
+                    if (store.suspended) {
+                        Text(
+                            text = stringResource(Res.string.picker_store_suspended),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
                 Text(
                     text = stringResource(Res.string.picker_store_address, store.slug),
                     style = MaterialTheme.typography.bodyMedium,

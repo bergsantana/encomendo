@@ -6,6 +6,8 @@ data class StoreChoice(
     val name: String,
     /** The store's address label: `{slug}.encomendo.com.br`. */
     val slug: String,
+    /** The platform suspended the store: it is marked "Suspensa", and choosing it only says why it stays closed. */
+    val suspended: Boolean = false,
 )
 
 /**

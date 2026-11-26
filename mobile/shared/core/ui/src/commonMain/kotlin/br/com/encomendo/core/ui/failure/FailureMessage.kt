@@ -20,6 +20,9 @@ sealed interface FailureMessage {
         val retryAfterSeconds: Int?,
     ) : FailureMessage
 
+    /** The store is suspended: "Esta loja está suspensa. Fale com o suporte do Encomendo." */
+    data object StoreSuspended : FailureMessage
+
     /** Any other refusal, in the server's own pt-BR words. */
     data class Refused(
         val title: String,
@@ -40,6 +43,7 @@ fun Failure.toFailureMessage(): FailureMessage =
     when (this) {
         is Failure.Offline -> FailureMessage.Offline
         is Failure.RateLimited -> FailureMessage.RateLimited(retryAfterSeconds)
+        is Failure.StoreSuspended -> FailureMessage.StoreSuspended
         is Failure.Forbidden -> refusedIn(title)
         is Failure.NotFound -> refusedIn(title)
         is Failure.Unexpected -> if (isServerFailure) FailureMessage.ServerUnavailable else refusedIn(title)

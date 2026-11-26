@@ -13,6 +13,7 @@
         <item quantity="one">Muitas tentativas. Tente de novo em %1$d minuto.</item>
         <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
     </plurals>
+    <string name="failure_store_suspended">Esta loja está suspensa. Fale com o suporte do Encomendo.</string>
     <!-- Not in the design document: a failure on the device, with no server words to show. -->
     <string name="failure_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
 </resources>

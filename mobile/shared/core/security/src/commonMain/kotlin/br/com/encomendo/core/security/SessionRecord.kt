@@ -48,6 +48,8 @@ internal class TenantRecord(
 internal class MembershipRecord(
     val tenant: TenantRecord,
     val role: String,
+    // Added with ADR 0022; a session stored before it has no stores suspended.
+    val suspended: Boolean = false,
 )
 
 internal fun StoredSession.toRecord(): SessionRecord =
@@ -58,7 +60,7 @@ internal fun StoredSession.toRecord(): SessionRecord =
         tenant = session.tenant?.toRecord(),
         role = session.role?.key,
         permissions = session.permissions.keys.map { it.key },
-        memberships = session.memberships.map { MembershipRecord(it.tenant.toRecord(), it.role.key) },
+        memberships = session.memberships.map { MembershipRecord(it.tenant.toRecord(), it.role.key, it.suspended) },
     )
 
 internal fun SessionRecord.toStoredSession(): StoredSession =
@@ -70,7 +72,7 @@ internal fun SessionRecord.toStoredSession(): StoredSession =
                 tenant = tenant?.toTenant(),
                 role = role?.let(::Role),
                 permissions = GrantedPermissions(permissions.map(::Permission)),
-                memberships = memberships.map { Membership(it.tenant.toTenant(), Role(it.role)) },
+                memberships = memberships.map { Membership(it.tenant.toTenant(), Role(it.role), it.suspended) },
             ),
     )
 

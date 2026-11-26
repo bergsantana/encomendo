@@ -1,6 +1,6 @@
 package br.com.encomendo.core.data.members
 
-import br.com.encomendo.core.data.failure.asFailures
+import br.com.encomendo.core.data.failure.StoreCalls
 import br.com.encomendo.core.domain.members.Invitation
 import br.com.encomendo.core.domain.members.InvitationsRepository
 import br.com.encomendo.core.domain.paging.Page
@@ -14,12 +14,13 @@ import kotlin.time.Instant
 /** ApiInvitationsRepository reads and sends the team's invitations through [api], in the session's store. */
 class ApiInvitationsRepository(
     private val api: MembersApi,
+    private val calls: StoreCalls,
 ) : InvitationsRepository {
     override suspend fun page(
         cursor: String?,
         limit: Int,
     ): Page<Invitation> =
-        asFailures {
+        calls.inStore {
             val page = api.invitations(cursor = cursor, limit = limit)
             Page(items = page.items.map { it.toInvitation() }, nextCursor = page.nextCursor)
         }
@@ -27,9 +28,9 @@ class ApiInvitationsRepository(
     override suspend fun invite(
         email: String,
         role: Role,
-    ): Invitation = asFailures { api.invite(email = email, role = role.key).toInvitation() }
+    ): Invitation = calls.inStore { api.invite(email = email, role = role.key).toInvitation() }
 
-    override suspend fun revoke(invitationId: String) = asFailures { api.revoke(invitationId = invitationId) }
+    override suspend fun revoke(invitationId: String) = calls.inStore { api.revoke(invitationId = invitationId) }
 }
 
 private fun InvitationDto.toInvitation(): Invitation =

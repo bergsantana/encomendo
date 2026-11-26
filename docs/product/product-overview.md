@@ -25,7 +25,7 @@ Business owners create items, components and ready kits. The sourcing mode belon
 | **Estoque** | Immediately, if enough is on hand and reserved for the order; otherwise after the supplier's lead time, with a "sem estoque" warning. |
 | **Produção própria** | After the production time plus the wait for free capacity, tracked on a production board with a weekly capacity number. |
 
-A ready kit has a fixed price. When the client swaps an item, the kit price changes by the difference between the two items at single-item price, the kit discount stays, and the date is recalculated.
+A ready kit has a fixed price. When the client swaps an item, the owner's choice for that kit applies. Either the kit price changes by the difference between the two items at single-item price and the kit discount stays (the default), or the kit loses its discount and costs the sum of its items. Either way the date is recalculated.
 
 ## 3. The store page
 
