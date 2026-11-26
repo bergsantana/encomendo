@@ -10,7 +10,7 @@ import { safeRedirect } from '../../../router/redirect'
 import { useAuthStore } from '../store'
 
 const auth = useAuthStore()
-const { submitting, formError, fieldErrors, notice } = storeToRefs(auth)
+const { submitting, formError, fieldErrors, notice, restoreFailed, retrying } = storeToRefs(auth)
 const route = useRoute()
 const router = useRouter()
 
@@ -25,12 +25,20 @@ onMounted(() => auth.clearErrors())
 // The notice (a password just changed) is for this visit only.
 onUnmounted(() => auth.clearNotice())
 
+function openDestination(): Promise<unknown> {
+  return router.replace(safeRedirect(route.query.redirect) ?? { name: 'hoje' })
+}
+
 async function submit(): Promise<void> {
   if (await auth.logIn({ email: email.value, password: password.value })) {
-    await router.replace(safeRedirect(route.query.redirect) ?? { name: 'hoje' })
+    await openDestination()
     return
   }
   await focusFirstError(fieldErrors.value)
+}
+
+async function retry(): Promise<void> {
+  if (await auth.retryRestore()) await openDestination()
 }
 </script>
 
@@ -51,6 +59,20 @@ async function submit(): Promise<void> {
     >
       {{ formError }}
     </p>
+    <p
+      v-if="retrying"
+      role="status"
+    >
+      Tentando de novo…
+    </p>
+    <!-- Not disabled while it waits: disabling the button just pressed would drop focus. -->
+    <BaseButton
+      v-if="restoreFailed || retrying"
+      :aria-disabled="retrying ? 'true' : undefined"
+      @click="retry"
+    >
+      Tentar de novo
+    </BaseButton>
     <form
       novalidate
       aria-labelledby="login-title"

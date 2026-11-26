@@ -155,6 +155,9 @@ The exact wording of the screens that start, move and end a staff session. Web a
 - Empty fields: "Informe seu e-mail.", "Informe sua senha."
 - Wrong email or password: "E-mail ou senha incorretos."
 - After a password reset: "Senha alterada. Entre com a nova senha."
+- When the session could not be restored on load: the connection, server or rate-limit message.
+  - Except after a rate limit, a button "Tentar de novo" asks for the session again (logging in again would start a new login). While it waits: "Tentando de novo…".
+  - The page opens once the server answers with the session. If the server answers that there is none, the message goes and the login form stays.
 
 **Criar conta (sign-up)**
 
