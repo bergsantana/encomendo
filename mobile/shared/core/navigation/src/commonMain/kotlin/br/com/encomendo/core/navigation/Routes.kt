@@ -13,6 +13,10 @@ data object AuthGraph
 @Serializable
 data object LoginDestination
 
+/** Criar conta: a new staff account, which then creates its first store. */
+@Serializable
+data object SignUpDestination
+
 /** The management graph, opened after a staff login. */
 @Serializable
 data object BackofficeGraph

@@ -132,6 +132,55 @@ class AuthApiTest {
         }
 
     @Test
+    fun signUpAsksForTheRefreshTokenInTheBody() =
+        runTest {
+            // A new account's session, with no store yet (docs/api/openapi.yaml, signUp).
+            val requests = mutableListOf<HttpRequestData>()
+            val api =
+                authApi { request ->
+                    requests += request
+                    respondJson(NO_STORE_JSON, HttpStatusCode.Created)
+                }
+
+            val session = api.signUp(name = "Ana Souza", email = "ana@altarpm.com.br", password = "segredo-forte")
+
+            val request = requests.single()
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/auth/signup", request.url.encodedPath)
+            assertNull(request.headers[HttpHeaders.Authorization])
+            assertEquals(
+                """{"name":"Ana Souza","email":"ana@altarpm.com.br","password":"segredo-forte",""" +
+                    """"refreshTransport":"body"}""",
+                request.body.toByteArray().decodeToString(),
+            )
+            assertEquals("refresh-new", session.refreshToken)
+            assertNull(session.tenant)
+        }
+
+    @Test
+    fun anEmailInUseIsAnApiError() =
+        runTest {
+            val api =
+                authApi {
+                    respondProblem(
+                        HttpStatusCode.Conflict,
+                        """{"title":"E-mail em uso","status":409,"code":"email_taken"}""",
+                    )
+                }
+
+            val error =
+                assertFailsWith<ApiError> {
+                    api.signUp(
+                        name = "Ana",
+                        email = "ana@altarpm.com.br",
+                        password = "segredo-forte",
+                    )
+                }
+
+            assertEquals(ApiErrorCode.EmailTaken, error.code)
+        }
+
+    @Test
     fun logInAsksForTheRefreshTokenInTheBody() =
         runTest {
             // Android takes the refresh token from the body (ADR 0010), and a login carries no old access token.

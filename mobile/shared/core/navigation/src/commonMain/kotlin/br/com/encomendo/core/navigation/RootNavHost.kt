@@ -19,6 +19,7 @@ import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.ui.LocalGrantedPermissions
 import br.com.encomendo.feature.auth.AccountBarRoute
 import br.com.encomendo.feature.auth.LoginRoute
+import br.com.encomendo.feature.auth.SignUpRoute
 import br.com.encomendo.feature.auth.StorePickerRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import org.koin.compose.viewmodel.koinViewModel
@@ -70,8 +71,9 @@ fun RootNavHost(
 
 @Composable
 private fun AuthHost(modifier: Modifier) {
-    NavHost(navController = rememberNavController(), startDestination = AuthGraph, modifier = modifier) {
-        authNavGraph()
+    val navController = rememberNavController()
+    NavHost(navController = navController, startDestination = AuthGraph, modifier = modifier) {
+        authNavGraph(navController)
     }
 }
 
@@ -98,10 +100,15 @@ private fun ManagementShell(modifier: Modifier) {
     }
 }
 
-/** Login, and later sign-up and forgot password (`feature/auth`); the store picker has its own state. */
-fun NavGraphBuilder.authNavGraph() {
+/** Login and sign-up, and later forgot password (`feature/auth`); the store picker has its own state. */
+fun NavGraphBuilder.authNavGraph(navController: NavController) {
     navigation<AuthGraph>(startDestination = LoginDestination) {
-        composable<LoginDestination> { LoginRoute() }
+        composable<LoginDestination> {
+            LoginRoute(onCreateAccount = { navController.navigate(SignUpDestination) { launchSingleTop = true } })
+        }
+        composable<SignUpDestination> {
+            SignUpRoute(onHaveAccount = { navController.popBackStack() })
+        }
     }
 }
 

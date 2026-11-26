@@ -22,12 +22,24 @@
         <item quantity="one">Muitas tentativas. Tente de novo em %1$d minuto.</item>
         <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
     </plurals>
+    <string name="login_create_account">Criar conta</string>
     <string name="login_missing_email">Informe seu e-mail.</string>
     <string name="login_missing_password">Informe sua senha.</string>
     <!-- Any staff form (design document, "Account and store screens (staff)"). -->
     <string name="form_check_fields">Confira os campos destacados.</string>
     <!-- Not in the design document: a failure on the device, with no server words to show. -->
     <string name="form_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
+
+    <!-- Criar conta (design document, "Account and store screens (staff)"). -->
+    <string name="signup_title">Criar conta</string>
+    <string name="signup_name">Nome</string>
+    <string name="signup_submitting">Criando conta…</string>
+    <string name="signup_have_account">Já tenho conta</string>
+    <string name="signup_missing_name">Informe seu nome.</string>
+    <string name="signup_missing_password">Informe uma senha.</string>
+    <string name="signup_email_taken">Já existe uma conta com este e-mail.</string>
+    <!-- The password rule, under every new password. -->
+    <string name="password_hint">Pelo menos 8 caracteres.</string>
 
     <!-- The account bar; Sair and its error as on the web admin (layouts/DashboardLayout.vue, features/auth/store.ts). -->
     <string name="account_menu_description">Conta de %1$s</string>

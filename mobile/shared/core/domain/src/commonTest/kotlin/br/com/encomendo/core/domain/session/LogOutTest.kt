@@ -37,6 +37,12 @@ class LogOutTest {
             password: String,
         ): Session = error("LogOut never logs in")
 
+        override suspend fun signUp(
+            name: String,
+            email: String,
+            password: String,
+        ): Session = error("LogOut never signs up")
+
         override suspend fun logOut() {
             logouts++
             failure?.let { throw it }
