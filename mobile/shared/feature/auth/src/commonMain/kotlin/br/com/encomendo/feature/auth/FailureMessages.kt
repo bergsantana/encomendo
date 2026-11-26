@@ -2,9 +2,46 @@ package br.com.encomendo.feature.auth
 
 import androidx.compose.runtime.Composable
 import br.com.encomendo.feature.auth.resources.Res
+import br.com.encomendo.feature.auth.resources.form_check_fields
+import br.com.encomendo.feature.auth.resources.form_unexpected
+import br.com.encomendo.feature.auth.resources.login_error_offline
 import br.com.encomendo.feature.auth.resources.login_error_rate_limited_minutes
 import br.com.encomendo.feature.auth.resources.login_error_rate_limited_seconds
+import br.com.encomendo.feature.auth.resources.login_error_server
+import br.com.encomendo.feature.auth.resources.login_error_wrong_credentials
+import br.com.encomendo.feature.auth.resources.picker_error_not_member
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
+
+/** The text above a form for [this] error, in the design document's words. */
+@Composable
+internal fun FormError.message(): String =
+    when (this) {
+        FormError.CheckFields -> stringResource(Res.string.form_check_fields)
+        FormError.WrongCredentials -> stringResource(Res.string.login_error_wrong_credentials)
+        FormError.NotAMember -> stringResource(Res.string.picker_error_not_member)
+        FormError.Offline -> stringResource(Res.string.login_error_offline)
+        FormError.ServerUnavailable -> stringResource(Res.string.login_error_server)
+        FormError.Unexpected -> stringResource(Res.string.form_unexpected)
+        is FormError.Refused -> title
+        is FormError.RateLimited -> rateLimitMessage(retryAfterSeconds)
+    }
+
+/**
+ * The text under a field for [this] problem: [missing] when it was left
+ * empty, [taken] when it is someone else's, the server's words otherwise.
+ */
+@Composable
+internal fun FieldProblem.text(
+    missing: StringResource,
+    taken: StringResource? = null,
+): String =
+    when (this) {
+        FieldProblem.Missing -> stringResource(missing)
+        FieldProblem.Taken -> stringResource(requireNotNull(taken) { "a field that can be taken needs its words" })
+        is FieldProblem.Server -> message
+    }
 
 /** True for a 5xx: the server's fault, worded as "O servidor não respondeu" as on the web. Status 0 is the device. */
 internal fun isServerFailure(status: Int): Boolean = status >= FIRST_SERVER_ERROR

@@ -32,8 +32,10 @@ class ApiFailuresTest {
     }
 
     @Test
-    fun aRefusalIsForbidden() {
-        assertIs<Failure.Forbidden>(ApiError(status = 403, code = ApiErrorCode.Forbidden).toFailure())
+    fun aRefusalIsForbiddenAndKeepsTheServersOwnWords() {
+        val failure = ApiError(status = 403, code = ApiErrorCode.Forbidden, title = "Sem permissão").toFailure()
+
+        assertEquals("Sem permissão", assertIs<Failure.Forbidden>(failure).title)
     }
 
     @Test
@@ -41,6 +43,14 @@ class ApiFailuresTest {
         // The screen puts its own words next to the field (web: features/auth/store.ts, fieldByCode).
         assertEquals("slug", assertIs<Failure.AlreadyTaken>(ApiError(409, ApiErrorCode.SlugTaken).toFailure()).field)
         assertEquals("email", assertIs<Failure.AlreadyTaken>(ApiError(409, ApiErrorCode.EmailTaken).toFailure()).field)
+    }
+
+    @Test
+    fun anUnexpectedRefusalKeepsTheServersOwnWords() {
+        // Shown as is: "Any other refusal: the pt-BR title the API sent" (design document).
+        val failure = ApiError(status = 409, code = ApiErrorCode.Conflict, title = "Limite de lojas").toFailure()
+
+        assertEquals("Limite de lojas", assertIs<Failure.Unexpected>(failure).title)
     }
 
     @Test

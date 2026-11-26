@@ -27,8 +27,12 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("invalid input", cause)
 
-    /** The signed-in user may not do this, such as opening a store they no longer belong to. */
+    /**
+     * The signed-in user may not do this, such as opening a store they no
+     * longer belong to. [title] is the API's pt-BR summary, null when none.
+     */
     class Forbidden(
+        val title: String? = null,
         cause: Throwable? = null,
     ) : Failure("forbidden", cause)
 
@@ -47,11 +51,14 @@ sealed class Failure(
      * Anything the screen has no better answer for: a server failure, an
      * answer the app cannot read, a refusal it does not expect. [status] is the
      * HTTP status, or 0 when the failure was on the device; [code] is the
-     * API's problem code, kept for logs.
+     * API's problem code, kept for logs; [title] is the API's pt-BR summary,
+     * which a screen shows for a refusal it has no words of its own for, and
+     * null when there is none. The message keeps only the status and code.
      */
     class Unexpected(
         val status: Int,
         val code: String,
+        val title: String? = null,
         cause: Throwable? = null,
     ) : Failure("unexpected: $status $code", cause)
 }

@@ -22,7 +22,12 @@
         <item quantity="one">Muitas tentativas. Tente de novo em %1$d minuto.</item>
         <item quantity="other">Muitas tentativas. Tente de novo em %1$d minutos.</item>
     </plurals>
-    <string name="login_error_unexpected">Não foi possível entrar agora. Tente de novo em instantes.</string>
+    <string name="login_missing_email">Informe seu e-mail.</string>
+    <string name="login_missing_password">Informe sua senha.</string>
+    <!-- Any staff form (design document, "Account and store screens (staff)"). -->
+    <string name="form_check_fields">Confira os campos destacados.</string>
+    <!-- Not in the design document: a failure on the device, with no server words to show. -->
+    <string name="form_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
 
     <!-- The account bar; Sair and its error as on the web admin (layouts/DashboardLayout.vue, features/auth/store.ts). -->
     <string name="account_menu_description">Conta de %1$s</string>
@@ -44,7 +49,7 @@
     <string name="picker_create">Criar loja</string>
     <string name="picker_creating">Criando…</string>
     <string name="picker_error_not_member">Você não faz mais parte desta loja.</string>
-    <string name="picker_error_check_fields">Confira os campos destacados.</string>
-    <string name="picker_error_unexpected">Não foi possível concluir agora. Tente de novo em instantes.</string>
+    <string name="picker_missing_name">Informe o nome da loja.</string>
+    <string name="picker_missing_link">Informe o link da loja.</string>
     <string name="account_switch_store">Trocar de loja</string>
 </resources>

@@ -23,21 +23,36 @@ class LoginViewModel(
     /** The form as the screen shows it. */
     val uiState: StateFlow<LoginUiState> = state.asStateFlow()
 
-    /** The user typed in the email field. Clears that field's issue and the form error, except a wait. */
+    /** The user typed in the email field. Clears that field's issue, and the form error once no field is marked. */
     fun onEmailChange(email: String) =
-        state.update { it.copy(email = email, emailIssue = null, error = it.errorAfterTyping()) }
+        state.update { it.copy(email = email, emailIssue = null, error = it.error.afterTyping(it.passwordIssue)) }
 
-    /** The user typed in the password field. Clears that field's issue and the form error, except a wait. */
+    /** The user typed in the password field. Clears that field's issue, and the form error once no field is marked. */
     fun onPasswordChange(password: String) =
-        state.update { it.copy(password = password, passwordIssue = null, error = it.errorAfterTyping()) }
+        state.update { it.copy(password = password, passwordIssue = null, error = it.error.afterTyping(it.emailIssue)) }
 
     /** The user tapped Mostrar or Ocultar on the password field. */
     fun onPasswordVisibilityToggle() = state.update { it.copy(passwordVisible = !it.passwordVisible) }
 
-    /** The user tapped Entrar, or Done on the keyboard. Does nothing while a login runs or a field is empty. */
+    /**
+     * The user tapped Entrar, or Done on the keyboard. Marks empty fields
+     * instead of sending; does nothing while a login runs.
+     */
     fun onSubmit() {
         val form = state.value
         if (!form.canSubmit) return
+        val emailIssue = FieldProblem.Missing.takeIf { form.email.isBlank() }
+        val passwordIssue = FieldProblem.Missing.takeIf { form.password.isEmpty() }
+        if (emailIssue != null || passwordIssue != null) {
+            state.update {
+                it.copy(
+                    emailIssue = emailIssue,
+                    passwordIssue = passwordIssue,
+                    error = FormError.CheckFields,
+                )
+            }
+            return
+        }
         state.update { it.copy(submitting = true, error = null, emailIssue = null, passwordIssue = null) }
         viewModelScope.launch {
             try {
@@ -52,33 +67,18 @@ class LoginViewModel(
     }
 }
 
-/** Typing fixes a wrong field, but doesn't shorten a rate limit's wait. */
-private fun LoginUiState.errorAfterTyping(): LoginError? = error as? LoginError.RateLimited
-
 private fun LoginUiState.showing(failure: Failure): LoginUiState {
     val stopped = copy(submitting = false)
     return when (failure) {
-        is Failure.WrongCredentials -> stopped.copy(error = LoginError.WrongCredentials)
-        is Failure.Offline -> stopped.copy(error = LoginError.Offline)
-        is Failure.RateLimited -> stopped.copy(error = LoginError.RateLimited(failure.retryAfterSeconds))
-        is Failure.InvalidInput -> {
-            val email = failure.issues.firstOrNull { it.field == EMAIL_FIELD }?.message
-            val password = failure.issues.firstOrNull { it.field == PASSWORD_FIELD }?.message
-            // An issue on a field the form doesn't show can't be fixed here: say something went wrong.
-            if (email == null && password == null) {
-                stopped.copy(error = LoginError.Unexpected)
-            } else {
-                stopped.copy(emailIssue = email, passwordIssue = password)
-            }
-        }
-        is Failure.Unexpected -> stopped.copy(error = unexpected(failure.status))
-        // Not answers a login gives; say something went wrong rather than guess.
-        is Failure.Forbidden, is Failure.AlreadyTaken -> stopped.copy(error = LoginError.Unexpected)
+        is Failure.InvalidInput ->
+            stopped.copy(
+                emailIssue = failure.problemFor(EMAIL_FIELD),
+                passwordIssue = failure.problemFor(PASSWORD_FIELD),
+                error = FormError.CheckFields,
+            )
+        else -> stopped.copy(error = failure.toFormError())
     }
 }
-
-private fun unexpected(status: Int): LoginError =
-    if (isServerFailure(status)) LoginError.ServerUnavailable else LoginError.Unexpected
 
 /** The field names of `LoginRequest` in docs/api/openapi.yaml. */
 private const val EMAIL_FIELD = "email"
