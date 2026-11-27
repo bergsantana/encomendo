@@ -35,9 +35,11 @@ sealed interface FailureMessage {
 /**
  * Returns the message any staff screen shows for this failure. Wrong input,
  * a taken value, a wrong code, wrong credentials, someone already on the
- * team and an invitation whose email did not go out are
- * [FailureMessage.Unexpected] here: a screen that can get them has words of
- * its own, next to its fields, and handles them before calling this.
+ * team, an invitation whose email did not go out, and the catalog's
+ * refusals (a version conflict, a category in use, an item in a kit or
+ * archived, a photo refused) are [FailureMessage.Unexpected] here: a screen
+ * that can get them has words of its own, next to its fields, and handles
+ * them before calling this.
  */
 fun Failure.toFailureMessage(): FailureMessage =
     when (this) {
@@ -53,6 +55,13 @@ fun Failure.toFailureMessage(): FailureMessage =
         is Failure.WrongCredentials,
         is Failure.AlreadyMember,
         is Failure.EmailNotSent,
+        is Failure.VersionConflict,
+        is Failure.CategoryInUse,
+        is Failure.ItemInKit,
+        is Failure.ItemArchived,
+        is Failure.PhotoLimit,
+        is Failure.PhotoInvalid,
+        is Failure.PhotoNotUploaded,
         -> FailureMessage.Unexpected
     }
 

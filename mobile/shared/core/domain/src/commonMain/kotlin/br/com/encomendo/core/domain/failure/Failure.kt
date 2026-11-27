@@ -82,6 +82,46 @@ sealed class Failure(
         cause: Throwable? = null,
     ) : Failure("wrong credentials", cause)
 
+    /** Someone saved the row first (`version_conflict`): read it again and apply the change again. */
+    class VersionConflict(
+        cause: Throwable? = null,
+    ) : Failure("version conflict", cause)
+
+    /** A category cannot be deleted while items, archived ones included, use it (`category_in_use`). */
+    class CategoryInUse(
+        cause: Throwable? = null,
+    ) : Failure("category in use", cause)
+
+    /** An item cannot be archived while kits that are not archived hold it (`item_in_kit`); [kits] names them. */
+    class ItemInKit(
+        val kits: List<Reference>,
+        cause: Throwable? = null,
+    ) : Failure("item in kit", cause)
+
+    /** A kit cannot be saved or restored while an item in it is archived (`item_archived`); [items] names them. */
+    class ItemArchived(
+        val items: List<Reference>,
+        cause: Throwable? = null,
+    ) : Failure("item archived", cause)
+
+    /** The item or kit has 8 photos already (`photo_limit`). */
+    class PhotoLimit(
+        cause: Throwable? = null,
+    ) : Failure("photo limit", cause)
+
+    /** The photo is over 10 MB or not a JPEG, PNG or WebP image (`photo_invalid`); the server deleted it. */
+    class PhotoInvalid(
+        cause: Throwable? = null,
+    ) : Failure("photo invalid", cause)
+
+    /**
+     * Nothing was uploaded to the photo's key, or the upload to storage failed or expired
+     * (`photo_not_uploaded`); pick the photo again.
+     */
+    class PhotoNotUploaded(
+        cause: Throwable? = null,
+    ) : Failure("photo not uploaded", cause)
+
     /**
      * Anything the screen has no better answer for: a server failure, an
      * answer the app cannot read, a refusal it does not expect. [status] is the
@@ -104,4 +144,12 @@ data class InputIssue(
     val field: String,
     /** pt-BR text from the server. */
     val message: String,
+)
+
+/** Reference names a row a refusal is about, such as a kit that holds an item. */
+data class Reference(
+    /** The row's id (a UUID). */
+    val id: String,
+    /** The row's name. */
+    val name: String,
 )

@@ -25,6 +25,9 @@ kotlin {
             // The client factory takes Ktor's engine and returns its client.
             api(project(":shared:core:network"))
             api(project(":shared:core:security"))
+            // Its cache DAO is in the catalog repositories' constructors.
+            api(project(":shared:core:database"))
+            implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {

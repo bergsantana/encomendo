@@ -32,6 +32,7 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
         }
         androidMain.dependencies {
+            implementation(project(":shared:core:platform"))
             implementation(libs.koin.android)
         }
         commonTest.dependencies {

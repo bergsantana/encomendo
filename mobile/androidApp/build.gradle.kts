@@ -69,6 +69,7 @@ dependencies {
     implementation(project(":shared:core:ui"))
     implementation(project(":shared:core:navigation"))
     implementation(project(":shared:core:di"))
+    implementation(project(":shared:core:platform")) // MainActivity attaches itself to the photo picker
     implementation(libs.androidx.activity.compose)
     implementation(libs.koin.android)
 }

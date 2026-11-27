@@ -1,9 +1,19 @@
 package br.com.encomendo.core.di
 
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
+import br.com.encomendo.core.database.EncomendoDatabase
+import br.com.encomendo.core.domain.catalog.AttributeRepository
+import br.com.encomendo.core.domain.catalog.CatalogRepository
+import br.com.encomendo.core.domain.catalog.CategoryRepository
+import br.com.encomendo.core.domain.catalog.ItemRepository
+import br.com.encomendo.core.domain.catalog.KitRepository
+import br.com.encomendo.core.domain.catalog.PhotoRepository
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.TenancyRepository
 import br.com.encomendo.core.domain.session.scope
+import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.navigation.RootViewModel
 import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.network.ApiClientConfig
@@ -68,6 +78,10 @@ class ModulesTest {
                     single(SessionDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single(DeviceDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single<HttpClientEngine> { MockEngine { respondOk() } }
+                    // The cache DAOs are only built here, never queried, so no SQLite is opened.
+                    single<RoomDatabase.Builder<EncomendoDatabase>> {
+                        Room.inMemoryDatabaseBuilder<EncomendoDatabase>()
+                    }
                 }
             // The test's own scope as the app's, so nothing started at launch outlives the test.
             val testAppScope = module { single(AppScope) { backgroundScope } }
@@ -79,6 +93,13 @@ class ModulesTest {
             koin.get<AccountViewModel>()
             koin.get<StorePickerViewModel>()
             koin.get<MembersViewModel>()
+            koin.get<CatalogRepository>()
+            koin.get<SupplierRepository>()
+            koin.get<CategoryRepository>()
+            koin.get<AttributeRepository>()
+            koin.get<ItemRepository>()
+            koin.get<KitRepository>()
+            koin.get<PhotoRepository>()
             koin.get<TenancyRepository>()
             assertSame(
                 koin.get<SessionTurns>(),

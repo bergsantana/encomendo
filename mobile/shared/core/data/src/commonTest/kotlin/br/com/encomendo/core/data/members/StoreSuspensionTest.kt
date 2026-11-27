@@ -1,18 +1,35 @@
 package br.com.encomendo.core.data.members
 
+import br.com.encomendo.core.data.catalog.ApiCatalogRepository
+import br.com.encomendo.core.data.catalog.ApiSupplierRepository
+import br.com.encomendo.core.data.catalog.ITEM_ID
+import br.com.encomendo.core.data.catalog.InMemoryCatalogCacheDao
+import br.com.encomendo.core.data.catalog.KIT_ID
+import br.com.encomendo.core.data.catalog.itemDraft
 import br.com.encomendo.core.data.session.InMemoryStoreSuspensionNotice
 import br.com.encomendo.core.data.session.createSessionApiClient
+import br.com.encomendo.core.domain.catalog.ItemFilter
+import br.com.encomendo.core.domain.catalog.KitFilter
+import br.com.encomendo.core.domain.catalog.PhotoOwner
+import br.com.encomendo.core.domain.catalog.PhotoOwnerKind
+import br.com.encomendo.core.domain.catalog.PickedPhoto
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.session.scope
+import br.com.encomendo.core.domain.supplier.SupplierDraft
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
+import br.com.encomendo.core.network.catalog.CatalogApis
+import br.com.encomendo.core.network.catalog.PhotoStorageApi
+import br.com.encomendo.core.network.catalog.SuppliersApi
+import br.com.encomendo.core.network.catalog.createStorageClient
 import br.com.encomendo.core.network.members.MembersApi
 import br.com.encomendo.core.security.SessionTokens
 import br.com.encomendo.core.security.StoredSession
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.core.testing.AltaRpm
 import br.com.encomendo.core.testing.FakeSecretCipher
+import br.com.encomendo.core.testing.FakeSessionRepository
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
 import br.com.encomendo.core.testing.testSession
 import io.ktor.client.engine.mock.MockEngine
@@ -50,6 +67,18 @@ class StoreSuspensionTest {
             "invitations.page" to { it.invitations.page(cursor = null, limit = 100) },
             "invitations.invite" to { it.invitations.invite(email = "carla@altarpm.com.br", role = Role.Viewer) },
             "invitations.revoke" to { it.invitations.revoke(invitationId = "i-1") },
+            "catalog.categories" to { it.catalog.categories() },
+            "catalog.attributes" to { it.catalog.attributes() },
+            "catalog.itemsPage" to { it.catalog.itemsPage(ItemFilter(), cursor = null, limit = 20) },
+            "catalog.createItem" to { it.catalog.createItem(itemDraft()) },
+            "catalog.kitsPage" to { it.catalog.kitsPage(KitFilter(), cursor = null, limit = 20) },
+            "catalog.archiveKit" to { it.catalog.archiveKit(KIT_ID, version = 1) },
+            "catalog.uploadPhoto" to {
+                val photo = PickedPhoto(byteArrayOf(1), "image/png")
+                it.catalog.uploadPhoto(PhotoOwner(PhotoOwnerKind.Item, ITEM_ID), photo)
+            },
+            "suppliers.page" to { it.suppliers.page(query = null, cursor = null, limit = 20) },
+            "suppliers.create" to { it.suppliers.create(SupplierDraft("Couros", "5511987654321")) },
         )
 
     @Test
@@ -152,6 +181,8 @@ class StoreSuspensionTest {
     private class Repositories(
         val members: ApiMembersRepository,
         val invitations: ApiInvitationsRepository,
+        val catalog: ApiCatalogRepository,
+        val suppliers: ApiSupplierRepository,
     )
 
     private class Wired(
@@ -192,8 +223,23 @@ class StoreSuspensionTest {
         val renewals = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val calls = storeCalls(store, client, turns, notice, renewals)
         val api = MembersApi(client)
+        val cache = InMemoryCatalogCacheDao()
+        val sessions = FakeSessionRepository(testSession())
+        val catalog =
+            ApiCatalogRepository(
+                CatalogApis(client),
+                PhotoStorageApi(createStorageClient(MockEngine { respond("", HttpStatusCode.OK) })),
+                calls,
+                cache,
+                sessions,
+            )
         return Wired(
-            Repositories(ApiMembersRepository(api, calls), ApiInvitationsRepository(api, calls)),
+            Repositories(
+                ApiMembersRepository(api, calls),
+                ApiInvitationsRepository(api, calls),
+                catalog,
+                ApiSupplierRepository(SuppliersApi(client), calls, cache, sessions),
+            ),
             store,
             notice,
             paths,

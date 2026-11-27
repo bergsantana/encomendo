@@ -1,5 +1,7 @@
 package br.com.encomendo.core.di
 
+import br.com.encomendo.core.data.catalog.ApiCatalogRepository
+import br.com.encomendo.core.data.catalog.ApiSupplierRepository
 import br.com.encomendo.core.data.failure.StoreCalls
 import br.com.encomendo.core.data.members.ApiInvitationsRepository
 import br.com.encomendo.core.data.members.ApiMembersRepository
@@ -13,6 +15,12 @@ import br.com.encomendo.core.data.session.TokenSessionRepository
 import br.com.encomendo.core.data.session.createSessionApiClient
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.database.buildDatabase
+import br.com.encomendo.core.domain.catalog.AttributeRepository
+import br.com.encomendo.core.domain.catalog.CatalogRepository
+import br.com.encomendo.core.domain.catalog.CategoryRepository
+import br.com.encomendo.core.domain.catalog.ItemRepository
+import br.com.encomendo.core.domain.catalog.KitRepository
+import br.com.encomendo.core.domain.catalog.PhotoRepository
 import br.com.encomendo.core.domain.members.InvitationsRepository
 import br.com.encomendo.core.domain.members.MembersRepository
 import br.com.encomendo.core.domain.session.AuthRepository
@@ -20,11 +28,16 @@ import br.com.encomendo.core.domain.session.PasswordResetRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.StoreSuspensionNotice
 import br.com.encomendo.core.domain.session.TenancyRepository
+import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.navigation.navigationModule
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
 import br.com.encomendo.core.network.auth.AuthApi
+import br.com.encomendo.core.network.catalog.CatalogApis
+import br.com.encomendo.core.network.catalog.PhotoStorageApi
+import br.com.encomendo.core.network.catalog.SuppliersApi
+import br.com.encomendo.core.network.catalog.createStorageClient
 import br.com.encomendo.core.network.members.MembersApi
 import br.com.encomendo.core.network.tenancy.TenancyApi
 import br.com.encomendo.core.security.TokenStore
@@ -48,7 +61,7 @@ val DeviceDataStore = named("device-datastore")
 
 /**
  * Platform bindings: the Room builder, the Keystore cipher, the session and
- * device DataStores, the HTTP engine and, later, the camera and link opener. Each
+ * device DataStores, the HTTP engine, the photo picker and, later, the link opener. Each
  * platform provides its own.
  */
 expect val platformModule: Module
@@ -58,6 +71,7 @@ val databaseModule: Module =
     module {
         single<EncomendoDatabase> { buildDatabase(builder = get(), queryContext = Dispatchers.IO) }
         single { get<EncomendoDatabase>().syncStateDao() }
+        single { get<EncomendoDatabase>().catalogCacheDao() }
     }
 
 /** The token store: one per process, because DataStore allows one instance per file. */
@@ -84,6 +98,10 @@ val networkModule: Module =
         single { AuthApi(get()) }
         single { TenancyApi(get()) }
         single { MembersApi(get()) }
+        single { CatalogApis(get()) }
+        single { SuppliersApi(get()) }
+        // A plain client: the storage host is not the API and must never see the bearer token (ADR 0024).
+        single { PhotoStorageApi(createStorageClient(get())) }
     }
 
 /** Names the scope that lives as long as the app, for work that must outlive the screen that started it. */
@@ -117,6 +135,24 @@ val dataModule: Module =
         single { StoreCalls(tokens = get(), keeper = get(), notice = get(), renewals = get(AppScope)) }
         single<MembersRepository> { ApiMembersRepository(api = get(), calls = get()) }
         single<InvitationsRepository> { ApiInvitationsRepository(api = get(), calls = get()) }
+        single {
+            ApiCatalogRepository(
+                apis = get(),
+                storage = get(),
+                calls = get(),
+                cache = get(),
+                sessions = get(),
+            )
+        }
+        single<CatalogRepository> { get<ApiCatalogRepository>() }
+        single<CategoryRepository> { get<ApiCatalogRepository>() }
+        single<AttributeRepository> { get<ApiCatalogRepository>() }
+        single<ItemRepository> { get<ApiCatalogRepository>() }
+        single<KitRepository> { get<ApiCatalogRepository>() }
+        single<PhotoRepository> { get<ApiCatalogRepository>() }
+        single<SupplierRepository> {
+            ApiSupplierRepository(api = get(), calls = get(), cache = get(), sessions = get())
+        }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */
