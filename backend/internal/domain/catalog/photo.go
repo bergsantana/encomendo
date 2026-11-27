@@ -37,8 +37,7 @@ type Photo struct {
 // or WebP, or a size outside 1 byte to 10 MB. The upload flow checks the
 // bytes themselves before it calls this (ADR 0024).
 func NewPhoto(id shared.PhotoID, key, contentType string, size int64) (Photo, error) {
-	okType := contentType == ContentTypeJPEG || contentType == ContentTypePNG || contentType == ContentTypeWebP
-	if id.IsZero() || key == "" || !okType || size < 1 || size > MaxPhotoBytes {
+	if id.IsZero() || key == "" || !IsPhotoType(contentType) || size < 1 || size > MaxPhotoBytes {
 		return Photo{}, fmt.Errorf("new photo %v (%q, %d bytes): %w", id, contentType, size, ErrPhotoInvalid)
 	}
 	return Photo{id: id, key: key, contentType: contentType, size: size}, nil
@@ -78,6 +77,29 @@ func restorePhotos(photos []Photo) (photoSet, error) {
 	return photoSet{photos: cloneSlice(photos)}, nil
 }
 
+// PhotoList is the ordered photos of one item or kit, apart from the item or
+// kit itself. The photo use cases change photos through it without loading
+// the owner or changing its version: photos are their own resource (plan
+// 3.6). It has the same rules as an item's or kit's photos: at most 8, none
+// twice, the first is the cover.
+type PhotoList struct {
+	photoSet
+}
+
+// NewPhotoList returns the list of stored photos, in order. It returns
+// ErrPhotoInvalid for more than 8 photos, a repeated id or a zero photo.
+func NewPhotoList(photos []Photo) (*PhotoList, error) {
+	set, err := restorePhotos(photos)
+	if err != nil {
+		return nil, err
+	}
+	return &PhotoList{photoSet: set}, nil
+}
+
+// Full reports whether there are already 8 photos, so no other may be
+// added (ErrPhotoLimit).
+func (s *photoSet) Full() bool { return len(s.photos) >= maxPhotos }
+
 // Photos returns the photos in order, the cover first. The result is a copy.
 func (s *photoSet) Photos() []Photo { return cloneSlice(s.photos) }
 
@@ -96,7 +118,7 @@ func (s *photoSet) AddPhoto(p Photo) error {
 	if p.id.IsZero() || s.indexOf(p.id) >= 0 {
 		return fmt.Errorf("add photo %v: %w", p.id, ErrPhotoInvalid)
 	}
-	if len(s.photos) >= maxPhotos {
+	if s.Full() {
 		return ErrPhotoLimit
 	}
 	s.photos = append(s.photos, p)

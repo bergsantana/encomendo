@@ -307,7 +307,7 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
 
 ### 3.9 `adapter/storage` and the photo use cases
 
-- **Goal:** signed upload and confirm for item and kit photos, on any S3-compatible store: MinIO in development and tests, R2 in production.
+- **Goal:** signed upload and confirm for item and kit photos, on any S3-compatible store: MinIO in development and tests, R2 in production. Amended 2026-11-27: the server is Silo, the maintained MinIO fork (`pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329`, `RELEASE.2026-11-12T00-00-00Z`), since MinIO's images left Docker Hub in September 2026 (the user's decision; ADR 0024). Uploads are staged under `uploads/` and promoted on confirm (ADR 0028).
 - **Ticks:** "`adapter/storage`: local and S3-compatible photo storage …". The box's "local" storage is dropped by ADR 0024, and the box is reworded.
 - **Model:** opus. The keys, signed URLs and content checks decide whether one tenant can write or read another's objects.
 - **Skill:** none.
@@ -315,11 +315,11 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
   - `backend/internal/adapter/storage/{doc,s3}.go` and tests;
   - `backend/internal/app/catalog/photos.go`;
   - `backend/internal/platform/config`;
-  - `deploy/docker-compose*.yml`, for MinIO, a bucket-init job with CORS for the admin origin, and a lifecycle rule;
+  - `deploy/docker-compose*.yml`, for MinIO (Silo), a bucket-init job (`mcli`, same image) with CORS for the admin origin, and a lifecycle rule;
   - `deploy/prod.env.example`;
   - `test/integration/storage/`.
 - **Work:**
-  - **New dependency:** `github.com/minio/minio-go/v7`. It is a single S3-compatible client that works with R2 and MinIO, smaller than `aws-sdk-go-v2`. Justify it in the PR. MinIO joins testcontainers.
+  - **New dependency:** `github.com/minio/minio-go/v7`. It is a single S3-compatible client that works with R2 and MinIO, smaller than `aws-sdk-go-v2`. Justify it in the PR. MinIO (Silo, pinned by digest) joins testcontainers.
   - **`PhotoStore` port:**
     - `PresignPut(key, contentType, ttl)`;
     - `Stat(key)`;
@@ -346,7 +346,7 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
   - unit: key building and parsing, including another tenant's key, another owner's key, a trailing segment, `..` and a URL-encoded slash. None of them reaches storage, checked with a fake that fails on any call;
   - a repeat confirm returns the existing photo and deletes nothing;
   - use cases with a fake store;
-  - integration with MinIO:
+  - integration with MinIO (Silo):
     - presign, then a `PUT` with `net/http`, then confirm;
     - an 11 MB object refused and deleted;
     - a `.jpg` name holding text refused;

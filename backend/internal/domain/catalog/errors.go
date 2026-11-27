@@ -49,6 +49,14 @@ var (
 	// ErrPhotoInvalid means a photo's key, type or size breaks a rule: 400
 	// photo_invalid.
 	ErrPhotoInvalid = fmt.Errorf("catalog: invalid photo: %w", shared.ErrInvalid)
+	// ErrPhotoNotUploaded means nothing was uploaded to the key, or the key
+	// is not one issued for this item or kit in this store: 400
+	// photo_not_uploaded. The two are not told apart, so a key check is no
+	// oracle for other stores' objects (ADR 0025).
+	ErrPhotoNotUploaded = fmt.Errorf("catalog: photo not uploaded: %w", shared.ErrInvalid)
+	// ErrInvalidPhotoOwner means a photo's owner is neither an item nor a
+	// kit, or has no id: 400 invalid.
+	ErrInvalidPhotoOwner = fmt.Errorf("catalog: invalid photo owner: %w", shared.ErrInvalid)
 	// ErrSwapNotInKit means a swap names an item the kit does not hold.
 	ErrSwapNotInKit = fmt.Errorf("catalog: swap of an item not in the kit: %w", shared.ErrInvalid)
 	// ErrSwapNotAllowed means a swap names a kit item the client cannot

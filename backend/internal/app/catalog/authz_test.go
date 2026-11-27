@@ -7,6 +7,7 @@ import (
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
+	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -32,7 +33,18 @@ func (h *harness) useCases(t *testing.T) []useCase {
 	free := h.createItem(t, inHouseInput("Avulso", 100, 1)) // in no kit, so it can be archived
 	p := shared.PageRequest{}
 	ignore := func(_ any, err error) error { return err }
+	owner := catalog.ItemPhotos(it.ID)
+	photo := h.confirmPhoto(t, owner, jpegBytes)
+	staged := h.stage(t, owner, jpegBytes)
 	return []useCase{
+		{"RequestPhotoUpload", true, func(ctx context.Context) error {
+			return ignore(h.svc.RequestPhotoUpload(ctx, appcatalog.PhotoUploadInput{Owner: owner, ContentType: catalog.ContentTypeJPEG}))
+		}},
+		{"ConfirmPhoto", true, func(ctx context.Context) error { return ignore(h.svc.ConfirmPhoto(ctx, owner, staged)) }},
+		{"OrderPhotos", true, func(ctx context.Context) error {
+			return ignore(h.svc.OrderPhotos(ctx, owner, []shared.PhotoID{photo.Photo.ID}))
+		}},
+		{"DeletePhoto", true, func(ctx context.Context) error { return h.svc.DeletePhoto(ctx, owner, photo.Photo.ID) }},
 		{"ListCategories", false, func(ctx context.Context) error { return ignore(h.svc.ListCategories(ctx)) }},
 		{"CreateCategory", true, func(ctx context.Context) error {
 			return ignore(h.svc.CreateCategory(ctx, appcatalog.CreateCategoryInput{Name: "Rodas"}))

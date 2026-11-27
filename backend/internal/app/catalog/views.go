@@ -222,13 +222,22 @@ func optionViews(options []catalog.CustomizationOption) []OptionView {
 func (s *Service) photoViews(ctx context.Context, photos []catalog.Photo) ([]PhotoView, error) {
 	out := make([]PhotoView, 0, len(photos))
 	for i, p := range photos {
-		url, expires, err := s.photos.SignGet(ctx, p.Key(), photoURLTTL)
+		v, err := s.photoView(ctx, p, i)
 		if err != nil {
-			return nil, fmt.Errorf("sign photo %s: %w", p.ID(), err)
+			return nil, err
 		}
-		out = append(out, PhotoView{ID: p.ID(), URL: url, ExpiresAt: expires, Position: i})
+		out = append(out, v)
 	}
 	return out, nil
+}
+
+// photoView signs a read URL for p, at position.
+func (s *Service) photoView(ctx context.Context, p catalog.Photo, position int) (PhotoView, error) {
+	url, expires, err := s.storage.SignGet(ctx, p.Key(), photoURLTTL)
+	if err != nil {
+		return PhotoView{}, fmt.Errorf("sign photo %s: %w", p.ID(), err)
+	}
+	return PhotoView{ID: p.ID(), URL: url, ExpiresAt: expires, Position: position}, nil
 }
 
 // cover signs the first photo only, for a list row; nil without photos.

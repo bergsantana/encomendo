@@ -28,6 +28,8 @@ func TestErrorsMatchSharedSentinels(t *testing.T) {
 		{"ErrPhotoLimit", ErrPhotoLimit, shared.ErrConflict},
 		{"ErrPublishArchived", ErrPublishArchived, shared.ErrInvalid},
 		{"ErrPhotoInvalid", ErrPhotoInvalid, shared.ErrInvalid},
+		{"ErrPhotoNotUploaded", ErrPhotoNotUploaded, shared.ErrInvalid},
+		{"ErrInvalidPhotoOwner", ErrInvalidPhotoOwner, shared.ErrInvalid},
 		{"ErrSwapNotInKit", ErrSwapNotInKit, shared.ErrInvalid},
 		{"ErrSwapNotAllowed", ErrSwapNotAllowed, shared.ErrInvalid},
 		{"ErrSwapNotListed", ErrSwapNotListed, shared.ErrInvalid},
