@@ -64,6 +64,18 @@ From `docs/product/` and the Repair Shop design system:
 - WhatsApp is always a `wa.me` link the API returns. Open it; don't build it in the client.
 - Avoid gradients, glass effects, emoji, stock photos and donut charts.
 
+## Phone layouts (admin)
+
+Two layouts, one breakpoint: desktop, and phone at 640 px wide or less (design size 390 × 844). Decide layout in CSS; use script only for behaviour.
+
+- Write `@media (max-width: 640px)` in the component, after the desktop rules. The number is `phoneMaxWidth` in `packages/ui/src/responsive.ts`; a CSS custom property cannot sit in a media query, so it is repeated.
+- `tokens.css` raises `--enc-control-height` to 48 px at phone width, so `BaseButton`, `BaseInput` and `BaseSelect` follow. Links and menu entries set `min-height: var(--enc-control-height)`.
+- Tables become cards with the `enc-cards` class on the `<table>`: a `data-label` on each `<td>`, and `enc-cards__actions` on the actions cell. The header row stays for screen readers. Every button keeps its accessible name.
+- `BaseDialog` (dialog and drawer) is a full-screen sheet at phone width. A phone has no Escape key and no backdrop to tap, so every dialog's slot carries its own "Fechar" or "Cancelar".
+- `useIsPhone()` and `useMediaQuery()` follow a media query as a ref; `trapTab()` keeps Tab inside a container. Both are for focus behaviour (the menu drawer, `BaseDialog`), never for choosing what to render.
+- Never set `inert` to `false`; set it or remove it (an older WebView reads the bare attribute as inert).
+- Playwright: the `phone` project runs the `e2e/phone*.spec.ts` files at 390 × 844 and checks `scrollWidth <= innerWidth`. `openMenu(page)` in `e2e/support.ts` opens the drawer when there is one.
+
 ## Accessibility
 
 - Every interactive element is reachable by keyboard and has a visible focus ring (yellow).
