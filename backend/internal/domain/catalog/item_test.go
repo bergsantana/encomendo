@@ -487,7 +487,7 @@ func TestItem_Lifecycle(t *testing.T) {
 		t.Errorf("after Archive: archived %v published %v, want archived and unpublished", i.Archived(), i.Published())
 	}
 	err := i.Publish()
-	if !errors.Is(err, ErrPublishArchived) || !errors.Is(err, shared.ErrConflict) || i.Published() {
+	if !errors.Is(err, ErrPublishArchived) || !errors.Is(err, shared.ErrInvalid) || i.Published() {
 		t.Errorf("Publish on an archived item = %v (published %v), want ErrPublishArchived", err, i.Published())
 	}
 	i.Restore()
