@@ -64,14 +64,14 @@ func valuesOf(db *gorm.DB, kind ownerKind, tenant string, owners []string) (map[
 
 // photosOfOwners returns the photos of the items or kits by position.
 // Writing photos is the photo repository's job (step 3.9).
-func photosOfOwners(db *gorm.DB, kind ownerKind, tenant string, owners []string) (map[string][]models.PhotoRead, error) {
-	var rows []models.PhotoRead
+func photosOfOwners(db *gorm.DB, kind ownerKind, tenant string, owners []string) (map[string][]models.Photo, error) {
+	var rows []models.Photo
 	err := db.Where("tenant_id = ? AND ? IN ?", tenant, clause.Column{Name: kind.column()}, owners).
 		Order("position, id").Find(&rows).Error
 	if err != nil {
 		return nil, wrap("read photos", err)
 	}
-	out := map[string][]models.PhotoRead{}
+	out := map[string][]models.Photo{}
 	for _, p := range rows {
 		owner := p.ItemID
 		if kind == kitOwners {
