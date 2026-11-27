@@ -645,7 +645,7 @@ What PR B changed from the sections above. Later steps build against this.
   - `TrackingMessage(f, link)` and `CreatedMessage(f, link)` take the link as an argument, and `MessageFacts` has no link field. So `DateChangedMessage` and `ChangedMessage` cannot carry a tracking link (ADR 0030, Amendments).
   - A voided deposit keeps the release date, but the guard counts only payments that are not void, so the order cannot leave awaiting_deposit on it.
 - **From the review of PR B:**
-  - **The confirmed deposit is frozen.** The deposit due when it was first confirmed is kept, `Record.DepositConfirmedCents`. `DepositDue` returns it, capped at the total. So a higher total or percent after a change adds to the balance, and `order.deposit_confirmed` fires once per confirmation.
+  - **The confirmed deposit is frozen.** The deposit due when it was first confirmed is kept, `Record.DepositConfirmedCents`. `DepositDue` returns it, capped at the total. So a higher total or percent after a change adds to the balance, and `order.deposit_confirmed` fires once per confirmation (again only after a void and a new payment).
   - **A voided deposit can be replaced.** The owner may `Release` the order, which counts dates from that day. Or the deposit may be paid again, which releases from the day it is paid. `Release` refuses only an order the owner already released or whose deposit is paid, and refuses a zero user or a zero today.
   - **Item dates on a change.** Kept items with the same timing keep their expected date. New or retimed items count from today once the order is released. Before the release, every item that has not arrived is forecast from today.
   - **No alerts before the release.**
@@ -1515,4 +1515,5 @@ Rules that the reviewers will check:
 - `app/order.Cancel` has a comment `// M5: cancel unsent purchase lines and flag sent ones (ADR 0030).` and `// M6: release stock reservations.`, with the issue numbers once opened (`TODO(#n)` only with an issue, per `CLAUDE.md`). The session opens the two issues when it reaches 4.10.
 - M7 store-page orders run in a scope with no staff user, so `order_item_sourcing` can't be written there. M7 must decide (ADR) between filling the snapshot on the first staff touch and a narrow platform path; 4.10 states this in `app/order/doc.go`.
 - `schedule.Timing.Promised` is filled by M5; `InitialStatus(stock)` changes in M6.
+- `order.deposit_confirmed` fires again when a voided deposit is paid again, so M5's `GeneratePurchases` must be idempotent per order item: a line that already exists for an item is never made twice.
 - M7's `PlaceOrder` reuses the find-by-phone path of `Create`. On the public store page a phone proves nothing, so for a customer matched only by phone it must answer no customer facts (name, addresses) and must not use the stored addresses; the delivery address comes from the checkout form (security review of 4.1, D5). 4.10 writes this in `app/order/doc.go`.
