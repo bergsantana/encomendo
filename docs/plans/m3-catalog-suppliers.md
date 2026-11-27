@@ -334,6 +334,7 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
        - on the same owner, return it with `200`;
        - otherwise, `photo_not_uploaded`.
        - Never read or delete in either case.
+       - This check runs before the 8-photo limit, so a retried confirm of the 8th photo answers `200`, not `photo_limit`.
     3. **`Stat`.** A missing object is `photo_not_uploaded`.
     4. **Check the object:** size ≤ 10 MB and a sniffed type of JPEG, PNG or WebP. On failure, delete the object and return `photo_invalid`.
     5. **Record the row** with `photoID` as its primary key. A unique-violation race returns the existing photo; it is not a delete.
