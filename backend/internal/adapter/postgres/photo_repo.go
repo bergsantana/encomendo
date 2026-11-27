@@ -186,8 +186,14 @@ func (*Photos) Reorder(ctx context.Context, tenant shared.TenantID, owner catalo
 	if err := list.ReorderPhotos(ids); err != nil {
 		return err
 	}
+	where, err := ownerWhere(tenant, owner)
+	if err != nil {
+		return err
+	}
 	for i, id := range ids {
-		err := db.Model(&models.Photo{}).Where("tenant_id = ? AND id = ?", tenant.String(), id.String()).
+		// The owner too, not just the id: the update can only ever move
+		// this owner's photos, whatever ids reach it.
+		err := db.Model(&models.Photo{}).Where(where).Where("id = ?", id.String()).
 			Updates(map[string]any{"position": i, "updated_at": gorm.Expr("now()")}).Error
 		if err != nil {
 			return wrap("move photo", err)
