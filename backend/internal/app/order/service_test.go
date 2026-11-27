@@ -60,10 +60,10 @@ func newHarness(t *testing.T) *harness {
 	}
 	svc, err := apporder.NewService(apporder.Deps{
 		Repo: h.repo, Catalog: h.catalog, Customers: h.customers, Workflows: h.workflows,
-		Store: fake.Store{Facts_: apporder.StoreFacts{
+		Store: fake.NewStore(apporder.StoreFacts{
 			Name: "Alta RPM", Slug: "altarpm", WhatsApp: "5592991234567", Currency: "BRL",
 			DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, Location: loc,
-		}},
+		}),
 		Tracking: fake.Tracking{}, WhatsApp: fake.WhatsApp{},
 		Idempotency: sharedfake.NewIdempotency(clock), Secrets: sharedfake.NewSecrets(),
 		Tx: h.tx, Events: h.events, Clock: clock, IDs: ids,
@@ -119,7 +119,7 @@ func (h *harness) bancoLine() apporder.LineRequest {
 	return apporder.LineRequest{Item: h.banco, Quantity: 1}
 }
 
-func (h *harness) create(t *testing.T, ctx context.Context, edit func(*apporder.CreateInput)) apporder.CreatedView {
+func (h *harness) create(ctx context.Context, t *testing.T, edit func(*apporder.CreateInput)) apporder.CreatedView {
 	t.Helper()
 	in := apporder.CreateInput{
 		Customer: h.joao.ID, Lines: []apporder.LineRequest{h.bancoLine()},
@@ -135,7 +135,7 @@ func (h *harness) create(t *testing.T, ctx context.Context, edit func(*apporder.
 	return v
 }
 
-func (h *harness) pay(t *testing.T, ctx context.Context, v apporder.View, kind order.PaymentKind, cents int64) apporder.View {
+func (h *harness) pay(ctx context.Context, t *testing.T, v apporder.View, kind order.PaymentKind, cents int64) apporder.View {
 	t.Helper()
 	out, err := h.svc.RecordPayment(ctx, apporder.PaymentInput{Order: v.ID, Kind: kind, AmountCents: cents,
 		Method: order.MethodPix, Version: v.Version, Idempotency: h.key()})
@@ -155,13 +155,13 @@ func TestNewService_RefusesAMissingDependency(t *testing.T) {
 func TestCreate_TakesTheCurrentWorkflowAndKeepsItAfterTheOwnerPicksAnother(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	first := h.create(t, h.staff(t), nil)
+	first := h.create(h.staff(t), t, nil)
 	if first.Order.Workflow.Key != testkit.PresetEncomendaMontagem || first.Order.Status.Key != "draft" {
 		t.Fatalf("new order on %s at %s", first.Order.Workflow.Key, first.Order.Status.Key)
 	}
 	// The owner picks another list; the first order keeps its own.
 	h.workflows.Choose(testkit.Preset(t, testkit.PresetProntaEntrega))
-	second := h.create(t, h.staff(t), nil)
+	second := h.create(h.staff(t), t, nil)
 	if second.Order.Workflow.Key != testkit.PresetProntaEntrega {
 		t.Errorf("second order on %s, want the new choice", second.Order.Workflow.Key)
 	}
@@ -262,7 +262,7 @@ func TestCreate_Refusals(t *testing.T) {
 func TestCreate_AdminSetsTermsAndDelivery(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.admin(t), func(in *apporder.CreateInput) {
+	v := h.create(h.admin(t), t, func(in *apporder.CreateInput) {
 		in.Terms = apporder.TermsInput{Handover: order.HandoverDelivery, Address: h.joao.Addresses[0].ID,
 			FreightCents: 3_000, DiscountCents: ptr[int64](10_000), DepositPercent: ptr(30), AssemblyDays: ptr(5)}
 	})
@@ -279,7 +279,7 @@ func TestCreate_AdminSetsTermsAndDelivery(t *testing.T) {
 func TestCreate_NewCustomerFoundByPhone(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), func(in *apporder.CreateInput) {
+	v := h.create(h.staff(t), t, func(in *apporder.CreateInput) {
 		in.Customer, in.New = shared.CustomerID{}, &apporder.NewCustomer{Name: "Outro nome", Phone: h.joao.Phone}
 	})
 	if v.Order.Customer.ID != h.joao.ID || v.Order.Customer.Name != "João Pereira" {
@@ -290,7 +290,7 @@ func TestCreate_NewCustomerFoundByPhone(t *testing.T) {
 func TestCreate_SendToCustomerMovesOnAndStoresNoLink(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), func(in *apporder.CreateInput) { in.SendToCustomer = true })
+	v := h.create(h.staff(t), t, func(in *apporder.CreateInput) { in.SendToCustomer = true })
 	if v.Order.Status.Key != "awaiting_deposit" || !strings.HasPrefix(v.WhatsAppURL, "https://wa.me/5592981234567?text=") {
 		t.Fatalf("status %s, link %q", v.Order.Status.Key, v.WhatsAppURL)
 	}
@@ -313,7 +313,7 @@ func TestCreate_SendToCustomerMovesOnAndStoresNoLink(t *testing.T) {
 func TestRecordPayment_ConfirmsTheDepositOnceAndReplays(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	h.clock.Advance(48 * time.Hour) // paid on 12-03
 	in := apporder.PaymentInput{Order: v.ID, Kind: order.PaymentDeposit, AmountCents: 50_000, Method: order.MethodPix, Version: v.Version, Idempotency: h.key()}
 	paid, err := h.svc.RecordPayment(h.staff(t), in)
@@ -343,7 +343,7 @@ func TestRecordPayment_ConfirmsTheDepositOnceAndReplays(t *testing.T) {
 func TestRelease_TheOwnersOnly(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	if _, err := h.svc.Release(h.admin(t), apporder.VersionInput{Order: v.ID, Version: v.Version}); !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("admin: err = %v, want ErrForbidden", err)
 	}
@@ -359,7 +359,7 @@ func TestRelease_TheOwnersOnly(t *testing.T) {
 func TestVoidPayment_TheOwnersOnly(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.pay(t, h.staff(t), h.create(t, h.staff(t), nil).Order, order.PaymentDeposit, 50_000)
+	v := h.pay(h.staff(t), t, h.create(h.staff(t), t, nil).Order, order.PaymentDeposit, 50_000)
 	in := apporder.VoidPaymentInput{Order: v.ID, Payment: v.Payments[0].ID, Reason: "Pix não caiu", Version: v.Version}
 	if _, err := h.svc.VoidPayment(h.admin(t), in); !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("admin: err = %v", err)
@@ -373,7 +373,7 @@ func TestVoidPayment_TheOwnersOnly(t *testing.T) {
 func TestChange_StaffOmittingTermsKeepsThem(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.admin(t), func(in *apporder.CreateInput) {
+	v := h.create(h.admin(t), t, func(in *apporder.CreateInput) {
 		in.Terms.DiscountCents, in.Terms.DepositPercent = ptr[int64](10_000), ptr(80)
 	}).Order
 	got, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
@@ -389,7 +389,7 @@ func TestChange_StaffOmittingTermsKeepsThem(t *testing.T) {
 func TestChange_StaffResettingDiscountIsForbidden(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.admin(t), func(in *apporder.CreateInput) { in.Terms.DiscountCents = ptr[int64](10_000) }).Order
+	v := h.create(h.admin(t), t, func(in *apporder.CreateInput) { in.Terms.DiscountCents = ptr[int64](10_000) }).Order
 	_, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
 		Lines: []apporder.LineRequest{h.bancoLine()}, Terms: apporder.TermsInput{Handover: order.HandoverPickup, DiscountCents: ptr[int64](0)}})
 	if !errors.Is(err, shared.ErrForbidden) {
@@ -400,7 +400,7 @@ func TestChange_StaffResettingDiscountIsForbidden(t *testing.T) {
 func TestChange_PaidNeedsManageAndApprovalAndAnswersTheSummary(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.pay(t, h.staff(t), h.create(t, h.staff(t), nil).Order, order.PaymentDeposit, 50_000)
+	v := h.pay(h.staff(t), t, h.create(h.staff(t), t, nil).Order, order.PaymentDeposit, 50_000)
 	in := apporder.ChangeInput{Order: v.ID, Version: v.Version, Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 2}},
 		Terms: apporder.TermsInput{Handover: order.HandoverPickup}}
 	if _, err := h.svc.Change(h.staff(t), in); !errors.Is(err, shared.ErrForbidden) {
@@ -425,7 +425,7 @@ func TestChange_PaidNeedsManageAndApprovalAndAnswersTheSummary(t *testing.T) {
 func TestChange_UnchangedLineKeepsItsPriceAndSnapshot(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	// The catalog raises the price; the line sent back as it was keeps the
 	// price it was sold at (docs/architecture.md section 4.2).
 	h.catalog.AddItem(fake.CatalogItem{ID: h.banco, Name: "Banco renomeado", Mode: catalog.ModeToOrder, Price: brl(t, 150_000), LeadDays: 30})
@@ -442,7 +442,7 @@ func TestChange_UnchangedLineKeepsItsPriceAndSnapshot(t *testing.T) {
 func TestChange_ChangedLineKeepsItemIDStatusAndSourcing(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.admin(t), nil).Order
+	v := h.create(h.admin(t), t, nil).Order
 	moved, err := h.svc.UseBackupSupplier(h.admin(t), apporder.ItemVersionInput{Order: v.ID, Item: v.Items[0].ID, Version: v.Version})
 	if err != nil {
 		t.Fatal(err)
@@ -461,7 +461,7 @@ func TestChange_ChangedLineKeepsItemIDStatusAndSourcing(t *testing.T) {
 func TestChangeDeliveryDate_AnswersTheLinkAndRecordsTheMessage(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	in := apporder.DateInput{Order: v.ID, Date: testkit.Date(t, "2026-12-30"), Reason: "Fornecedor atrasou", Version: v.Version}
 	if _, err := h.svc.ChangeDeliveryDate(h.staff(t), in); !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("staff: err = %v", err)
@@ -481,7 +481,7 @@ func TestChangeDeliveryDate_AnswersTheLinkAndRecordsTheMessage(t *testing.T) {
 func TestSendTrackingLink_RotatesTheTokenAndStoresNoLink(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	created := h.create(t, h.staff(t), nil)
+	created := h.create(h.staff(t), t, nil)
 	before, _ := h.repo.Stored(h.store, created.Order.ID)
 	got, err := h.svc.SendTrackingLink(h.staff(t), created.Order.ID)
 	if err != nil {
@@ -504,7 +504,7 @@ func TestSendTrackingLink_RotatesTheTokenAndStoresNoLink(t *testing.T) {
 func TestMovesAndCancel_PermissionsEventsAndVersion(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	moved, err := h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[0].ID, To: order.ItemSentToSupplier, Version: v.Version})
 	if err != nil || moved.Items[0].Status != order.ItemSentToSupplier {
 		t.Fatalf("move: %v", err)
@@ -534,7 +534,7 @@ func TestMovesAndCancel_PermissionsEventsAndVersion(t *testing.T) {
 func TestAdvance_GuardRefusalChangesNothing(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	_, err := h.svc.Advance(h.staff(t), apporder.AdvanceInput{Order: v.ID, To: "purchasing", Version: v.Version})
 	var g *order.GuardError
 	if !errors.As(err, &g) || g.Guard != order.GuardDepositUnpaid {
@@ -550,7 +550,7 @@ func TestAdvance_GuardRefusalChangesNothing(t *testing.T) {
 func TestViews_CostsAndMarginsForTheOwnerOnly(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	v := h.create(t, h.owner(t), nil).Order
+	v := h.create(h.owner(t), t, nil).Order
 	if v.Cost == nil || v.Cost.Cents() != 40_000 || v.Margin == nil || v.Items[0].Cost == nil {
 		t.Errorf("owner's create answer: cost %v margin %v", v.Cost, v.Margin)
 	}
@@ -563,7 +563,7 @@ func TestViews_CostsAndMarginsForTheOwnerOnly(t *testing.T) {
 			t.Errorf("%s reads costs: %v %v %v", name, got.Cost, got.Margin, got.Items[0].Cost)
 		}
 	}
-	answer := h.pay(t, h.staff(t), v, order.PaymentDeposit, 50_000)
+	answer := h.pay(h.staff(t), t, v, order.PaymentDeposit, 50_000)
 	if answer.Cost != nil || answer.Items[0].Cost != nil {
 		t.Error("staff's payment answer carries costs")
 	}
@@ -602,7 +602,7 @@ func TestTrackingView_HasNoInternalField(t *testing.T) {
 	walk(reflect.TypeOf(apporder.TrackingView{}), "")
 
 	h := newHarness(t)
-	v := h.create(t, h.owner(t), func(in *apporder.CreateInput) { in.Lines[0].Options = []apporder.OptionChoice{h.red} })
+	v := h.create(h.owner(t), t, func(in *apporder.CreateInput) { in.Lines[0].Options = []apporder.OptionChoice{h.red} })
 	rec, _ := h.repo.Stored(h.store, v.Order.ID)
 	o, err := order.Restore(rec, testkit.Preset(t, testkit.PresetEncomendaMontagem))
 	if err != nil {
@@ -635,7 +635,7 @@ func TestQuote_WritesNothing(t *testing.T) {
 	if len(h.events.Names()) != 0 || len(h.repo.Messages()) != 0 {
 		t.Error("a quote wrote something")
 	}
-	v := h.create(t, h.staff(t), nil).Order
+	v := h.create(h.staff(t), t, nil).Order
 	qc, err := h.svc.Quote(h.staff(t), apporder.QuoteInput{Order: v.ID, Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 3}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}})
 	if err != nil || qc.Total.Cents() != 300_000 {
 		t.Errorf("change quote: %v %v", err, qc.Total)

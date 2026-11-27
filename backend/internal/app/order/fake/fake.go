@@ -374,10 +374,13 @@ func (f *Workflows) Get(_ context.Context, id shared.WorkflowID, version int) (w
 }
 
 // Store is an apporder.Store with fixed facts.
-type Store struct{ Facts_ apporder.StoreFacts }
+type Store struct{ facts apporder.StoreFacts }
+
+// NewStore returns a store whose facts are f.
+func NewStore(f apporder.StoreFacts) Store { return Store{facts: f} }
 
 // Facts implements apporder.Store.
-func (s Store) Facts(context.Context) (apporder.StoreFacts, error) { return s.Facts_, nil }
+func (s Store) Facts(context.Context) (apporder.StoreFacts, error) { return s.facts, nil }
 
 // Tracking builds tracking URLs on a test domain.
 type Tracking struct{}

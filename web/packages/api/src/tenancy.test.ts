@@ -53,8 +53,14 @@ describe('getSettings', () => {
       assemblyDays: 3,
       safetyMarginDays: 2,
       whatsappPhone: null,
+      timeZone: 'America/Sao_Paulo',
       currency: 'BRL',
-      statusWorkflow: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01', version: 1, name: 'Encomenda com montagem' },
+      statusWorkflow: {
+        id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01',
+        version: 1,
+        name: 'Encomenda com montagem',
+        statuses: [{ key: 'draft', label: 'Rascunho', clientLabel: 'Pedido recebido', phase: 'draft' }],
+      },
       version: 2,
     }
     let authorization: string | null = null
