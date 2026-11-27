@@ -14,6 +14,7 @@ var wantGrants = map[Permission][]shared.Role{
 	PermOrderWrite:      {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff},
 	PermPurchaseWrite:   {shared.RoleOwner, shared.RoleAdmin},
 	PermReceivingWrite:  {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff},
+	PermCatalogRead:     {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer},
 	PermCatalogWrite:    {shared.RoleOwner, shared.RoleAdmin},
 	PermInventoryAdjust: {shared.RoleOwner, shared.RoleAdmin},
 	PermProductionWrite: {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff},
@@ -73,9 +74,30 @@ func TestAllows_ViewerOnlyReads(t *testing.T) {
 	t.Parallel()
 
 	got := PermissionsOf(shared.RoleViewer)
-	want := []Permission{PermOrderRead, PermSettingsRead}
+	want := []Permission{PermCatalogRead, PermOrderRead, PermSettingsRead}
 	if !slices.Equal(got, want) {
 		t.Errorf("viewer permissions = %v, want %v", got, want)
+	}
+}
+
+// Costs and margins are the owner's only: no other role, and no role
+// outside the table, sees them (ADR 0025; docs/product/design-document.md,
+// Screens: "cost and margin visible only to the owner").
+func TestSeesCosts_OwnerOnly(t *testing.T) {
+	t.Parallel()
+
+	cases := map[shared.Role]bool{
+		shared.RoleOwner:      true,
+		shared.RoleAdmin:      false,
+		shared.RoleStaff:      false,
+		shared.RoleViewer:     false,
+		shared.Role("client"): false,
+		shared.Role(""):       false,
+	}
+	for role, want := range cases {
+		if got := SeesCosts(role); got != want {
+			t.Errorf("SeesCosts(%q) = %v, want %v", role, got, want)
+		}
 	}
 }
 
