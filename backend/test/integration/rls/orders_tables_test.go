@@ -470,7 +470,7 @@ func TestStore_CannotLinkAClientOrMoveAnOrder(t *testing.T) {
 			return err
 		})
 		if !refused(err) {
-			t.Errorf("%s as store A: err = %v, want 42501", strings.Join(strings.Fields(query), " ")[:60], err)
+			t.Errorf("%.60s as store A: err = %v, want 42501", strings.Join(strings.Fields(query), " "), err)
 		}
 	}
 }
