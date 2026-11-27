@@ -362,7 +362,8 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
   - `backend/internal/adapter/http/handler/{catalog,supplier}.go` and `dto/`;
   - `router.go` (owned);
   - `cmd/api/main.go` (owned);
-  - `respond/problem.go`, for the new codes.
+  - `respond/problem.go`, for the new codes;
+  - `docs/api/openapi.yaml` (owned): remove every `x-unserved: step 3.10` mark. The e2e suite fails on a marked operation the server answers, and runs the full 401 and suspension checks on each one once its mark is gone.
 - **Tests:**
   - `httptest` with fake use cases: status codes, problem codes, DTO validation with unknown fields refused, `version_conflict`;
   - responses validated against `openapi.yaml`;
