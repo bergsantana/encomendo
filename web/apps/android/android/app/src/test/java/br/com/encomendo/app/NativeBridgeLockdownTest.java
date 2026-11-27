@@ -12,7 +12,9 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.CookieHandler;
 import java.net.CookieManager;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.After;
 import org.junit.Test;
@@ -69,6 +71,39 @@ public class NativeBridgeLockdownTest {
             assertTrue(stub.getSimpleName(), Modifier.isPublic(stub.getModifiers()));
             assertNotNull(stub.getConstructor());
         }
+    }
+
+    @Test
+    public void theLockdownIsInPlaceWhenEveryNameHoldsItsStub() {
+        Map<String, Object> plugins = Map.of(
+            "CapacitorHttp", new NativeBridgeLockdown.NoNativeHttp(),
+            "CapacitorCookies", new NativeBridgeLockdown.NoNativeCookies(),
+            "WebView", new NativeBridgeLockdown.NoServerPath(),
+            "App", new Object()
+        );
+
+        assertEquals(List.of(), NativeBridgeLockdown.notInPlace(plugins::get));
+    }
+
+    @Test
+    public void aCorePluginThatSurvivedItsStubIsReported() {
+        // Bridge.registerPlugin only logs a stub that failed to load, leaving the core plugin's handle.
+        Map<String, Object> plugins = new HashMap<>();
+        plugins.put("CapacitorHttp", new Object());
+        plugins.put("CapacitorCookies", new NativeBridgeLockdown.NoNativeCookies());
+
+        assertEquals(List.of("CapacitorHttp", "WebView"), NativeBridgeLockdown.notInPlace(plugins::get));
+    }
+
+    @Test
+    public void aStubUnderAnotherStubsNameDoesNotCount() {
+        Map<String, Object> plugins = Map.of(
+            "CapacitorHttp", new NativeBridgeLockdown.NoNativeCookies(),
+            "CapacitorCookies", new NativeBridgeLockdown.NoNativeHttp(),
+            "WebView", new NativeBridgeLockdown.NoServerPath()
+        );
+
+        assertEquals(List.of("CapacitorHttp", "CapacitorCookies"), NativeBridgeLockdown.notInPlace(plugins::get));
     }
 
     @Test

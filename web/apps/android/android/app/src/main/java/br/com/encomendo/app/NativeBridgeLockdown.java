@@ -4,7 +4,9 @@ import android.webkit.WebView;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.net.CookieHandler;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * NativeBridgeLockdown takes Capacitor's native HTTP, cookie and server-path plugins away from the
@@ -44,6 +46,25 @@ public final class NativeBridgeLockdown {
             webView.removeJavascriptInterface(name);
         }
         isolateNativeCookies();
+    }
+
+    /**
+     * notInPlace returns the names of the stubs the bridge does not hold, given a lookup from plugin
+     * name to the instance registered under it (null when none). Capacitor's
+     * {@code Bridge.registerPlugin} only logs a plugin that fails to load, so a broken stub would
+     * leave the core plugin live without a sound; MainActivity refuses to show the admin unless this
+     * list is empty.
+     */
+    static List<String> notInPlace(Function<String, Object> instanceByName) {
+        List<String> missing = new ArrayList<>();
+        for (Class<? extends Plugin> stub : STUBS) {
+            String name = stub.getAnnotation(CapacitorPlugin.class).name();
+            Object instance = instanceByName.apply(name);
+            if (instance == null || instance.getClass() != stub) {
+                missing.add(name);
+            }
+        }
+        return missing;
     }
 
     /** LockedPlugin is a plugin with no methods; loading it applies the lockdown. */

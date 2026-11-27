@@ -16,13 +16,16 @@ import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.Logger;
+import com.getcapacitor.PluginHandle;
+import java.util.List;
 
 /**
  * MainActivity is the whole shell: one WebView on the hosted admin (ADR 0029). On top of Capacitor's
  * bridge it guarantees that:
  * - the admin opens only on a WebView that binds the bridge to the admin origin (WebViewSupport);
  *   otherwise the phone is asked to update its WebView;
- * - the page cannot reach Capacitor's native HTTP, cookie or server-path plugins (NativeBridgeLockdown);
+ * - the page cannot reach Capacitor's native HTTP, cookie or server-path plugins (NativeBridgeLockdown),
+ *   and the app closes before the admin runs if any stub failed to take a core plugin's place;
  * - navigation and frames stay on the admin origin, and tapped links open outside the app
  *   (LockedWebViewClient);
  * - photo inputs offer "Da galeria" or "Tirar foto" (PhotoChooser);
@@ -41,8 +44,9 @@ public class MainActivity extends BridgeActivity {
             registerPlugin(stub);
         }
         super.onCreate(savedInstanceState);
-        if (bridge == null) {
-            // Either BridgeActivity showed its own "no WebView" screen, or load() showed the update page.
+        if (bridge == null || isFinishing()) {
+            // BridgeActivity showed its own "no WebView" screen, load() showed the update page, or the
+            // native bridge lockdown failed and the app is closing.
             return;
         }
         WebView webView = bridge.getWebView();
@@ -76,6 +80,27 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         super.load();
+        refuseUnlessLockedDown();
+    }
+
+    /**
+     * refuseUnlessLockedDown closes the app if any core plugin survived its stub. The bridge has asked
+     * the WebView to load the admin by now, but nothing has arrived: this runs in the same main-thread
+     * task, so stopping here means no admin script ever runs beside a live native cookie jar.
+     */
+    private void refuseUnlessLockedDown() {
+        List<String> missing = NativeBridgeLockdown.notInPlace((name) -> {
+            PluginHandle handle = bridge.getPlugin(name);
+            return handle == null ? null : handle.getInstance();
+        });
+        if (missing.isEmpty()) {
+            return;
+        }
+        Logger.error("Native bridge lockdown failed; core plugins still live: " + missing);
+        WebView webView = bridge.getWebView();
+        webView.stopLoading();
+        webView.loadUrl("about:blank");
+        finish();
     }
 
     private void showUpdateWebView(PackageInfo webViewPackage) {
