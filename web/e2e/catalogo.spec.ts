@@ -63,6 +63,9 @@ test.describe('Catálogo against the real stack', () => {
     await page.getByLabel('Adicionar fotos').setInputFiles({ name: 'escapamento.png', mimeType: 'image/png', buffer: png })
     const photo = page.getByRole('img', { name: 'Foto 1' })
     await expect(photo).toBeVisible()
+    // The thumbnail comes from the photo store (Silo, bucket path t/{tenant}/items/...), not from the admin origin.
+    await expect(photo).toHaveAttribute('src', /^https?:\/\/[^/]+\/encomendo-photos\/t\/[\w-]+\/items\/[\w-]+\/[\w-]+/)
+    expect(new URL((await photo.getAttribute('src')) ?? '').origin).not.toBe(new URL(process.env.E2E_BASE_URL ?? '').origin)
     await expect.poll(() => photo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1)
     await expect(page.getByText('Capa', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Cancelar' }).click()
@@ -137,5 +140,62 @@ test.describe('Catálogo against the real stack', () => {
     } finally {
       await guestContext.close()
     }
+  })
+
+  // The half of "created on one app, shown on the other" that the web can
+  // prove: an item written through the API alone (what the Android app
+  // sends) shows in the web list with its supplier and lead time.
+  test('an item created through the API shows in the web list', async ({ page, request }) => {
+    const owner = unique('apiitem')
+    // Node cannot resolve *.localhost the way Chromium does, so call the stack by
+    // address and keep the admin Host header nginx routes on.
+    const admin = new URL(process.env.E2E_BASE_URL ?? '')
+    const api = `http://127.0.0.1:${admin.port}`
+    const json = { 'content-type': 'application/json', host: admin.host }
+
+    const signed = await request.post(`${api}/auth/signup`, { headers: json, data: { name: 'Gil Prado', email: owner.email, password } })
+    expect(signed.status()).toBe(201)
+    const first = (await signed.json()) as { accessToken: string }
+    const created = await request.post(`${api}/api/v1/admin/tenants`, {
+      headers: { ...json, authorization: `Bearer ${first.accessToken}` },
+      data: { name: 'Loja pela API', slug: owner.slug },
+    })
+    expect(created.status()).toBe(201)
+
+    // A new login has the store selected.
+    const login = await request.post(`${api}/auth/login`, { headers: json, data: { email: owner.email, password } })
+    expect(login.status()).toBe(200)
+    const headers = { ...json, authorization: `Bearer ${((await login.json()) as { accessToken: string }).accessToken}` }
+    const supplier = await request.post(`${api}/api/v1/admin/suppliers`, { headers, data: { name: 'Fornecedor da API', whatsappPhone: '5511987654321' } })
+    expect(supplier.status()).toBe(201)
+    const supplierId = ((await supplier.json()) as { id: string }).id
+    const item = await request.post(`${api}/api/v1/admin/catalog/items`, {
+      headers,
+      data: {
+        name: 'Item pela API',
+        description: '',
+        categoryId: null,
+        sourcingMode: 'to_order',
+        priceCents: 12000,
+        mainSupplier: { supplierId, leadDays: 4, costCents: 7000 },
+        attributeValueIds: [],
+        options: [],
+        published: false,
+      },
+    })
+    expect(item.status()).toBe(201)
+
+    await page.goto('/')
+    await page.getByLabel('E-mail').fill(owner.email)
+    await page.getByLabel('Senha').fill(password)
+    await page.getByRole('button', { name: 'Entrar' }).click()
+    await expect(page).toHaveURL(/\/hoje$/)
+    await openCatalog(page)
+
+    const row = page.getByRole('row', { name: /Item pela API/ })
+    await expect(row).toContainText('Fornecedor da API')
+    await expect(row).toContainText('4 dias')
+    await expect(row).toContainText('120,00')
+    await expect(row).toContainText('70,00')
   })
 })
