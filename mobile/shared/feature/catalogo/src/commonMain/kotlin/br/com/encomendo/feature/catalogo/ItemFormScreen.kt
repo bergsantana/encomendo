@@ -175,7 +175,7 @@ private fun titleOf(state: ItemFormUiState): StringResource =
 
 /** "Descartar as alterações?", with "Continuar editando" as the primary answer: leaving is the careful choice. */
 @Composable
-private fun DiscardDialog(
+internal fun DiscardDialog(
     onKeepEditing: () -> Unit,
     onDiscard: () -> Unit,
 ) {
@@ -188,7 +188,7 @@ private fun DiscardDialog(
 }
 
 @Composable
-private fun LoadFailed(
+internal fun LoadFailed(
     message: CatalogMessage,
     onReload: () -> Unit,
 ) {
@@ -208,7 +208,9 @@ private fun EditableForm(
     } else {
         SupplierSection(state, actions)
     }
-    AttributePicks(state, actions)
+    AttributePicks(state.attributes, state.fields.attributeValueIds) { id, picked ->
+        actions.onEdit(null) { it.withValuePicked(id, picked) }
+    }
     OptionsEditor(state, actions)
     PhotosEditor(state.photos, actions.photos)
     SwitchRow(

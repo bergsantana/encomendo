@@ -35,10 +35,12 @@ import br.com.encomendo.feature.auth.LoginRoute
 import br.com.encomendo.feature.auth.SignUpRoute
 import br.com.encomendo.feature.auth.StorePickerRoute
 import br.com.encomendo.feature.catalogo.AttributesRoute
+import br.com.encomendo.feature.catalogo.CatalogoNavigation
+import br.com.encomendo.feature.catalogo.CatalogoRoute
 import br.com.encomendo.feature.catalogo.CategoriesRoute
 import br.com.encomendo.feature.catalogo.ItemFormRoute
 import br.com.encomendo.feature.catalogo.ItemsNavigation
-import br.com.encomendo.feature.catalogo.ItemsRoute
+import br.com.encomendo.feature.catalogo.KitFormRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import br.com.encomendo.feature.members.MembersRoute
 import coil3.ImageLoader
@@ -215,22 +217,33 @@ fun NavGraphBuilder.backofficeNavGraph(navController: NavController) {
 }
 
 /**
- * Catálogo: the Itens list and the screens opened from it. Every role with `catalog:read` may read them; the
+ * Catálogo: the Itens and Kits tabs and the screens opened from them. Every role with `catalog:read` may read them; the
  * screens show editing controls only to `catalog:write`, and the API checks every call.
  */
 private fun NavGraphBuilder.catalogoNavGraph(navController: NavController) {
     composable<CatalogoDestination> {
         PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) {
-            ItemsRoute(
-                ItemsNavigation(
-                    onOpenItem = { itemId ->
-                        navController.navigate(ItemFormDestination(itemId)) {
-                            launchSingleTop =
-                                true
-                        }
+            CatalogoRoute(
+                CatalogoNavigation(
+                    items =
+                        ItemsNavigation(
+                            onOpenItem = { itemId ->
+                                navController.navigate(ItemFormDestination(itemId)) { launchSingleTop = true }
+                            },
+                            onOpenCategories = {
+                                navController.navigate(
+                                    CategoriesDestination,
+                                ) { launchSingleTop = true }
+                            },
+                            onOpenAttributes = {
+                                navController.navigate(
+                                    AttributesDestination,
+                                ) { launchSingleTop = true }
+                            },
+                        ),
+                    onOpenKit = { kitId ->
+                        navController.navigate(KitFormDestination(kitId)) { launchSingleTop = true }
                     },
-                    onOpenCategories = { navController.navigate(CategoriesDestination) { launchSingleTop = true } },
-                    onOpenAttributes = { navController.navigate(AttributesDestination) { launchSingleTop = true } },
                 ),
             )
         }
@@ -239,6 +252,12 @@ private fun NavGraphBuilder.catalogoNavGraph(navController: NavController) {
         val itemId = entry.toRoute<ItemFormDestination>().itemId
         PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) {
             ItemFormRoute(itemId = itemId, onClose = { navController.popBackStack() })
+        }
+    }
+    composable<KitFormDestination> { entry ->
+        val kitId = entry.toRoute<KitFormDestination>().kitId
+        PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) {
+            KitFormRoute(kitId = kitId, onClose = { navController.popBackStack() })
         }
     }
     composable<CategoriesDestination> {

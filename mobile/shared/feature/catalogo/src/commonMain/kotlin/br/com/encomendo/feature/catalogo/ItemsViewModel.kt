@@ -159,6 +159,8 @@ class ItemsViewModel(
                 readCategories()
             }
             is ItemNotice -> list.update { it.copy(notice = change) }
+            // Kits are the Kits tab's own: nothing in the items changed.
+            CatalogChange.KitSaved, is CatalogChange.KitArchived, is CatalogChange.KitRestored -> return
         }
         pager.readFirst(firstPage)
     }

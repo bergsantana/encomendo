@@ -24,6 +24,14 @@ sealed interface CatalogMessage {
         val kits: List<String>,
     ) : CatalogMessage
 
+    /**
+     * "{item} está arquivado e não pode entrar no kit." once for each archived item the API names, or with none named
+     * "Um item do kit está arquivado e não pode entrar no kit."
+     */
+    data class KitItemsArchived(
+        val items: List<String>,
+    ) : CatalogMessage
+
     /** "Esta categoria tem itens. Mude os itens de categoria antes de excluir." */
     data object CategoryInUse : CatalogMessage
 
@@ -50,6 +58,7 @@ internal fun Failure.toCatalogMessage(): CatalogMessage =
     when (this) {
         is Failure.VersionConflict -> CatalogMessage.Conflict
         is Failure.ItemInKit -> CatalogMessage.ItemInKit(kits.map { it.name })
+        is Failure.ItemArchived -> CatalogMessage.KitItemsArchived(items.distinctBy { it.id }.map { it.name })
         is Failure.CategoryInUse -> CatalogMessage.CategoryInUse
         is Failure.PhotoInvalid -> CatalogMessage.PhotoInvalid
         is Failure.PhotoLimit -> CatalogMessage.PhotoLimit

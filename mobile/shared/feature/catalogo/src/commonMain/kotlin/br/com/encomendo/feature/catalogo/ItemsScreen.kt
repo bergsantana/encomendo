@@ -20,14 +20,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.encomendo.core.domain.catalog.ItemSummary
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
-import br.com.encomendo.feature.catalogo.resources.catalogo_title
 import br.com.encomendo.feature.catalogo.resources.items_all_categories
 import br.com.encomendo.feature.catalogo.resources.items_attributes
 import br.com.encomendo.feature.catalogo.resources.items_categories
@@ -122,11 +119,6 @@ private fun ItemsHeader(
     actions: ItemsActions,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = stringResource(Res.string.catalogo_title),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.semantics { heading() },
-        )
         if (state.canWrite) {
             PrimaryButton(
                 text = stringResource(Res.string.items_new),

@@ -37,6 +37,7 @@ import br.com.encomendo.feature.catalogo.resources.photos_camera
 import br.com.encomendo.feature.catalogo.resources.photos_gallery
 import br.com.encomendo.feature.catalogo.resources.photos_hint
 import br.com.encomendo.feature.catalogo.resources.photos_save_first
+import br.com.encomendo.feature.catalogo.resources.photos_save_first_kit
 import br.com.encomendo.feature.catalogo.resources.photos_title
 import br.com.encomendo.feature.catalogo.resources.photos_uploading
 import org.jetbrains.compose.resources.stringResource
@@ -53,7 +54,13 @@ internal fun PhotosEditor(
     SectionTitle(stringResource(Res.string.photos_title))
     if (photos.ownerId == null) {
         // The upload names the owner's id.
-        Text(stringResource(Res.string.photos_save_first), style = MaterialTheme.typography.bodyLarge)
+        val saveFirst =
+            if (LocalCatalogSubject.current == CatalogSubject.Kit) {
+                Res.string.photos_save_first_kit
+            } else {
+                Res.string.photos_save_first
+            }
+        Text(stringResource(saveFirst), style = MaterialTheme.typography.bodyLarge)
         return
     }
     photos.message?.let { MessageText(message = it) }

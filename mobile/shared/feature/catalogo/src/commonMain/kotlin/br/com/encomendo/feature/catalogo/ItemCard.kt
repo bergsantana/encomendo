@@ -123,33 +123,43 @@ private fun ItemCosts(summary: ItemSummary) {
     }
 }
 
-/** "No portal": a switch, read aloud as "Mostrar {item} na página da loja". Only a writer can flip it. */
+/** "No portal" of an item: only a writer can flip it. */
 @Composable
 private fun PortalSwitch(
     summary: ItemSummary,
     state: ItemsUiState,
     onToggle: (ItemSummary, Boolean) -> Unit,
 ) {
-    val description = stringResource(Res.string.portal_switch_of, summary.name)
-    val enabled = state.canWrite && !summary.archived && state.savingId == null
-    // The whole row is the switch's touch target, and it is read out as the doc says, with its state.
+    PortalSwitchRow(
+        name = summary.name,
+        published = summary.published,
+        enabled = state.canWrite && !summary.archived && state.savingId == null,
+        onToggle = { onToggle(summary, it) },
+    )
+}
+
+/** "No portal": a switch read aloud as "Mostrar {name} na página da loja" with its state; the row is the target. */
+@Composable
+internal fun PortalSwitchRow(
+    name: String,
+    published: Boolean,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val description = stringResource(Res.string.portal_switch_of, name)
     val rowModifier =
         Modifier
             .fillMaxWidth()
             .heightIn(min = TouchTarget)
-            .toggleable(
-                value = summary.published,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = { onToggle(summary, it) },
-            ).semantics { contentDescription = description }
+            .toggleable(value = published, enabled = enabled, role = Role.Switch, onValueChange = onToggle)
+            .semantics { contentDescription = description }
     Row(
         modifier = rowModifier,
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = stringResource(Res.string.col_portal), style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = summary.published, onCheckedChange = null, enabled = enabled)
+        Switch(checked = published, onCheckedChange = null, enabled = enabled)
     }
 }
 

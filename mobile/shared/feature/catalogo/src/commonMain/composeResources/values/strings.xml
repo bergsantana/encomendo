@@ -184,4 +184,74 @@
     <string name="attribute_cancel">Cancelar</string>
     <string name="attribute_confirm">Remover</string>
     <string name="attributes_loading">Carregando os campos…</string>
+    <!-- Tabs of Catálogo. -->
+    <string name="tab_items">Itens</string>
+    <string name="tab_kits">Kits</string>
+
+    <!-- Kits: the list. -->
+    <string name="kits_new">Novo kit</string>
+    <string name="kits_loading">Carregando os kits…</string>
+    <string name="kits_empty">Nenhum kit ainda.</string>
+    <string name="kits_open">Abrir %1$s</string>
+    <string name="col_kit_items">Itens</string>
+    <string name="col_kit_price">Preço do kit</string>
+    <string name="col_kit_single_total">Soma avulsa</string>
+
+    <!-- Kits: the editor. -->
+    <string name="kit_new">Novo kit</string>
+    <string name="kit_edit">Editar kit</string>
+    <string name="kit_readonly_title">Kit</string>
+    <string name="kit_loading">Carregando o kit…</string>
+    <string name="kit_saved">Kit salvo.</string>
+    <string name="kit_price">Preço do kit</string>
+    <string name="kit_items_title">Itens do kit</string>
+    <string name="kit_item_picker">Item a adicionar</string>
+    <string name="kit_item_pick">Escolha o item</string>
+    <string name="kit_item_add">Adicionar item</string>
+    <string name="kit_item_none_to_add">Nenhum item disponível para adicionar.</string>
+    <string name="kit_item_quantity">Quantidade</string>
+    <string name="kit_item_quantity_of">Quantidade de %1$s</string>
+    <string name="kit_item_swappable">Cliente pode trocar</string>
+    <string name="kit_item_swappable_of">Cliente pode trocar %1$s</string>
+    <string name="kit_item_swap_for">Pode trocar por</string>
+    <string name="kit_item_suggestions">Sugestões da categoria %1$s</string>
+    <string name="kit_item_others">Outros itens</string>
+    <string name="kit_item_archived_alternative">%1$s (arquivado)</string>
+    <string name="kit_item_remove">Remover do kit</string>
+    <string name="kit_item_remove_of">Remover %1$s do kit</string>
+    <string name="kit_swap_title">Ao trocar um item</string>
+    <string name="kit_swap_keep">Manter o desconto do kit</string>
+    <string name="kit_swap_keep_hint">Preço do kit − item retirado + item novo, pelos preços avulsos.</string>
+    <string name="kit_swap_lose">Cobrar a soma dos itens avulsos</string>
+    <string name="kit_swap_lose_hint">O kit trocado custa a soma dos preços avulsos dos seus itens.</string>
+    <string name="kit_assembly_days">Dias de %1$s</string>
+    <string name="kit_safety_margin_days">Margem de segurança (dias)</string>
+    <plurals name="kit_store_default">
+        <item quantity="one">Padrão da loja: %1$d dia</item>
+        <item quantity="other">Padrão da loja: %1$d dias</item>
+    </plurals>
+    <string name="kit_totals_title">Totais do kit</string>
+    <string name="kit_totals_new">Os totais e o prazo aparecem depois de salvar.</string>
+    <string name="kit_totals_stale">Os totais e o prazo mostram o último salvamento. Eles se atualizam depois de salvar.</string>
+    <string name="kit_total_single">Soma dos itens avulsos: %1$s</string>
+    <string name="kit_total_discount">Desconto do kit: %1$s</string>
+    <string name="kit_total_margin">Margem: %1$s</string>
+    <plurals name="kit_total_days">
+        <item quantity="one">Prazo calculado: %1$d dia (item mais lento %2$d + %3$s %4$d + margem de segurança %5$d)</item>
+        <item quantity="other">Prazo calculado: %1$d dias (item mais lento %2$d + %3$s %4$d + margem de segurança %5$d)</item>
+    </plurals>
+    <string name="kit_price_above_single">O preço do kit está acima da soma avulsa.</string>
+
+    <!-- Kits: refusals and wrong fields. -->
+    <string name="message_kit_conflict">Outra pessoa alterou este kit. Recarregue para ver a versão atual.</string>
+    <string name="message_kit_photo_limit">Cada kit pode ter até 8 fotos.</string>
+    <string name="message_kit_item_archived">%1$s está arquivado e não pode entrar no kit.</string>
+    <string name="message_kit_item_archived_unnamed">Um item do kit está arquivado e não pode entrar no kit.</string>
+    <string name="photos_save_first_kit">Salve o kit para adicionar fotos.</string>
+    <string name="problem_kit_name_missing">Informe o nome do kit.</string>
+    <string name="problem_kit_price_missing">Informe o preço do kit.</string>
+    <string name="problem_kit_items_missing">Adicione ao menos um item.</string>
+    <string name="problem_kit_quantity_range">Use uma quantidade de 1 a 99.</string>
+    <string name="problem_kit_alternatives_missing">Escolha ao menos um item para a troca.</string>
+    <string name="problem_kit_days_range">Use de 0 a 60 dias.</string>
 </resources>

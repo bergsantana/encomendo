@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import br.com.encomendo.core.domain.catalog.Attribute
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.form_backup_add
@@ -132,22 +133,23 @@ internal fun ProductionSection(
     }
 }
 
-/** "Campos": one multi-select per store field, as chips of its values. */
+/** "Campos": one multi-select per store field, as chips of its values; [onPick] tells a value ticked or not. */
 @Composable
 internal fun AttributePicks(
-    state: ItemFormUiState,
-    actions: ItemFormActions,
+    attributes: List<Attribute>,
+    picked: Set<String>,
+    onPick: (valueId: String, picked: Boolean) -> Unit,
 ) {
-    if (state.attributes.isEmpty()) return
+    if (attributes.isEmpty()) return
     SectionTitle(stringResource(Res.string.form_fields_title))
-    state.attributes.forEach { attribute ->
+    attributes.forEach { attribute ->
         Text(text = attribute.name, style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             attribute.values.forEach { value ->
-                val picked = value.id in state.fields.attributeValueIds
+                val isPicked = value.id in picked
                 FilterChip(
-                    selected = picked,
-                    onClick = { actions.onEdit(null) { it.withValuePicked(value.id, !picked) } },
+                    selected = isPicked,
+                    onClick = { onPick(value.id, !isPicked) },
                     label = { Text(value.label, style = MaterialTheme.typography.bodyLarge) },
                     modifier = Modifier.heightIn(min = TouchTarget),
                 )

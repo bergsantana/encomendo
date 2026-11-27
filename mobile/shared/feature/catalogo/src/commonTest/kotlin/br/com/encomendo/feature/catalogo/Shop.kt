@@ -1,26 +1,38 @@
 package br.com.encomendo.feature.catalogo
 
 import br.com.encomendo.core.domain.catalog.ArchiveItem
+import br.com.encomendo.core.domain.catalog.ArchiveKit
 import br.com.encomendo.core.domain.catalog.Attribute
 import br.com.encomendo.core.domain.catalog.ChangeAttributes
 import br.com.encomendo.core.domain.catalog.ChangeCategories
 import br.com.encomendo.core.domain.catalog.ChangePhotos
 import br.com.encomendo.core.domain.catalog.CostChange
 import br.com.encomendo.core.domain.catalog.GetItem
+import br.com.encomendo.core.domain.catalog.GetKit
 import br.com.encomendo.core.domain.catalog.Item
 import br.com.encomendo.core.domain.catalog.ItemDraft
 import br.com.encomendo.core.domain.catalog.ItemRepository
 import br.com.encomendo.core.domain.catalog.ItemSummary
+import br.com.encomendo.core.domain.catalog.Kit
+import br.com.encomendo.core.domain.catalog.KitDraft
+import br.com.encomendo.core.domain.catalog.KitItemDraft
+import br.com.encomendo.core.domain.catalog.KitRepository
+import br.com.encomendo.core.domain.catalog.KitSummary
 import br.com.encomendo.core.domain.catalog.ListAttributes
 import br.com.encomendo.core.domain.catalog.ListCategories
 import br.com.encomendo.core.domain.catalog.ListItems
+import br.com.encomendo.core.domain.catalog.ListKits
 import br.com.encomendo.core.domain.catalog.PhotoRepository
 import br.com.encomendo.core.domain.catalog.PickedPhoto
 import br.com.encomendo.core.domain.catalog.SaveItem
+import br.com.encomendo.core.domain.catalog.SaveKit
 import br.com.encomendo.core.domain.catalog.SetItemPublished
+import br.com.encomendo.core.domain.catalog.SetKitPublished
 import br.com.encomendo.core.domain.catalog.SourcingMode
 import br.com.encomendo.core.domain.catalog.SupplierLinkDraft
+import br.com.encomendo.core.domain.catalog.SwapDiscount
 import br.com.encomendo.core.domain.failure.Failure
+import br.com.encomendo.core.domain.niche.NicheWords
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Role
 import br.com.encomendo.core.domain.settings.GetStoreSettings
@@ -121,6 +133,10 @@ internal class Shop(
             changes,
         ).also { collect(it.uiState) }
 
+    fun kits(): KitsViewModel =
+        KitsViewModel(observeSession(), ListKits(catalog), SetKitPublished(catalog), changes)
+            .also { collect(it.uiState) }
+
     fun categories(): CategoriesViewModel =
         CategoriesViewModel(observeSession(), ListCategories(catalog), ChangeCategories(catalog), changes)
             .also { collect(it.uiState) }
@@ -157,6 +173,41 @@ internal class Shop(
         ).also { collect(it.uiState) }
     }
 
+    /** The kit editor for [kitId] (null for a new kit); [kits] may stand in front of the fake, to record or refuse. */
+    fun kitForm(
+        kitId: String? = null,
+        kits: KitRepository = catalog,
+        picker: PhotoPicker = this.picker,
+        niche: NicheWords = NicheWords.Default,
+    ): KitFormViewModel {
+        val useCases =
+            KitFormUseCases(
+                getKit = GetKit(kits),
+                saveKit = SaveKit(kits),
+                archiveKit = ArchiveKit(kits),
+                listItems = ListItems(catalog),
+                listCategories = ListCategories(catalog),
+                listAttributes = ListAttributes(catalog),
+                getSettings = GetStoreSettings(settings),
+            )
+        return KitFormViewModel(
+            kitId = kitId,
+            observeSession = observeSession(),
+            useCases = useCases,
+            changePhotos = ChangePhotos(catalog),
+            picker = picker,
+            changes = changes,
+            niche = niche,
+        ).also { collect(it.uiState) }
+    }
+
+    /** Adds a kit as the server would hold it, through the fake's own rules. */
+    suspend fun seedKit(
+        name: String,
+        items: List<KitItemDraft>,
+        configure: KitDraft.() -> KitDraft = { this },
+    ): Kit = catalog.createKit(kitDraft(name, items).configure())
+
     private fun <T> collect(flow: kotlinx.coroutines.flow.StateFlow<T>) {
         // As the screen does: the state is shared while someone watches it.
         scope.backgroundScope.launch { flow.collect {} }
@@ -190,6 +241,30 @@ internal fun draft(
         options = emptyList(),
         published = false,
     )
+
+/** A draft of a kit priced at R$ 250,00 that keeps its discount on a swap; tests change what they care about. */
+internal fun kitDraft(
+    name: String,
+    items: List<KitItemDraft>,
+    priceCents: Long = 25_000,
+): KitDraft =
+    KitDraft(
+        name = name,
+        description = "",
+        priceCents = priceCents,
+        swapDiscount = SwapDiscount.Keep,
+        assemblyDays = null,
+        safetyMarginDays = null,
+        items = items,
+        attributeValueIds = emptyList(),
+        published = false,
+    )
+
+/** One row of a kit that is not swappable. */
+internal fun plainRow(
+    itemId: String,
+    quantity: Int = 1,
+) = KitItemDraft(itemId, quantity, swappable = false, alternativeItemIds = emptyList())
 
 /** Records the drafts a form sends, and refuses them with [refuse] when set, in front of the fake. */
 internal class RecordingItems(
@@ -242,3 +317,33 @@ internal val ItemsUiState.row: ItemSummary get() = items.single()
 
 /** The labels of the values of a field draft, in order. */
 internal val AttributeEditor.labels: List<String> get() = values.map { it.label }
+
+/** Records the kit drafts a form sends, and refuses them with [refuse] when set, in front of the fake. */
+internal class RecordingKits(
+    private val delegate: KitRepository,
+) : KitRepository by delegate {
+    val drafts = mutableListOf<KitDraft>()
+    var refuse: Failure? = null
+
+    override suspend fun createKit(draft: KitDraft): Kit {
+        drafts += draft
+        refuse?.let { throw it }
+        return delegate.createKit(draft)
+    }
+
+    override suspend fun replaceKit(
+        id: String,
+        version: Int,
+        draft: KitDraft,
+    ): Kit {
+        drafts += draft
+        refuse?.let { throw it }
+        return delegate.replaceKit(id, version, draft)
+    }
+}
+
+/** The one kit the fake server holds. */
+internal val Shop.storedKit: Kit get() = state.kits.single()
+
+/** The one row the Kits list shows. */
+internal val KitsUiState.row: KitSummary get() = kits.single()

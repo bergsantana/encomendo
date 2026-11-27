@@ -16,6 +16,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,18 @@ import br.com.encomendo.feature.catalogo.resources.message_reload
 import org.jetbrains.compose.resources.stringResource
 
 private val WORKSHOP_BODY = 18.sp
+
+/** CatalogSubject says whether a screen is about an item or a kit, for the few sentences that name which. */
+internal enum class CatalogSubject {
+    /** The Itens screens. */
+    Item,
+
+    /** The Kits screens. */
+    Kit,
+}
+
+/** The subject of the screen being composed; the item screens are the default. */
+internal val LocalCatalogSubject = compositionLocalOf { CatalogSubject.Item }
 
 /** CatalogoTheme sets the body text of the Catálogo screens to the workshop size, 18 sp. */
 @Composable
