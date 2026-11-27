@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Encomendo</string>
+    <string name="title_activity_main">Encomendo</string>
+    <string name="package_name">br.com.encomendo.app</string>
+    <string name="custom_url_scheme">br.com.encomendo.app</string>
+    <!-- Product wording: "Adicionar fotos" asks "Da galeria" or "Tirar foto" (docs/product/design-document.md, Fotos). -->
+    <string name="photo_chooser_title">Adicionar fotos</string>
+    <string name="photo_from_gallery">Da galeria</string>
+    <string name="photo_from_camera">Tirar foto</string>
+    <!-- Drafted for review (docs/product/design-document.md, The Android app). %1$s is the WebView app's name. -->
+    <string name="webview_update_message">Para abrir o Encomendo, atualize o %1$s deste aparelho na Play Store e abra o app de novo.</string>
+    <string name="webview_update_action">Atualizar na Play Store</string>
+</resources>

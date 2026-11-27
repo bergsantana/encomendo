@@ -5,6 +5,8 @@
 *.keystore
 *.jks
 mobile/local.properties
+# The Android shell's release signing values stay on the machine that builds (web/apps/android/README.md)
+web/apps/android/android/keystore.properties
 
 # Claude Code worktrees
 .claude/worktrees/

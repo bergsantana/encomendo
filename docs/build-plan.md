@@ -23,13 +23,13 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
-| 3.5 | Android shell | 3 | 6 | In progress: ADR 0029 accepted, and phone layouts for every existing admin screen; the Capacitor shell is in review, then the device walkthrough |
+| 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
 | 4 | Customers, orders and deadlines | 0 | 17 | Not started |
 | 5 | Purchasing and receiving | 0 | 9 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **64** | **127** | **about 50%** (50.4%) |
+|   | **All milestones** | **65** | **127** | **about 51%** (51.2%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -176,7 +176,7 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 Goal: the Android management app is a Capacitor shell that opens the hosted web admin (ADR 0029), and every existing admin screen works at phone size. Plan: `docs/plans/m3_5-android-shell.md`.
 
 - [x] ADR 0029 accepted, and the docs follow it: architecture 8.2 and 8.4, rule 6 in `CLAUDE.md`, `mobile/` frozen, and this plan
-- [ ] `web/apps/android`: the Capacitor shell, with app id `br.com.encomendo.app`, the hosted admin URL per build, navigation limited to the admin host, external links (`wa.me`, store pages) opened outside the app, the back button, and release signing read from outside the repository
+- [x] `web/apps/android`: the Capacitor shell, with app id `br.com.encomendo.app`, the hosted admin URL per build, navigation limited to the admin host, external links (`wa.me`, store pages) opened outside the app, the back button, and release signing read from outside the repository (step 3.5.2; hardened after the security review: Capacitor's native HTTP, cookie and WebView plugins replaced by inert stubs, file routes and foreign frames refused, old WebViews refused)
 - [x] Phone layouts: login, sign-up, Esqueci a senha, the store picker, the menu, Hoje and Equipe at 390 × 844 (step 3.5.3)
 - [x] Phone layouts: Catálogo, covering Itens, Kits, the drawers and dialogs, and photos from the camera or gallery through the shell (step 3.5.4)
 - [ ] A signed release APK can be built and installed by following `web/apps/android/README.md`; CI builds the shell (that needs the user's workflow edit)

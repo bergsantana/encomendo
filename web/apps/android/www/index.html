@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  The shell's offline page (server.errorPath in capacitor.config.ts). The
+  WebView shows it when the admin cannot be loaded. "Tentar de novo" goes to
+  /retry, which MainActivity's NavigationPolicy turns into a fresh load of
+  the admin URL for this build, so the page never needs to know that URL.
+  No script, no external file: it must work with no connection at all.
+-->
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Encomendo</title>
+    <style>
+      /* Copied from web/packages/ui/src/tokens.css: this page loads nothing, so it cannot import it. */
+      :root {
+        --enc-ground: #f5f4f0;
+        --enc-surface: #ffffff;
+        --enc-hairline: #e3e1da;
+        --enc-ink: #1b1d20;
+        --enc-ink-secondary: #545860;
+        --enc-primary: #1b1d20;
+        --enc-primary-text: #ffffff;
+        --enc-accent: #ffc800;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: var(--enc-ground);
+        color: var(--enc-ink);
+        font: 16px/1.5 'IBM Plex Sans', system-ui, sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 360px;
+        padding: 24px;
+        border: 1px solid var(--enc-hairline);
+        border-radius: 8px;
+        background: var(--enc-surface);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 16px;
+        font-weight: 700;
+      }
+      .mark {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: var(--enc-accent);
+      }
+      p {
+        margin: 0 0 24px;
+      }
+      .retry {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        border-radius: 8px;
+        background: var(--enc-primary);
+        color: var(--enc-primary-text);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .retry:focus-visible {
+        outline: 2px solid var(--enc-accent);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        Encomendo
+      </div>
+      <p role="alert">Sem conexão com o servidor. Confira a internet e tente de novo.</p>
+      <a class="retry" href="/retry">Tentar de novo</a>
+    </main>
+  </body>
+</html>

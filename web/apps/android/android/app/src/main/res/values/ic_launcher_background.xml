@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Values copied from web/packages/ui/src/tokens.css. -->
+<resources>
+    <!-- Safety yellow: the logo mark only (docs/product/design-document.md). -->
+    <color name="ic_launcher_background">#FFC800</color>
+    <!-- The design system's ground, behind the splash icon and the WebView update page. -->
+    <color name="enc_ground">#F5F4F0</color>
+    <!-- Ink, for the WebView update page's text. -->
+    <color name="enc_ink">#1B1D20</color>
+</resources>
