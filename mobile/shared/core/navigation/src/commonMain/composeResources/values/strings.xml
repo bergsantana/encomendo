@@ -6,5 +6,6 @@
     <string name="menu_title">Menu principal</string>
     <string name="menu_brand">Encomendo</string>
     <string name="menu_hoje">Hoje</string>
+    <string name="menu_catalogo">Catálogo</string>
     <string name="menu_equipe">Equipe</string>
 </resources>

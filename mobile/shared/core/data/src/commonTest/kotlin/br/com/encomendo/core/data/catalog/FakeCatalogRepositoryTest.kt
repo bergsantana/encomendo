@@ -135,6 +135,24 @@ class FakeCatalogRepositoryTest {
         }
 
     @Test
+    fun aCategoryMovesToItsPlaceAndAnotherCannotTakeItsName() =
+        runTest {
+            catalog.createCategory("Bancos")
+            catalog.createCategory("Guidões")
+            val third = catalog.createCategory("Manoplas")
+
+            catalog.moveCategory(third.id, 0)
+
+            assertEquals(listOf("Manoplas", "Bancos", "Guidões"), catalog.categories().value.map { it.name })
+            assertEquals(listOf(0, 1, 2), catalog.categories().value.map { it.position })
+            assertEquals(
+                "name",
+                assertFailsWith<Failure.AlreadyTaken> { catalog.renameCategory(third.id, "bancos") }.field,
+            )
+            assertEquals("MANOPLAS", catalog.renameCategory(third.id, "MANOPLAS").name, "its own name, in other case")
+        }
+
+    @Test
     fun aPhotoIsLastAndTheNinthIsRefused() =
         runTest {
             val item = catalog.createItem(itemDraft())

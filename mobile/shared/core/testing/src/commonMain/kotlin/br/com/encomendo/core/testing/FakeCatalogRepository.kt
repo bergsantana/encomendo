@@ -101,17 +101,25 @@ class FakeCategoryRepository(
     override suspend fun renameCategory(
         id: String,
         name: String,
-    ): Category = change(id) { it.copy(name = name) }
+    ): Category {
+        state.check()
+        if (state.categories.any { it.id != id && it.name.equals(name, ignoreCase = true) }) {
+            throw Failure.AlreadyTaken("name")
+        }
+        return change(id) { it.copy(name = name) }
+    }
 
     override suspend fun moveCategory(
         id: String,
         position: Int,
     ): Category {
-        val moved = change(id) { it.copy(position = position.coerceAtMost(state.categories.lastIndex)) }
-        // Numbered again from 0, as the server does after a move.
-        val ordered = state.categories.sortedBy { it.position }
+        state.check()
+        val moved = state.categories.firstOrNull { it.id == id } ?: throw Failure.NotFound()
+        // As the server does: the others close up, the category takes its place, and all are numbered from 0.
+        val others = state.categories.sortedBy { it.position }.filterNot { it.id == id }
+        val ordered = others.toMutableList().apply { add(position.coerceIn(0, others.size), moved) }
         state.categories = ordered.mapIndexed { index, category -> category.copy(position = index) }
-        return state.categories.first { it.id == moved.id }
+        return state.categories.first { it.id == id }
     }
 
     override suspend fun deleteCategory(id: String) {

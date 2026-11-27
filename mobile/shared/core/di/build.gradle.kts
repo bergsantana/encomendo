@@ -27,6 +27,7 @@ kotlin {
             implementation(project(":shared:core:data"))
             implementation(project(":shared:core:navigation"))
             implementation(project(":shared:feature:auth"))
+            implementation(project(":shared:feature:catalogo"))
             implementation(project(":shared:feature:members"))
             api(libs.koin.core)
             implementation(libs.kotlinx.coroutines.core)

@@ -29,6 +29,24 @@ data object BackofficeGraph
 @Serializable
 data object HojeDestination
 
+/** Catálogo: the items list, for roles with `catalog:read`. */
+@Serializable
+data object CatalogoDestination
+
+/** The item form: "Novo item" when [itemId] is null, else "Editar item". */
+@Serializable
+data class ItemFormDestination(
+    val itemId: String? = null,
+)
+
+/** Categorias, opened from Catálogo. */
+@Serializable
+data object CategoriesDestination
+
+/** Campos dos itens, opened from Catálogo. */
+@Serializable
+data object AttributesDestination
+
 /** Equipe: the store's team and roles, for roles with `members:manage`. */
 @Serializable
 data object MembersDestination

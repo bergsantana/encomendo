@@ -13,21 +13,28 @@ import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.TenancyRepository
 import br.com.encomendo.core.domain.session.scope
+import br.com.encomendo.core.domain.settings.SettingsRepository
 import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.navigation.RootViewModel
 import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
+import br.com.encomendo.core.platform.PhotoPicker
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.SessionTokens
 import br.com.encomendo.core.security.StoredSession
 import br.com.encomendo.core.security.TokenStore
+import br.com.encomendo.core.testing.FakePhotoPicker
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
 import br.com.encomendo.core.testing.testSession
 import br.com.encomendo.feature.auth.AccountViewModel
 import br.com.encomendo.feature.auth.LoginViewModel
 import br.com.encomendo.feature.auth.StorePickerViewModel
+import br.com.encomendo.feature.catalogo.AttributesViewModel
+import br.com.encomendo.feature.catalogo.CategoriesViewModel
+import br.com.encomendo.feature.catalogo.ItemFormViewModel
+import br.com.encomendo.feature.catalogo.ItemsViewModel
 import br.com.encomendo.feature.members.MembersViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
@@ -44,6 +51,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import org.koin.core.parameter.parametersOf
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 import kotlin.test.AfterTest
@@ -75,6 +83,7 @@ class ModulesTest {
             val fakePlatform =
                 module {
                     single<SecretCipher> { FakeSecretCipher() }
+                    single<PhotoPicker> { FakePhotoPicker() }
                     single(SessionDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single(DeviceDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single<HttpClientEngine> { MockEngine { respondOk() } }
@@ -93,6 +102,11 @@ class ModulesTest {
             koin.get<AccountViewModel>()
             koin.get<StorePickerViewModel>()
             koin.get<MembersViewModel>()
+            koin.get<ItemsViewModel>()
+            koin.get<CategoriesViewModel>()
+            koin.get<AttributesViewModel>()
+            koin.get<ItemFormViewModel> { parametersOf(null) }
+            koin.get<SettingsRepository>()
             koin.get<CatalogRepository>()
             koin.get<SupplierRepository>()
             koin.get<CategoryRepository>()

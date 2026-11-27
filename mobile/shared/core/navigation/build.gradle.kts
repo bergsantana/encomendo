@@ -28,6 +28,7 @@ kotlin {
             implementation(project(":shared:core:domain"))
             implementation(project(":shared:core:ui"))
             implementation(project(":shared:feature:auth"))
+            implementation(project(":shared:feature:catalogo"))
             implementation(project(":shared:feature:hoje"))
             implementation(project(":shared:feature:members"))
             implementation(libs.compose.components.resources)

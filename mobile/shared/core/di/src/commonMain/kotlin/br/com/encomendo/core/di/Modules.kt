@@ -14,6 +14,7 @@ import br.com.encomendo.core.data.session.LastStore
 import br.com.encomendo.core.data.session.SessionKeeper
 import br.com.encomendo.core.data.session.TokenSessionRepository
 import br.com.encomendo.core.data.session.createSessionApiClient
+import br.com.encomendo.core.data.settings.ApiSettingsRepository
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.database.buildDatabase
 import br.com.encomendo.core.domain.catalog.AttributeRepository
@@ -29,6 +30,7 @@ import br.com.encomendo.core.domain.session.PasswordResetRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.StoreSuspensionNotice
 import br.com.encomendo.core.domain.session.TenancyRepository
+import br.com.encomendo.core.domain.settings.SettingsRepository
 import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.navigation.navigationModule
@@ -40,9 +42,11 @@ import br.com.encomendo.core.network.catalog.PhotoStorageApi
 import br.com.encomendo.core.network.catalog.SuppliersApi
 import br.com.encomendo.core.network.catalog.createStorageClient
 import br.com.encomendo.core.network.members.MembersApi
+import br.com.encomendo.core.network.settings.SettingsApi
 import br.com.encomendo.core.network.tenancy.TenancyApi
 import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.feature.auth.di.authModule
+import br.com.encomendo.feature.catalogo.di.catalogoModule
 import br.com.encomendo.feature.members.di.membersModule
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +110,7 @@ val networkModule: Module =
         single { MembersApi(get()) }
         single { CatalogApis(get()) }
         single { SuppliersApi(get()) }
+        single { SettingsApi(get()) }
         // A plain client: the storage host is not the API and must never see the bearer token (ADR 0024).
         single { PhotoStorageApi(createStorageClient(get())) }
     }
@@ -156,13 +161,14 @@ val dataModule: Module =
         single<ItemRepository> { get<ApiCatalogRepository>() }
         single<KitRepository> { get<ApiCatalogRepository>() }
         single<PhotoRepository> { get<ApiCatalogRepository>() }
+        single<SettingsRepository> { ApiSettingsRepository(api = get(), calls = get()) }
         single<SupplierRepository> {
             ApiSupplierRepository(api = get(), calls = get(), cache = get(), sessions = get())
         }
     }
 
 /** Feature modules, in menu order; each joins when it ships. */
-val featureModules: List<Module> = listOf(authModule, membersModule)
+val featureModules: List<Module> = listOf(authModule, catalogoModule, membersModule)
 
 /** The modules every platform shares; tests load them with a fake platform module. */
 val commonModules: List<Module> =

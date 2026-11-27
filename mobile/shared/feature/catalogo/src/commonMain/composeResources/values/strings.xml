@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pt-BR is the only language; it lives in the default values folder.
+     Catálogo in docs/product/design-document.md, the same text as the web admin. -->
+<resources>
+    <!-- Itens: the list. -->
+    <string name="catalogo_title">Catálogo</string>
+    <string name="items_search">Buscar item</string>
+    <string name="items_all_categories">Todas as categorias</string>
+    <string name="items_show_archived">Mostrar arquivados</string>
+    <string name="items_new">Novo item</string>
+    <string name="items_categories">Categorias</string>
+    <string name="items_attributes">Campos</string>
+    <string name="items_loading">Carregando o catálogo…</string>
+    <string name="items_load_more">Carregar mais</string>
+    <string name="items_empty">Nenhum item no catálogo ainda.</string>
+    <string name="items_none_found">Nenhum item encontrado.</string>
+    <string name="items_archived">Arquivado</string>
+    <string name="items_retry">Tentar de novo</string>
+    <string name="items_offline_saved">Mostrando o catálogo salvo neste aparelho em %1$s.</string>
+    <string name="items_open">Abrir %1$s</string>
+
+    <!-- The list's columns, one labelled line each on a phone. -->
+    <string name="col_category">Categoria</string>
+    <string name="col_source">Origem</string>
+    <string name="col_supplier">Fornecedor</string>
+    <string name="col_lead">Prazo</string>
+    <string name="col_cost">Custo</string>
+    <string name="col_price">Preço</string>
+    <string name="col_margin">Margem</string>
+    <string name="col_portal">No portal</string>
+    <string name="no_category">Sem categoria</string>
+    <string name="source_to_order">Sob encomenda</string>
+    <string name="source_stock">Estoque</string>
+    <string name="source_in_house">Produção própria</string>
+    <plurals name="lead_days">
+        <item quantity="one">%1$d dia</item>
+        <item quantity="other">%1$d dias</item>
+    </plurals>
+    <string name="margin_value">%1$s (%2$s)</string>
+    <string name="margin_none">—</string>
+    <string name="portal_switch_of">Mostrar %1$s na página da loja</string>
+
+    <!-- After a change. -->
+    <string name="notice_saved">Item salvo.</string>
+    <string name="notice_archived">%1$s foi arquivado.</string>
+    <string name="notice_restored">%1$s voltou ao catálogo.</string>
+
+    <!-- Refusals. -->
+    <string name="message_check_fields">Confira os campos destacados.</string>
+    <string name="message_conflict">Outra pessoa alterou este item. Recarregue para ver a versão atual.</string>
+    <string name="message_reload">Recarregar</string>
+    <string name="message_item_in_kit">Este item está no kit %1$s. Tire-o do kit antes de arquivar.</string>
+    <string name="message_category_in_use">Esta categoria tem itens. Mude os itens de categoria antes de excluir.</string>
+    <string name="message_photo_too_big">Esta foto passa de 10 MB.</string>
+    <string name="message_photo_wrong_type">Use uma foto JPEG, PNG ou WebP.</string>
+    <string name="message_photo_limit">Cada item pode ter até 8 fotos.</string>
+    <string name="message_photo_not_uploaded">A foto não foi enviada. Tente de novo.</string>
+
+    <!-- Item form. -->
+    <string name="form_new">Novo item</string>
+    <string name="form_edit">Editar item</string>
+    <string name="form_loading">Carregando o item…</string>
+    <string name="form_name">Nome</string>
+    <string name="form_description">Descrição (opcional)</string>
+    <string name="form_category">Categoria</string>
+    <string name="form_source">Origem</string>
+    <string name="form_price">Preço</string>
+    <string name="form_supplier_section">Fornecedor</string>
+    <string name="form_supplier_main">Fornecedor principal</string>
+    <string name="form_supplier_backup">Fornecedor reserva</string>
+    <string name="form_supplier_new">Novo fornecedor</string>
+    <string name="form_supplier_lead">Prazo do fornecedor (dias)</string>
+    <string name="form_cost">Custo</string>
+    <string name="form_backup_add">Adicionar fornecedor reserva</string>
+    <string name="form_backup_remove">Remover fornecedor reserva</string>
+    <string name="form_production_days">Dias de produção</string>
+    <string name="form_production_cost">Custo de produção</string>
+    <string name="form_published">Mostrar na página da loja</string>
+    <string name="form_save">Salvar</string>
+    <string name="form_cancel">Cancelar</string>
+    <string name="form_archive">Arquivar</string>
+    <string name="form_restore">Restaurar</string>
+    <string name="form_close">Voltar</string>
+    <string name="form_fields_title">Campos</string>
+
+    <!-- Novo fornecedor. -->
+    <string name="supplier_name">Nome do fornecedor</string>
+    <string name="supplier_phone">WhatsApp do fornecedor</string>
+    <string name="supplier_phone_hint">Com DDD, como (11) 98765-4321.</string>
+    <string name="supplier_add">Adicionar fornecedor</string>
+
+    <!-- Opções do cliente. -->
+    <string name="options_title">Opções do cliente</string>
+    <string name="options_hint">O cliente escolhe uma destas opções ao pedir. Dias a mais entram no prazo.</string>
+    <string name="option_name">Nome da opção</string>
+    <string name="option_required">Obrigatória</string>
+    <string name="choice_label">Escolha</string>
+    <string name="choice_price">Acréscimo no preço</string>
+    <string name="choice_days">Dias a mais</string>
+    <string name="option_new">Nova opção</string>
+    <string name="choice_add">Adicionar escolha</string>
+    <string name="choice_remove">Remover escolha</string>
+    <string name="option_remove">Remover opção</string>
+
+    <!-- Fotos. -->
+    <string name="photos_title">Fotos</string>
+    <string name="photos_add">Adicionar fotos</string>
+    <string name="photos_hint">JPEG, PNG ou WebP, até 10 MB. A primeira é a capa.</string>
+    <string name="photos_gallery">Da galeria</string>
+    <string name="photos_camera">Tirar foto</string>
+    <string name="photos_save_first">Salve o item para adicionar fotos.</string>
+    <string name="photo_number">Foto %1$d</string>
+    <string name="photo_cover_mark">Capa</string>
+    <string name="photo_make_cover">Usar como capa</string>
+    <string name="photo_remove">Remover foto</string>
+
+    <!-- Wrong or empty fields. -->
+    <string name="problem_name_missing">Informe o nome do item.</string>
+    <string name="problem_price_missing">Informe o preço.</string>
+    <string name="problem_main_supplier_missing">Escolha o fornecedor principal.</string>
+    <string name="problem_backup_supplier_missing">Escolha o fornecedor reserva.</string>
+    <string name="problem_backup_same">O fornecedor reserva precisa ser outro.</string>
+    <string name="problem_lead_days_missing">Informe o prazo do fornecedor.</string>
+    <string name="problem_lead_days_range">Use um prazo de 0 a 365 dias.</string>
+    <string name="problem_cost_invalid">Informe um custo de zero ou mais.</string>
+    <string name="problem_production_days_missing">Informe os dias de produção.</string>
+    <string name="problem_option_name_missing">Informe o nome da opção.</string>
+    <string name="problem_option_needs_choice">Adicione ao menos uma escolha.</string>
+    <string name="problem_choice_label_missing">Informe o nome da escolha.</string>
+    <string name="problem_choice_duplicate">Já existe uma escolha com este nome.</string>
+    <string name="problem_choice_price_invalid">Informe um acréscimo de zero ou mais.</string>
+    <string name="problem_choice_days_invalid">Use de 0 a 365 dias a mais.</string>
+    <string name="problem_supplier_name_missing">Informe o nome do fornecedor.</string>
+    <string name="problem_supplier_name_too_long">Use um nome de até 120 caracteres.</string>
+    <string name="problem_supplier_name_control">Use um nome sem quebras de linha ou caracteres de controle.</string>
+    <string name="problem_supplier_name_taken">Já existe um fornecedor com este nome.</string>
+    <string name="problem_supplier_phone_missing">Informe o WhatsApp do fornecedor.</string>
+    <string name="problem_supplier_phone_invalid">Confira o número: use DDD e 8 ou 9 dígitos.</string>
+
+    <!-- Categorias. -->
+    <string name="categories_title">Categorias</string>
+    <string name="category_name">Nome da categoria</string>
+    <string name="category_new">Nova categoria</string>
+    <string name="category_move_up">Mover para cima</string>
+    <string name="category_move_down">Mover para baixo</string>
+    <string name="category_rename">Renomear</string>
+    <string name="category_delete">Excluir</string>
+    <string name="category_save">Salvar</string>
+    <string name="category_cancel">Cancelar</string>
+    <string name="category_name_missing">Informe o nome da categoria.</string>
+    <string name="category_name_taken">Já existe uma categoria com este nome.</string>
+    <string name="categories_loading">Carregando as categorias…</string>
+
+    <!-- Campos. -->
+    <string name="attributes_title">Campos dos itens</string>
+    <string name="attributes_hint">Campos como \"Serve em\" ajudam o cliente a achar o que serve para ele.</string>
+    <string name="attribute_name">Nome do campo</string>
+    <string name="attribute_new">Novo campo</string>
+    <string name="attribute_values">Valores</string>
+    <string name="attribute_value">Valor</string>
+    <string name="attribute_value_add">Adicionar valor</string>
+    <string name="attribute_value_remove">Remover valor</string>
+    <string name="attribute_value_remove_of">Remover valor %1$s</string>
+    <string name="attribute_delete">Excluir campo</string>
+    <string name="attribute_name_missing">Informe o nome do campo.</string>
+    <string name="attribute_name_taken">Já existe um campo com este nome.</string>
+    <string name="attribute_value_missing">Informe o valor.</string>
+    <string name="attribute_value_duplicate">Este valor já existe neste campo.</string>
+    <string name="attribute_ask_remove">Remover %1$s? Ele sai de %2$d itens e kits.</string>
+    <string name="attribute_cancel">Cancelar</string>
+    <string name="attribute_confirm">Remover</string>
+    <string name="attributes_loading">Carregando os campos…</string>
+</resources>
