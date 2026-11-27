@@ -122,6 +122,7 @@ export interface HttpClient {
   get<T>(path: string, options?: RequestOptions): Promise<T>
   post<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>
   put<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>
+  patch<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>
   delete<T>(path: string, options?: RequestOptions): Promise<T>
 }
 
@@ -198,6 +199,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     get: (path, requestOptions) => request('GET', path, undefined, requestOptions),
     post: (path, body, requestOptions) => request('POST', path, body, requestOptions),
     put: (path, body, requestOptions) => request('PUT', path, body, requestOptions),
+    patch: (path, body, requestOptions) => request('PATCH', path, body, requestOptions),
     delete: (path, requestOptions) => request('DELETE', path, undefined, requestOptions),
   }
 }
