@@ -45,7 +45,7 @@ class KitsViewModel(
             onPage = { page ->
                 list.update { it.copy(kits = page.items, hasMore = page.nextCursor != null, offlineSince = cachedAt) }
             },
-            onFailure = { failure -> list.update { it.copy(message = failure.toCatalogMessage()) } },
+            onFailure = { failure -> list.update { it.copy(message = failure.toKitMessage()) } },
             onEnd = { list.update { it.copy(loading = false) } },
         )
 
@@ -55,7 +55,7 @@ class KitsViewModel(
             onPage = { page ->
                 list.update { it.copy(kits = it.kits + page.items, hasMore = page.nextCursor != null) }
             },
-            onFailure = { failure -> list.update { it.copy(message = failure.toCatalogMessage()) } },
+            onFailure = { failure -> list.update { it.copy(message = failure.toKitMessage()) } },
             onEnd = { list.update { it.copy(loadingMore = false) } },
         )
 
@@ -115,9 +115,9 @@ class KitsViewModel(
                     )
                 }
             } catch (failure: Failure) {
-                val message = failure.toCatalogMessage()
+                val message = failure.toKitMessage()
                 list.update { it.copy(message = message) }
-                if (message == CatalogMessage.Conflict) {
+                if (message == CatalogMessage.KitConflict) {
                     // Someone else saved first, so the list is stale. Reading clears the message: say it again.
                     pager.readFirst(firstPage)
                     list.update { it.copy(message = message) }
@@ -142,3 +142,6 @@ class KitsViewModel(
         const val PAGE_SIZE = 20
     }
 }
+
+/** The message for a failure of a read or change on a kit, with the kit's own sentences. */
+private fun Failure.toKitMessage(): CatalogMessage = toCatalogMessage(CatalogSubject.Kit)

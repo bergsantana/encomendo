@@ -95,7 +95,7 @@ class KitFormViewModel(
         field: KitField?,
         change: (KitFields) -> KitFields,
     ) {
-        if (!form.value.editable) return
+        if (!form.value.canEdit) return
         form.update { state ->
             val issues = if (field == null) state.issues else state.issues - field
             state.copy(fields = change(state.fields), issues = issues)
@@ -104,19 +104,30 @@ class KitFormViewModel(
 
     /** "Item a adicionar" was picked; null is back at "Escolha o item". */
     fun onPickItemToAdd(itemId: String?) {
-        if (form.value.editable) form.update { it.copy(itemToAdd = itemId) }
+        if (form.value.canEdit) form.update { it.copy(itemToAdd = itemId) }
     }
 
     /** "Adicionar item": the picked item joins the kit with a quantity of 1. */
     fun onAddItem() {
         val state = form.value
         val item = state.addable.firstOrNull { it.id == state.itemToAdd }
-        if (!state.editable || item == null) return
+        if (!state.canEdit || item == null) return
         form.update {
             it.copy(
                 fields = it.fields.copy(items = it.fields.items + KitItemFields(item.id, item.name)),
                 issues = it.issues - KitField.Items,
                 itemToAdd = null,
+            )
+        }
+    }
+
+    /** "Remover do kit": the row goes, and so do the problems marked on it. */
+    fun onRemoveItem(itemId: String) {
+        if (!form.value.canEdit) return
+        form.update { state ->
+            state.copy(
+                fields = state.fields.withoutRow(itemId),
+                issues = state.issues - KitField.Items - KitField.Quantity(itemId) - KitField.Alternatives(itemId),
             )
         }
     }
@@ -220,7 +231,7 @@ class KitFormViewModel(
                 changes.publish(notice(change(kit).name))
                 effectChannel.send(KitFormEffect.Close)
             } catch (failure: Failure) {
-                form.update { it.copy(message = failure.toCatalogMessage()) }
+                form.update { it.copy(message = failure.toCatalogMessage(CatalogSubject.Kit)) }
             } finally {
                 form.update { it.copy(saving = false) }
             }
@@ -228,14 +239,16 @@ class KitFormViewModel(
     }
 
     private fun load() {
-        form.update { KitFormUiState(kitId = kitId, niche = it.niche) }
+        // A kit created in this session has an id of its own now: "Recarregar" reads that one, not a new kit.
+        val id = form.value.kit?.id ?: kitId
+        form.update { KitFormUiState(kitId = id, niche = it.niche) }
         viewModelScope.launch {
             try {
                 // Nothing edits the form while it loads, so reading from the state as it was is safe.
-                form.value = readEverything(form.value)
+                form.value = readEverything(form.value, id)
                 form.value.let { photoController.open(it.kit?.id, it.kit?.photos.orEmpty(), enabled = it.canWrite) }
             } catch (failure: Failure) {
-                form.update { it.copy(loadMessage = failure.toCatalogMessage()) }
+                form.update { it.copy(loadMessage = failure.toCatalogMessage(CatalogSubject.Kit)) }
             } finally {
                 form.update { it.copy(loading = false) }
             }
@@ -243,16 +256,20 @@ class KitFormViewModel(
     }
 
     /** Reads the kit and what its pickers offer; offline from the device's copy, an editor opens read-only. */
-    private suspend fun readEverything(state: KitFormUiState): KitFormUiState {
+    private suspend fun readEverything(
+        state: KitFormUiState,
+        id: String?,
+    ): KitFormUiState {
         val session = observeSession().first()
-        val fetched = kitId?.let { useCases.getKit(it) }
+        val fetched = id?.let { useCases.getKit(it) }
         val kit = fetched?.value
         val mayWrite = session?.permissions?.allows(Permission.CatalogWrite) == true
-        val settings = if (mayWrite) cachedKitOrThrow(fetched) { useCases.getSettings() } else null
+        // Every role reads the settings: the read-only view says "Padrão da loja" for days the kit leaves blank.
+        val settings = cachedKitOrThrow(fetched) { useCases.getSettings() }
         val items = cachedKitOrThrow(fetched) { allItems() }
         val fields = kit?.toFields() ?: KitFields()
         return state.copy(
-            canWrite = settings != null && items != null,
+            canWrite = mayWrite && settings != null && items != null,
             kit = kit,
             offlineSince = fetched?.cachedAtEpochMillis,
             fields = fields,
@@ -300,7 +317,7 @@ private fun KitFormUiState.refusedBy(
     failure: Failure,
     sent: KitFields,
 ): KitFormUiState {
-    if (failure !is Failure.InvalidInput) return copy(message = failure.toCatalogMessage())
+    if (failure !is Failure.InvalidInput) return copy(message = failure.toCatalogMessage(CatalogSubject.Kit))
     val placed = placeKitIssues(failure.issues, sent)
     val unplaced = placed.unplaced.firstOrNull()
     val message =

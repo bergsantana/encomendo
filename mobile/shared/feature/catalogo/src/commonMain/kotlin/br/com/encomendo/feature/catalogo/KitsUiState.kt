@@ -1,12 +1,10 @@
 package br.com.encomendo.feature.catalogo
 
 import br.com.encomendo.core.domain.catalog.KitSummary
-import br.com.encomendo.core.domain.catalog.isShown
 
 /**
  * KitsUiState is the Kits list: the rows read so far, "Mostrar arquivados", whether the rows are the device's copy,
- * and what the last change said. Rows carry a margin only when the API sent it, so a screen shows "Margem" exactly
- * when [showsMargin] is true.
+ * and what the last change said. Rows carry a margin only when the API sent it, and a card shows "Margem" exactly then.
  */
 data class KitsUiState(
     /** The rows read so far, by name. */
@@ -30,9 +28,6 @@ data class KitsUiState(
     /** Why the last read or change failed. */
     val message: CatalogMessage? = null,
 ) {
-    /** True when the API sent a margin on a row: the owner's line shows. */
-    val showsMargin: Boolean get() = kits.any { it.margin.isShown }
-
     /** The read ended with nothing to show and no failure. */
     val isEmpty: Boolean get() = !loading && kits.isEmpty() && message == null
 

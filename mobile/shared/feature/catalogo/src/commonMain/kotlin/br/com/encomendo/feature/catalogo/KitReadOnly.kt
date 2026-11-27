@@ -28,8 +28,8 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * KitReadOnly shows a kit to a role that cannot change the catalog: the same facts as the editor in labelled lines,
- * with no field and no button that changes anything. The totals are the API's, and "Margem" is never there: a role
- * that only reads is never sent one.
+ * with no field and no button that changes anything. The totals are the API's, so "Margem" shows only when the API
+ * sent it, which it does to the owner alone. The kit's own days show as set; days it leaves blank say "Padrão da loja".
  */
 @Composable
 internal fun KitReadOnly(state: KitFormUiState) {
@@ -44,8 +44,14 @@ internal fun KitReadOnly(state: KitFormUiState) {
         SectionTitle(stringResource(Res.string.kit_items_title))
         kit.items.forEach { KitItemLines(it, state) }
         ItemLine(stringResource(Res.string.kit_swap_title), kit.swapDiscount.label())
-        ItemLine(stringResource(Res.string.kit_assembly_days, state.niche.montagem), kit.days.assembly.toString())
-        ItemLine(stringResource(Res.string.kit_safety_margin_days), kit.days.safetyMargin.toString())
+        ItemLine(
+            stringResource(Res.string.kit_assembly_days, state.niche.montagem),
+            ownDaysText(kit.assemblyDays, state.defaultAssemblyDays ?: kit.days.assembly),
+        )
+        ItemLine(
+            stringResource(Res.string.kit_safety_margin_days),
+            ownDaysText(kit.safetyMarginDays, state.defaultSafetyMarginDays ?: kit.days.safetyMargin),
+        )
         KitTotals(state)
         AttributeLines(state, kit)
         // Shown as the switch it is in the editor, but nothing can flip it here.
@@ -57,6 +63,13 @@ internal fun KitReadOnly(state: KitFormUiState) {
         )
     }
 }
+
+/** The kit's own days, or "Padrão da loja: {n} dias" for the blank that means the store's default. */
+@Composable
+private fun ownDaysText(
+    own: Int?,
+    storeDefault: Int,
+): String = if (own == null) defaultDaysHint(storeDefault) else daysLabel(own)
 
 @Composable
 private fun SwapDiscount.label(): String =
@@ -71,7 +84,10 @@ private fun KitItemLines(
     Text(text = row.itemName + archived, style = MaterialTheme.typography.titleMedium)
     ItemLine(stringResource(Res.string.kit_item_quantity), row.quantity.toString())
     if (row.swappable) {
-        val names = row.alternativeItemIds.mapNotNull { id -> state.catalogItems.firstOrNull { it.id == id }?.name }
+        val names =
+            row.alternativeItemIds
+                .mapNotNull { id -> state.catalogItems.firstOrNull { it.id == id } }
+                .map { alternativeLabel(it) }
         Text(stringResource(Res.string.kit_item_swappable), style = MaterialTheme.typography.bodyLarge)
         if (names.isNotEmpty()) ItemLine(stringResource(Res.string.kit_item_swap_for), names.joinToString(", "))
     }

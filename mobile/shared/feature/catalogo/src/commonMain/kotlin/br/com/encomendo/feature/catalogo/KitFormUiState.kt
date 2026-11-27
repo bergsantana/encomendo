@@ -65,6 +65,9 @@ data class KitFormUiState(
     /** The form can be edited: the role may write and the kit was read. */
     val editable: Boolean get() = canWrite && !loading && loadMessage == null
 
+    /** The form takes edits now: the role may write, the kit was read, and nothing is being saved. */
+    val canEdit: Boolean get() = editable && !saving
+
     /** Something was typed that is not saved: leaving asks first, and the totals say they are the last saved. */
     val dirty: Boolean get() = fields != initialFields
 

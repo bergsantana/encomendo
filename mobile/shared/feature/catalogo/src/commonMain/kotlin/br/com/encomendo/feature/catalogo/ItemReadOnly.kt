@@ -20,11 +20,9 @@ import br.com.encomendo.feature.catalogo.resources.form_source
 import br.com.encomendo.feature.catalogo.resources.form_supplier_backup
 import br.com.encomendo.feature.catalogo.resources.form_supplier_main
 import br.com.encomendo.feature.catalogo.resources.items_archived
-import br.com.encomendo.feature.catalogo.resources.lead_days
 import br.com.encomendo.feature.catalogo.resources.no_category
 import br.com.encomendo.feature.catalogo.resources.option_required
 import br.com.encomendo.feature.catalogo.resources.options_title
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -69,7 +67,7 @@ private fun SupplierLine(
     label: String,
     supplier: SupplierItem,
 ) {
-    val days = pluralStringResource(Res.plurals.lead_days, supplier.leadDays, supplier.leadDays)
+    val days = daysLabel(supplier.leadDays)
     ItemLine(label, supplier.supplierName)
     ItemLine(stringResource(Res.string.col_lead), days)
 }

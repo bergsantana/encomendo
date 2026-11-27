@@ -16,7 +16,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -49,14 +48,12 @@ import br.com.encomendo.feature.catalogo.resources.kit_price
 import br.com.encomendo.feature.catalogo.resources.kit_readonly_title
 import br.com.encomendo.feature.catalogo.resources.kit_safety_margin_days
 import br.com.encomendo.feature.catalogo.resources.kit_saved
-import br.com.encomendo.feature.catalogo.resources.kit_store_default
 import br.com.encomendo.feature.catalogo.resources.kit_swap_keep
 import br.com.encomendo.feature.catalogo.resources.kit_swap_keep_hint
 import br.com.encomendo.feature.catalogo.resources.kit_swap_lose
 import br.com.encomendo.feature.catalogo.resources.kit_swap_lose_hint
 import br.com.encomendo.feature.catalogo.resources.kit_swap_title
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -84,6 +81,7 @@ fun KitFormRoute(
                 onEdit = viewModel::onEdit,
                 onPickItemToAdd = viewModel::onPickItemToAdd,
                 onAddItem = viewModel::onAddItem,
+                onRemoveItem = viewModel::onRemoveItem,
                 onSave = viewModel::onSave,
                 onCancel = viewModel::onCancel,
                 onArchive = viewModel::onArchive,
@@ -107,6 +105,7 @@ data class KitFormActions(
     val onEdit: (KitField?, (KitFields) -> KitFields) -> Unit,
     val onPickItemToAdd: (String?) -> Unit,
     val onAddItem: () -> Unit,
+    val onRemoveItem: (itemId: String) -> Unit,
     val onSave: () -> Unit,
     val onCancel: () -> Unit,
     val onArchive: () -> Unit,
@@ -130,38 +129,36 @@ fun KitFormScreen(
     modifier: Modifier = Modifier,
 ) {
     BackHandler(enabled = true, onBack = actions.onCancel)
-    CompositionLocalProvider(LocalCatalogSubject provides CatalogSubject.Kit) {
-        Column(
-            modifier =
-                modifier
-                    .fillMaxSize()
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(titleOf(state)),
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.semantics { heading() },
-            )
-            state.offlineSince?.let { OfflineBanner(savedAtEpochMillis = it) }
-            when {
-                state.loading ->
-                    Text(
-                        stringResource(Res.string.kit_loading),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                state.loadMessage != null -> LoadFailed(state.loadMessage, actions.onReload)
-                state.canWrite -> EditableKit(state, actions)
-                else -> {
-                    KitReadOnly(state)
-                    SecondaryButton(stringResource(Res.string.form_close), actions.onCancel)
-                }
+    Column(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(titleOf(state)),
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.semantics { heading() },
+        )
+        state.offlineSince?.let { OfflineBanner(savedAtEpochMillis = it) }
+        when {
+            state.loading ->
+                Text(
+                    stringResource(Res.string.kit_loading),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            state.loadMessage != null -> LoadFailed(state.loadMessage, actions.onReload)
+            state.canWrite -> EditableKit(state, actions)
+            else -> {
+                KitReadOnly(state)
+                SecondaryButton(stringResource(Res.string.form_close), actions.onCancel)
             }
         }
-        state.discard?.let { DiscardDialog(onKeepEditing = actions.onKeepEditing, onDiscard = actions.onDiscard) }
     }
+    state.discard?.let { DiscardDialog(onKeepEditing = actions.onKeepEditing, onDiscard = actions.onDiscard) }
 }
 
 /** "Kit" for a role that only reads it, else "Novo kit" or "Editar kit". */
@@ -281,7 +278,7 @@ private fun KitDays(
         value = state.fields.assemblyDays,
         onValueChange = { text -> actions.onEdit(KitField.AssemblyDays) { it.copy(assemblyDays = text) } },
         problem = state.issue(KitField.AssemblyDays)?.text(),
-        hint = state.defaultAssemblyDays?.let { defaultHint(it) },
+        hint = state.defaultAssemblyDays?.let { defaultDaysHint(it) },
         keyboardType = KeyboardType.Number,
     )
     CatalogTextField(
@@ -289,14 +286,10 @@ private fun KitDays(
         value = state.fields.safetyMarginDays,
         onValueChange = { text -> actions.onEdit(KitField.SafetyMarginDays) { it.copy(safetyMarginDays = text) } },
         problem = state.issue(KitField.SafetyMarginDays)?.text(),
-        hint = state.defaultSafetyMarginDays?.let { defaultHint(it) },
+        hint = state.defaultSafetyMarginDays?.let { defaultDaysHint(it) },
         keyboardType = KeyboardType.Number,
     )
 }
-
-/** "Padrão da loja: 1 dia" or "Padrão da loja: {n} dias". */
-@Composable
-private fun defaultHint(days: Int): String = pluralStringResource(Res.plurals.kit_store_default, days, days)
 
 @Composable
 private fun KitButtons(

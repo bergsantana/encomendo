@@ -15,7 +15,6 @@ import br.com.encomendo.core.domain.catalog.SaveItem
 import br.com.encomendo.core.domain.catalog.SaveKit
 import br.com.encomendo.core.domain.catalog.SetItemPublished
 import br.com.encomendo.core.domain.catalog.SetKitPublished
-import br.com.encomendo.core.domain.niche.NicheWords
 import br.com.encomendo.core.domain.settings.GetStoreSettings
 import br.com.encomendo.core.domain.supplier.CreateSupplier
 import br.com.encomendo.core.domain.supplier.ListSuppliers
@@ -35,10 +34,10 @@ import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
 /**
- * Catálogo: the catalog and supplier use cases and the screens' ViewModels (the Itens list, the item form, Categorias
- * and Campos). The repositories, the photo picker and the session come from core:di. [CatalogChanges] is shared by
- * the screens so the list learns what they changed; it keeps nothing, so one for the process leaks nothing between
- * stores.
+ * Catálogo: the catalog and supplier use cases and the screens' ViewModels (the Itens and Kits lists, the item form,
+ * the kit editor, Categorias and Campos). The repositories, the photo picker, the session and the niche words come
+ * from core:di. [CatalogChanges] is shared by the screens so the lists learn what they changed; it keeps nothing, so
+ * one for the process leaks nothing between stores.
  */
 val catalogoModule: Module =
     module {
@@ -63,8 +62,6 @@ val catalogoModule: Module =
         factoryOf(::SetKitPublished)
         factoryOf(::ArchiveKit)
         factoryOf(::KitFormUseCases)
-        // Until the store's template exists (milestone 7), every store reads the default niche words (ADR 0025).
-        single { NicheWords.Default }
         viewModelOf(::ItemsViewModel)
         viewModelOf(::KitsViewModel)
         viewModelOf(::CategoriesViewModel)

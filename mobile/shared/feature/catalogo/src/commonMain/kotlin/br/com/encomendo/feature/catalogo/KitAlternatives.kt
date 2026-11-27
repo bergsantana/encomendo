@@ -38,17 +38,11 @@ internal fun alternativesFor(
     val categoryName = categories.firstOrNull { it.id == ownCategory }?.name
     val suggested = if (categoryName == null) emptyList() else candidates.filter { it.categoryId == ownCategory }
     val others = candidates - suggested.toSet()
+    val suggestions = categoryName?.takeIf { suggested.isNotEmpty() }?.let(AlternativeHeading::Suggestions)
+    val othersHeading = if (suggestions == null) null else AlternativeHeading.Others
     return buildList {
-        if (suggested.isNotEmpty() &&
-            categoryName != null
-        ) {
-            add(AlternativeGroup(AlternativeHeading.Suggestions(categoryName), suggested))
-        }
-        if (others.isNotEmpty()) {
-            add(
-                AlternativeGroup(if (suggested.isEmpty()) null else AlternativeHeading.Others, others),
-            )
-        }
+        if (suggestions != null) add(AlternativeGroup(suggestions, suggested))
+        if (others.isNotEmpty()) add(AlternativeGroup(othersHeading, others))
     }
 }
 

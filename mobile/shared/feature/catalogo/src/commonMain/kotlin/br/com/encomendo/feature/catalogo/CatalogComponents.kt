@@ -16,7 +16,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,9 +48,6 @@ internal enum class CatalogSubject {
     /** The Kits screens. */
     Kit,
 }
-
-/** The subject of the screen being composed; the item screens are the default. */
-internal val LocalCatalogSubject = compositionLocalOf { CatalogSubject.Item }
 
 /** CatalogoTheme sets the body text of the Catálogo screens to the workshop size, 18 sp. */
 @Composable
@@ -89,7 +85,7 @@ internal fun MessageText(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.announced(),
         )
-        if (message == CatalogMessage.Conflict && onReload != null) {
+        if ((message == CatalogMessage.Conflict || message == CatalogMessage.KitConflict) && onReload != null) {
             OutlinedButton(onClick = onReload, modifier = Modifier.heightIn(min = TouchTarget)) {
                 Text(stringResource(Res.string.message_reload))
             }

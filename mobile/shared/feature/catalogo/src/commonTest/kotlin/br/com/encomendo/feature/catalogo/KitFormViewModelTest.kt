@@ -1,8 +1,12 @@
 package br.com.encomendo.feature.catalogo
 
 import app.cash.turbine.test
+import br.com.encomendo.core.domain.catalog.Kit
+import br.com.encomendo.core.domain.catalog.KitDraft
 import br.com.encomendo.core.domain.catalog.KitItemDraft
+import br.com.encomendo.core.domain.catalog.KitRepository
 import br.com.encomendo.core.domain.catalog.OwnerField
+import br.com.encomendo.core.domain.catalog.PhotoOwnerKind
 import br.com.encomendo.core.domain.catalog.SwapDiscount
 import br.com.encomendo.core.domain.catalog.isShown
 import br.com.encomendo.core.domain.failure.Failure
@@ -10,6 +14,7 @@ import br.com.encomendo.core.domain.failure.InputIssue
 import br.com.encomendo.core.domain.failure.Reference
 import br.com.encomendo.core.domain.niche.NicheWords
 import br.com.encomendo.core.ui.failure.FailureMessage
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -36,6 +41,17 @@ private fun fillKit(
 private fun KitFormViewModel.add(itemId: String) {
     onPickItemToAdd(itemId)
     onAddItem()
+}
+
+/** Kit writes that wait for the test, so what shows while "Salvar" is under way can be seen. */
+private class GatedKits(
+    private val delegate: KitRepository,
+    private val gate: CompletableDeferred<Unit>,
+) : KitRepository by delegate {
+    override suspend fun createKit(draft: KitDraft): Kit {
+        gate.await()
+        return delegate.createKit(draft)
+    }
 }
 
 /** The kit editor: creating, swaps, days, the API's totals, refusals, roles, leaving, photos and the offline copy. */
@@ -574,7 +590,7 @@ class KitFormViewModelTest {
 
             form.onSave()
             val conflict = shop.settle { form.uiState.value }
-            assertEquals(CatalogMessage.Conflict, conflict.message, "Outra pessoa alterou este kit.")
+            assertEquals(CatalogMessage.KitConflict, conflict.message, "Outra pessoa alterou este kit.")
             assertEquals("Meu nome", conflict.fields.name)
 
             form.onReload()
@@ -583,6 +599,127 @@ class KitFormViewModelTest {
             assertTrue(reloaded.fields.published)
             assertNull(reloaded.message)
             assertEquals(2, reloaded.kit?.version)
+        }
+
+    @Test
+    fun recarregarOnAKitCreatedInThisSessionReadsThatKitAndSavesItAgainWithoutADuplicate() =
+        runTest(main) {
+            val shop = Shop(this, Who.Admin)
+            val bench = shop.seedItem("Banco Scrambler")
+            val form = shop.kitForm()
+            shop.settle { }
+            fillKit(form)
+            form.add(bench.id)
+            form.onSave()
+            shop.settle { }
+            val created = shop.storedKit
+            shop.picker.gallery += jpeg()
+            form.onAddPhoto(PhotoSource.Gallery)
+            shop.settle { }
+            // Someone else saves first, so the next "Salvar" is a conflict.
+            shop.catalog.setKitPublished(created.id, true, created.version)
+            form.onEdit(KitField.Name) { it.copy(name = "Meu nome") }
+            form.onSave()
+            assertEquals(CatalogMessage.KitConflict, shop.settle { form.uiState.value.message })
+
+            form.onReload()
+            val reloaded = shop.settle { form.uiState.value }
+
+            assertEquals(created.id, reloaded.kit?.id, "the same kit, not a blank new one")
+            assertEquals("Kit Scrambler", reloaded.fields.name)
+            assertEquals(1, reloaded.photos.photos.size, "with its photos")
+            assertEquals(created.id, reloaded.photos.ownerId)
+
+            form.onEdit(KitField.Name) { it.copy(name = "Meu nome") }
+            form.onSave()
+            shop.settle { }
+            assertEquals(1, shop.state.kits.size, "no duplicate")
+            assertEquals("Meu nome", shop.storedKit.name)
+        }
+
+    @Test
+    fun takingARowOutAlsoTakesItsMarkedProblems() =
+        runTest(main) {
+            val shop = Shop(this, Who.Admin)
+            val bench = shop.seedItem("Banco Scrambler")
+            val form = shop.kitForm()
+            shop.settle { }
+            fillKit(form)
+            form.add(bench.id)
+            form.onEdit(null) { it.withRow(bench.id) { row -> row.copy(quantity = "0", swappable = true) } }
+            form.onSave()
+            shop.settle { }
+            assertEquals(
+                setOf(KitField.Quantity(bench.id), KitField.Alternatives(bench.id)),
+                form.uiState.value.issues.keys,
+            )
+
+            form.onRemoveItem(bench.id)
+
+            val state = form.uiState.value
+            assertTrue(state.fields.items.isEmpty())
+            assertTrue(state.issues.isEmpty(), "no mark is left for a row that is gone")
+        }
+
+    @Test
+    fun editsAreIgnoredWhileTheKitIsBeingSaved() =
+        runTest(main) {
+            val shop = Shop(this, Who.Admin)
+            val bench = shop.seedItem("Banco Scrambler")
+            val saddle = shop.seedItem("Selim")
+            val gate = CompletableDeferred<Unit>()
+            val form = shop.kitForm(kits = GatedKits(shop.catalog, gate))
+            shop.settle { }
+            fillKit(form)
+            form.add(bench.id)
+
+            form.onSave()
+            shop.settle { }
+            assertTrue(form.uiState.value.saving)
+            form.onEdit(KitField.Name) { it.copy(name = "Outro") }
+            form.onPickItemToAdd(saddle.id)
+            form.onAddItem()
+            form.onRemoveItem(bench.id)
+            gate.complete(Unit)
+            val saved = shop.settle { form.uiState.value }
+
+            assertEquals("Kit Scrambler", saved.fields.name)
+            assertEquals(listOf(bench.id), saved.fields.items.map { it.itemId })
+            assertFalse(saved.dirty)
+        }
+
+    @Test
+    fun theKitEditorWordsItsRefusalsAndPhotosForAKitAndTheItemFormForAnItem() =
+        runTest(main) {
+            val shop = Shop(this, Who.Admin)
+            val bench = shop.seedItem("Banco Scrambler")
+            val kit = shop.seedKit("Kit Scrambler", listOf(plainRow(bench.id)))
+            val kitForm = shop.kitForm(kit.id)
+            val itemForm = shop.form(bench.id)
+            shop.settle { }
+
+            assertEquals(PhotoOwnerKind.Kit, kitForm.uiState.value.photos.ownerKind, "Salve o kit… / Cada kit…")
+            assertEquals(PhotoOwnerKind.Item, itemForm.uiState.value.photos.ownerKind, "Salve o item… / Cada item…")
+            assertEquals(CatalogMessage.KitConflict, Failure.VersionConflict().toCatalogMessage(CatalogSubject.Kit))
+            assertEquals(CatalogMessage.Conflict, Failure.VersionConflict().toCatalogMessage())
+            assertEquals(CatalogMessage.KitPhotoLimit, Failure.PhotoLimit().toCatalogMessage(CatalogSubject.Kit))
+            assertEquals(CatalogMessage.PhotoLimit, Failure.PhotoLimit().toCatalogMessage())
+        }
+
+    @Test
+    fun aViewerSeesTheStoreDefaultsForDaysTheKitLeavesBlank() =
+        runTest(main) {
+            val shop = Shop(this, Who.Viewer)
+            val bench = shop.seedItem("Banco Scrambler")
+            val kit = shop.seedKit("Kit Scrambler", listOf(plainRow(bench.id)), configure = { copy(assemblyDays = 4) })
+            val form = shop.kitForm(kit.id)
+
+            val state = shop.settle { form.uiState.value }
+
+            assertFalse(state.canWrite)
+            assertEquals(4, state.kit?.assemblyDays)
+            assertNull(state.kit?.safetyMarginDays)
+            assertEquals(2, state.defaultSafetyMarginDays, "Padrão da loja: 2 dias")
         }
 
     @Test
@@ -758,7 +895,7 @@ class KitFormViewModelTest {
             form.onAddPhoto(PhotoSource.Gallery)
             val state = shop.settle { form.uiState.value }
 
-            assertEquals(CatalogMessage.PhotoLimit, state.photos.message, "Cada kit pode ter até 8 fotos.")
+            assertEquals(CatalogMessage.KitPhotoLimit, state.photos.message, "Cada kit pode ter até 8 fotos.")
             assertEquals(MAX_PHOTOS, state.photos.photos.size)
         }
 

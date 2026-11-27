@@ -18,7 +18,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -28,9 +27,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.encomendo.core.domain.catalog.KitSummary
-import br.com.encomendo.core.domain.catalog.OwnerField
-import br.com.encomendo.core.domain.catalog.valueOrNull
-import br.com.encomendo.core.domain.money.Money
 import br.com.encomendo.core.ui.PhotoImage
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
@@ -47,10 +43,6 @@ import br.com.encomendo.feature.catalogo.resources.kits_empty
 import br.com.encomendo.feature.catalogo.resources.kits_loading
 import br.com.encomendo.feature.catalogo.resources.kits_new
 import br.com.encomendo.feature.catalogo.resources.kits_open
-import br.com.encomendo.feature.catalogo.resources.lead_days
-import br.com.encomendo.feature.catalogo.resources.margin_none
-import br.com.encomendo.feature.catalogo.resources.margin_value
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -95,22 +87,20 @@ fun KitsScreen(
     actions: KitsActions,
     modifier: Modifier = Modifier,
 ) {
-    CompositionLocalProvider(LocalCatalogSubject provides CatalogSubject.Kit) {
-        LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item(key = "header") { KitsHeader(state = state, actions = actions) }
-            items(state.kits, key = { it.id }) { summary -> KitCard(summary, state, actions) }
-            if (state.hasMore) {
-                item(key = "more") {
-                    SecondaryButton(
-                        text = stringResource(Res.string.items_load_more),
-                        onClick = actions.onLoadMore,
-                        enabled = !state.loadingMore,
-                    )
-                }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item(key = "header") { KitsHeader(state = state, actions = actions) }
+        items(state.kits, key = { it.id }) { summary -> KitCard(summary, state, actions) }
+        if (state.hasMore) {
+            item(key = "more") {
+                SecondaryButton(
+                    text = stringResource(Res.string.items_load_more),
+                    onClick = actions.onLoadMore,
+                    enabled = !state.loadingMore,
+                )
             }
         }
     }
@@ -217,10 +207,10 @@ internal fun KitCard(
             ItemLine(stringResource(Res.string.col_kit_items), summary.itemCount.toString())
             ItemLine(stringResource(Res.string.col_kit_price), formatMoney(summary.price))
             ItemLine(stringResource(Res.string.col_kit_single_total), formatMoney(summary.singleItemsTotal))
-            KitMargin(summary)
+            summary.margin.text(summary.price.currency)?.let { ItemLine(stringResource(Res.string.col_margin), it) }
             ItemLine(
                 stringResource(Res.string.col_lead),
-                pluralStringResource(Res.plurals.lead_days, summary.totalDays, summary.totalDays),
+                daysLabel(summary.totalDays),
             )
             PortalSwitchRow(
                 name = summary.name,
@@ -230,22 +220,6 @@ internal fun KitCard(
             )
         }
     }
-}
-
-/** "Margem": "{valor} ({n}%)", or "—" without a cost; absent when the API did not send it. */
-@Composable
-private fun KitMargin(summary: KitSummary) {
-    if (summary.margin !is OwnerField.Shown) return
-    val margin = summary.margin.valueOrNull
-    val text =
-        margin?.let {
-            stringResource(
-                Res.string.margin_value,
-                formatMoney(Money(it.cents, summary.price.currency)),
-                formatBasisPoints(it.basisPoints),
-            )
-        } ?: stringResource(Res.string.margin_none)
-    ItemLine(stringResource(Res.string.col_margin), text)
 }
 
 private val COVER_SIZE = 72.dp

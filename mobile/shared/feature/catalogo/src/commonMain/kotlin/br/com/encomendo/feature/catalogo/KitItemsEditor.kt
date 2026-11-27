@@ -30,11 +30,13 @@ import br.com.encomendo.feature.catalogo.resources.kit_item_others
 import br.com.encomendo.feature.catalogo.resources.kit_item_pick
 import br.com.encomendo.feature.catalogo.resources.kit_item_picker
 import br.com.encomendo.feature.catalogo.resources.kit_item_quantity
+import br.com.encomendo.feature.catalogo.resources.kit_item_quantity_of
 import br.com.encomendo.feature.catalogo.resources.kit_item_remove
 import br.com.encomendo.feature.catalogo.resources.kit_item_remove_of
 import br.com.encomendo.feature.catalogo.resources.kit_item_suggestions
 import br.com.encomendo.feature.catalogo.resources.kit_item_swap_for
 import br.com.encomendo.feature.catalogo.resources.kit_item_swappable
+import br.com.encomendo.feature.catalogo.resources.kit_item_swappable_of
 import br.com.encomendo.feature.catalogo.resources.kit_items_title
 import org.jetbrains.compose.resources.stringResource
 
@@ -72,6 +74,9 @@ private fun KitItemRow(
 ) {
     val remove = stringResource(Res.string.kit_item_remove)
     val removeOf = stringResource(Res.string.kit_item_remove_of, row.itemName)
+    // Each row is read with its item's name: "Quantidade" alone would not say of which.
+    val quantityOf = stringResource(Res.string.kit_item_quantity_of, row.itemName)
+    val swappableOf = stringResource(Res.string.kit_item_swappable_of, row.itemName)
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -95,16 +100,18 @@ private fun KitItemRow(
                 },
                 problem = state.issue(KitField.Quantity(row.itemId))?.text(),
                 keyboardType = KeyboardType.Number,
+                modifier = Modifier.semantics { contentDescription = quantityOf },
             )
             CheckRow(
                 label = stringResource(Res.string.kit_item_swappable),
+                description = swappableOf,
                 checked = row.swappable,
                 onChange = { actions.onEdit(null) { f -> f.withSwappable(row.itemId, it) } },
             )
             if (row.swappable) Alternatives(row, state, actions)
             SecondaryButton(
                 text = remove,
-                onClick = { actions.onEdit(KitField.Items) { it.withoutRow(row.itemId) } },
+                onClick = { actions.onRemoveItem(row.itemId) },
                 modifier = Modifier.semantics { contentDescription = removeOf },
             )
         }
@@ -145,7 +152,7 @@ private fun AlternativeHeading.text(): String =
 
 /** The item's name, with "(arquivado)" while the row still names an archived item so it can be unticked. */
 @Composable
-private fun alternativeLabel(item: ItemSummary): String =
+internal fun alternativeLabel(item: ItemSummary): String =
     if (item.archived) stringResource(Res.string.kit_item_archived_alternative, item.name) else item.name
 
 /** "Item a adicionar" with "Adicionar item", or "Nenhum item disponível para adicionar.". */
@@ -176,13 +183,15 @@ internal fun CheckRow(
     label: String,
     checked: Boolean,
     onChange: (Boolean) -> Unit,
+    description: String? = null,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = TouchTarget)
-                .toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange),
+                .toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange)
+                .semantics { description?.let { contentDescription = it } },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = checked, onCheckedChange = null)

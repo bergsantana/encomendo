@@ -28,6 +28,7 @@ import br.com.encomendo.core.domain.catalog.KitRepository
 import br.com.encomendo.core.domain.catalog.PhotoRepository
 import br.com.encomendo.core.domain.members.InvitationsRepository
 import br.com.encomendo.core.domain.members.MembersRepository
+import br.com.encomendo.core.domain.niche.NicheWords
 import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.PasswordResetRepository
 import br.com.encomendo.core.domain.session.SessionRepository
@@ -198,6 +199,8 @@ val dataModule: Module =
         single<KitRepository> { get<ApiCatalogRepository>() }
         single<PhotoRepository> { get<ApiCatalogRepository>() }
         single<SettingsRepository> { ApiSettingsRepository(api = get(), calls = get()) }
+        // Until the store's template exists (milestone 7), every store reads the default niche words (ADR 0025).
+        single { NicheWords.Default }
         single<SupplierRepository> {
             ApiSupplierRepository(api = get(), calls = get(), cache = get(), sessions = get())
         }

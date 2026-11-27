@@ -7,10 +7,14 @@ import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.items_offline_saved
 import br.com.encomendo.feature.catalogo.resources.message_category_in_use
 import br.com.encomendo.feature.catalogo.resources.message_check_fields
+import br.com.encomendo.feature.catalogo.resources.message_conflict
 import br.com.encomendo.feature.catalogo.resources.message_item_in_kit
 import br.com.encomendo.feature.catalogo.resources.message_item_in_kits
 import br.com.encomendo.feature.catalogo.resources.message_item_in_unnamed_kit
+import br.com.encomendo.feature.catalogo.resources.message_kit_conflict
+import br.com.encomendo.feature.catalogo.resources.message_kit_photo_limit
 import br.com.encomendo.feature.catalogo.resources.message_photo_invalid
+import br.com.encomendo.feature.catalogo.resources.message_photo_limit
 import br.com.encomendo.feature.catalogo.resources.message_photo_not_uploaded
 import br.com.encomendo.feature.catalogo.resources.message_photo_too_big
 import br.com.encomendo.feature.catalogo.resources.notice_archived
@@ -54,13 +58,15 @@ import kotlin.time.Instant
 internal fun CatalogMessage.text(): String =
     when (this) {
         CatalogMessage.CheckFields -> stringResource(Res.string.message_check_fields)
-        CatalogMessage.Conflict -> conflictText()
+        CatalogMessage.Conflict -> stringResource(Res.string.message_conflict)
+        CatalogMessage.KitConflict -> stringResource(Res.string.message_kit_conflict)
         is CatalogMessage.KitItemsArchived -> kitItemsArchivedText(items)
         is CatalogMessage.ItemInKit -> inKitText(kits)
         CatalogMessage.CategoryInUse -> stringResource(Res.string.message_category_in_use)
         CatalogMessage.PhotoTooBig -> stringResource(Res.string.message_photo_too_big)
         CatalogMessage.PhotoInvalid -> stringResource(Res.string.message_photo_invalid)
-        CatalogMessage.PhotoLimit -> photoLimitText()
+        CatalogMessage.PhotoLimit -> stringResource(Res.string.message_photo_limit)
+        CatalogMessage.KitPhotoLimit -> stringResource(Res.string.message_kit_photo_limit)
         CatalogMessage.PhotoNotUploaded -> stringResource(Res.string.message_photo_not_uploaded)
         is CatalogMessage.General -> message.text()
     }

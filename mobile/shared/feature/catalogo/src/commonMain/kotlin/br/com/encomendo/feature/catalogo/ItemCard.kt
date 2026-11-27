@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import br.com.encomendo.core.domain.catalog.ItemSummary
 import br.com.encomendo.core.domain.catalog.OwnerField
 import br.com.encomendo.core.domain.catalog.valueOrNull
-import br.com.encomendo.core.domain.money.Money
 import br.com.encomendo.core.ui.PhotoImage
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
@@ -38,12 +37,9 @@ import br.com.encomendo.feature.catalogo.resources.col_source
 import br.com.encomendo.feature.catalogo.resources.col_supplier
 import br.com.encomendo.feature.catalogo.resources.items_archived
 import br.com.encomendo.feature.catalogo.resources.items_open
-import br.com.encomendo.feature.catalogo.resources.lead_days
 import br.com.encomendo.feature.catalogo.resources.margin_none
-import br.com.encomendo.feature.catalogo.resources.margin_value
 import br.com.encomendo.feature.catalogo.resources.no_category
 import br.com.encomendo.feature.catalogo.resources.portal_switch_of
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -91,7 +87,7 @@ internal fun ItemCard(
             summary.mainSupplierName?.let { ItemLine(stringResource(Res.string.col_supplier), it) }
             ItemLine(
                 stringResource(Res.string.col_lead),
-                pluralStringResource(Res.plurals.lead_days, summary.readyDays, summary.readyDays),
+                daysLabel(summary.readyDays),
             )
             ItemLine(stringResource(Res.string.col_price), formatMoney(summary.price))
             ItemCosts(summary)
@@ -109,18 +105,7 @@ private fun ItemCosts(summary: ItemSummary) {
             summary.cost.valueOrNull?.let(::formatMoney) ?: stringResource(Res.string.margin_none),
         )
     }
-    if (summary.margin is OwnerField.Shown) {
-        val margin = summary.margin.valueOrNull
-        val text =
-            margin?.let {
-                stringResource(
-                    Res.string.margin_value,
-                    formatMoney(Money(it.cents, summary.price.currency)),
-                    formatBasisPoints(it.basisPoints),
-                )
-            } ?: stringResource(Res.string.margin_none)
-        ItemLine(stringResource(Res.string.col_margin), text)
-    }
+    summary.margin.text(summary.price.currency)?.let { ItemLine(stringResource(Res.string.col_margin), it) }
 }
 
 /** "No portal" of an item: only a writer can flip it. */

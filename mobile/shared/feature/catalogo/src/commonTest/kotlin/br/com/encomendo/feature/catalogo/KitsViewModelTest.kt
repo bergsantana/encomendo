@@ -40,7 +40,7 @@ class KitsViewModelTest {
 
             val state = shop.settle { list.uiState.value }
 
-            assertTrue(state.showsMargin)
+            assertTrue(state.row.margin.isShown)
             assertTrue(state.row.margin.isShown)
         }
 
@@ -54,7 +54,6 @@ class KitsViewModelTest {
 
             val state = shop.settle { list.uiState.value }
 
-            assertFalse(state.showsMargin)
             assertEquals(OwnerField.Hidden, state.row.margin)
             assertEquals(OwnerField.Hidden, state.row.cost)
             assertTrue(state.canWrite)
@@ -170,7 +169,7 @@ class KitsViewModelTest {
             list.onTogglePublished(stale, false)
             val after = shop.settle { list.uiState.value }
 
-            assertEquals(CatalogMessage.Conflict, after.message)
+            assertEquals(CatalogMessage.KitConflict, after.message)
             assertTrue(after.row.published, "the list shows what the server holds now")
         }
 

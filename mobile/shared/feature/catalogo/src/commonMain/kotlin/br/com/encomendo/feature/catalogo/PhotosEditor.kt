@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import br.com.encomendo.core.domain.catalog.Photo
+import br.com.encomendo.core.domain.catalog.PhotoOwnerKind
 import br.com.encomendo.core.ui.PhotoImage
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
@@ -55,7 +56,7 @@ internal fun PhotosEditor(
     if (photos.ownerId == null) {
         // The upload names the owner's id.
         val saveFirst =
-            if (LocalCatalogSubject.current == CatalogSubject.Kit) {
+            if (photos.ownerKind == PhotoOwnerKind.Kit) {
                 Res.string.photos_save_first_kit
             } else {
                 Res.string.photos_save_first

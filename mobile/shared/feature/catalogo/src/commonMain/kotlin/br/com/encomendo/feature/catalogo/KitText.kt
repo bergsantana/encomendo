@@ -2,41 +2,31 @@ package br.com.encomendo.feature.catalogo
 
 import androidx.compose.runtime.Composable
 import br.com.encomendo.feature.catalogo.resources.Res
-import br.com.encomendo.feature.catalogo.resources.message_conflict
-import br.com.encomendo.feature.catalogo.resources.message_kit_conflict
+import br.com.encomendo.feature.catalogo.resources.kit_store_default
+import br.com.encomendo.feature.catalogo.resources.lead_days
 import br.com.encomendo.feature.catalogo.resources.message_kit_item_archived
 import br.com.encomendo.feature.catalogo.resources.message_kit_item_archived_unnamed
-import br.com.encomendo.feature.catalogo.resources.message_kit_photo_limit
-import br.com.encomendo.feature.catalogo.resources.message_photo_limit
 import br.com.encomendo.feature.catalogo.resources.notice_archived
 import br.com.encomendo.feature.catalogo.resources.notice_restored
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
-// The sentences that differ between an item and a kit, in the design document's words for Catálogo.
+// Kit sentences and the small helpers the kit screens share, in the design document's words for Catálogo.
 
-/** "Outra pessoa alterou este item…", or "…este kit…" on the kit editor. */
-@Composable
-internal fun conflictText(): String =
-    stringResource(
-        if (LocalCatalogSubject.current ==
-            CatalogSubject.Kit
-        ) {
-            Res.string.message_kit_conflict
-        } else {
-            Res.string.message_conflict
-        },
-    )
+/**
+ * The plural quantity for [days]: 1 for "1 dia", 2 (the "other" form) for everything else, 0 included. Portuguese
+ * plural rules put 0 with the singular, but the doc says "0 dias", as the web's `formatDays` does.
+ */
+internal fun daysQuantity(days: Int): Int = if (days == 1) 1 else 2
 
-/** "Cada item pode ter até 8 fotos.", or "Cada kit…" on the kit editor. */
+/** "Padrão da loja: 1 dia" or "Padrão da loja: {n} dias". */
 @Composable
-internal fun photoLimitText(): String =
-    stringResource(
-        if (LocalCatalogSubject.current == CatalogSubject.Kit) {
-            Res.string.message_kit_photo_limit
-        } else {
-            Res.string.message_photo_limit
-        },
-    )
+internal fun defaultDaysHint(days: Int): String =
+    pluralStringResource(Res.plurals.kit_store_default, daysQuantity(days), days)
+
+/** "{n} dias" ("1 dia", "0 dias"). */
+@Composable
+internal fun daysLabel(days: Int): String = pluralStringResource(Res.plurals.lead_days, daysQuantity(days), days)
 
 /** An archived item the API names, said once per item; with none named, the general sentence. */
 @Composable
