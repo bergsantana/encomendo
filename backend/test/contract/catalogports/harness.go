@@ -77,7 +77,10 @@ func page(t *testing.T, cursor string, limit int) shared.PageRequest {
 
 // itemSpec describes an item the suite builds.
 type itemSpec struct {
-	name      string
+	name string
+	// supplier, when set, is the main supplier instead of a new one of the
+	// item's store.
+	supplier  shared.SupplierID
 	category  shared.CategoryID
 	inHouse   bool
 	values    []shared.AttributeValueID
@@ -92,9 +95,13 @@ func (h Harness) buildItem(t *testing.T, tn tenant, spec itemSpec) *catalog.Item
 	t.Helper()
 	src := catalog.SourcingInput{Mode: catalog.ModeInHouse, ProductionDays: 5, ProductionCost: catalog.SetCost(brl(t, 1200))}
 	if !spec.inHouse {
+		main := spec.supplier
+		if main.IsZero() {
+			main = h.NewSupplier(t, tn.id)
+		}
 		src = catalog.SourcingInput{
 			Mode:   catalog.ModeToOrder,
-			Main:   &catalog.SupplierLink{Supplier: h.NewSupplier(t, tn.id), LeadDays: 7, Cost: catalog.SetCost(brl(t, 4000))},
+			Main:   &catalog.SupplierLink{Supplier: main, LeadDays: 7, Cost: catalog.SetCost(brl(t, 4000))},
 			Backup: &catalog.SupplierLink{Supplier: h.NewSupplier(t, tn.id), LeadDays: 9, Cost: catalog.ClearCost()},
 		}
 	}
@@ -205,3 +212,9 @@ func valueIDs(a *catalog.Attribute) []shared.AttributeValueID {
 }
 
 func member(id shared.ItemID) catalog.KitItem { return catalog.KitItem{Item: id, Quantity: 1} }
+
+// isCursorError reports whether err is a ValidationError on "cursor".
+func isCursorError(err error) bool {
+	var ve *shared.ValidationError
+	return errors.As(err, &ve) && len(ve.Fields) == 1 && ve.Fields[0].Field == "cursor"
+}

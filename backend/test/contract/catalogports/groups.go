@@ -6,7 +6,6 @@ import (
 	"slices"
 	"testing"
 
-	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
@@ -15,13 +14,12 @@ import (
 // names per store ignoring case, optimistic updates, the in-use refusal,
 // rollback and tenant isolation.
 func RunCategoriesContract(t *testing.T, newHarness func(t *testing.T) Harness) {
-	t.Run("categories list by position, then name", func(t *testing.T) { categoriesOrder(t, newHarness(t)) })
+	t.Run("categories list by position, then lower(name)", func(t *testing.T) { categoriesOrder(t, newHarness(t)) })
 	t.Run("a category name is unique per store, ignoring case", func(t *testing.T) { categoryNames(t, newHarness(t)) })
 	t.Run("category updates are optimistic", func(t *testing.T) { categoryUpdate(t, newHarness(t)) })
 	t.Run("a category in use cannot be deleted", func(t *testing.T) { categoryDelete(t, newHarness(t)) })
 	t.Run("a failed transaction undoes a category write", func(t *testing.T) { categoryRollback(t, newHarness(t)) })
 	t.Run("another store's categories are invisible", func(t *testing.T) { categoryIsolation(t, newHarness(t)) })
-	t.Run("categories need a transaction", func(t *testing.T) { categoryNeedsTx(t, newHarness(t)) })
 }
 
 func categoryNames(t *testing.T, h Harness) {
@@ -41,6 +39,7 @@ func categoriesOrder(t *testing.T, h Harness) {
 	tn := h.newTenant(t)
 	h.addCategory(t, tn, "Carenagens", 1)
 	h.addCategory(t, tn, "Bancos", 1)
+	h.addCategory(t, tn, "alças", 1)
 	h.addCategory(t, tn, "Rodas", 0)
 	h.in(t, tn.scope(), func(ctx context.Context) error {
 		list, err := h.Categories.List(ctx, tn.id)
@@ -48,8 +47,8 @@ func categoriesOrder(t *testing.T, h Harness) {
 		for _, c := range list {
 			got = append(got, c.Name())
 		}
-		if err != nil || !slices.Equal(got, []string{"Rodas", "Bancos", "Carenagens"}) {
-			t.Errorf("List = %v, %v; want by position, then name", got, err)
+		if err != nil || !slices.Equal(got, []string{"Rodas", "alças", "Bancos", "Carenagens"}) {
+			t.Errorf("List = %v, %v; want by position, then lower(name)", got, err)
 		}
 		return nil
 	})
@@ -177,13 +176,6 @@ func categoryIsolation(t *testing.T, h Harness) {
 		}
 		return nil
 	})
-}
-
-func categoryNeedsTx(t *testing.T, h Harness) {
-	tn := h.newTenant(t)
-	if _, err := h.Categories.List(context.Background(), tn.id); !errors.Is(err, appshared.ErrNoTransaction) {
-		t.Errorf("outside a transaction: %v, want ErrNoTransaction", err)
-	}
 }
 
 // RunAttributesContract checks the Attributes repository: order, names,

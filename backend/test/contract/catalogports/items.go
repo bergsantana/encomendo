@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
-	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
@@ -29,7 +28,7 @@ func RunItemsContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 	t.Run("the published items", func(t *testing.T) { itemPublished(t, newHarness(t)) })
 	t.Run("a scope with no user reads no supplier or cost", func(t *testing.T) { itemStorePage(t, newHarness(t)) })
 	t.Run("another store's items are invisible", func(t *testing.T) { itemIsolation(t, newHarness(t)) })
-	t.Run("items need a transaction", func(t *testing.T) { itemNeedsTx(t, newHarness(t)) })
+	t.Run("a sourcing change replaces the staff-only rows", func(t *testing.T) { itemSourcingChanges(t, newHarness(t)) })
 }
 
 func sameMoney(a, b *shared.Money) bool {
@@ -151,6 +150,7 @@ func itemReferences(t *testing.T, h Harness) {
 	for name, spec := range map[string]itemSpec{
 		"another store's category": {name: "Banco", category: theirCat.ID(), inHouse: true},
 		"another store's value":    {name: "Banco", values: valueIDs(theirAttr), inHouse: true},
+		"another store's supplier": {name: "Banco", supplier: h.NewSupplier(t, b.id)},
 	} {
 		it := h.buildItem(t, a, spec)
 		if err := h.try(a.scope(), func(ctx context.Context) error { return h.Items.Insert(ctx, it) }); !errors.Is(err, shared.ErrInvalid) {
@@ -207,7 +207,7 @@ func itemList(t *testing.T, h Harness) {
 	tn := h.newTenant(t)
 	bancos := h.addCategory(t, tn, "Bancos", 0)
 	for _, spec := range []itemSpec{
-		{name: "Delta", inHouse: true}, {name: "Alfa", category: bancos.ID(), inHouse: true},
+		{name: "Delta", inHouse: true}, {name: "alfa", category: bancos.ID(), inHouse: true},
 		{name: "Charlie", archived: true, inHouse: true}, {name: "Bravo Banco", category: bancos.ID()}, {name: "Echo"},
 	} {
 		h.addItem(t, tn, spec)
@@ -225,16 +225,16 @@ func itemList(t *testing.T, h Harness) {
 				break
 			}
 		}
-		if !slices.Equal(all, []string{"Alfa", "Bravo Banco", "Charlie", "Delta", "Echo"}) {
-			t.Errorf("all pages = %v, want every item by name", all)
+		if !slices.Equal(all, []string{"alfa", "Bravo Banco", "Charlie", "Delta", "Echo"}) {
+			t.Errorf("all pages = %v, want every item by lower(name)", all)
 		}
 		cases := map[string]struct {
 			filter appcatalog.ItemFilter
 			want   []string
 		}{
-			"active only":       {appcatalog.ItemFilter{}, []string{"Alfa", "Bravo Banco", "Delta", "Echo"}},
+			"active only":       {appcatalog.ItemFilter{}, []string{"alfa", "Bravo Banco", "Delta", "Echo"}},
 			"by query":          {appcatalog.ItemFilter{Query: "BANCO"}, []string{"Bravo Banco"}},
-			"by category":       {appcatalog.ItemFilter{Category: bancos.ID()}, []string{"Alfa", "Bravo Banco"}},
+			"by category":       {appcatalog.ItemFilter{Category: bancos.ID()}, []string{"alfa", "Bravo Banco"}},
 			"a literal percent": {appcatalog.ItemFilter{Query: "%"}, []string{}},
 		}
 		for name, c := range cases {
@@ -261,8 +261,8 @@ func itemBadCursor(t *testing.T, h Harness) {
 	})
 	h.in(t, a.scope(), func(ctx context.Context) error {
 		for name, c := range map[string]string{"gibberish": "not-a-cursor", "another store's cursor": theirs} {
-			if _, err := h.Items.List(ctx, a.id, appcatalog.ItemFilter{}, page(t, c, 10)); !errors.Is(err, shared.ErrInvalid) {
-				t.Errorf("%s: %v, want ErrInvalid", name, err)
+			if _, err := h.Items.List(ctx, a.id, appcatalog.ItemFilter{}, page(t, c, 10)); !isCursorError(err) {
+				t.Errorf("%s: %v, want a ValidationError on cursor", name, err)
 			}
 		}
 		return nil
@@ -279,7 +279,7 @@ func factsByID(list []appcatalog.ItemFacts) map[shared.ItemID]appcatalog.ItemFac
 
 func itemFacts(t *testing.T, h Harness) {
 	tn := h.newTenant(t)
-	supplied := h.addItem(t, tn, itemSpec{name: "Banco"})
+	supplied := h.addItem(t, tn, itemSpec{name: "Banco", published: true})
 	own := h.addItem(t, tn, itemSpec{name: "Capa", inHouse: true, archived: true})
 	missing := shared.ItemID(h.NewID())
 	h.in(t, tn.scope(), func(ctx context.Context) error {
@@ -289,7 +289,7 @@ func itemFacts(t *testing.T, h Harness) {
 			t.Fatalf("ByIDs = %+v, %v; want two items, once each", list, err)
 		}
 		s, o := got[supplied.ID()], got[own.ID()]
-		if s.Name != "Banco" || s.Facts.Price != supplied.Price() || s.Facts.ReadyDays != 7 || s.Facts.Archived || !sameMoney(s.Facts.Cost, supplied.Cost()) {
+		if s.Name != "Banco" || !s.Published || o.Published || s.Facts.Price != supplied.Price() || s.Facts.ReadyDays != 7 || s.Facts.Archived || !sameMoney(s.Facts.Cost, supplied.Cost()) {
 			t.Errorf("the supplied item's facts = %+v", s)
 		}
 		if o.Facts.ReadyDays != 5 || !o.Facts.Archived || !sameMoney(o.Facts.Cost, own.Cost()) {
@@ -360,10 +360,33 @@ func itemStorePage(t *testing.T, h Harness) {
 		}
 		return nil
 	})
-	fresh := h.buildItem(t, tn, itemSpec{name: "Novo"})
-	if err := h.try(tn.storePage(), func(ctx context.Context) error { return h.Items.Insert(ctx, fresh) }); err == nil {
-		t.Error("a scope with no user wrote an item's supplier links")
+	// Writes need a staff scope: RLS would hide the supplier rows, so a
+	// replace could never drop them. The refusal matches no sentinel.
+	refused := func(err error) bool {
+		return err != nil && !errors.Is(err, shared.ErrNotFound) && !errors.Is(err, shared.ErrConflict) && !errors.Is(err, shared.ErrInvalid)
 	}
+	for name, fresh := range map[string]*catalog.Item{
+		"with suppliers": h.buildItem(t, tn, itemSpec{name: "Novo"}),
+		"in house":       h.buildItem(t, tn, itemSpec{name: "Capa", inHouse: true}),
+	} {
+		if err := h.try(tn.storePage(), func(ctx context.Context) error { return h.Items.Insert(ctx, fresh) }); !refused(err) {
+			t.Errorf("a scope with no user inserting an item %s: %v, want a refusal", name, err)
+		}
+	}
+	it.Unpublish()
+	if err := it.ReplaceSourcing(catalog.SourcingInput{Mode: catalog.ModeInHouse, ProductionDays: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.try(tn.storePage(), func(ctx context.Context) error { return h.Items.Update(ctx, it) }); !refused(err) {
+		t.Errorf("a scope with no user updating an item with supplier rows: %v, want a refusal", err)
+	}
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		got, err := h.Items.ByID(ctx, tn.id, it.ID())
+		if _, main := got.MainSupplier(); err != nil || !got.Published() || got.Version() != 1 || !main {
+			t.Errorf("after the refused update: %+v, %v; want it unchanged", got, err)
+		}
+		return nil
+	})
 }
 
 func itemIsolation(t *testing.T, h Harness) {
@@ -394,8 +417,59 @@ func itemIsolation(t *testing.T, h Harness) {
 	}
 }
 
-func itemNeedsTx(t *testing.T, h Harness) {
-	if _, err := h.Items.ByIDs(context.Background(), h.NewTenant(t), nil); !errors.Is(err, appshared.ErrNoTransaction) {
-		t.Errorf("outside a transaction: %v, want ErrNoTransaction", err)
+// itemSourcingChanges moves an item between sourcing modes and checks what
+// each Update leaves in supplier_items, item_costs and items.ready_days.
+func itemSourcingChanges(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	it := h.addItem(t, tn, itemSpec{name: "Banco"})
+	main, backup := h.NewSupplier(t, tn.id), h.NewSupplier(t, tn.id)
+	inHouse := catalog.SourcingInput{Mode: catalog.ModeInHouse, ProductionDays: 5, ProductionCost: catalog.SetCost(brl(t, 1200))}
+	got := h.replaceSourcing(t, tn, it.ID(), 2, inHouse)
+	if hasMain(got) || hasBackup(got) || !sameMoney(got.ProductionCost(), ptrMoney(brl(t, 1200))) || got.ReadyDays() != 5 {
+		t.Errorf("to_order to in_house: links %v %v, production cost %v, ready %d; want no links, item_costs, 5 days",
+			hasMain(got), hasBackup(got), got.ProductionCost(), got.ReadyDays())
+	}
+	got = h.replaceSourcing(t, tn, it.ID(), 3, catalog.SourcingInput{Mode: catalog.ModeToOrder,
+		Main:   &catalog.SupplierLink{Supplier: main, LeadDays: 11},
+		Backup: &catalog.SupplierLink{Supplier: backup, LeadDays: 2, Cost: catalog.SetCost(brl(t, 300))}})
+	b, _ := got.BackupSupplier()
+	if got.ProductionCost() != nil || got.ReadyDays() != 11 || !hasBackup(got) || !sameMoney(b.Cost(), ptrMoney(brl(t, 300))) {
+		t.Errorf("in_house to to_order: production cost %v, ready %d; want none, 11 days, the backup with its cost", got.ProductionCost(), got.ReadyDays())
+	}
+	got = h.replaceSourcing(t, tn, it.ID(), 4, catalog.SourcingInput{Mode: catalog.ModeToOrder, Main: &catalog.SupplierLink{Supplier: main, LeadDays: 4}})
+	if hasBackup(got) || got.ReadyDays() != 4 {
+		t.Errorf("unlinking the backup: backup %v, ready %d; want none, 4 days", hasBackup(got), got.ReadyDays())
 	}
 }
+
+func hasMain(it *catalog.Item) bool   { _, ok := it.MainSupplier(); return ok }
+func hasBackup(it *catalog.Item) bool { _, ok := it.BackupSupplier(); return ok }
+
+// replaceSourcing replaces the sourcing of the item, stores it, and returns
+// it as read back, checking it reads back as saved at version.
+func (h Harness) replaceSourcing(t *testing.T, tn tenant, id shared.ItemID, version int, src catalog.SourcingInput) *catalog.Item {
+	t.Helper()
+	var got *catalog.Item
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		cur, err := h.Items.ByID(ctx, tn.id, id)
+		if err != nil {
+			return err
+		}
+		if err := cur.ReplaceSourcing(src); err != nil {
+			return err
+		}
+		if err := h.Items.Update(ctx, cur); err != nil {
+			return err
+		}
+		if got, err = h.Items.ByID(ctx, tn.id, id); err != nil {
+			return err
+		}
+		if diff := sameItem(got, cur, version); diff != "" {
+			t.Errorf("read back with other %s", diff)
+		}
+		return nil
+	})
+	return got
+}
+
+func ptrMoney(m shared.Money) *shared.Money { return &m }

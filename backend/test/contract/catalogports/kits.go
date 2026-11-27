@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
@@ -17,6 +18,51 @@ func RunRepositoryContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 	t.Run("Attributes", func(t *testing.T) { RunAttributesContract(t, newHarness) })
 	t.Run("Items", func(t *testing.T) { RunItemsContract(t, newHarness) })
 	t.Run("Kits", func(t *testing.T) { RunKitsContract(t, newHarness) })
+	t.Run("every method needs a transaction", func(t *testing.T) { needsTx(t, newHarness(t)) })
+}
+
+// needsTx calls every repository method outside a transaction.
+func needsTx(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	ctx := context.Background()
+	it := h.buildItem(t, tn, itemSpec{name: "Banco", inHouse: true})
+	k := h.buildKit(t, tn, kitSpec{name: "Kit", items: []catalog.KitItem{member(it.ID())}})
+	c, _ := catalog.NewCategory(tn.id, shared.CategoryID(h.NewID()), "Bancos", 0)
+	a, _ := catalog.NewAttribute(tn.id, shared.AttributeID(h.NewID()), catalog.AttributeInput{Name: "Serve em"})
+	p := page(t, "", 10)
+	ignore := func(_ any, err error) error { return err }
+	calls := map[string]func() error{
+		"Categories.List":        func() error { return ignore(h.Categories.List(ctx, tn.id)) },
+		"Categories.ByID":        func() error { return ignore(h.Categories.ByID(ctx, tn.id, c.ID())) },
+		"Categories.Insert":      func() error { return h.Categories.Insert(ctx, c) },
+		"Categories.Update":      func() error { return h.Categories.Update(ctx, c) },
+		"Categories.Delete":      func() error { return h.Categories.Delete(ctx, tn.id, c.ID()) },
+		"Attributes.List":        func() error { return ignore(h.Attributes.List(ctx, tn.id)) },
+		"Attributes.ByID":        func() error { return ignore(h.Attributes.ByID(ctx, tn.id, a.ID())) },
+		"Attributes.Insert":      func() error { return h.Attributes.Insert(ctx, a, 0) },
+		"Attributes.Update":      func() error { return h.Attributes.Update(ctx, a, nil) },
+		"Attributes.Delete":      func() error { return h.Attributes.Delete(ctx, tn.id, a.ID()) },
+		"Attributes.UsageCounts": func() error { return ignore(h.Attributes.UsageCounts(ctx, tn.id)) },
+		"Items.Insert":           func() error { return h.Items.Insert(ctx, it) },
+		"Items.Update":           func() error { return h.Items.Update(ctx, it) },
+		"Items.ByID":             func() error { return ignore(h.Items.ByID(ctx, tn.id, it.ID())) },
+		"Items.ByIDs":            func() error { return ignore(h.Items.ByIDs(ctx, tn.id, []shared.ItemID{it.ID()})) },
+		"Items.List":             func() error { return ignore(h.Items.List(ctx, tn.id, appcatalog.ItemFilter{}, p)) },
+		"Items.ActiveKitsHolding": func() error {
+			return ignore(h.Items.ActiveKitsHolding(ctx, tn.id, it.ID()))
+		},
+		"Items.Published": func() error { return ignore(h.Items.Published(ctx, tn.id)) },
+		"Kits.Insert":     func() error { return h.Kits.Insert(ctx, k) },
+		"Kits.Update":     func() error { return h.Kits.Update(ctx, k) },
+		"Kits.ByID":       func() error { return ignore(h.Kits.ByID(ctx, tn.id, k.ID())) },
+		"Kits.List":       func() error { return ignore(h.Kits.List(ctx, tn.id, appcatalog.KitFilter{}, p)) },
+		"Kits.Published":  func() error { return ignore(h.Kits.Published(ctx, tn.id)) },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, appshared.ErrNoTransaction) {
+			t.Errorf("%s outside a transaction: %v, want ErrNoTransaction", name, err)
+		}
+	}
 }
 
 // RunKitsContract checks the Kits repository: a kit reads back with its
@@ -140,13 +186,13 @@ func kitNames(p shared.Page[*catalog.Kit]) []string {
 func kitList(t *testing.T, h Harness) {
 	tn := h.newTenant(t)
 	it := h.addItem(t, tn, itemSpec{name: "Banco", inHouse: true})
-	for _, spec := range []kitSpec{{name: "Charlie"}, {name: "Alfa Couro"}, {name: "Bravo", archived: true}} {
+	for _, spec := range []kitSpec{{name: "Charlie"}, {name: "alfa Couro"}, {name: "Bravo", archived: true}} {
 		spec.items = []catalog.KitItem{member(it.ID())}
 		h.addKit(t, tn, spec)
 	}
 	h.in(t, tn.scope(), func(ctx context.Context) error {
 		first, err := h.Kits.List(ctx, tn.id, appcatalog.KitFilter{IncludeArchived: true}, page(t, "", 2))
-		if err != nil || !slices.Equal(kitNames(first), []string{"Alfa Couro", "Bravo"}) || !first.HasMore() {
+		if err != nil || !slices.Equal(kitNames(first), []string{"alfa Couro", "Bravo"}) || !first.HasMore() {
 			t.Fatalf("first page = %v, %v", kitNames(first), err)
 		}
 		last, err := h.Kits.List(ctx, tn.id, appcatalog.KitFilter{IncludeArchived: true}, page(t, first.NextCursor, 2))
@@ -154,15 +200,15 @@ func kitList(t *testing.T, h Harness) {
 			t.Errorf("last page = %v, %v", kitNames(last), err)
 		}
 		active, err := h.Kits.List(ctx, tn.id, appcatalog.KitFilter{}, page(t, "", 10))
-		if err != nil || !slices.Equal(kitNames(active), []string{"Alfa Couro", "Charlie"}) {
+		if err != nil || !slices.Equal(kitNames(active), []string{"alfa Couro", "Charlie"}) {
 			t.Errorf("active kits = %v, %v", kitNames(active), err)
 		}
 		found, err := h.Kits.List(ctx, tn.id, appcatalog.KitFilter{Query: "couro"}, page(t, "", 10))
-		if err != nil || !slices.Equal(kitNames(found), []string{"Alfa Couro"}) {
+		if err != nil || !slices.Equal(kitNames(found), []string{"alfa Couro"}) {
 			t.Errorf("kits matching couro = %v, %v", kitNames(found), err)
 		}
-		if _, err := h.Kits.List(ctx, tn.id, appcatalog.KitFilter{}, page(t, "bad", 10)); !errors.Is(err, shared.ErrInvalid) {
-			t.Errorf("a bad cursor: %v, want ErrInvalid", err)
+		if _, err := h.Kits.List(ctx, tn.id, appcatalog.KitFilter{}, page(t, "bad", 10)); !isCursorError(err) {
+			t.Errorf("a bad cursor: %v, want a ValidationError on cursor", err)
 		}
 		return nil
 	})
