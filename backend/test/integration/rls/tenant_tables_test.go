@@ -5,6 +5,7 @@ package rls_test
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,17 @@ func seed(t *testing.T) world {
 		s.Event(tenant)
 	}
 	w.account = s.ClientAccount()
+	for _, tt := range tenantTables {
+		if !tt.seeded {
+			continue
+		}
+		for _, tenant := range []shared.TenantID{w.a, w.b, w.c} {
+			query, args := tt.insert(w, tenant)
+			if _, err := s.DB().ExecContext(t.Context(), query, args...); err != nil {
+				t.Fatalf("seed %s: %v", tt.name, err)
+			}
+		}
+	}
 	return w
 }
 
@@ -49,13 +61,24 @@ type tenantTable struct {
 	insert func(w world, tenant shared.TenantID) (string, []any)
 	// set is the SET clause of the update case.
 	set string
+	// staffOnly marks a table with internal data under the staff_only
+	// policy (ADR 0024): it also runs the sixth case, a store page scope
+	// (tenant, no user) that must see and write nothing.
+	staffOnly bool
+	// seeded tables get one row per store from seed, written by insert as
+	// the superuser; the milestone 2 tables are seeded by hand above.
+	seeded bool
 }
 
 func (tt tenantTable) can(op string) bool { return strings.Contains(tt.grants, op) }
 
-// tenantTables lists every tenant-scoped table. TestEveryTenantTableIsListed
-// fails when a migration adds one that is missing here.
-var tenantTables = []tenantTable{
+// tenantTables lists every tenant-scoped table, tenants first.
+// TestEveryTenantTableIsListed fails when a migration adds one that is
+// missing here.
+var tenantTables = slices.Concat(platformTables, catalogTables)
+
+// platformTables are the tables of milestone 2.
+var platformTables = []tenantTable{
 	{
 		name: "tenants", column: "id", grants: "siu", set: "name = 'Outra loja'",
 		insert: func(_ world, tenant shared.TenantID) (string, []any) {

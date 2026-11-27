@@ -141,8 +141,8 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 - [ ] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (each kit keeps or loses its discount on a swap, both modes tested; ADR 0023)
 - [x] `domain/supplier`: supplier, supplier item (lead time, cost, backup supplier) (#54; `schedule.Days` too)
 - [ ] `app/catalog` and `app/supplier` services, cached queries, fakes
-- [ ] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`) (decided in ADR 0024: staff-only policies and item costs in their own table; built with the migrations below)
-- [ ] Migrations for catalog and suppliers, with RLS policies and tests
+- [x] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`) (decided in ADR 0024: staff-only policies and item costs in their own table; built in `0008_catalog` and `0009_suppliers`, step 3.4)
+- [x] Migrations for catalog and suppliers, with RLS policies and tests (`0008_catalog`, `0009_suppliers`; the RLS suite's sixth, staff-only case; step 3.4)
 - [ ] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
 - [ ] `adapter/storage`: S3-compatible photo storage (Cloudflare R2 in production, ADR 0023; signed `PUT` URLs and a confirm step, MinIO in dev and tests, so no local storage, ADR 0024)
 - [ ] HTTP handlers, OpenAPI entries, and the "clients never see costs or suppliers" visibility test (in M3: RLS sixth case, public view types, no cost or margin for non-owners; the store-route part lands with the first store route in M7, ADR 0025)
