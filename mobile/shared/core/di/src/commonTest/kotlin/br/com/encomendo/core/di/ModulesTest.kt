@@ -2,6 +2,7 @@ package br.com.encomendo.core.di
 
 import androidx.room3.Room
 import androidx.room3.RoomDatabase
+import br.com.encomendo.core.data.session.DeviceDataCleaner
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.domain.catalog.AttributeRepository
 import br.com.encomendo.core.domain.catalog.CatalogRepository
@@ -36,6 +37,8 @@ import br.com.encomendo.feature.catalogo.CategoriesViewModel
 import br.com.encomendo.feature.catalogo.ItemFormViewModel
 import br.com.encomendo.feature.catalogo.ItemsViewModel
 import br.com.encomendo.feature.members.MembersViewModel
+import coil3.ImageLoader
+import coil3.PlatformContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
@@ -84,6 +87,7 @@ class ModulesTest {
                 module {
                     single<SecretCipher> { FakeSecretCipher() }
                     single<PhotoPicker> { FakePhotoPicker() }
+                    single<PlatformContext> { testPlatformContext() }
                     single(SessionDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single(DeviceDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single<HttpClientEngine> { MockEngine { respondOk() } }
@@ -107,6 +111,9 @@ class ModulesTest {
             koin.get<AttributesViewModel>()
             koin.get<ItemFormViewModel> { parametersOf(null) }
             koin.get<SettingsRepository>()
+            // The photo thumbnails' loader: built over the storage client, which has no Auth plugin.
+            koin.get<ImageLoader>()
+            koin.get<DeviceDataCleaner>().clear() // Sair empties the loader's caches; an empty cache is fine
             koin.get<CatalogRepository>()
             koin.get<SupplierRepository>()
             koin.get<CategoryRepository>()

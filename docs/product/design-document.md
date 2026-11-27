@@ -250,6 +250,7 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - Above the table: the search field "Buscar item", the filter "Todas as categorias", the box "Mostrar arquivados", and the buttons "Novo item", "Categorias" and "Campos".
 - While loading: "Carregando o catálogo…". At the end of a page: "Carregar mais".
 - On the phone each row is a card with the same columns, one labelled line each (Categoria, Origem, Fornecedor, Prazo, Preço, and for the Dono Custo and Margem), then the "No portal" switch. Tapping a card opens the item.
+- On Android a role that only reads opens the item as its details in labelled lines (name, category, origin, price, suppliers, fields, options) with the title "Item" and one "Fechar" button, not as disabled fields.
 - Android keeps the last lists it read. When the server cannot be reached it shows them under "Sem conexão com o servidor. Confira a internet e tente de novo." and "Mostrando o catálogo salvo neste aparelho em {data}." (dd/mm/aaaa hh:mm). Anything that changes the catalog still needs the connection.
 - Empty catalog: "Nenhum item no catálogo ainda." with "Novo item". A search with no results: "Nenhum item encontrado."
 - An archived row shows "Arquivado" beside the name.

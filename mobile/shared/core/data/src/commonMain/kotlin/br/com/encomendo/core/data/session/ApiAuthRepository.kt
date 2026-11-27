@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
  * ApiAuthRepository logs in, signs up and logs out through the `/auth` endpoints and keeps
  * the session in [store], tokens and all, in one write (ADR 0015). Nothing
  * is stored unless the whole login worked. A login asks for the store this
- * device used last ([lastStore]).
+ * device used last ([lastStore]). Logging out also empties what [deviceData] cached.
  *
  * @param appScope lives as long as the app, so the server hears about a
  *   logout even after the screen that asked for it is gone.
@@ -26,6 +26,7 @@ class ApiAuthRepository(
     private val store: TokenStore,
     private val appScope: CoroutineScope,
     private val lastStore: LastStore,
+    private val deviceData: DeviceDataCleaner,
 ) : AuthRepository {
     override suspend fun logIn(
         email: String,
@@ -58,8 +59,10 @@ class ApiAuthRepository(
             // cancellable: the root clears the screen that asked as soon as it sees the session end,
             // before the clear returns here, and the revoke must still be sent.
             withContext(NonCancellable) {
-                val leaving = forget() ?: return@withContext
-                appScope.launch { revoke(leaving) }
+                val leaving = forget()
+                // Only once the session is gone: a logout the device could not save leaves the screen as it was.
+                deviceData.clear()
+                if (leaving != null) appScope.launch { revoke(leaving) }
             }
         }
 

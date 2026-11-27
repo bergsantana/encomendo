@@ -31,6 +31,12 @@ The upload is a `PUT` to the signed URL with exactly the returned headers. It us
 
 The Android build of `sqlite-bundled` only carries Android native libraries, so Room tests on the host JVM use `sqlite-bundled-jvm` in the `androidHostTest` source set only. The app itself is unchanged.
 
+### Thumbnails load through the same plain client, and Sair empties their caches
+
+Photo thumbnails (Coil 3) load the signed `GET` URLs through an image loader whose HTTP client is `createStorageClient`'s: no Auth plugin and no bearer, so the session's token never reaches the storage host. `core:ui`'s `LocalPhotoLoader` hands the loader to screens, and without one `PhotoImage` draws nothing instead of falling back to a loader nobody checked.
+
+Sair (ADR 0016) empties Coil's memory and disk caches right after it clears the session, through `DeviceDataCleaner`: a cached picture is readable by whoever holds the phone next. A store switch keeps them, because a signed URL names one object of one store, so the next store's screens never ask for the old store's pictures. A logout the device could not save leaves them alone, since the session on screen still works. A cache that cannot be emptied does not stop the logout.
+
 ### The photo picker is attached by the activity
 
 `PhotoPicker` is a small interface in the new `core:platform` module. Its Android implementation launches the system photo picker and the camera, and needs the activity to register its result launchers before it starts, so `MainActivity` attaches itself in `onCreate`. Without an activity it answers like a user who backed out. The singleton lets go of the activity when it is destroyed, one pick is open at a time, and a file over 10 MB is refused with `Failure.PhotoInvalid` before it is read into memory.
@@ -38,4 +44,4 @@ The Android build of `sqlite-bundled` only carries Android native libraries, so 
 ## Consequences
 
 - Step 3.15 and 3.16 screens show an offline banner when `Fetched.fromCache` is true, and show a cost column only when the field is `OwnerField.Shown`.
-- If a later step makes logout clear device data, it clears these tables too.
+- Sair now clears device data, but only the image caches. The catalog tables stay: their rows are keyed by store, and the costs flag drops costs for any role that does not see them. A later step may clear them on Sair as well; if it does, it clears both tables.

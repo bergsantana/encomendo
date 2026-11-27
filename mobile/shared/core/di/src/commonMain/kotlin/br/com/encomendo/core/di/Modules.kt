@@ -9,6 +9,7 @@ import br.com.encomendo.core.data.members.ApiMembersRepository
 import br.com.encomendo.core.data.session.ApiAuthRepository
 import br.com.encomendo.core.data.session.ApiPasswordResetRepository
 import br.com.encomendo.core.data.session.ApiTenancyRepository
+import br.com.encomendo.core.data.session.DeviceDataCleaner
 import br.com.encomendo.core.data.session.InMemoryStoreSuspensionNotice
 import br.com.encomendo.core.data.session.LastStore
 import br.com.encomendo.core.data.session.SessionKeeper
@@ -132,6 +133,8 @@ val imageModule: Module =
                 .components { add(KtorNetworkFetcherFactory(createStorageClient(get<HttpClientEngine>()))) }
                 .build()
         }
+        // Sair empties both caches: a signed photo URL shows its picture to whoever holds the phone (ADR 0016).
+        single<DeviceDataCleaner> { CoilDeviceDataCleaner(get<ImageLoader>(), Dispatchers.IO) }
     }
 
 /** Names the scope that lives as long as the app, for work that must outlive the screen that started it. */
@@ -150,7 +153,13 @@ val dataModule: Module =
         }
         single<SessionRepository> { TokenSessionRepository(tokens = get(), keeper = get()) }
         single<AuthRepository> {
-            ApiAuthRepository(api = get(), store = get(), appScope = get(AppScope), lastStore = get())
+            ApiAuthRepository(
+                api = get(),
+                store = get(),
+                appScope = get(AppScope),
+                lastStore = get(),
+                deviceData = get(),
+            )
         }
         single { SessionKeeper(auth = get(), store = get(), turns = get()) }
         single<TenancyRepository> { ApiTenancyRepository(tenancy = get(), keeper = get()) }
