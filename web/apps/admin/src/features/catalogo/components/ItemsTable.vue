@@ -18,6 +18,8 @@ const props = defineProps<{
   categories: readonly Category[]
   /** canWrite lets the "No portal" switch change; without it the switch only shows. */
   canWrite: boolean
+  /** publishingId is the row whose "No portal" is being saved; its switch waits. */
+  publishingId: string | null
 }>()
 
 const emit = defineEmits<{
@@ -136,6 +138,7 @@ function margin(item: ItemSummary): string {
             :checked="item.published"
             :label="`Mostrar ${item.name} na página da loja`"
             :disabled="!canWrite || item.archived"
+            :busy="publishingId === item.id"
             @toggle="(published) => emit('publish', item, published)"
           />
         </td>

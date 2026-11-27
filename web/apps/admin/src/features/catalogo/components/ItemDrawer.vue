@@ -7,7 +7,7 @@
  */
 import type { Attribute, Category, Item, Photo, Supplier } from '@encomendo/api'
 import { BaseButton, BaseDialog, BaseInput, BaseSelect } from '@encomendo/ui'
-import { computed, reactive, ref, useId } from 'vue'
+import { computed, nextTick, reactive, ref, useId, useTemplateRef } from 'vue'
 
 import { draftFromItem, emptyDraft, emptySupplier, type ItemDraft } from '../itemForm'
 import { isSourcingMode, sourcingOptions } from '../labels'
@@ -58,6 +58,11 @@ const draft = reactive<ItemDraft>(props.item === null ? emptyDraft() : draftFrom
 /** newSupplierFor is the slot showing the "Novo fornecedor" form. */
 const newSupplierFor = ref<'main' | 'backup' | null>(null)
 const descriptionId = useId()
+const publishedId = useId()
+/** initial is the form as it opened, to tell whether anything was typed since. */
+const initial = JSON.stringify(draft)
+const discarding = ref(false)
+const discardQuestion = useTemplateRef<HTMLElement>('discardQuestion')
 
 const archived = computed(() => props.item?.archived === true)
 const pickable = computed(() => props.attributes.filter((attribute) => attribute.values.length > 0))
@@ -73,6 +78,22 @@ function supplierErrors(slot: 'main' | 'backup'): Record<string, string> {
     ...(errors[`${slot}LeadDays`] === undefined ? {} : { leadDays: errors[`${slot}LeadDays`] as string }),
     ...(errors[`${slot}Cost`] === undefined ? {} : { cost: errors[`${slot}Cost`] as string }),
   }
+}
+
+/**
+ * requestClose is every way out that drops the draft (Cancelar, Escape, a
+ * click outside). With unsaved edits it asks first, so a stray click cannot
+ * throw them away.
+ */
+async function requestClose(): Promise<void> {
+  if (!props.canWrite || JSON.stringify(draft) === initial) {
+    emit('cancel')
+    return
+  }
+  discarding.value = true
+  await nextTick()
+  // The safe answer is focused, and the question is read out with it.
+  discardQuestion.value?.querySelector('button')?.focus()
 }
 
 function chooseMode(value: string): void {
@@ -122,7 +143,7 @@ defineExpose({
   <BaseDialog
     :title="title"
     variant="drawer"
-    @close="emit('cancel')"
+    @close="requestClose"
   >
     <form
       class="form"
@@ -153,7 +174,7 @@ defineExpose({
           :error="fieldErrors.name ?? null"
         />
         <div class="field">
-          <label :for="descriptionId">Descrição (opcional)</label>
+          <label :for="descriptionId">Descrição</label>
           <textarea
             :id="descriptionId"
             v-model="draft.description"
@@ -282,12 +303,28 @@ defineExpose({
 
       <div class="check">
         <PublishedSwitch
+          :id="publishedId"
           :checked="draft.published && !archived"
-          label="Mostrar na página da loja"
           :disabled="!canWrite || archived"
           @toggle="(published) => (draft.published = published)"
         />
-        <span aria-hidden="true">Mostrar na página da loja</span>
+        <label :for="publishedId">Mostrar na página da loja</label>
+      </div>
+
+      <div
+        v-if="discarding"
+        ref="discardQuestion"
+        class="discard"
+        role="group"
+        aria-label="Descartar as alterações"
+      >
+        <p>Descartar as alterações?</p>
+        <BaseButton @click="discarding = false">
+          Continuar editando
+        </BaseButton>
+        <BaseButton @click="emit('cancel')">
+          Descartar
+        </BaseButton>
       </div>
 
       <div class="buttons">
@@ -299,7 +336,7 @@ defineExpose({
           >
             Salvar
           </BaseButton>
-          <BaseButton @click="emit('cancel')">
+          <BaseButton @click="requestClose">
             Cancelar
           </BaseButton>
           <BaseButton
@@ -382,6 +419,19 @@ legend {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.discard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--enc-ground);
+  border-radius: var(--enc-radius-card);
+}
+.discard p {
+  flex: 1;
+  margin: 0;
+  font-weight: 600;
 }
 .buttons {
   display: flex;

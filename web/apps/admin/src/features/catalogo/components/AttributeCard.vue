@@ -7,7 +7,7 @@
  */
 import type { Attribute } from '@encomendo/api'
 import { BaseButton, BaseInput } from '@encomendo/ui'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { AttributeDraft } from '../taxonomy'
 
@@ -38,22 +38,27 @@ const draft = ref<AttributeDraft>(fromAttribute(props.attribute))
 /** asking is what a confirmation is about: one value, or the whole field. */
 const asking = ref<{ kind: 'value'; index: number } | { kind: 'field' } | null>(null)
 
-// A saved or re-read field replaces the draft.
+const confirmation = useTemplateRef<HTMLElement>('confirmation')
+
+// The draft starts over only when this field's own saved content changed. A
+// list read after another card was saved hands over new objects with the same
+// content, and must not wipe what is typed here.
 watch(
-  () => props.attribute,
-  (attribute) => {
-    draft.value = fromAttribute(attribute)
+  () => JSON.stringify([props.attribute?.id, props.attribute?.name, props.attribute?.values.map((value) => [value.id, value.label])]),
+  () => {
+    draft.value = fromAttribute(props.attribute)
     asking.value = null
   },
 )
 
 const usage = computed(() => new Map(props.attribute?.values.map((value) => [value.id, value.usageCount]) ?? []))
-const fieldUsage = computed(() => [...usage.value.values()].reduce((sum, count) => sum + count, 0))
+// Only a value's own count is exact; adding them up for a field would count an item twice.
+const fieldInUse = computed(() => [...usage.value.values()].some((count) => count > 0))
 
 const question = computed(() => {
   const ask = asking.value
   if (ask === null) return ''
-  if (ask.kind === 'field') return `Remover ${draft.value.name}? Seus valores saem de até ${fieldUsage.value} itens e kits.`
+  if (ask.kind === 'field') return `Remover ${draft.value.name}? Seus valores saem dos itens e kits que os usam.`
   const value = draft.value.values[ask.index]
   return `Remover ${value?.label ?? ''}? Ele sai de ${usageOf(ask.index)} itens e kits.`
 })
@@ -79,14 +84,21 @@ function dropValue(index: number): void {
   draft.value = { ...draft.value, values: draft.value.values.filter((_, at) => at !== index) }
 }
 
+// The button just clicked stays, so focus goes to the question, on "Cancelar", the safe answer.
+async function ask(what: NonNullable<typeof asking.value>): Promise<void> {
+  asking.value = what
+  await nextTick()
+  confirmation.value?.querySelector('button')?.focus()
+}
+
 function removeValue(index: number): void {
-  if (usageOf(index) > 0) asking.value = { kind: 'value', index }
+  if (usageOf(index) > 0) void ask({ kind: 'value', index })
   else dropValue(index)
 }
 
 function removeField(): void {
   if (props.attribute === null) emit('discard')
-  else if (fieldUsage.value > 0) asking.value = { kind: 'field' }
+  else if (fieldInUse.value) void ask({ kind: 'field' })
   else emit('remove')
 }
 
@@ -151,6 +163,7 @@ function confirm(): void {
     </fieldset>
     <div
       v-if="asking"
+      ref="confirmation"
       class="ask"
       role="group"
       aria-label="Confirmar remoção"
@@ -159,10 +172,7 @@ function confirm(): void {
       <BaseButton @click="asking = null">
         Cancelar
       </BaseButton>
-      <BaseButton
-        variant="primary"
-        @click="confirm"
-      >
+      <BaseButton @click="confirm">
         Remover
       </BaseButton>
     </div>

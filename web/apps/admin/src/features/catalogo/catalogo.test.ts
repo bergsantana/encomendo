@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { loadPage } from '../../pageLoad'
 import { closeApps, field as fieldByLabel, link, openApp } from '../../testing/app'
-import { authSession } from '../../testing/fixtures'
+import { authSession, gate } from '../../testing/fixtures'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
 
@@ -140,6 +140,11 @@ function button(wrapper: Scope, name: string) {
   return found
 }
 
+/** columnHeaders reads the table's column titles. */
+function columnHeaders(wrapper: Scope): string[] {
+  return wrapper.findAll('thead th').map((th) => th.text())
+}
+
 /** field finds a control by its label, its aria-label, or the label that wraps it (a checkbox). */
 function field(wrapper: Scope, label: string) {
   const named = wrapper.find(`[aria-label="${label}"]`)
@@ -200,7 +205,7 @@ describe('the Itens table', () => {
 
     const { wrapper } = await openCatalog('Guidão')
 
-    const headers = wrapper.findAll('th[scope=col]').map((th) => th.text())
+    const headers = columnHeaders(wrapper)
     expect(headers).toEqual(['Item', 'Categoria', 'Origem', 'Fornecedor', 'Prazo', 'Preço', 'No portal'])
     const rows = wrapper.findAll('tbody tr').map((row) => plain(row.text()))
     expect(rows[0]).toContain('Bancos')
@@ -219,7 +224,7 @@ describe('the Itens table', () => {
 
     const { wrapper } = await openCatalog()
 
-    expect(wrapper.findAll('th[scope=col]').map((th) => th.text())).toEqual(['Item', 'Categoria', 'Origem', 'Fornecedor', 'Prazo', 'Custo', 'Preço', 'Margem', 'No portal'])
+    expect(columnHeaders(wrapper)).toEqual(['Item', 'Categoria', 'Origem', 'Fornecedor', 'Prazo', 'Custo', 'Preço', 'Margem', 'No portal'])
     const rows = wrapper.findAll('tbody tr').map((row) => plain(row.text()))
     expect(rows[0]).toContain('R$ 315,00')
     expect(rows[0]).toContain('R$ 135,00 (30%)')
@@ -234,7 +239,7 @@ describe('the Itens table', () => {
 
     const { wrapper } = await openCatalog()
 
-    const headers = wrapper.findAll('th[scope=col]').map((th) => th.text())
+    const headers = columnHeaders(wrapper)
     expect(headers).not.toContain('Custo')
     expect(headers).not.toContain('Margem')
   })
@@ -956,7 +961,10 @@ describe('the Categorias dialog', () => {
     const { wrapper } = await openCatalog()
     await button(wrapper, 'Categorias').trigger('click')
     const dialog = wrapper.get('[role=dialog]')
-    expect(dialog.findAll('li').map((li) => li.find('.name').text())).toEqual(['Bancos', 'Guidões'])
+    const rows = dialog.findAll('li')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.text()).toContain('Bancos')
+    expect(rows[1]?.text()).toContain('Guidões')
     expect(button(dialog, 'Mover Bancos para cima').attributes('disabled')).toBeDefined()
 
     await button(dialog, 'Mover Guidões para cima').trigger('click')
@@ -1137,11 +1145,136 @@ describe('the Campos dialog', () => {
     const { dialog } = await openFields()
 
     await button(dialog, 'Excluir campo Serve em').trigger('click')
-    expect(dialog.get('[role=group]').text()).toContain('Remover Serve em? Seus valores saem de até 3 itens e kits.')
+    expect(dialog.get('[role=group]').text()).toContain('Remover Serve em? Seus valores saem dos itens e kits que os usam.')
     expect(deleted).toBe(false)
     await button(dialog.get('[role=group]'), 'Remover').trigger('click')
     await flushPromises()
 
     expect(deleted).toBe(true)
+  })
+})
+
+describe('unsaved edits in the item form', () => {
+  async function dirtyDrawer() {
+    signedInAs('admin', writer)
+    server.use(http.get(`*/api/v1/admin/catalog/items/${bancoId}`, () => HttpResponse.json(item())))
+    const { wrapper } = await openCatalog()
+    const drawer = await openItem(wrapper)
+    await field(drawer, 'Nome').setValue('Meu nome')
+    return { wrapper, drawer }
+  }
+
+  it('closes at once when nothing was typed', async () => {
+    signedInAs('admin', writer)
+    server.use(http.get(`*/api/v1/admin/catalog/items/${bancoId}`, () => HttpResponse.json(item())))
+    const { wrapper } = await openCatalog()
+    const drawer = await openItem(wrapper)
+
+    await drawer.trigger('keydown', { key: 'Escape' })
+
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+  })
+
+  it.each([
+    ['Escape', (drawer: Scope) => (drawer as ReturnType<VueWrapper['get']>).trigger('keydown', { key: 'Escape' })],
+    ['Cancelar', (drawer: Scope) => button(drawer, 'Cancelar').trigger('click')],
+  ])('asks before %s throws edits away, and keeps them on "Continuar editando"', async (_way, close) => {
+    const { wrapper, drawer } = await dirtyDrawer()
+
+    await close(drawer)
+    await flushPromises()
+
+    expect(wrapper.find('[role=dialog]').exists()).toBe(true)
+    const question = drawer.get('[role=group][aria-label="Descartar as alterações"]')
+    expect(question.text()).toContain('Descartar as alterações?')
+    expect(document.activeElement?.textContent?.trim()).toBe('Continuar editando')
+    await button(question, 'Continuar editando').trigger('click')
+    expect(drawer.text()).not.toContain('Descartar as alterações?')
+    expect((field(drawer, 'Nome').element as HTMLInputElement).value).toBe('Meu nome')
+  })
+
+  it('drops the edits on "Descartar"', async () => {
+    const { wrapper, drawer } = await dirtyDrawer()
+
+    await button(drawer, 'Cancelar').trigger('click')
+    await flushPromises()
+    await button(drawer, 'Descartar').trigger('click')
+
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+  })
+})
+
+describe('the item form checks', () => {
+  it('asks for at least one production day', async () => {
+    signedInAs('owner', writer)
+    serve({ settings: settings({ productionEnabled: true }) })
+    const { wrapper } = await openCatalog()
+    await button(wrapper, 'Novo item').trigger('click')
+    const drawer = wrapper.get('[role=dialog]')
+    await field(drawer, 'Origem').setValue('in_house')
+
+    await drawer.get('form').trigger('submit')
+    expect(drawer.text()).toContain('Informe os dias de produção.')
+    await field(drawer, 'Dias de produção').setValue('0')
+    await drawer.get('form').trigger('submit')
+
+    expect(drawer.text()).toContain('Use de 1 a 365 dias de produção.')
+  })
+})
+
+describe('"No portal" while it is saved', () => {
+  it('waits for the answer before the switch can be used again', async () => {
+    signedInAs('admin', writer)
+    const answer = gate()
+    server.use(
+      http.put(`*/api/v1/admin/catalog/items/${bancoId}/published`, async () => {
+        await answer.opened
+        return HttpResponse.json(item({ published: false, version: 4 }))
+      }),
+    )
+    const { wrapper } = await openCatalog()
+    const toggle = () => field(wrapper, 'Mostrar Banco de couro Scrambler na página da loja')
+
+    await toggle().setValue(false)
+    expect((toggle().element as HTMLInputElement).disabled).toBe(true)
+    answer.open()
+    await vi.waitFor(() => expect((toggle().element as HTMLInputElement).disabled).toBe(false))
+
+    expect((toggle().element as HTMLInputElement).checked).toBe(false)
+  })
+})
+
+describe('the Campos dialog keeps what is typed', () => {
+  it('does not wipe another card when the fields are read again', async () => {
+    signedInAs('admin', writer)
+    const second: Attribute = { id: 'a2', name: 'Cor', position: 1, values: [{ id: 'b3', label: 'Preto', usageCount: 0 }] }
+    serve({ attributes: [serveEm, second] })
+    server.use(http.put(`*/api/v1/admin/catalog/attributes/${serveEm.id}`, () => HttpResponse.json(serveEm)))
+    const { wrapper } = await openCatalog()
+    await button(wrapper, 'Campos').trigger('click')
+    const dialog = wrapper.get('[role=dialog]')
+    const cards = dialog.findAll('form')
+    const [first, other] = cards
+    if (first === undefined || other === undefined) throw new Error('two cards expected')
+
+    await field(other, 'Valor 1').setValue('Branco')
+    await field(first, 'Nome do campo').setValue('Serve nas motos')
+    await button(first, 'Salvar campo').trigger('click')
+    await flushPromises()
+
+    expect((field(other, 'Valor 1').element as HTMLInputElement).value).toBe('Branco')
+  })
+
+  it('moves focus to the removal question', async () => {
+    signedInAs('admin', writer)
+    const { wrapper } = await openCatalog()
+    await button(wrapper, 'Campos').trigger('click')
+    const dialog = wrapper.get('[role=dialog]')
+
+    await button(dialog, 'Remover valor CB 500X').trigger('click')
+    await flushPromises()
+
+    expect(document.activeElement?.textContent?.trim()).toBe('Cancelar')
+    expect(dialog.get('[role=group]').element.contains(document.activeElement)).toBe(true)
   })
 })

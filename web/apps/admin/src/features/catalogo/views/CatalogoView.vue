@@ -31,6 +31,7 @@ const {
   stockEnabled,
   productionEnabled,
   sendsCosts,
+  publishingId,
   notice,
   error,
   editing,
@@ -184,6 +185,7 @@ function coverPhoto(photo: Photo): void {
         :items="items"
         :categories="categories"
         :can-write="canWrite"
+        :publishing-id="publishingId"
         @edit="store.openEdit($event)"
         @publish="(item, published) => store.setPublished(item, published)"
       />
@@ -199,7 +201,6 @@ function coverPhoto(photo: Photo): void {
         </p>
         <BaseButton
           v-if="noFilters() && canWrite"
-          variant="primary"
           @click="store.openNew()"
         >
           Novo item

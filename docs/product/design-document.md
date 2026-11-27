@@ -315,22 +315,30 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 **Also on the Itens screens** (added by Claude in step 3.12, for the user to review)
 
 - Read-only roles: the item opens with the title "Item", the fields disabled and one button, "Fechar". "Categorias" and "Campos" open to read, without "Nova categoria", "Novo campo" or any button that changes anything. The "No portal" switch shows its state, disabled.
-- The category filter is read aloud as "Filtrar por categoria".
+- The category filter is read aloud as "Filtrar por categoria". The table is read aloud as "Itens do catálogo".
+- Leaving the item form with edits not saved (Cancelar, Escape or a click outside) asks "Descartar as alterações?", with "Continuar editando" (the keyboard lands here) and "Descartar".
+- On an empty catalog only the toolbar's "Novo item" is the primary button; the one beside "Nenhum item no catálogo ainda." is a plain button.
 - Item form:
-  - the backup supplier's choice is labelled "Fornecedor reserva", the group "Fornecedor reserva" has the same "Prazo do fornecedor (dias)" and "Custo" fields;
+  - "Descrição" is the label, with no "(opcional)": an empty one is allowed;
+  - the choice of supplier starts at "Escolha o fornecedor"; the backup supplier's choice is labelled "Fornecedor reserva" and, left empty, says "Escolha o fornecedor reserva."; the group "Fornecedor reserva" has the same "Prazo do fornecedor (dias)" and "Custo" fields;
+  - production days outside 1 to 365: "Use de 1 a 365 dias de produção.";
+  - the "No portal" switch waits, disabled, while the change is saved;
   - the new supplier's number is typed with its DDD; the app sends it with 55 in front;
   - "Novo fornecedor" also has a "Cancelar" button;
   - options and choices are numbered for screen readers, "Opção 1", "Escolha 1";
   - an empty choice: "Informe a escolha.";
   - "Salvar" closes the form after "Item salvo.". A new item has no photos until it is saved: "Salve o item para adicionar fotos.";
-  - while a photo goes up: "Enviando a foto…". The first photo shows "Capa" instead of "Usar como capa";
+  - photos are read aloud as "Foto {n}"; while a photo goes up: "Enviando a foto…". The first photo shows "Capa" instead of "Usar como capa";
   - a photo the server refuses as not JPEG, PNG or WebP, or over 10 MB: "Use uma foto JPEG, PNG ou WebP de até 10 MB.";
+  - an item archived in a kit the API does not name: "Este item está em um kit. Tire-o do kit antes de arquivar.";
   - archiving an item that several kits hold: "Este item está nos kits {A}, {B} e {C}. Tire-o dos kits antes de arquivar."
-- Categorias: renaming shows a field "Novo nome de {categoria}" with "Salvar" and "Cancelar"; the dialog closes with "Fechar". The buttons are read aloud with the category, as "Mover {categoria} para cima", "Renomear {categoria}", "Excluir {categoria}".
+- Categorias: a category that was deleted elsewhere meanwhile: "Esta categoria não existe mais."; renaming shows a field "Novo nome de {categoria}" with "Salvar" and "Cancelar"; the dialog closes with "Fechar". The buttons are read aloud with the category, as "Mover {categoria} para cima", "Renomear {categoria}", "Excluir {categoria}".
 - Campos:
   - each field has "Salvar campo" (nothing is saved until then); its values are "Valor 1", "Valor 2" …, with "Remover valor";
-  - removing a field whose values are in use asks first: "Remover {campo}? Seus valores saem de até {n} itens e kits." ({n} adds up the uses of its values, so an item that picked two of them counts twice);
-  - a field name already used: "Já existe um campo com este nome."
+  - removing a field whose values are in use asks first: "Remover {campo}? Seus valores saem dos itens e kits que os usam." (no count: the API counts each value, and adding them up would count an item twice);
+  - a field name already used: "Já existe um campo com este nome.";
+  - the question is read out as the group "Confirmar remoção", with the keyboard on "Cancelar"; "Remover" is not the primary button;
+  - a field deleted elsewhere meanwhile: "Este campo não existe mais."
 
 **Kits**
 

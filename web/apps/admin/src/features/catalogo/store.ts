@@ -95,6 +95,8 @@ export const useCatalogStore = defineStore('catalog', () => {
   const productionEnabled = ref(false)
   const currency = ref('BRL')
 
+  /** publishingId is the item whose "No portal" is being saved. */
+  const publishingId = ref<string | null>(null)
   /** notice is the last change that went through, for a status line. */
   const notice = ref<string | null>(null)
   /** error is why the last read or switch failed, for the alert above the table. */
@@ -192,7 +194,10 @@ export const useCatalogStore = defineStore('catalog', () => {
   /** setPublished switches "No portal" for a row, and shows what the server saved. */
   async function setPublished(item: ItemSummary, published: boolean): Promise<void> {
     notice.value = null
-    const saved = await guard(() => setItemPublished(api, item.id, { published, version: item.version }))
+    publishingId.value = item.id
+    const saved = await guard(() => setItemPublished(api, item.id, { published, version: item.version })).finally(() => {
+      publishingId.value = null
+    })
     if (saved === undefined) {
       // A stale version or a lost permission: read the row again, and keep saying why.
       const why = error.value
@@ -402,6 +407,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     productionEnabled,
     currency,
     sendsCosts,
+    publishingId,
     notice,
     error,
     editing,

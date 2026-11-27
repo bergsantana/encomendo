@@ -202,6 +202,10 @@ const isDays = (text: string): boolean => {
   const days = wholeNumber(text)
   return Number.isInteger(days) && days >= 0 && days <= 365
 }
+const isProductionDays = (text: string): boolean => {
+  const days = wholeNumber(text)
+  return Number.isInteger(days) && days >= 1 && days <= 365
+}
 const isMoneyOrBlank = (text: string): boolean => text.trim() === '' || parseCents(text) !== null
 
 /**
@@ -215,7 +219,11 @@ export function itemChecks(draft: ItemDraft, sendsCosts: boolean): FormCheck[] {
     { field: 'price', message: 'Informe o preço.', ok: parseCents(draft.price) !== null },
   ]
   if (draft.sourcingMode === 'in_house') {
-    checks.push({ field: 'productionDays', message: 'Informe os dias de produção.', ok: isDays(draft.productionDays) })
+    checks.push({
+      field: 'productionDays',
+      message: draft.productionDays.trim() === '' ? 'Informe os dias de produção.' : 'Use de 1 a 365 dias de produção.',
+      ok: isProductionDays(draft.productionDays),
+    })
     if (sendsCosts) checks.push({ field: 'productionCost', message: 'Informe um custo de zero ou mais.', ok: isMoneyOrBlank(draft.productionCost) })
   } else {
     checks.push(...supplierChecks('main', draft.main, sendsCosts, 'Escolha o fornecedor principal.'))
