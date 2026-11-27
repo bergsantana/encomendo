@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Encomendo API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     The contract between the Go backend and the web and Android clients.
     Written by hand; backend HTTP tests validate responses against it, and the
@@ -81,6 +81,25 @@ info:
 
     Limits keyed on an email use the email trimmed and lower-cased, so
     changing its case never buys more attempts.
+
+    ## Operations not served yet
+
+    An operation marked `x-unserved` is written ahead of the server so the
+    apps can build against it; the server answers it `404` until the plan
+    step named there serves it and removes the mark. The end-to-end suite
+    checks both halves.
+
+    ## Costs and margins (ADR 0025)
+
+    Costs and margins are the owner's only. In every catalog response, a
+    `cost`, `productionCost` or `margin` field is **present only for the
+    owner** (`null` when nothing is recorded) and **absent** for every other
+    role. Show the cost and margin columns only when the field is present.
+    A write that sends a cost field from any other role, even `null`, is
+    `403 forbidden`; a cost field left out keeps the stored cost.
+
+    Suppliers, costs and lead times by supplier are staff data: the store
+    page never receives them.
 servers:
   - url: http://localhost:8081
     description: Local stack (make dev-up)
@@ -94,6 +113,10 @@ tags:
     description: Creating a store and its settings.
   - name: members
     description: The store's team ("Equipe"), its roles and invitations ("Convites").
+  - name: catalog
+    description: Catálogo — items, categories, item fields, kits and their photos.
+  - name: suppliers
+    description: The store's suppliers ("Fornecedores"), created from the item form in milestone 3.
 
 paths:
   /healthz:
@@ -789,6 +812,1103 @@ paths:
         "5XX":
           $ref: "#/components/responses/ServerFailure"
 
+  /api/v1/admin/catalog/categories:
+    get:
+      tags: [catalog]
+      operationId: listCategories
+      x-unserved: step 3.10
+      summary: Every category of the store, in the store's order.
+      description: Needs `catalog:read` (every role).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All categories; a store has few, so there is no paging.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [catalog]
+      operationId: createCategory
+      x-unserved: step 3.10
+      summary: Add a category at the end of the list.
+      description: Needs `catalog:write` (owner, admin).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "201":
+          description: The new category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/NameTaken"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/categories/{categoryId}:
+    patch:
+      tags: [catalog]
+      operationId: updateCategory
+      x-unserved: step 3.10
+      summary: Rename a category or move it in the list.
+      description: |
+        Needs `catalog:write`. Send `name`, `position` or both. A position
+        past the end moves the category to the end; the others shift to make
+        room.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CategoryId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryRequest"
+      responses:
+        "200":
+          description: The category as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/NameTaken"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    delete:
+      tags: [catalog]
+      operationId: deleteCategory
+      x-unserved: step 3.10
+      summary: Delete a category no item uses.
+      description: Needs `catalog:write`. Archived items count as using it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CategoryId"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`category_in_use`: items still have this category; move them first."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/attributes:
+    get:
+      tags: [catalog]
+      operationId: listAttributes
+      x-unserved: step 3.10
+      summary: Every item field of the store ("Serve em" …) with its values.
+      description: Needs `catalog:read`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All fields, in the store's order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttributeList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [catalog]
+      operationId: createAttribute
+      x-unserved: step 3.10
+      summary: Add an item field with its values.
+      description: Needs `catalog:write`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttributeInput"
+      responses:
+        "201":
+          description: The new field.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attribute"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/NameTaken"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/attributes/{attributeId}:
+    put:
+      tags: [catalog]
+      operationId: replaceAttribute
+      x-unserved: step 3.10
+      summary: Replace a field's name and its ordered values.
+      description: |
+        Needs `catalog:write`. A value sent with its `id` keeps it, and the
+        items and kits that use it; a value without an `id` is new; a value
+        left out is removed from the field and from every item and kit that
+        used it. The apps ask first, using `usageCount`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AttributeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttributeInput"
+      responses:
+        "200":
+          description: The field as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attribute"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/NameTaken"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    delete:
+      tags: [catalog]
+      operationId: deleteAttribute
+      x-unserved: step 3.10
+      summary: Delete a field; its values leave every item and kit.
+      description: Needs `catalog:write`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AttributeId"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items:
+    get:
+      tags: [catalog]
+      operationId: listItems
+      x-unserved: step 3.10
+      summary: The store's catalog items, by name.
+      description: Needs `catalog:read`. `cost` and `margin` follow the cost rule (see the top of this document).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/CategoryFilter"
+        - $ref: "#/components/parameters/IncludeArchived"
+      responses:
+        "200":
+          description: One page of items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [catalog]
+      operationId: createItem
+      x-unserved: step 3.10
+      summary: Add a catalog item.
+      description: |
+        Needs `catalog:write`. A cost field (`productionCostCents`, a
+        supplier's `costCents`) is the owner's only: any other role sending
+        one, even `null`, gets `403 forbidden`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemInput"
+      responses:
+        "201":
+          description: The new item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}:
+    get:
+      tags: [catalog]
+      operationId: getItem
+      x-unserved: step 3.10
+      summary: One item with its suppliers, fields, options and photos.
+      description: Needs `catalog:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    put:
+      tags: [catalog]
+      operationId: replaceItem
+      x-unserved: step 3.10
+      summary: Replace an item's details.
+      description: |
+        Needs `catalog:write`. Send every field with the `version` you read.
+        Photos are not part of it (see `/photos`). A cost field left out
+        keeps the stored cost, so an admin can save without seeing it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceItemRequest"
+      responses:
+        "200":
+          description: The item as saved, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}/published:
+    put:
+      tags: [catalog]
+      operationId: setItemPublished
+      x-unserved: step 3.10
+      summary: Show or hide the item on the store page ("No portal").
+      description: Needs `catalog:write`. An archived item cannot be published (`400 invalid`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPublishedRequest"
+      responses:
+        "200":
+          description: The item as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}/archive:
+    post:
+      tags: [catalog]
+      operationId: archiveItem
+      x-unserved: step 3.10
+      summary: Archive an item; it leaves the store page and the pickers.
+      description: |
+        Needs `catalog:write`. Archiving also unpublishes. Nothing in the
+        catalog is deleted (ADR 0025).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The archived item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            `item_in_kit`: kits that are not archived hold the item;
+            `references` names them. `version_conflict`: someone saved first.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}/restore:
+    post:
+      tags: [catalog]
+      operationId: restoreItem
+      x-unserved: step 3.10
+      summary: Bring an archived item back, unpublished.
+      description: Needs `catalog:write`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The restored item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}/photos:
+    post:
+      tags: [catalog]
+      operationId: confirmItemPhoto
+      x-unserved: step 3.10
+      summary: Record a photo uploaded to the key from `/catalog/photo-uploads`.
+      description: |
+        Needs `catalog:write`. The server reads the stored object: at most
+        10 MB, and JPEG, PNG or WebP by its content, not its name (ADR 0024).
+        The photo goes last; the first photo is the cover.
+        The key is checked first, before storage is touched: it must parse
+        exactly as `t/{this store}/items/{itemId}/{photoId}` (or `kits/`),
+        with this path's id and a UUID `photoId`, and nothing after it. A key
+        that fails is `photo_not_uploaded`, the same answer as a key nobody
+        uploaded to, and is never read or deleted. The photo's id is the
+        key's last part, so a key is used once: confirming a key already
+        recorded on this item answers `200` with that photo and changes
+        nothing. Only an object that passed the key check and has no photo
+        yet is deleted when refused.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPhotoRequest"
+      responses:
+        "200":
+          description: The key was already confirmed on this item; the photo it recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        "201":
+          description: The photo, with a short-lived URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        "400":
+          $ref: "#/components/responses/PhotoRefused"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PhotoLimit"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}/photos/order:
+    put:
+      tags: [catalog]
+      operationId: orderItemPhotos
+      x-unserved: step 3.10
+      summary: Put the item's photos in a new order; the first is the cover.
+      description: Needs `catalog:write`. List every photo of the item exactly once.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderPhotosRequest"
+      responses:
+        "200":
+          description: The photos in their new order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoList"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/items/{itemId}/photos/{photoId}:
+    delete:
+      tags: [catalog]
+      operationId: deleteItemPhoto
+      x-unserved: step 3.10
+      summary: Remove a photo from the item and from storage.
+      description: Needs `catalog:write`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ItemId"
+        - $ref: "#/components/parameters/PhotoId"
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits:
+    get:
+      tags: [catalog]
+      operationId: listKits
+      x-unserved: step 3.10
+      summary: The store's kits, by name.
+      description: Needs `catalog:read`. `cost` and `margin` follow the cost rule.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/IncludeArchived"
+      responses:
+        "200":
+          description: One page of kits.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KitPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [catalog]
+      operationId: createKit
+      x-unserved: step 3.10
+      summary: Add a ready kit ("Kit pronto").
+      description: Needs `catalog:write`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KitInput"
+      responses:
+        "201":
+          description: The new kit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Kit"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/ItemArchived"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}:
+    get:
+      tags: [catalog]
+      operationId: getKit
+      x-unserved: step 3.10
+      summary: One kit with its items, totals and days.
+      description: Needs `catalog:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      responses:
+        "200":
+          description: The kit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Kit"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    put:
+      tags: [catalog]
+      operationId: replaceKit
+      x-unserved: step 3.10
+      summary: Replace a kit's details and items.
+      description: Needs `catalog:write`. Send every field with the `version` you read. Photos are not part of it.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceKitRequest"
+      responses:
+        "200":
+          description: The kit as saved, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Kit"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`version_conflict`: someone saved first. `item_archived`: an item in the kit, or one of its alternatives, is archived; `references` names them."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}/published:
+    put:
+      tags: [catalog]
+      operationId: setKitPublished
+      x-unserved: step 3.10
+      summary: Show or hide the kit on the store page ("No portal").
+      description: Needs `catalog:write`. An archived kit cannot be published (`400 invalid`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPublishedRequest"
+      responses:
+        "200":
+          description: The kit as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Kit"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}/archive:
+    post:
+      tags: [catalog]
+      operationId: archiveKit
+      x-unserved: step 3.10
+      summary: Archive a kit; it leaves the store page and stops holding its items.
+      description: Needs `catalog:write`. Archiving also unpublishes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The archived kit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Kit"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}/restore:
+    post:
+      tags: [catalog]
+      operationId: restoreKit
+      x-unserved: step 3.10
+      summary: Bring an archived kit back, unpublished.
+      description: Needs `catalog:write`. Refused while an item of the kit is archived.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The restored kit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Kit"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`version_conflict`: someone saved first. `item_archived`: an item of the kit is archived; `references` names them."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}/photos:
+    post:
+      tags: [catalog]
+      operationId: confirmKitPhoto
+      x-unserved: step 3.10
+      summary: Record a photo uploaded to the key from `/catalog/photo-uploads`.
+      description: |
+        Needs `catalog:write`. The same checks as for an item's photo, with
+        `kits/` in the key; confirming a key already recorded on this kit
+        answers `200` with that photo.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmPhotoRequest"
+      responses:
+        "200":
+          description: The key was already confirmed on this kit; the photo it recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        "201":
+          description: The photo, with a short-lived URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Photo"
+        "400":
+          $ref: "#/components/responses/PhotoRefused"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PhotoLimit"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}/photos/order:
+    put:
+      tags: [catalog]
+      operationId: orderKitPhotos
+      x-unserved: step 3.10
+      summary: Put the kit's photos in a new order; the first is the cover.
+      description: Needs `catalog:write`. List every photo of the kit exactly once.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderPhotosRequest"
+      responses:
+        "200":
+          description: The photos in their new order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoList"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/kits/{kitId}/photos/{photoId}:
+    delete:
+      tags: [catalog]
+      operationId: deleteKitPhoto
+      x-unserved: step 3.10
+      summary: Remove a photo from the kit and from storage.
+      description: Needs `catalog:write`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/KitId"
+        - $ref: "#/components/parameters/PhotoId"
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/catalog/photo-uploads:
+    post:
+      tags: [catalog]
+      operationId: requestPhotoUpload
+      x-unserved: step 3.10
+      summary: Get a short-lived URL to upload one photo of an item or kit.
+      description: |
+        Needs `catalog:write`. The server picks the key; apps never do
+        (ADR 0024). Upload the file with `method` to `uploadUrl`, sending
+        exactly `headers` and no `Authorization`, before `expiresAt`; then
+        confirm it on the owner's `/photos`. An upload never confirmed is
+        removed after a day.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhotoUploadRequest"
+      responses:
+        "201":
+          description: Where and how to upload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoUpload"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PhotoLimit"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/suppliers:
+    get:
+      tags: [suppliers]
+      operationId: listSuppliers
+      x-unserved: step 3.10
+      summary: The store's suppliers, by name.
+      description: Needs `catalog:read` (every role). Suppliers carry no cost.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Search"
+      responses:
+        "200":
+          description: One page of suppliers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [suppliers]
+      operationId: createSupplier
+      x-unserved: step 3.10
+      summary: Add a supplier ("Novo fornecedor").
+      description: Needs `catalog:write` (owner, admin; ADR 0025).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierInput"
+      responses:
+        "201":
+          description: The new supplier.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/suppliers/{supplierId}:
+    get:
+      tags: [suppliers]
+      operationId: getSupplier
+      x-unserved: step 3.10
+      summary: One supplier.
+      description: Needs `catalog:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          description: The supplier.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    put:
+      tags: [suppliers]
+      operationId: replaceSupplier
+      x-unserved: step 3.10
+      summary: Replace a supplier's name and WhatsApp.
+      description: Needs `catalog:write`. Send the `version` you read.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceSupplierRequest"
+      responses:
+        "200":
+          description: The supplier as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -851,6 +1971,63 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/Uuid"
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    AttributeId:
+      name: attributeId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    KitId:
+      name: kitId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    SupplierId:
+      name: supplierId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    Search:
+      name: q
+      in: query
+      description: Only rows whose name contains this text, ignoring case.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+    CategoryFilter:
+      name: categoryId
+      in: query
+      description: Only items of this category.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    IncludeArchived:
+      name: includeArchived
+      in: query
+      description: Also list archived rows ("Mostrar arquivados").
+      schema:
+        type: boolean
+        default: false
 
   responses:
     AuthSession:
@@ -933,6 +2110,36 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
 
+    NameTaken:
+      description: "`name_taken`: another row of this kind already has this name, ignoring case."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ItemArchived:
+      description: "`item_archived`: an item in the kit, or one of its alternatives, is archived; `references` names them."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PhotoRefused:
+      description: |
+        `photo_invalid`: the stored object is over 10 MB or not a JPEG, PNG
+        or WebP image; it was deleted. `photo_not_uploaded`: nothing was
+        uploaded to the key, or the key is not one issued for this item or
+        kit in this store (the two are not told apart). `invalid`: the body
+        breaks a rule.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PhotoLimit:
+      description: "`photo_limit`: the item or kit already has 8 photos."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
   schemas:
     Status:
       type: object
@@ -981,6 +2188,13 @@ components:
             - invalid_code
             - email_unavailable
             - tenant_suspended
+            - name_taken
+            - category_in_use
+            - item_in_kit
+            - item_archived
+            - photo_limit
+            - photo_invalid
+            - photo_not_uploaded
         detail:
           type: string
         instance:
@@ -989,6 +2203,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FieldIssue"
+        references:
+          type: array
+          description: With `item_in_kit` and `item_archived`, the rows the refusal names (the kits, or the archived items).
+          items:
+            $ref: "#/components/schemas/Reference"
     FieldIssue:
       type: object
       required: [field, message]
@@ -1043,6 +2262,7 @@ components:
     Permission:
       type: string
       enum:
+        - catalog:read
         - catalog:write
         - finance:read
         - inventory:adjust
@@ -1434,3 +2654,888 @@ components:
         nextCursor:
           type: string
           description: Absent on the last page.
+
+    Money:
+      type: object
+      required: [cents, currency]
+      description: An amount in integer cents of `currency`, never a float. Never negative unless the field says so.
+      properties:
+        cents:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          example: BRL
+    Cents:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 100000000000
+      description: An amount in integer cents of the store's currency.
+    Margin:
+      type: object
+      required: [cents, basisPoints]
+      description: |
+        Price minus cost, computed by the server and never stored. Negative
+        when the cost is above the price. `basisPoints` is the margin over
+        the price in hundredths of a percent, rounded toward zero: 3000 is
+        30%.
+      properties:
+        cents:
+          type: integer
+          format: int64
+        basisPoints:
+          type: integer
+    SourcingMode:
+      type: string
+      enum: [to_order, stock, in_house]
+      description: |
+        Sob encomenda / Estoque / Produção própria. `stock` and `in_house`
+        are refused (`400 invalid`) while the store has Estoque or Produção
+        turned off.
+    Days:
+      type: integer
+      minimum: 0
+      maximum: 365
+    VersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+    SetPublishedRequest:
+      type: object
+      additionalProperties: false
+      required: [published, version]
+      properties:
+        published:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+    Reference:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+
+    Category:
+      type: object
+      required: [id, name, position]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Bancos
+        position:
+          type: integer
+          minimum: 0
+          description: Place in the store's order, from 0.
+    CategoryList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+    CategoryInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: "#/components/schemas/CatalogName"
+    UpdateCategoryRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: "#/components/schemas/CatalogName"
+        position:
+          type: integer
+          minimum: 0
+    CatalogName:
+      type: string
+      minLength: 1
+      maxLength: 120
+      description: Trimmed by the server; blank is refused.
+
+    Attribute:
+      type: object
+      required: [id, name, position, values]
+      description: An item field such as "Serve em", with the values items and kits pick (ADR 0025).
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Serve em
+        position:
+          type: integer
+          minimum: 0
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttributeValue"
+    AttributeValue:
+      type: object
+      required: [id, label, usageCount]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        label:
+          type: string
+          example: CB 500X
+        usageCount:
+          type: integer
+          minimum: 0
+          description: Items and kits, archived ones included, that picked this value.
+    AttributeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attribute"
+    AttributeInput:
+      type: object
+      additionalProperties: false
+      required: [name, values]
+      properties:
+        name:
+          $ref: "#/components/schemas/CatalogName"
+        values:
+          type: array
+          maxItems: 200
+          description: In the store's order. Labels are unique within the field, ignoring case.
+          items:
+            type: object
+            additionalProperties: false
+            required: [label]
+            properties:
+              id:
+                $ref: "#/components/schemas/Uuid"
+              label:
+                type: string
+                minLength: 1
+                maxLength: 80
+
+    SupplierItem:
+      type: object
+      required: [supplierId, supplierName, leadDays]
+      description: A supplier of the item, its lead time and, for the owner, its cost.
+      properties:
+        supplierId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        leadDays:
+          $ref: "#/components/schemas/Days"
+        cost:
+          description: Owner only; absent for every other role. Null when no cost is recorded.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+    SupplierItemInput:
+      type: object
+      additionalProperties: false
+      required: [supplierId, leadDays]
+      properties:
+        supplierId:
+          $ref: "#/components/schemas/Uuid"
+        leadDays:
+          $ref: "#/components/schemas/Days"
+        costCents:
+          description: |
+            Owner only: any other role sending it, even null, gets
+            `403 forbidden`. Absent keeps the stored cost; null clears it.
+            A cost belongs to the item and this supplier, not to the main or
+            backup slot: a supplier newly linked to the item starts with no
+            cost, swapping main and backup keeps each supplier's own cost,
+            and unlinking a supplier drops its cost.
+          oneOf:
+            - $ref: "#/components/schemas/Cents"
+            - type: "null"
+    CustomizationOption:
+      type: object
+      required: [id, name, required, choices]
+      description: |
+        A choice the client makes when ordering (ADR 0024): exactly one
+        choice when `required`, at most one otherwise. Extra days are added
+        to the item's ready date.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Cor da costura
+        required:
+          type: boolean
+        choices:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id, label, extraPrice, extraDays]
+            properties:
+              id:
+                $ref: "#/components/schemas/Uuid"
+              label:
+                type: string
+                example: Vermelha
+              extraPrice:
+                $ref: "#/components/schemas/Money"
+              extraDays:
+                $ref: "#/components/schemas/Days"
+    CustomizationOptionInput:
+      type: object
+      additionalProperties: false
+      required: [name, required, choices]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+          description: Send it to keep an existing option; omit it for a new one.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        required:
+          type: boolean
+        choices:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: Labels are unique within the option, ignoring case.
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, extraPriceCents, extraDays]
+            properties:
+              id:
+                $ref: "#/components/schemas/Uuid"
+              label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              extraPriceCents:
+                $ref: "#/components/schemas/Cents"
+              extraDays:
+                $ref: "#/components/schemas/Days"
+    Photo:
+      type: object
+      required: [id, url, expiresAt, position]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        url:
+          type: string
+          format: uri
+          description: A signed URL to read the photo. Read it again after `expiresAt`.
+        expiresAt:
+          type: string
+          format: date-time
+        position:
+          type: integer
+          minimum: 0
+          maximum: 7
+          description: 0 is the cover.
+    PhotoList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/Photo"
+    PhotoUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerType, ownerId, contentType]
+      properties:
+        ownerType:
+          type: string
+          enum: [item, kit]
+        ownerId:
+          $ref: "#/components/schemas/Uuid"
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+    PhotoUpload:
+      type: object
+      required: [key, uploadUrl, method, headers, expiresAt]
+      properties:
+        key:
+          type: string
+          maxLength: 256
+          description: Send it back to confirm. Opaque; never build one.
+        uploadUrl:
+          type: string
+          format: uri
+        method:
+          type: string
+          enum: [PUT]
+        headers:
+          type: object
+          description: Send exactly these headers with the upload.
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    ConfirmPhotoRequest:
+      type: object
+      additionalProperties: false
+      required: [key]
+      properties:
+        key:
+          type: string
+          minLength: 1
+          maxLength: 256
+    OrderPhotosRequest:
+      type: object
+      additionalProperties: false
+      required: [photoIds]
+      properties:
+        photoIds:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Uuid"
+
+    ItemSummary:
+      type: object
+      required: [id, name, categoryId, sourcingMode, price, readyDays, mainSupplierName, published, archived, cover, version]
+      description: A row of the Itens table.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        categoryId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        sourcingMode:
+          $ref: "#/components/schemas/SourcingMode"
+        price:
+          $ref: "#/components/schemas/Money"
+        readyDays:
+          $ref: "#/components/schemas/ReadyDays"
+        mainSupplierName:
+          type: [string, "null"]
+          description: Null for in-house items.
+        published:
+          type: boolean
+        archived:
+          type: boolean
+        cover:
+          oneOf:
+            - $ref: "#/components/schemas/Photo"
+            - type: "null"
+        version:
+          type: integer
+          minimum: 1
+        cost:
+          description: Owner only; absent for every other role. Null when no cost is recorded.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        margin:
+          description: Owner only; absent for every other role. Null without a cost.
+          oneOf:
+            - $ref: "#/components/schemas/Margin"
+            - type: "null"
+    ItemPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemSummary"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    ReadyDays:
+      type: integer
+      minimum: 0
+      maximum: 365
+      description: |
+        Days the item needs before it is ready: the main supplier's lead time
+        for `to_order` and `stock` (until stock on hand exists, milestone 6),
+        the production days for `in_house` (ADR 0025).
+    Item:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - categoryId
+        - sourcingMode
+        - price
+        - productionDays
+        - readyDays
+        - mainSupplier
+        - backupSupplier
+        - attributeValueIds
+        - options
+        - photos
+        - published
+        - archived
+        - version
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Banco de couro Scrambler
+        description:
+          type: string
+          description: Empty when there is none.
+        categoryId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        sourcingMode:
+          $ref: "#/components/schemas/SourcingMode"
+        price:
+          $ref: "#/components/schemas/Money"
+        productionDays:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 365
+          description: "`in_house` only; null otherwise."
+        readyDays:
+          $ref: "#/components/schemas/ReadyDays"
+        mainSupplier:
+          description: "`to_order` and `stock`; null for `in_house`."
+          oneOf:
+            - $ref: "#/components/schemas/SupplierItem"
+            - type: "null"
+        backupSupplier:
+          description: Fornecedor reserva; null when there is none.
+          oneOf:
+            - $ref: "#/components/schemas/SupplierItem"
+            - type: "null"
+        attributeValueIds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Uuid"
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomizationOption"
+        photos:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/Photo"
+        published:
+          type: boolean
+          description: Shown on the store page ("No portal"). Always false when archived.
+        archived:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        productionCost:
+          description: Owner only, `in_house` only; absent otherwise. Null when no cost is recorded.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        cost:
+          description: |
+            Owner only; absent for every other role. The cost the margin
+            uses: the main supplier's, or the production cost. Null when none
+            is recorded.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        margin:
+          description: Owner only; absent for every other role. Null without a cost.
+          oneOf:
+            - $ref: "#/components/schemas/Margin"
+            - type: "null"
+    ItemInput:
+      type: object
+      description: Unknown fields are refused (`400 invalid`).
+      required: [name, description, categoryId, sourcingMode, priceCents, attributeValueIds, options, published]
+      properties:
+        name:
+          $ref: "#/components/schemas/CatalogName"
+        description:
+          type: string
+          maxLength: 2000
+        categoryId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        sourcingMode:
+          $ref: "#/components/schemas/SourcingMode"
+        priceCents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000000000
+          description: In the store's currency.
+        productionDays:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 365
+          description: Required for `in_house`; must be absent or null otherwise.
+        productionCostCents:
+          description: |
+            Owner only, `in_house` only; as `SupplierItemInput.costCents`.
+            Changing the sourcing mode away from `in_house` drops the
+            production cost; coming back starts with none.
+          oneOf:
+            - $ref: "#/components/schemas/Cents"
+            - type: "null"
+        mainSupplier:
+          description: Required for `to_order` and `stock`; must be absent or null for `in_house`.
+          oneOf:
+            - $ref: "#/components/schemas/SupplierItemInput"
+            - type: "null"
+        backupSupplier:
+          description: Optional; a supplier other than the main one.
+          oneOf:
+            - $ref: "#/components/schemas/SupplierItemInput"
+            - type: "null"
+        attributeValueIds:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Uuid"
+        options:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/CustomizationOptionInput"
+        published:
+          type: boolean
+    ReplaceItemRequest:
+      allOf:
+        - $ref: "#/components/schemas/ItemInput"
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+              minimum: 1
+
+    KitDays:
+      type: object
+      required: [slowestItem, assembly, safetyMargin, total]
+      description: |
+        "Prazo calculado": the slowest item's ready days + assembly days +
+        safety margin, computed by the server (ADR 0025). Option choices
+        made by a client add to this on an order (milestone 4).
+      properties:
+        slowestItem:
+          $ref: "#/components/schemas/ReadyDays"
+        assembly:
+          type: integer
+          minimum: 0
+          description: The kit's own value, or the store's default.
+        safetyMargin:
+          type: integer
+          minimum: 0
+          description: The kit's own value, or the store's default.
+        total:
+          type: integer
+          minimum: 0
+    KitItem:
+      type: object
+      required: [itemId, itemName, quantity, swappable, alternativeItemIds, unitPrice, readyDays, archived]
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        itemName:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+        swappable:
+          type: boolean
+          description: Cliente pode trocar.
+        alternativeItemIds:
+          type: array
+          description: Pode trocar por. Empty unless `swappable`.
+          items:
+            $ref: "#/components/schemas/Uuid"
+        unitPrice:
+          $ref: "#/components/schemas/Money"
+        readyDays:
+          $ref: "#/components/schemas/ReadyDays"
+        archived:
+          type: boolean
+          description: True when the item was archived after the kit was saved; the kit cannot be saved again until it is replaced.
+    SwapDiscount:
+      type: string
+      enum: [keep, lose]
+      description: |
+        What a client's swap does to the price (ADR 0023). `keep` (the
+        default): kit price − removed item + new item, both at single-item
+        price. `lose`: the sum of the resulting items' single-item prices.
+    KitSummary:
+      type: object
+      required: [id, name, itemCount, price, singleItemsTotal, totalDays, published, archived, cover, version]
+      description: A row of the Kits table.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        itemCount:
+          type: integer
+          minimum: 1
+        price:
+          $ref: "#/components/schemas/Money"
+        singleItemsTotal:
+          $ref: "#/components/schemas/Money"
+        totalDays:
+          type: integer
+          minimum: 0
+        published:
+          type: boolean
+        archived:
+          type: boolean
+        cover:
+          oneOf:
+            - $ref: "#/components/schemas/Photo"
+            - type: "null"
+        version:
+          type: integer
+          minimum: 1
+        cost:
+          description: Owner only; absent for every other role. Null when an item of the kit has no cost.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        margin:
+          description: Owner only; absent for every other role. Null without a cost.
+          oneOf:
+            - $ref: "#/components/schemas/Margin"
+            - type: "null"
+    KitPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KitSummary"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    Kit:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - price
+        - singleItemsTotal
+        - discount
+        - swapDiscount
+        - assemblyDays
+        - safetyMarginDays
+        - days
+        - items
+        - attributeValueIds
+        - photos
+        - published
+        - archived
+        - version
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Kit Scrambler CB 500X
+        description:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        singleItemsTotal:
+          $ref: "#/components/schemas/Money"
+          description: Soma dos itens avulsos, quantities included.
+        discount:
+          $ref: "#/components/schemas/Money"
+          description: Desconto do kit, `singleItemsTotal − price`. Negative when the kit costs more than its items.
+        swapDiscount:
+          $ref: "#/components/schemas/SwapDiscount"
+        assemblyDays:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 60
+          description: The kit's own assembly days; null uses the store's default.
+        safetyMarginDays:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 60
+          description: The kit's own safety margin; null uses the store's default.
+        days:
+          $ref: "#/components/schemas/KitDays"
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/KitItem"
+        attributeValueIds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Uuid"
+        photos:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/Photo"
+        published:
+          type: boolean
+        archived:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        cost:
+          description: Owner only; absent for every other role. The sum of the items' costs times their quantities; null when one has none.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        margin:
+          description: Owner only; absent for every other role. Kit price minus cost; null without a cost.
+          oneOf:
+            - $ref: "#/components/schemas/Margin"
+            - type: "null"
+    KitInput:
+      type: object
+      description: Unknown fields are refused (`400 invalid`).
+      required: [name, description, priceCents, swapDiscount, assemblyDays, safetyMarginDays, items, attributeValueIds, published]
+      properties:
+        name:
+          $ref: "#/components/schemas/CatalogName"
+        description:
+          type: string
+          maxLength: 2000
+        priceCents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000000000
+        swapDiscount:
+          $ref: "#/components/schemas/SwapDiscount"
+        assemblyDays:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 60
+        safetyMarginDays:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 60
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: An item appears once; an alternative is never the item itself or archived.
+          items:
+            type: object
+            additionalProperties: false
+            required: [itemId, quantity, swappable, alternativeItemIds]
+            properties:
+              itemId:
+                $ref: "#/components/schemas/Uuid"
+              quantity:
+                type: integer
+                minimum: 1
+                maximum: 99
+              swappable:
+                type: boolean
+              alternativeItemIds:
+                type: array
+                maxItems: 50
+                uniqueItems: true
+                description: At least one when `swappable`; empty otherwise.
+                items:
+                  $ref: "#/components/schemas/Uuid"
+        attributeValueIds:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Uuid"
+        published:
+          type: boolean
+    ReplaceKitRequest:
+      allOf:
+        - $ref: "#/components/schemas/KitInput"
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+              minimum: 1
+
+    SupplierPhone:
+      type: string
+      pattern: "^55[1-9]{2}[0-9]{8,9}$"
+      description: Digits only, 55 + DDD + number, as wa.me links need it.
+      example: "5511987654321"
+    Supplier:
+      type: object
+      required: [id, name, whatsappPhone, version]
+      description: A supplier of the store. Staff only; never on the store page. It carries no cost.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Couros Paulista
+        whatsappPhone:
+          $ref: "#/components/schemas/SupplierPhone"
+        version:
+          type: integer
+          minimum: 1
+    SupplierPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Supplier"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    SupplierInput:
+      type: object
+      description: Unknown fields are refused (`400 invalid`).
+      required: [name, whatsappPhone]
+      properties:
+        name:
+          $ref: "#/components/schemas/CatalogName"
+        whatsappPhone:
+          $ref: "#/components/schemas/SupplierPhone"
+    ReplaceSupplierRequest:
+      allOf:
+        - $ref: "#/components/schemas/SupplierInput"
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+              minimum: 1

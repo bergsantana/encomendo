@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -194,6 +195,15 @@ func TestTokens_EveryProtectedRouteRefusesABadToken(t *testing.T) {
 	}
 	for _, op := range ops {
 		t.Run(op.method+" "+op.path, func(t *testing.T) {
+			if op.unserved != "" {
+				// Written ahead of the server: it must not be served yet, so
+				// the mark goes the moment it is (see the spec's "Operations
+				// not served yet").
+				if got := call(t, op.method, op.url, op.body, tokens["expired"]); got.Status != 404 {
+					t.Errorf("marked x-unserved (%s) but answered %d %v: serve it fully and remove the mark", op.unserved, got.Status, got.Body)
+				}
+				return
+			}
 			for name, token := range tokens {
 				got := call(t, op.method, op.url, op.body, token)
 				if got.Status != 401 || got.str("code") != "unauthenticated" {
@@ -208,10 +218,14 @@ func TestTokens_EveryProtectedRouteRefusesABadToken(t *testing.T) {
 type operation struct {
 	method, path, url string
 	body              any
+	// unserved is the operation's x-unserved mark: the plan step that will
+	// serve it, or "" for an operation the server serves today.
+	unserved string
 }
 
 // protectedOperations returns every operation of openapi.yaml that needs a
 // staff token, with an id in each path parameter and {} for each body.
+// Operations marked x-unserved come back with their mark set.
 func protectedOperations(t *testing.T) []operation {
 	t.Helper()
 	doc, err := openapi3.NewLoader().LoadFromFile("../../../docs/api/openapi.yaml")
@@ -225,7 +239,10 @@ func protectedOperations(t *testing.T) []operation {
 			if !needsBearer(op) {
 				continue
 			}
-			o := operation{method: method, path: path, url: strings.NewReplacer("{userId}", id, "{invitationId}", id).Replace(path)}
+			o := operation{method: method, path: path, url: pathParam.ReplaceAllString(path, id)}
+			if mark, ok := op.Extensions["x-unserved"].(string); ok {
+				o.unserved = mark
+			}
 			if op.RequestBody != nil {
 				o.body = map[string]any{}
 			}
@@ -234,6 +251,9 @@ func protectedOperations(t *testing.T) []operation {
 	}
 	return out
 }
+
+// pathParam matches a path template parameter such as {itemId}.
+var pathParam = regexp.MustCompile(`\{[^/{}]+\}`)
 
 // needsBearer reports whether op requires a bearer token: it lists
 // bearerAuth and no empty requirement (an optional token, as logout).
@@ -267,7 +287,8 @@ func TestSuspendedStore(t *testing.T) {
 	// The very next request on every tenant-scoped admin route, with the
 	// token issued before the suspension. Creating a store needs none.
 	for _, op := range protectedOperations(t) {
-		if op.path == "/api/v1/admin/tenants" {
+		// Unserved operations are checked in the token test instead.
+		if op.path == "/api/v1/admin/tenants" || op.unserved != "" {
 			continue
 		}
 		if a := call(t, op.method, op.url, op.body, s.access); a.Status != 403 || a.str("code") != "tenant_suspended" {

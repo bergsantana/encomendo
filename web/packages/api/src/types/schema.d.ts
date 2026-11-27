@@ -415,6 +415,533 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/catalog/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every category of the store, in the store's order.
+         * @description Needs `catalog:read` (every role).
+         */
+        get: operations["listCategories"];
+        put?: never;
+        /**
+         * Add a category at the end of the list.
+         * @description Needs `catalog:write` (owner, admin).
+         */
+        post: operations["createCategory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/categories/{categoryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a category no item uses.
+         * @description Needs `catalog:write`. Archived items count as using it.
+         */
+        delete: operations["deleteCategory"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a category or move it in the list.
+         * @description Needs `catalog:write`. Send `name`, `position` or both. A position
+         *     past the end moves the category to the end; the others shift to make
+         *     room.
+         */
+        patch: operations["updateCategory"];
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every item field of the store ("Serve em" …) with its values.
+         * @description Needs `catalog:read`.
+         */
+        get: operations["listAttributes"];
+        put?: never;
+        /**
+         * Add an item field with its values.
+         * @description Needs `catalog:write`.
+         */
+        post: operations["createAttribute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/attributes/{attributeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace a field's name and its ordered values.
+         * @description Needs `catalog:write`. A value sent with its `id` keeps it, and the
+         *     items and kits that use it; a value without an `id` is new; a value
+         *     left out is removed from the field and from every item and kit that
+         *     used it. The apps ask first, using `usageCount`.
+         */
+        put: operations["replaceAttribute"];
+        post?: never;
+        /**
+         * Delete a field; its values leave every item and kit.
+         * @description Needs `catalog:write`.
+         */
+        delete: operations["deleteAttribute"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The store's catalog items, by name.
+         * @description Needs `catalog:read`. `cost` and `margin` follow the cost rule (see the top of this document).
+         */
+        get: operations["listItems"];
+        put?: never;
+        /**
+         * Add a catalog item.
+         * @description Needs `catalog:write`. A cost field (`productionCostCents`, a
+         *     supplier's `costCents`) is the owner's only: any other role sending
+         *     one, even `null`, gets `403 forbidden`.
+         */
+        post: operations["createItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One item with its suppliers, fields, options and photos.
+         * @description Needs `catalog:read`.
+         */
+        get: operations["getItem"];
+        /**
+         * Replace an item's details.
+         * @description Needs `catalog:write`. Send every field with the `version` you read.
+         *     Photos are not part of it (see `/photos`). A cost field left out
+         *     keeps the stored cost, so an admin can save without seeing it.
+         */
+        put: operations["replaceItem"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}/published": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Show or hide the item on the store page ("No portal").
+         * @description Needs `catalog:write`. An archived item cannot be published (`400 invalid`).
+         */
+        put: operations["setItemPublished"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive an item; it leaves the store page and the pickers.
+         * @description Needs `catalog:write`. Archiving also unpublishes. Nothing in the
+         *     catalog is deleted (ADR 0025).
+         */
+        post: operations["archiveItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring an archived item back, unpublished.
+         * @description Needs `catalog:write`.
+         */
+        post: operations["restoreItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a photo uploaded to the key from `/catalog/photo-uploads`.
+         * @description Needs `catalog:write`. The server reads the stored object: at most
+         *     10 MB, and JPEG, PNG or WebP by its content, not its name (ADR 0024).
+         *     The photo goes last; the first photo is the cover.
+         *     The key is checked first, before storage is touched: it must parse
+         *     exactly as `t/{this store}/items/{itemId}/{photoId}` (or `kits/`),
+         *     with this path's id and a UUID `photoId`, and nothing after it. A key
+         *     that fails is `photo_not_uploaded`, the same answer as a key nobody
+         *     uploaded to, and is never read or deleted. The photo's id is the
+         *     key's last part, so a key is used once: confirming a key already
+         *     recorded on this item answers `200` with that photo and changes
+         *     nothing. Only an object that passed the key check and has no photo
+         *     yet is deleted when refused.
+         */
+        post: operations["confirmItemPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}/photos/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put the item's photos in a new order; the first is the cover.
+         * @description Needs `catalog:write`. List every photo of the item exactly once.
+         */
+        put: operations["orderItemPhotos"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/items/{itemId}/photos/{photoId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a photo from the item and from storage.
+         * @description Needs `catalog:write`.
+         */
+        delete: operations["deleteItemPhoto"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The store's kits, by name.
+         * @description Needs `catalog:read`. `cost` and `margin` follow the cost rule.
+         */
+        get: operations["listKits"];
+        put?: never;
+        /**
+         * Add a ready kit ("Kit pronto").
+         * @description Needs `catalog:write`.
+         */
+        post: operations["createKit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One kit with its items, totals and days.
+         * @description Needs `catalog:read`.
+         */
+        get: operations["getKit"];
+        /**
+         * Replace a kit's details and items.
+         * @description Needs `catalog:write`. Send every field with the `version` you read. Photos are not part of it.
+         */
+        put: operations["replaceKit"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}/published": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Show or hide the kit on the store page ("No portal").
+         * @description Needs `catalog:write`. An archived kit cannot be published (`400 invalid`).
+         */
+        put: operations["setKitPublished"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a kit; it leaves the store page and stops holding its items.
+         * @description Needs `catalog:write`. Archiving also unpublishes.
+         */
+        post: operations["archiveKit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring an archived kit back, unpublished.
+         * @description Needs `catalog:write`. Refused while an item of the kit is archived.
+         */
+        post: operations["restoreKit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a photo uploaded to the key from `/catalog/photo-uploads`.
+         * @description Needs `catalog:write`. The same checks as for an item's photo, with
+         *     `kits/` in the key; confirming a key already recorded on this kit
+         *     answers `200` with that photo.
+         */
+        post: operations["confirmKitPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}/photos/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put the kit's photos in a new order; the first is the cover.
+         * @description Needs `catalog:write`. List every photo of the kit exactly once.
+         */
+        put: operations["orderKitPhotos"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/kits/{kitId}/photos/{photoId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a photo from the kit and from storage.
+         * @description Needs `catalog:write`.
+         */
+        delete: operations["deleteKitPhoto"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/catalog/photo-uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a short-lived URL to upload one photo of an item or kit.
+         * @description Needs `catalog:write`. The server picks the key; apps never do
+         *     (ADR 0024). Upload the file with `method` to `uploadUrl`, sending
+         *     exactly `headers` and no `Authorization`, before `expiresAt`; then
+         *     confirm it on the owner's `/photos`. An upload never confirmed is
+         *     removed after a day.
+         */
+        post: operations["requestPhotoUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/suppliers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The store's suppliers, by name.
+         * @description Needs `catalog:read` (every role). Suppliers carry no cost.
+         */
+        get: operations["listSuppliers"];
+        put?: never;
+        /**
+         * Add a supplier ("Novo fornecedor").
+         * @description Needs `catalog:write` (owner, admin; ADR 0025).
+         */
+        post: operations["createSupplier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/suppliers/{supplierId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One supplier.
+         * @description Needs `catalog:read`.
+         */
+        get: operations["getSupplier"];
+        /**
+         * Replace a supplier's name and WhatsApp.
+         * @description Needs `catalog:write`. Send the `version` you read.
+         */
+        put: operations["replaceSupplier"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -437,10 +964,12 @@ export interface components {
              * @description Stable machine-readable code. New codes may be added; existing ones never change.
              * @enum {string}
              */
-            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended";
+            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended" | "name_taken" | "category_in_use" | "item_in_kit" | "item_archived" | "photo_limit" | "photo_invalid" | "photo_not_uploaded";
             detail?: string;
             instance?: string;
             errors?: components["schemas"]["FieldIssue"][];
+            /** @description With `item_in_kit` and `item_archived`, the rows the refusal names (the kits, or the archived items). */
+            references?: components["schemas"]["Reference"][];
         };
         FieldIssue: {
             field: string;
@@ -485,7 +1014,7 @@ export interface components {
          * @description New permissions are added as features land; existing ones never change.
          * @enum {string}
          */
-        Permission: "catalog:write" | "finance:read" | "inventory:adjust" | "members:manage" | "order:read" | "order:write" | "portal:write" | "production:write" | "purchase:write" | "receiving:write" | "settings:read" | "settings:write";
+        Permission: "catalog:read" | "catalog:write" | "finance:read" | "inventory:adjust" | "members:manage" | "order:read" | "order:write" | "portal:write" | "production:write" | "purchase:write" | "receiving:write" | "settings:read" | "settings:write";
         /**
          * @description How the refresh token travels; see "Sessions" above. Android sends `body`.
          * @default cookie
@@ -683,6 +1212,412 @@ export interface components {
             /** @description Absent on the last page. */
             nextCursor?: string;
         };
+        /** @description An amount in integer cents of `currency`, never a float. Never negative unless the field says so. */
+        Money: {
+            /** Format: int64 */
+            cents: number;
+            /** @example BRL */
+            currency: string;
+        };
+        /**
+         * Format: int64
+         * @description An amount in integer cents of the store's currency.
+         */
+        Cents: number;
+        /**
+         * @description Price minus cost, computed by the server and never stored. Negative
+         *     when the cost is above the price. `basisPoints` is the margin over
+         *     the price in hundredths of a percent, rounded toward zero: 3000 is
+         *     30%.
+         */
+        Margin: {
+            /** Format: int64 */
+            cents: number;
+            basisPoints: number;
+        };
+        /**
+         * @description Sob encomenda / Estoque / Produção própria. `stock` and `in_house`
+         *     are refused (`400 invalid`) while the store has Estoque or Produção
+         *     turned off.
+         * @enum {string}
+         */
+        SourcingMode: "to_order" | "stock" | "in_house";
+        Days: number;
+        VersionRequest: {
+            version: number;
+        };
+        SetPublishedRequest: {
+            published: boolean;
+            version: number;
+        };
+        Reference: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+        };
+        Category: {
+            id: components["schemas"]["Uuid"];
+            /** @example Bancos */
+            name: string;
+            /** @description Place in the store's order, from 0. */
+            position: number;
+        };
+        CategoryList: {
+            items: components["schemas"]["Category"][];
+        };
+        CategoryInput: {
+            name: components["schemas"]["CatalogName"];
+        };
+        UpdateCategoryRequest: {
+            name?: components["schemas"]["CatalogName"];
+            position?: number;
+        };
+        /** @description Trimmed by the server; blank is refused. */
+        CatalogName: string;
+        /** @description An item field such as "Serve em", with the values items and kits pick (ADR 0025). */
+        Attribute: {
+            id: components["schemas"]["Uuid"];
+            /** @example Serve em */
+            name: string;
+            position: number;
+            values: components["schemas"]["AttributeValue"][];
+        };
+        AttributeValue: {
+            id: components["schemas"]["Uuid"];
+            /** @example CB 500X */
+            label: string;
+            /** @description Items and kits, archived ones included, that picked this value. */
+            usageCount: number;
+        };
+        AttributeList: {
+            items: components["schemas"]["Attribute"][];
+        };
+        AttributeInput: {
+            name: components["schemas"]["CatalogName"];
+            /** @description In the store's order. Labels are unique within the field, ignoring case. */
+            values: {
+                id?: components["schemas"]["Uuid"];
+                label: string;
+            }[];
+        };
+        /** @description A supplier of the item, its lead time and, for the owner, its cost. */
+        SupplierItem: {
+            supplierId: components["schemas"]["Uuid"];
+            supplierName: string;
+            leadDays: components["schemas"]["Days"];
+            /** @description Owner only; absent for every other role. Null when no cost is recorded. */
+            cost?: components["schemas"]["Money"] | null;
+        };
+        SupplierItemInput: {
+            supplierId: components["schemas"]["Uuid"];
+            leadDays: components["schemas"]["Days"];
+            /**
+             * @description Owner only: any other role sending it, even null, gets
+             *     `403 forbidden`. Absent keeps the stored cost; null clears it.
+             *     A cost belongs to the item and this supplier, not to the main or
+             *     backup slot: a supplier newly linked to the item starts with no
+             *     cost, swapping main and backup keeps each supplier's own cost,
+             *     and unlinking a supplier drops its cost.
+             */
+            costCents?: components["schemas"]["Cents"] | null;
+        };
+        /**
+         * @description A choice the client makes when ordering (ADR 0024): exactly one
+         *     choice when `required`, at most one otherwise. Extra days are added
+         *     to the item's ready date.
+         */
+        CustomizationOption: {
+            id: components["schemas"]["Uuid"];
+            /** @example Cor da costura */
+            name: string;
+            required: boolean;
+            choices: {
+                id: components["schemas"]["Uuid"];
+                /** @example Vermelha */
+                label: string;
+                extraPrice: components["schemas"]["Money"];
+                extraDays: components["schemas"]["Days"];
+            }[];
+        };
+        CustomizationOptionInput: {
+            /** @description Send it to keep an existing option; omit it for a new one. */
+            id?: components["schemas"]["Uuid"];
+            name: string;
+            required: boolean;
+            /** @description Labels are unique within the option, ignoring case. */
+            choices: {
+                id?: components["schemas"]["Uuid"];
+                label: string;
+                extraPriceCents: components["schemas"]["Cents"];
+                extraDays: components["schemas"]["Days"];
+            }[];
+        };
+        Photo: {
+            id: components["schemas"]["Uuid"];
+            /**
+             * Format: uri
+             * @description A signed URL to read the photo. Read it again after `expiresAt`.
+             */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description 0 is the cover. */
+            position: number;
+        };
+        PhotoList: {
+            items: components["schemas"]["Photo"][];
+        };
+        PhotoUploadRequest: {
+            /** @enum {string} */
+            ownerType: "item" | "kit";
+            ownerId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            contentType: "image/jpeg" | "image/png" | "image/webp";
+        };
+        PhotoUpload: {
+            /** @description Send it back to confirm. Opaque; never build one. */
+            key: string;
+            /** Format: uri */
+            uploadUrl: string;
+            /** @enum {string} */
+            method: "PUT";
+            /** @description Send exactly these headers with the upload. */
+            headers: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        ConfirmPhotoRequest: {
+            key: string;
+        };
+        OrderPhotosRequest: {
+            photoIds: components["schemas"]["Uuid"][];
+        };
+        /** @description A row of the Itens table. */
+        ItemSummary: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            categoryId: components["schemas"]["Uuid"] | null;
+            sourcingMode: components["schemas"]["SourcingMode"];
+            price: components["schemas"]["Money"];
+            readyDays: components["schemas"]["ReadyDays"];
+            /** @description Null for in-house items. */
+            mainSupplierName: string | null;
+            published: boolean;
+            archived: boolean;
+            cover: components["schemas"]["Photo"] | null;
+            version: number;
+            /** @description Owner only; absent for every other role. Null when no cost is recorded. */
+            cost?: components["schemas"]["Money"] | null;
+            /** @description Owner only; absent for every other role. Null without a cost. */
+            margin?: components["schemas"]["Margin"] | null;
+        };
+        ItemPage: {
+            items: components["schemas"]["ItemSummary"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        /**
+         * @description Days the item needs before it is ready: the main supplier's lead time
+         *     for `to_order` and `stock` (until stock on hand exists, milestone 6),
+         *     the production days for `in_house` (ADR 0025).
+         */
+        ReadyDays: number;
+        Item: {
+            id: components["schemas"]["Uuid"];
+            /** @example Banco de couro Scrambler */
+            name: string;
+            /** @description Empty when there is none. */
+            description: string;
+            categoryId: components["schemas"]["Uuid"] | null;
+            sourcingMode: components["schemas"]["SourcingMode"];
+            price: components["schemas"]["Money"];
+            /** @description `in_house` only; null otherwise. */
+            productionDays: number | null;
+            readyDays: components["schemas"]["ReadyDays"];
+            /** @description `to_order` and `stock`; null for `in_house`. */
+            mainSupplier: components["schemas"]["SupplierItem"] | null;
+            /** @description Fornecedor reserva; null when there is none. */
+            backupSupplier: components["schemas"]["SupplierItem"] | null;
+            attributeValueIds: components["schemas"]["Uuid"][];
+            options: components["schemas"]["CustomizationOption"][];
+            photos: components["schemas"]["Photo"][];
+            /** @description Shown on the store page ("No portal"). Always false when archived. */
+            published: boolean;
+            archived: boolean;
+            version: number;
+            /** @description Owner only, `in_house` only; absent otherwise. Null when no cost is recorded. */
+            productionCost?: components["schemas"]["Money"] | null;
+            /**
+             * @description Owner only; absent for every other role. The cost the margin
+             *     uses: the main supplier's, or the production cost. Null when none
+             *     is recorded.
+             */
+            cost?: components["schemas"]["Money"] | null;
+            /** @description Owner only; absent for every other role. Null without a cost. */
+            margin?: components["schemas"]["Margin"] | null;
+        };
+        /** @description Unknown fields are refused (`400 invalid`). */
+        ItemInput: {
+            name: components["schemas"]["CatalogName"];
+            description: string;
+            categoryId: components["schemas"]["Uuid"] | null;
+            sourcingMode: components["schemas"]["SourcingMode"];
+            /**
+             * Format: int64
+             * @description In the store's currency.
+             */
+            priceCents: number;
+            /** @description Required for `in_house`; must be absent or null otherwise. */
+            productionDays?: number | null;
+            /**
+             * @description Owner only, `in_house` only; as `SupplierItemInput.costCents`.
+             *     Changing the sourcing mode away from `in_house` drops the
+             *     production cost; coming back starts with none.
+             */
+            productionCostCents?: components["schemas"]["Cents"] | null;
+            /** @description Required for `to_order` and `stock`; must be absent or null for `in_house`. */
+            mainSupplier?: components["schemas"]["SupplierItemInput"] | null;
+            /** @description Optional; a supplier other than the main one. */
+            backupSupplier?: components["schemas"]["SupplierItemInput"] | null;
+            attributeValueIds: components["schemas"]["Uuid"][];
+            options: components["schemas"]["CustomizationOptionInput"][];
+            published: boolean;
+        };
+        ReplaceItemRequest: components["schemas"]["ItemInput"] & {
+            version: number;
+        };
+        /**
+         * @description "Prazo calculado": the slowest item's ready days + assembly days +
+         *     safety margin, computed by the server (ADR 0025). Option choices
+         *     made by a client add to this on an order (milestone 4).
+         */
+        KitDays: {
+            slowestItem: components["schemas"]["ReadyDays"];
+            /** @description The kit's own value, or the store's default. */
+            assembly: number;
+            /** @description The kit's own value, or the store's default. */
+            safetyMargin: number;
+            total: number;
+        };
+        KitItem: {
+            itemId: components["schemas"]["Uuid"];
+            itemName: string;
+            quantity: number;
+            /** @description Cliente pode trocar. */
+            swappable: boolean;
+            /** @description Pode trocar por. Empty unless `swappable`. */
+            alternativeItemIds: components["schemas"]["Uuid"][];
+            unitPrice: components["schemas"]["Money"];
+            readyDays: components["schemas"]["ReadyDays"];
+            /** @description True when the item was archived after the kit was saved; the kit cannot be saved again until it is replaced. */
+            archived: boolean;
+        };
+        /**
+         * @description What a client's swap does to the price (ADR 0023). `keep` (the
+         *     default): kit price − removed item + new item, both at single-item
+         *     price. `lose`: the sum of the resulting items' single-item prices.
+         * @enum {string}
+         */
+        SwapDiscount: "keep" | "lose";
+        /** @description A row of the Kits table. */
+        KitSummary: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            itemCount: number;
+            price: components["schemas"]["Money"];
+            singleItemsTotal: components["schemas"]["Money"];
+            totalDays: number;
+            published: boolean;
+            archived: boolean;
+            cover: components["schemas"]["Photo"] | null;
+            version: number;
+            /** @description Owner only; absent for every other role. Null when an item of the kit has no cost. */
+            cost?: components["schemas"]["Money"] | null;
+            /** @description Owner only; absent for every other role. Null without a cost. */
+            margin?: components["schemas"]["Margin"] | null;
+        };
+        KitPage: {
+            items: components["schemas"]["KitSummary"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        Kit: {
+            id: components["schemas"]["Uuid"];
+            /** @example Kit Scrambler CB 500X */
+            name: string;
+            description: string;
+            price: components["schemas"]["Money"];
+            /** @description Soma dos itens avulsos, quantities included. */
+            singleItemsTotal: components["schemas"]["Money"];
+            /** @description Desconto do kit, `singleItemsTotal − price`. Negative when the kit costs more than its items. */
+            discount: components["schemas"]["Money"];
+            swapDiscount: components["schemas"]["SwapDiscount"];
+            /** @description The kit's own assembly days; null uses the store's default. */
+            assemblyDays: number | null;
+            /** @description The kit's own safety margin; null uses the store's default. */
+            safetyMarginDays: number | null;
+            days: components["schemas"]["KitDays"];
+            items: components["schemas"]["KitItem"][];
+            attributeValueIds: components["schemas"]["Uuid"][];
+            photos: components["schemas"]["Photo"][];
+            published: boolean;
+            archived: boolean;
+            version: number;
+            /** @description Owner only; absent for every other role. The sum of the items' costs times their quantities; null when one has none. */
+            cost?: components["schemas"]["Money"] | null;
+            /** @description Owner only; absent for every other role. Kit price minus cost; null without a cost. */
+            margin?: components["schemas"]["Margin"] | null;
+        };
+        /** @description Unknown fields are refused (`400 invalid`). */
+        KitInput: {
+            name: components["schemas"]["CatalogName"];
+            description: string;
+            /** Format: int64 */
+            priceCents: number;
+            swapDiscount: components["schemas"]["SwapDiscount"];
+            assemblyDays: number | null;
+            safetyMarginDays: number | null;
+            /** @description An item appears once; an alternative is never the item itself or archived. */
+            items: {
+                itemId: components["schemas"]["Uuid"];
+                quantity: number;
+                swappable: boolean;
+                /** @description At least one when `swappable`; empty otherwise. */
+                alternativeItemIds: components["schemas"]["Uuid"][];
+            }[];
+            attributeValueIds: components["schemas"]["Uuid"][];
+            published: boolean;
+        };
+        ReplaceKitRequest: components["schemas"]["KitInput"] & {
+            version: number;
+        };
+        /**
+         * @description Digits only, 55 + DDD + number, as wa.me links need it.
+         * @example 5511987654321
+         */
+        SupplierPhone: string;
+        /** @description A supplier of the store. Staff only; never on the store page. It carries no cost. */
+        Supplier: {
+            id: components["schemas"]["Uuid"];
+            /** @example Couros Paulista */
+            name: string;
+            whatsappPhone: components["schemas"]["SupplierPhone"];
+            version: number;
+        };
+        SupplierPage: {
+            items: components["schemas"]["Supplier"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        /** @description Unknown fields are refused (`400 invalid`). */
+        SupplierInput: {
+            name: components["schemas"]["CatalogName"];
+            whatsappPhone: components["schemas"]["SupplierPhone"];
+        };
+        ReplaceSupplierRequest: components["schemas"]["SupplierInput"] & {
+            version: number;
+        };
     };
     responses: {
         /** @description A new session. */
@@ -784,6 +1719,48 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description `name_taken`: another row of this kind already has this name, ignoring case. */
+        NameTaken: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `item_archived`: an item in the kit, or one of its alternatives, is archived; `references` names them. */
+        ItemArchived: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `photo_invalid`: the stored object is over 10 MB or not a JPEG, PNG
+         *     or WebP image; it was deleted. `photo_not_uploaded`: nothing was
+         *     uploaded to the key, or the key is not one issued for this item or
+         *     kit in this store (the two are not told apart). `invalid`: the body
+         *     breaks a rule.
+         */
+        PhotoRefused: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `photo_limit`: the item or kit already has 8 photos. */
+        PhotoLimit: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
     };
     parameters: {
         /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
@@ -791,6 +1768,18 @@ export interface components {
         Limit: number;
         UserId: components["schemas"]["Uuid"];
         InvitationId: components["schemas"]["Uuid"];
+        CategoryId: components["schemas"]["Uuid"];
+        AttributeId: components["schemas"]["Uuid"];
+        ItemId: components["schemas"]["Uuid"];
+        KitId: components["schemas"]["Uuid"];
+        PhotoId: components["schemas"]["Uuid"];
+        SupplierId: components["schemas"]["Uuid"];
+        /** @description Only rows whose name contains this text, ignoring case. */
+        Search: string;
+        /** @description Only items of this category. */
+        CategoryFilter: components["schemas"]["Uuid"];
+        /** @description Also list archived rows ("Mostrar arquivados"). */
+        IncludeArchived: boolean;
     };
     requestBodies: never;
     headers: {
@@ -1487,6 +2476,1025 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All categories; a store has few, so there is no paging. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryInput"];
+            };
+        };
+        responses: {
+            /** @description The new category. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Category"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["NameTaken"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    deleteCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: components["parameters"]["CategoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `category_in_use`: items still have this category; move them first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    updateCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: components["parameters"]["CategoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description The category as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Category"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["NameTaken"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listAttributes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All fields, in the store's order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeInput"];
+            };
+        };
+        responses: {
+            /** @description The new field. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attribute"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["NameTaken"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    replaceAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attributeId: components["parameters"]["AttributeId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeInput"];
+            };
+        };
+        responses: {
+            /** @description The field as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attribute"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["NameTaken"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    deleteAttribute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attributeId: components["parameters"]["AttributeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listItems: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Only rows whose name contains this text, ignoring case. */
+                q?: components["parameters"]["Search"];
+                /** @description Only items of this category. */
+                categoryId?: components["parameters"]["CategoryFilter"];
+                /** @description Also list archived rows ("Mostrar arquivados"). */
+                includeArchived?: components["parameters"]["IncludeArchived"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemInput"];
+            };
+        };
+        responses: {
+            /** @description The new item. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    replaceItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceItemRequest"];
+            };
+        };
+        responses: {
+            /** @description The item as saved, with the new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    setItemPublished: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPublishedRequest"];
+            };
+        };
+        responses: {
+            /** @description The item as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    archiveItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The archived item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description `item_in_kit`: kits that are not archived hold the item;
+             *     `references` names them. `version_conflict`: someone saved first.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    restoreItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The restored item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    confirmItemPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPhotoRequest"];
+            };
+        };
+        responses: {
+            /** @description The key was already confirmed on this item; the photo it recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photo"];
+                };
+            };
+            /** @description The photo, with a short-lived URL. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photo"];
+                };
+            };
+            400: components["responses"]["PhotoRefused"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PhotoLimit"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    orderItemPhotos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPhotosRequest"];
+            };
+        };
+        responses: {
+            /** @description The photos in their new order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoList"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    deleteItemPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+                photoId: components["parameters"]["PhotoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listKits: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Only rows whose name contains this text, ignoring case. */
+                q?: components["parameters"]["Search"];
+                /** @description Also list archived rows ("Mostrar arquivados"). */
+                includeArchived?: components["parameters"]["IncludeArchived"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of kits. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KitPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KitInput"];
+            };
+        };
+        responses: {
+            /** @description The new kit. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kit"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["ItemArchived"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The kit. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kit"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    replaceKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceKitRequest"];
+            };
+        };
+        responses: {
+            /** @description The kit as saved, with the new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kit"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `version_conflict`: someone saved first. `item_archived`: an item in the kit, or one of its alternatives, is archived; `references` names them. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    setKitPublished: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPublishedRequest"];
+            };
+        };
+        responses: {
+            /** @description The kit as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kit"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    archiveKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The archived kit. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kit"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    restoreKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The restored kit. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kit"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `version_conflict`: someone saved first. `item_archived`: an item of the kit is archived; `references` names them. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    confirmKitPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPhotoRequest"];
+            };
+        };
+        responses: {
+            /** @description The key was already confirmed on this kit; the photo it recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photo"];
+                };
+            };
+            /** @description The photo, with a short-lived URL. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photo"];
+                };
+            };
+            400: components["responses"]["PhotoRefused"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PhotoLimit"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    orderKitPhotos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPhotosRequest"];
+            };
+        };
+        responses: {
+            /** @description The photos in their new order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoList"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    deleteKitPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kitId: components["parameters"]["KitId"];
+                photoId: components["parameters"]["PhotoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    requestPhotoUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhotoUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Where and how to upload. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoUpload"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PhotoLimit"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listSuppliers: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Only rows whose name contains this text, ignoring case. */
+                q?: components["parameters"]["Search"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of suppliers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createSupplier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierInput"];
+            };
+        };
+        responses: {
+            /** @description The new supplier. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Supplier"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getSupplier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplierId: components["parameters"]["SupplierId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The supplier. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Supplier"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    replaceSupplier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplierId: components["parameters"]["SupplierId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceSupplierRequest"];
+            };
+        };
+        responses: {
+            /** @description The supplier as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Supplier"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["VersionConflict"];
             "5XX": components["responses"]["ServerFailure"];
         };
     };

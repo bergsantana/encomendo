@@ -15,10 +15,16 @@ type Permission string
 // Permissions. Each bounded context adds its own when it lands, with a row in
 // the role table test.
 const (
-	PermOrderRead       Permission = "order:read"
-	PermOrderWrite      Permission = "order:write"
-	PermPurchaseWrite   Permission = "purchase:write"
-	PermReceivingWrite  Permission = "receiving:write"
+	PermOrderRead      Permission = "order:read"
+	PermOrderWrite     Permission = "order:write"
+	PermPurchaseWrite  Permission = "purchase:write"
+	PermReceivingWrite Permission = "receiving:write"
+	// PermCatalogRead lets every role read the catalog and the store's
+	// suppliers. Costs and margins are not part of it: SeesCosts decides
+	// those (ADR 0025).
+	PermCatalogRead Permission = "catalog:read"
+	// PermCatalogWrite covers the catalog and, in milestone 3, the suppliers
+	// that source it (ADR 0025).
 	PermCatalogWrite    Permission = "catalog:write"
 	PermInventoryAdjust Permission = "inventory:adjust"
 	PermProductionWrite Permission = "production:write"
@@ -42,20 +48,22 @@ func grantsOf(role shared.Role) []Permission {
 	switch role {
 	case shared.RoleOwner:
 		return []Permission{
-			PermCatalogWrite, PermFinanceRead, PermInventoryAdjust, PermMembersManage,
+			PermCatalogRead, PermCatalogWrite, PermFinanceRead, PermInventoryAdjust, PermMembersManage,
 			PermOrderRead, PermOrderWrite, PermPortalWrite, PermProductionWrite,
 			PermPurchaseWrite, PermReceivingWrite, PermSettingsRead, PermSettingsWrite,
 		}
 	case shared.RoleAdmin:
 		return []Permission{
-			PermCatalogWrite, PermInventoryAdjust, PermMembersManage,
+			PermCatalogRead, PermCatalogWrite, PermInventoryAdjust, PermMembersManage,
 			PermOrderRead, PermOrderWrite, PermPortalWrite, PermProductionWrite,
 			PermPurchaseWrite, PermReceivingWrite, PermSettingsRead,
 		}
 	case shared.RoleStaff:
-		return []Permission{PermOrderRead, PermOrderWrite, PermProductionWrite, PermReceivingWrite, PermSettingsRead}
+		return []Permission{
+			PermCatalogRead, PermOrderRead, PermOrderWrite, PermProductionWrite, PermReceivingWrite, PermSettingsRead,
+		}
 	case shared.RoleViewer:
-		return []Permission{PermOrderRead, PermSettingsRead}
+		return []Permission{PermCatalogRead, PermOrderRead, PermSettingsRead}
 	default:
 		return nil
 	}
@@ -71,6 +79,17 @@ func Allows(role shared.Role, perm Permission) bool {
 // the caller may keep or change. It returns nil for an unknown role.
 func PermissionsOf(role shared.Role) []Permission {
 	return grantsOf(role)
+}
+
+// SeesCosts reports whether role may see costs and margins: item and
+// supplier costs, kit costs and every margin computed from them. Only the
+// owner may (ADR 0025; docs/product/design-document.md, Screens). It is a
+// policy, not a permission, because it changes which fields a view
+// carries rather than which calls a role may make: views built for any
+// other role leave those fields out, and a write that sends a cost from any
+// other role is refused.
+func SeesCosts(role shared.Role) bool {
+	return role == shared.RoleOwner
 }
 
 // AllPermissions returns every permission, sorted. The owner holds them all.
