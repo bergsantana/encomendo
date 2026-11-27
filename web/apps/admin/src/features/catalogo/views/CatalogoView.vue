@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
- * CatalogoView is the Catálogo screen. Only the Itens tab exists so far; the
- * Kits tab joins it in step 3.13 as one more entry in `tabs` and one more
- * panel. Every role reads it (`catalog:read`); only owner and admin
+ * CatalogoView is the Catálogo screen: the Itens tab here and the Kits tab in
+ * `KitsTab`. Every role reads it (`catalog:read`); only owner and admin
  * (`catalog:write`) get the controls that change anything, and only the owner
  * gets cost and margin, because the API sends them to no one else.
  */
@@ -13,12 +12,14 @@ import { nextTick, onMounted, ref, useTemplateRef } from 'vue'
 
 import { usePermission } from '../../../composables/usePermission'
 import AttributesDialog from '../components/AttributesDialog.vue'
+import CatalogTabs from '../components/CatalogTabs.vue'
 import CategoriesDialog from '../components/CategoriesDialog.vue'
 import ItemDrawer from '../components/ItemDrawer.vue'
 import ItemsTable from '../components/ItemsTable.vue'
 import ItemsToolbar from '../components/ItemsToolbar.vue'
 import type { ItemDraft } from '../itemForm'
 import { type ItemFilters, useCatalogStore } from '../store'
+import KitsTab from './KitsTab.vue'
 
 const store = useCatalogStore()
 const {
@@ -59,8 +60,11 @@ const {
 } = storeToRefs(store)
 const canWrite = usePermission('catalog:write')
 
-/** tabs are the sections of Catálogo. Step 3.13 adds Kits. */
-const tabs = [{ id: 'itens', label: 'Itens' }]
+/** tabs are the sections of Catálogo. */
+const tabs = [
+  { id: 'itens', label: 'Itens' },
+  { id: 'kits', label: 'Kits' },
+]
 const tab = ref('itens')
 const dialog = ref<'categories' | 'attributes' | null>(null)
 const status = useTemplateRef<HTMLElement>('status')
@@ -123,24 +127,11 @@ function coverPhoto(photo: Photo): void {
 <template>
   <section class="catalogo">
     <h1>Catálogo</h1>
-    <div
-      class="tabs"
-      role="tablist"
-      aria-label="Catálogo"
-    >
-      <button
-        v-for="candidate in tabs"
-        :id="`tab-${candidate.id}`"
-        :key="candidate.id"
-        type="button"
-        role="tab"
-        :aria-selected="tab === candidate.id"
-        :aria-controls="`panel-${candidate.id}`"
-        @click="tab = candidate.id"
-      >
-        {{ candidate.label }}
-      </button>
-    </div>
+    <CatalogTabs
+      v-model="tab"
+      :tabs="tabs"
+      label="Catálogo"
+    />
 
     <div
       v-if="tab === 'itens'"
@@ -214,6 +205,8 @@ function coverPhoto(photo: Photo): void {
         Carregar mais
       </BaseButton>
     </div>
+
+    <KitsTab v-if="tab === 'kits'" />
 
     <ItemDrawer
       v-if="drawerOpen"
@@ -306,23 +299,5 @@ p {
 }
 .muted {
   color: var(--enc-ink-secondary);
-}
-.tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--enc-hairline);
-  width: 100%;
-}
-.tabs [role='tab'] {
-  padding: 8px 14px;
-  border: 0;
-  background: none;
-  color: var(--enc-ink);
-  font: inherit;
-  cursor: pointer;
-}
-.tabs [role='tab'][aria-selected='true'] {
-  box-shadow: inset 0 -3px 0 var(--enc-accent);
-  font-weight: 600;
 }
 </style>

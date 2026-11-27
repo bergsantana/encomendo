@@ -12,8 +12,6 @@ import {
   listSuppliers,
   orderItemPhotos,
   type Photo,
-  PhotoFileError,
-  PhotoUploadError,
   type Reference,
   replaceItem,
   restoreItem,
@@ -29,6 +27,7 @@ import { useForm } from '../../composables/useForm'
 import { errorMessage } from '../../errorMessage'
 import { useSessionStore } from '../../stores/session'
 import { formField, type ItemDraft, itemChecks, toItemInput } from './itemForm'
+import { photoMessage } from './photoMessage'
 import { isSupplierPhone, supplierPhone } from './phone'
 import { useTaxonomy } from './taxonomy'
 
@@ -44,14 +43,6 @@ const pageSize = 50
 const fixTheFields = 'Confira os campos destacados.'
 const conflictMessage = 'Outra pessoa alterou este item. Recarregue para ver a versão atual.'
 
-const photoMessages = {
-  tooLarge: 'Esta foto passa de 10 MB.',
-  wrongType: 'Use uma foto JPEG, PNG ou WebP.',
-  invalid: 'Use uma foto JPEG, PNG ou WebP de até 10 MB.',
-  limit: 'Cada item pode ter até 8 fotos.',
-  notSent: 'A foto não foi enviada. Tente de novo.',
-}
-
 /** inKitMessage names the kits holding an item that was to be archived (`item_in_kit`). */
 function inKitMessage(kits: Reference[]): string {
   const names = kits.map((kit) => kit.name)
@@ -59,15 +50,6 @@ function inKitMessage(kits: Reference[]): string {
   if (names.length === 1) return `Este item está no kit ${names[0]}. Tire-o do kit antes de arquivar.`
   const last = names[names.length - 1]
   return `Este item está nos kits ${names.slice(0, -1).join(', ')} e ${last}. Tire-o dos kits antes de arquivar.`
-}
-
-/** photoMessage is what a failed photo upload or change says, or null when the person cancelled it. */
-function photoMessage(failure: unknown): string | null {
-  if (failure instanceof PhotoFileError) return failure.code === 'photo_too_large' ? photoMessages.tooLarge : photoMessages.wrongType
-  if (failure instanceof PhotoUploadError) return photoMessages.notSent
-  if (failure instanceof DOMException && failure.name === 'AbortError') return null
-  if (!(failure instanceof ApiError)) throw failure
-  return errorMessage(failure, { photo_limit: photoMessages.limit, photo_invalid: photoMessages.invalid, photo_not_uploaded: photoMessages.notSent })
 }
 
 /**

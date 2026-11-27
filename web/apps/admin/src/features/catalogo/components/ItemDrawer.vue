@@ -7,10 +7,12 @@
  */
 import type { Attribute, Category, Item, Photo, Supplier } from '@encomendo/api'
 import { BaseButton, BaseDialog, BaseInput, BaseSelect } from '@encomendo/ui'
-import { computed, nextTick, reactive, ref, useId, useTemplateRef } from 'vue'
+import { computed, reactive, ref, useId } from 'vue'
 
 import { draftFromItem, emptyDraft, emptySupplier, type ItemDraft } from '../itemForm'
 import { isSourcingMode, sourcingOptions } from '../labels'
+import AttributePicker from './AttributePicker.vue'
+import DiscardQuestion from './DiscardQuestion.vue'
 import OptionsEditor from './OptionsEditor.vue'
 import PhotosEditor from './PhotosEditor.vue'
 import PublishedSwitch from './PublishedSwitch.vue'
@@ -62,10 +64,8 @@ const publishedId = useId()
 /** initial is the form as it opened, to tell whether anything was typed since. */
 const initial = JSON.stringify(draft)
 const discarding = ref(false)
-const discardQuestion = useTemplateRef<HTMLElement>('discardQuestion')
 
 const archived = computed(() => props.item?.archived === true)
-const pickable = computed(() => props.attributes.filter((attribute) => attribute.values.length > 0))
 const title = computed(() => (!props.canWrite ? 'Item' : props.item === null ? 'Novo item' : 'Editar item'))
 const modeOptions = computed(() => sourcingOptions(props.stockEnabled, props.productionEnabled, draft.sourcingMode))
 const categoryOptions = computed(() => [{ value: '', label: 'Sem categoria' }, ...props.categories.map((category) => ({ value: category.id, label: category.name }))])
@@ -85,25 +85,16 @@ function supplierErrors(slot: 'main' | 'backup'): Record<string, string> {
  * click outside). With unsaved edits it asks first, so a stray click cannot
  * throw them away.
  */
-async function requestClose(): Promise<void> {
+function requestClose(): void {
   if (!props.canWrite || JSON.stringify(draft) === initial) {
     emit('cancel')
     return
   }
   discarding.value = true
-  await nextTick()
-  // The safe answer is focused, and the question is read out with it.
-  discardQuestion.value?.querySelector('button')?.focus()
 }
 
 function chooseMode(value: string): void {
   if (isSourcingMode(value)) draft.sourcingMode = value
-}
-
-function pick(valueId: string, event: Event): void {
-  if (!(event.target instanceof HTMLInputElement)) return
-  const others = draft.attributeValueIds.filter((id) => id !== valueId)
-  draft.attributeValueIds = event.target.checked ? [...others, valueId] : others
 }
 
 function addBackup(): void {
@@ -263,25 +254,10 @@ defineExpose({
           </div>
         </template>
 
-        <fieldset
-          v-for="attribute in pickable"
-          :key="attribute.id"
-          class="attribute"
-        >
-          <legend>{{ attribute.name }}</legend>
-          <label
-            v-for="value in attribute.values"
-            :key="value.id"
-            class="check"
-          >
-            <input
-              type="checkbox"
-              :checked="draft.attributeValueIds.includes(value.id)"
-              @change="(event) => pick(value.id, event)"
-            >
-            {{ value.label }}
-          </label>
-        </fieldset>
+        <AttributePicker
+          v-model="draft.attributeValueIds"
+          :attributes="attributes"
+        />
 
         <OptionsEditor
           v-model="draft.options"
@@ -311,21 +287,11 @@ defineExpose({
         <label :for="publishedId">Mostrar na página da loja</label>
       </div>
 
-      <div
+      <DiscardQuestion
         v-if="discarding"
-        ref="discardQuestion"
-        class="discard"
-        role="group"
-        aria-label="Descartar as alterações"
-      >
-        <p>Descartar as alterações?</p>
-        <BaseButton @click="discarding = false">
-          Continuar editando
-        </BaseButton>
-        <BaseButton @click="emit('cancel')">
-          Descartar
-        </BaseButton>
-      </div>
+        @keep="discarding = false"
+        @discard="emit('cancel')"
+      />
 
       <div class="buttons">
         <template v-if="canWrite">
@@ -402,36 +368,10 @@ textarea {
 .alert p {
   margin: 0;
 }
-.attribute {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--enc-hairline);
-  border-radius: var(--enc-radius-card);
-}
-legend {
-  padding: 0 4px;
-  font-weight: 600;
-}
 .check {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.discard {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: var(--enc-ground);
-  border-radius: var(--enc-radius-card);
-}
-.discard p {
-  flex: 1;
-  margin: 0;
-  font-weight: 600;
 }
 .buttons {
   display: flex;

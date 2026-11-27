@@ -375,6 +375,29 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - "Outra pessoa alterou este kit. Recarregue para ver a versão atual."
 - A kit price above the single-item sum shows, without blocking: "O preço do kit está acima da soma avulsa."
 
+**Also on the Kits screens** (added by Claude in step 3.13, for the user to review)
+
+- Tabs: "Itens" and "Kits" are a tab list; the arrow keys, Home and End move between them.
+- Table: read aloud as "Kits do catálogo"; the box "Mostrar arquivados"; while loading "Carregando os kits…"; at the end of a page "Carregar mais". "Margem" is "{valor} ({n}%)", or "—" without a cost. An archived row shows "Arquivado" beside the name. On an empty list only the toolbar's "Novo kit" is the primary button.
+- Read-only roles: the kit opens with the title "Kit", the fields disabled and one button, "Fechar". The "No portal" switch shows its state, disabled.
+- "Itens do kit":
+  - the picker is "Item a adicionar", starting at "Escolha o item", with the button "Adicionar item"; it lists non-archived items that are not in the kit yet, and when there are none it says "Nenhum item disponível para adicionar.";
+  - "Remover do kit" is read aloud with the item, "Remover {item} do kit";
+  - a row whose item was archived after the kit was saved shows "Arquivado";
+  - under "Pode trocar por", an archived item that the row still names is listed as "{item} (arquivado)" so it can be unticked; the items after the suggestions are under "Outros itens", and an item with no category gets one list with no heading.
+- Quantity and days:
+  - "Quantidade" outside 1 to 99: "Use uma quantidade de 1 a 99.";
+  - days outside 0 to 60: "Use de 0 a 60 dias.";
+  - the store's default reads "Padrão da loja: 1 dia" or "Padrão da loja: {n} dias".
+- The totals block is read aloud as "Totais do kit". It shows what the API sent with the kit as last saved; nothing is worked out on the screen:
+  - a new kit: "Os totais e o prazo aparecem depois de salvar.";
+  - a saved kit whose form has edits: "Os totais e o prazo mostram o último salvamento. Eles se atualizam depois de salvar.";
+  - "Margem: —" when the Dono's kit has no cost to take a margin from.
+- After "Salvar" the editor stays open on the saved kit, so the new totals show and a new kit can take photos: "Kit salvo.". "Arquivar" and "Restaurar" close it: "{kit} foi arquivado.", "{kit} voltou ao catálogo."
+- Photos: "Salve o kit para adicionar fotos." and "Cada kit pode ter até 8 fotos."
+- An archived item the API names, said once per item: "{item} está arquivado e não pode entrar no kit."; when it names none: "Um item do kit está arquivado e não pode entrar no kit." Restoring a kit holding an archived item says the same.
+- Leaving the kit form with edits not saved asks "Descartar as alterações?", as for items.
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.
