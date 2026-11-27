@@ -20,8 +20,8 @@ CREATE TABLE customers (
     whatsapp_phone    text        NOT NULL CHECK (whatsapp_phone ~ '^55[1-9]{2}[0-9]{8,9}$'),
     email             citext      CHECK (email IS NULL OR char_length(email) BETWEEN 3 AND 254),
     notes             text        NOT NULL DEFAULT '' CHECK (char_length(notes) <= 2000),
-    -- Set in milestone 7, when a logged-in client orders; encomendo_app gets
-    -- no UPDATE on it until then.
+    -- Set in milestone 7, when a logged-in client orders; encomendo_app may
+    -- neither insert nor update it until then (see 0013 orders).
     client_account_id uuid        REFERENCES client_accounts (id) ON DELETE SET NULL,
     version           int         NOT NULL DEFAULT 1 CHECK (version >= 1),
     created_at        timestamptz NOT NULL DEFAULT now(),
@@ -72,7 +72,9 @@ CREATE TRIGGER customers_audit AFTER INSERT OR UPDATE OR DELETE ON customers
 CREATE TRIGGER customer_addresses_audit AFTER INSERT OR UPDATE OR DELETE ON customer_addresses
     FOR EACH ROW EXECUTE FUNCTION audit_row();
 
-GRANT SELECT, INSERT ON customers TO encomendo_app;
+GRANT SELECT ON customers TO encomendo_app;
+GRANT INSERT (tenant_id, id, name, whatsapp_phone, email, notes, version, created_at, updated_at)
+    ON customers TO encomendo_app;
 GRANT UPDATE (name, whatsapp_phone, email, notes, version, updated_at) ON customers TO encomendo_app;
 GRANT SELECT, INSERT, DELETE ON customer_addresses TO encomendo_app;
 GRANT UPDATE (position, label, cep, street, number, complement, district, city, state, updated_at)

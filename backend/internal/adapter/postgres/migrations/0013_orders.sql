@@ -2,7 +2,10 @@
 -- and 1.8). Three RLS tiers:
 --
 --   - tenant_isolation on the order and what it is made of: counters,
---     orders, lines, items, payments and the status history.
+--     orders, lines, items and payments.
+--   - the 0010 pair on the status history: any scope of the store writes
+--     (a store page order writes its "created" entry in milestone 7), only
+--     staff read, since entries hold staff ids and free-text reasons.
 --   - staff_only (ADR 0024) on what a store page scope must never read:
 --     order_item_sourcing (supplier and cost at order time) and
 --     order_messages (the client's phone and the WhatsApp texts). A scope
@@ -66,7 +69,9 @@ CREATE TABLE orders (
     cancelled_at            timestamptz,
     cancel_reason           text        CHECK (char_length(cancel_reason) BETWEEN 1 AND 500),
     tracking_token_hash     bytea       NOT NULL CHECK (octet_length(tracking_token_hash) = 32),
-    -- Milestone 7 links an order to a client account; no grant before then.
+    -- Milestone 7 links an order to a client account through a reviewed
+    -- path; until then encomendo_app may neither insert nor update it, so
+    -- no store can put an order in an account it has no relation to.
     client_account_id       uuid        REFERENCES client_accounts (id) ON DELETE SET NULL,
     created_by              uuid,       -- null for a store page order (milestone 7)
     version                 int         NOT NULL DEFAULT 1 CHECK (version >= 1),
@@ -110,6 +115,7 @@ CREATE TABLE order_lines (
     updated_at         timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
+    UNIQUE (tenant_id, order_id, id), -- so an item's line is always of the item's own order
     FOREIGN KEY (tenant_id, order_id) REFERENCES orders (tenant_id, id) ON DELETE CASCADE,
     CHECK ((kit_id IS NULL) = (kit IS NULL))
 );
@@ -136,7 +142,7 @@ CREATE TABLE order_items (
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
     FOREIGN KEY (tenant_id, order_id) REFERENCES orders (tenant_id, id) ON DELETE CASCADE,
-    FOREIGN KEY (tenant_id, line_id) REFERENCES order_lines (tenant_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id, order_id, line_id) REFERENCES order_lines (tenant_id, order_id, id) ON DELETE CASCADE,
     -- An in-house item never takes a bought item's status, and the reverse.
     CHECK (CASE WHEN sourcing_mode = 'in_house'
         THEN status IN ('planned', 'in_production', 'ready', 'installed')
@@ -191,9 +197,11 @@ CREATE TABLE payments (
 CREATE INDEX payments_tenant_order_idx ON payments (tenant_id, order_id, recorded_at);
 CREATE INDEX payments_tenant_recorded_idx ON payments (tenant_id, recorded_at);
 
--- Append-only: who did what to the order, for staff. No client policy: it
--- holds staff ids and reasons. It stays tenant_isolation, not staff-only,
--- because a store page order (milestone 7) writes its "created" entry.
+-- Append-only: who did what to the order, for staff. Its entries hold staff
+-- ids and free-text reasons, so only staff read it, as audit_log (0010):
+-- a store page scope may write (its order's "created" entry, milestone 7)
+-- but never read. No client policy. A store page insert must not use
+-- RETURNING, which would need the read policy.
 CREATE TABLE order_status_history (
     tenant_id  uuid        NOT NULL,
     id         uuid        NOT NULL,
@@ -285,9 +293,10 @@ CREATE POLICY client_read ON payments FOR SELECT
 
 ALTER TABLE order_status_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_status_history FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON order_status_history
-    USING (tenant_id = current_tenant_id())
+CREATE POLICY history_write ON order_status_history FOR INSERT
     WITH CHECK (tenant_id = current_tenant_id());
+CREATE POLICY staff_read ON order_status_history FOR SELECT
+    USING (tenant_id = current_tenant_id() AND current_user_id() IS NOT NULL);
 
 ALTER TABLE order_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_messages FORCE ROW LEVEL SECURITY;
@@ -312,7 +321,12 @@ CREATE TRIGGER payments_audit AFTER INSERT OR UPDATE OR DELETE ON payments
 -- replaces; payments, history and messages are kept for good.
 GRANT SELECT, INSERT ON order_counters TO encomendo_app;
 GRANT UPDATE (last_number, updated_at) ON order_counters TO encomendo_app;
-GRANT SELECT, INSERT ON orders TO encomendo_app;
+GRANT SELECT ON orders TO encomendo_app;
+GRANT INSERT (tenant_id, id, number, customer_id, workflow_id, workflow_version, status_key, release_date,
+    released_by, deposit_confirmed_cents, delivery_date, promise_changed_by_hand, assembly_days,
+    safety_margin_days, deposit_percent, currency, subtotal_cents, freight_cents, discount_cents, handover,
+    delivery_address_id, delivery_address, handed_over_as, handed_over_at, cancelled_at, cancel_reason,
+    tracking_token_hash, created_by, version, created_at, updated_at) ON orders TO encomendo_app;
 GRANT UPDATE (status_key, release_date, released_by, deposit_confirmed_cents, delivery_date,
     promise_changed_by_hand, assembly_days, safety_margin_days, deposit_percent, subtotal_cents,
     freight_cents, discount_cents, handover, delivery_address_id, delivery_address, handed_over_as,
