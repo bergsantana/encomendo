@@ -29,26 +29,74 @@ test.describe('without an API', () => {
 
   const store = { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d00', name: 'Alta RPM', slug: 'altarpm' }
   const refused = { type: 'about:blank', title: 'Sessão expirada', status: 401, code: 'unauthenticated' }
+  const ana = { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d9e', name: 'Ana Souza', email: 'ana@altarpm.com.br' }
+  // Two stores, so the drawer offers "Trocar de loja" and the picker has a list.
+  const session = (permissions: string[]) => ({
+    accessToken: 'e2e-access',
+    tokenType: 'Bearer',
+    expiresIn: 900,
+    user: ana,
+    tenant: store,
+    role: 'owner',
+    permissions,
+    memberships: [
+      { tenant: store, role: 'owner', status: 'active' },
+      { tenant: { ...store, id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01', name: 'Outra Loja', slug: 'outra' }, role: 'admin', status: 'active' },
+    ],
+  })
 
   test.beforeEach(async ({ page }) => {
     await page.route('**/auth/refresh', (route) => route.fulfill({ status: 401, contentType: 'application/problem+json', body: JSON.stringify(refused) }))
-    await page.route('**/auth/login', (route) =>
-      route.fulfill({
-        json: {
-          accessToken: 'e2e-access',
-          tokenType: 'Bearer',
-          expiresIn: 900,
-          user: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d9e', name: 'Ana Souza', email: 'ana@altarpm.com.br' },
-          tenant: store,
-          role: 'owner',
-          permissions: ['order:read', 'order:write'],
-          memberships: [
-            { tenant: store, role: 'owner', status: 'active' },
-            { tenant: { ...store, id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01', name: 'Outra Loja', slug: 'outra' }, role: 'admin', status: 'active' },
-          ],
-        },
-      }),
-    )
+    await page.route('**/auth/login', (route) => route.fulfill({ json: session(['order:read', 'order:write']) }))
+  })
+
+  // Signed in from the start, with a team and invitations the API would send, so CI
+  // (which has no real stack) still checks the cards, the picker and long emails.
+  test.describe('signed in', () => {
+    const longEmail = `${'a'.repeat(34)}@${'b'.repeat(21)}.com`
+    const members = [
+      { userId: ana.id, name: ana.name, email: ana.email, role: 'owner', joinedAt: '2026-11-01T12:00:00Z' },
+      { userId: '0190f3c4-5e1a-7b2c-8d3e-00000000beef', name: 'Bruno Lima', email: longEmail, role: 'staff', joinedAt: '2026-11-02T12:00:00Z' },
+    ]
+    const invitations = [
+      { id: '0190f3c4-5e1a-7b2c-8d3e-00000000cafe', email: `convite-${longEmail}`, role: 'viewer', expiresAt: '2026-12-04T12:00:00Z', createdAt: '2026-11-27T12:00:00Z' },
+    ]
+
+    test.beforeEach(async ({ page }) => {
+      await page.route('**/auth/refresh', (route) => route.fulfill({ json: session(['order:read', 'members:manage']) }))
+      await page.route('**/api/v1/admin/members*', (route) => route.fulfill({ json: { items: members } }))
+      await page.route('**/api/v1/admin/invitations*', (route) => route.fulfill({ json: { items: invitations } }))
+    })
+
+    test('Equipe shows cards: no side scroll, long emails, named actions, thumb-sized targets', async ({ page }) => {
+      expect(longEmail).toHaveLength(60)
+      await page.goto('/equipe')
+      await expect(page.getByRole('heading', { name: 'Equipe', exact: true })).toBeVisible()
+      await expect(page.getByText(longEmail, { exact: true })).toBeVisible()
+
+      // A row showing display: block proves the card styles applied; a table row would be table-row.
+      const display = await page.getByRole('row', { name: /Bruno Lima/ }).evaluate((row) => getComputedStyle(row).display)
+      expect(display).not.toBe('table-row')
+      await expect(page.locator('tbody tr').first()).toHaveCSS('display', 'flex')
+      await expectNoSideScroll(page)
+
+      const role = page.getByLabel('Papel de Bruno Lima')
+      await expect(role).toHaveValue('staff')
+      await expectThumbSized(role, page.getByRole('button', { name: 'Remover Bruno Lima' }), page.getByRole('button', { name: `Reenviar convite para ${invitations[0].email}` }), page.getByRole('button', { name: `Cancelar convite para ${invitations[0].email}` }))
+
+      // The draft change keeps its named button, inside the card.
+      await role.selectOption({ label: 'Admin' })
+      await expectThumbSized(page.getByRole('button', { name: 'Alterar papel de Bruno Lima' }))
+      await expectNoSideScroll(page)
+    })
+
+    test('the store picker lists the stores and fits', async ({ page }) => {
+      await page.goto('/lojas')
+      await expect(page.getByRole('heading', { name: 'Escolha a loja' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Outra Loja' })).toBeVisible()
+      await expectNoSideScroll(page)
+      await expectThumbSized(page.getByRole('button', { name: 'Alta RPM' }), page.getByLabel('Nome da loja'), page.getByRole('button', { name: 'Criar loja' }))
+    })
   })
 
   test('the auth screens fit and have thumb-sized controls', async ({ page }) => {

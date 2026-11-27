@@ -17,7 +17,7 @@
 import type { Permission } from '@encomendo/api'
 import { BaseButton, IconMenu2, IconX, trapTab, useIsPhone } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import { useAuthStore } from '../features/auth/store'
@@ -65,20 +65,34 @@ async function closeDrawer(focus: 'button' | 'page' | 'none'): Promise<void> {
   else if (focus === 'page') page.value?.focus()
 }
 
-function onDrawerKeydown(event: KeyboardEvent): void {
-  if (!drawerOpen.value) return
+// On the document, not the drawer: a tap on the scrim or the page can leave focus on <body>,
+// and Escape and Tab must still work then.
+function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.stopPropagation()
     void closeDrawer('button')
     return
   }
-  if (drawer.value !== null) trapTab(event, drawer.value)
+  const menuEl = drawer.value
+  if (event.key !== 'Tab' || menuEl === null) return
+  if (menuEl.contains(document.activeElement)) {
+    trapTab(event, menuEl)
+    return
+  }
+  event.preventDefault()
+  closeButton.value?.focus()
 }
 
 // Choosing an entry closes the drawer, also the page already open, which changes no route.
 function onDrawerClick(event: MouseEvent): void {
   if (event.target instanceof Element && event.target.closest('a') !== null) void closeDrawer('page')
 }
+
+watch(drawerOpen, (open) => {
+  if (open) document.addEventListener('keydown', onKeydown)
+  else document.removeEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 watch(
   () => route.fullPath,
@@ -121,6 +135,7 @@ watch(isPhone, (phone) => {
     </header>
     <div
       class="scrim"
+      data-testid="menu-scrim"
       aria-hidden="true"
       @click="closeDrawer('button')"
     />
@@ -129,7 +144,6 @@ watch(isPhone, (phone) => {
       ref="drawer"
       class="menu"
       aria-label="Menu principal"
-      @keydown="onDrawerKeydown"
       @click="onDrawerClick"
     >
       <div class="brand">
@@ -317,6 +331,7 @@ watch(isPhone, (phone) => {
     inset: 0 auto 0 0;
     z-index: 20;
     display: none;
+    box-sizing: border-box;
     width: min(300px, 85vw);
     padding: 16px;
     overflow-y: auto;

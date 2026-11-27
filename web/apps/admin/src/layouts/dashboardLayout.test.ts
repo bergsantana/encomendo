@@ -48,6 +48,7 @@ describe('the menu drawer', () => {
     expect(menuButton(wrapper).attributes('aria-expanded')).toBe('true')
     expect(document.activeElement).toBe(button(wrapper, 'Fechar menu').element)
     expect(wrapper.get('main').attributes('inert')).toBeDefined()
+    expect(wrapper.get('header').attributes('inert')).toBeDefined()
     // What the menu always holds: the store, the person, the switch and the way out.
     const menu = wrapper.get('nav[aria-label="Menu principal"]')
     expect(menu.text()).toContain('Alta RPM')
@@ -81,6 +82,38 @@ describe('the menu drawer', () => {
     expect(menuButton(wrapper).attributes('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(menuButton(wrapper).element)
     expect(wrapper.get('main').attributes('inert')).toBeUndefined()
+    expect(wrapper.get('header').attributes('inert')).toBeUndefined()
+  })
+
+  it('still answers Escape and Tab when focus fell to the page body', async () => {
+    const { wrapper } = await openApp('/hoje')
+    await menuButton(wrapper).trigger('click')
+    ;(document.activeElement as HTMLElement).blur()
+    expect(document.activeElement).toBe(document.body)
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    document.body.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(button(wrapper, 'Fechar menu').element)
+
+    ;(document.activeElement as HTMLElement).blur()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(menuButton(wrapper).attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(menuButton(wrapper).element)
+  })
+
+  it('stops listening to the keyboard once closed', async () => {
+    const { wrapper } = await openApp('/hoje')
+    await menuButton(wrapper).trigger('click')
+    await button(wrapper, 'Fechar menu').trigger('click')
+    menuButton(wrapper).element.blur()
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    document.body.dispatchEvent(tab)
+
+    expect(tab.defaultPrevented).toBe(false)
   })
 
   it('closes with Fechar menu and with a tap outside', async () => {
@@ -90,7 +123,7 @@ describe('the menu drawer', () => {
     expect(menuButton(wrapper).attributes('aria-expanded')).toBe('false')
 
     await menuButton(wrapper).trigger('click')
-    await wrapper.get('.scrim').trigger('click')
+    await wrapper.get('[data-testid=menu-scrim]').trigger('click')
     expect(menuButton(wrapper).attributes('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(menuButton(wrapper).element)
   })

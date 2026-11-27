@@ -33,7 +33,6 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  box-sizing: border-box;
   max-width: 400px;
   padding: 24px;
   border: 1px solid var(--enc-hairline);
@@ -74,6 +73,7 @@
     padding: 0;
   }
   .auth__card {
+    box-sizing: border-box;
     max-width: none;
     padding: 16px;
     border: 0;
@@ -84,7 +84,7 @@
 
 <!-- Not scoped: the buttons and links to size live inside the screens' slots, deeper than :slotted reaches. -->
 <style>
-/* Phone: buttons are full width, and links are as tall as the controls. */
+/* Phone: buttons are full width, and standalone links (Esqueci a senha, Criar conta, Voltar para o login) are as tall as the controls. Links inside a sentence would need their own rule. */
 @media (max-width: 640px) {
   .auth__card .enc-button {
     width: 100%;
