@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -16,9 +17,16 @@ import (
 // Handlers are the handlers the router mounts. Each milestone adds its own.
 // A nil group is not mounted.
 type Handlers struct {
-	Health  *handler.Health
-	Auth    *handler.Auth
-	Tenancy *handler.Tenancy
+	Health    *handler.Health
+	Auth      *handler.Auth
+	Tenancy   *handler.Tenancy
+	Catalog   *handler.Catalog
+	Suppliers *handler.Suppliers
+}
+
+// hasAdmin reports whether any group of /api/v1/admin routes is set.
+func (h Handlers) hasAdmin() bool {
+	return h.Tenancy != nil || h.Catalog != nil || h.Suppliers != nil
 }
 
 // RouterOptions configure the middleware stack.
@@ -31,11 +39,11 @@ type RouterOptions struct {
 	// RateLimits applies the per-IP rules (ADR 0021). Required when
 	// Handlers.Auth is set.
 	RateLimits *middleware.RateLimits
-	// Authn checks the access token on /api/v1/admin/*. Required when
-	// Handlers.Tenancy is set.
+	// Authn checks the access token on /api/v1/admin/*. Required when any
+	// admin handler group is set.
 	Authn *middleware.Authn
 	// Stores refuses a suspended store on every tenant-scoped admin route
-	// (ADR 0022). Required when Handlers.Tenancy is set.
+	// (ADR 0022). Required when any admin handler group is set.
 	Stores middleware.StoreChecker
 }
 
@@ -48,7 +56,7 @@ func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) (http.Handler, 
 	if h.Auth != nil && (opts.AuthGuard == nil || opts.RateLimits == nil) {
 		return nil, errors.New("router: the /auth routes need the cross-origin check and the rate limits")
 	}
-	if h.Tenancy != nil && (opts.Authn == nil || opts.Stores == nil) {
+	if h.hasAdmin() && (opts.Authn == nil || opts.Stores == nil) {
 		return nil, errors.New("router: the admin routes need authn and the suspended-store check")
 	}
 	mux := http.NewServeMux()
@@ -58,7 +66,7 @@ func NewRouter(log *slog.Logger, h Handlers, opts RouterOptions) (http.Handler, 
 	if h.Auth != nil {
 		mountAuth(mux, h.Auth, opts)
 	}
-	if h.Tenancy != nil {
+	if h.hasAdmin() {
 		mountAdmin(mux, h, opts.Authn, middleware.ActiveStore(opts.Stores, log))
 	}
 
@@ -113,7 +121,20 @@ func mountAuth(mux *http.ServeMux, a *handler.Auth, opts RouterOptions) {
 // new group adds its routes here, never through a mount of its own, so each
 // one gets authn and the suspended-store check (ADR 0022).
 func adminRoutes(h Handlers) map[string]http.HandlerFunc {
-	t := h.Tenancy
+	routes := map[string]http.HandlerFunc{}
+	if h.Tenancy != nil {
+		maps.Copy(routes, tenancyRoutes(h.Tenancy))
+	}
+	if h.Catalog != nil {
+		maps.Copy(routes, catalogRoutes(h.Catalog))
+	}
+	if h.Suppliers != nil {
+		maps.Copy(routes, supplierRoutes(h.Suppliers))
+	}
+	return routes
+}
+
+func tenancyRoutes(t *handler.Tenancy) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		"POST /api/v1/admin/tenants":                      t.CreateTenant,
 		"GET /api/v1/admin/settings":                      t.Settings,
@@ -124,6 +145,52 @@ func adminRoutes(h Handlers) map[string]http.HandlerFunc {
 		"GET /api/v1/admin/invitations":                   t.Invitations,
 		"POST /api/v1/admin/invitations":                  t.InviteMember,
 		"DELETE /api/v1/admin/invitations/{invitationId}": t.RevokeInvitation,
+	}
+}
+
+// catalogRoutes are the 29 catalog operations of the contract.
+func catalogRoutes(c *handler.Catalog) map[string]http.HandlerFunc {
+	const base = "/api/v1/admin/catalog"
+	return map[string]http.HandlerFunc{
+		"GET " + base + "/categories":                         c.ListCategories,
+		"POST " + base + "/categories":                        c.CreateCategory,
+		"PATCH " + base + "/categories/{categoryId}":          c.UpdateCategory,
+		"DELETE " + base + "/categories/{categoryId}":         c.DeleteCategory,
+		"GET " + base + "/attributes":                         c.ListAttributes,
+		"POST " + base + "/attributes":                        c.CreateAttribute,
+		"PUT " + base + "/attributes/{attributeId}":           c.ReplaceAttribute,
+		"DELETE " + base + "/attributes/{attributeId}":        c.DeleteAttribute,
+		"GET " + base + "/items":                              c.ListItems,
+		"POST " + base + "/items":                             c.CreateItem,
+		"GET " + base + "/items/{itemId}":                     c.GetItem,
+		"PUT " + base + "/items/{itemId}":                     c.ReplaceItem,
+		"PUT " + base + "/items/{itemId}/published":           c.SetItemPublished,
+		"POST " + base + "/items/{itemId}/archive":            c.ArchiveItem,
+		"POST " + base + "/items/{itemId}/restore":            c.RestoreItem,
+		"POST " + base + "/items/{itemId}/photos":             c.ConfirmItemPhoto,
+		"PUT " + base + "/items/{itemId}/photos/order":        c.OrderItemPhotos,
+		"DELETE " + base + "/items/{itemId}/photos/{photoId}": c.DeleteItemPhoto,
+		"GET " + base + "/kits":                               c.ListKits,
+		"POST " + base + "/kits":                              c.CreateKit,
+		"GET " + base + "/kits/{kitId}":                       c.GetKit,
+		"PUT " + base + "/kits/{kitId}":                       c.ReplaceKit,
+		"PUT " + base + "/kits/{kitId}/published":             c.SetKitPublished,
+		"POST " + base + "/kits/{kitId}/archive":              c.ArchiveKit,
+		"POST " + base + "/kits/{kitId}/restore":              c.RestoreKit,
+		"POST " + base + "/kits/{kitId}/photos":               c.ConfirmKitPhoto,
+		"PUT " + base + "/kits/{kitId}/photos/order":          c.OrderKitPhotos,
+		"DELETE " + base + "/kits/{kitId}/photos/{photoId}":   c.DeleteKitPhoto,
+		"POST " + base + "/photo-uploads":                     c.RequestPhotoUpload,
+	}
+}
+
+// supplierRoutes are the four supplier operations of the contract.
+func supplierRoutes(s *handler.Suppliers) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"GET /api/v1/admin/suppliers":              s.List,
+		"POST /api/v1/admin/suppliers":             s.Create,
+		"GET /api/v1/admin/suppliers/{supplierId}": s.Get,
+		"PUT /api/v1/admin/suppliers/{supplierId}": s.Replace,
 	}
 }
 

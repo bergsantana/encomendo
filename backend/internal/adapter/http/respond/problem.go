@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"time"
 
+	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
@@ -40,6 +42,15 @@ const (
 	CodeEmailUnavailable   = "email_unavailable"
 	// CodeTenantSuspended is a suspended store (ADR 0022).
 	CodeTenantSuspended = "tenant_suspended"
+
+	// The codes of the catalog (ADRs 0025 and 0028).
+	CodeNameTaken        = "name_taken"
+	CodeCategoryInUse    = "category_in_use"
+	CodeItemInKit        = "item_in_kit"
+	CodeItemArchived     = "item_archived"
+	CodePhotoLimit       = "photo_limit"
+	CodePhotoInvalid     = "photo_invalid"
+	CodePhotoNotUploaded = "photo_not_uploaded"
 )
 
 // StatusClientClosedRequest is the status logged for a request whose client
@@ -64,6 +75,15 @@ type Problem struct {
 	Detail   string       `json:"detail,omitempty"`
 	Instance string       `json:"instance,omitempty"`
 	Errors   []FieldIssue `json:"errors,omitempty"`
+	// References name the rows behind item_in_kit and item_archived.
+	References []Reference `json:"references,omitempty"`
+}
+
+// Reference is one row a refusal names: a kit that holds an item, or an
+// archived item a kit holds.
+type Reference struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // FieldIssue is one invalid field in a 400 response.
@@ -207,6 +227,19 @@ func conflictFor(err error) Problem {
 	switch {
 	case errors.Is(err, shared.ErrVersionConflict):
 		p.Code, p.Title = CodeVersionConflict, "Alguém salvou antes de você. Recarregue e faça a mudança de novo."
+	case errors.Is(err, catalog.ErrNameTaken):
+		p.Code, p.Title = CodeNameTaken, "Já existe um registro com este nome. Escolha outro."
+	case errors.Is(err, catalog.ErrCategoryInUse):
+		p.Code, p.Title = CodeCategoryInUse, "Há itens nesta categoria. Mude os itens de categoria antes de apagá-la."
+	case errors.Is(err, catalog.ErrPhotoLimit):
+		// 8 photos: the most an item or kit holds (ADR 0025).
+		p.Code, p.Title = CodePhotoLimit, "Este registro já tem 8 fotos. Remova uma para enviar outra."
+	case errors.Is(err, catalog.ErrItemInKit):
+		p.Code, p.Title = CodeItemInKit, "Este item está em kits. Tire o item dos kits antes de arquivá-lo."
+		p.References = referencesOf(err)
+	case errors.Is(err, catalog.ErrItemArchived):
+		p.Code, p.Title = CodeItemArchived, "Há itens arquivados no kit. Troque ou restaure os itens."
+		p.References = referencesOf(err)
 	case errors.Is(err, identity.ErrEmailTaken):
 		p.Code, p.Title = CodeEmailTaken, "Já existe uma conta com este e-mail."
 	case errors.Is(err, tenancy.ErrSlugTaken):
@@ -217,9 +250,37 @@ func conflictFor(err error) Problem {
 	return p
 }
 
-// invalidFor maps an error matching shared.ErrInvalid, listing the fields
-// of a *shared.ValidationError.
+// referencesOf lists the rows an appcatalog.RefusalError names, nil for an
+// error that names none.
+func referencesOf(err error) []Reference {
+	var re *appcatalog.RefusalError
+	if !errors.As(err, &re) {
+		return nil
+	}
+	out := make([]Reference, 0, len(re.References))
+	for _, ref := range re.References {
+		out = append(out, Reference{ID: ref.ID.String(), Name: ref.Name})
+	}
+	return out
+}
+
+// invalidFor maps an error matching shared.ErrInvalid. The photo refusals
+// come first: they match ErrInvalid but have codes of their own. Any other
+// error lists the fields of a *shared.ValidationError.
 func invalidFor(err error) Problem {
+	switch {
+	case errors.Is(err, catalog.ErrPhotoInvalid):
+		return Problem{
+			Status: http.StatusBadRequest, Code: CodePhotoInvalid,
+			// 10 MB and the three types: what ConfirmPhoto accepts (ADR 0024).
+			Title: "A foto precisa ser JPEG, PNG ou WebP, com até 10 MB.",
+		}
+	case errors.Is(err, catalog.ErrPhotoNotUploaded):
+		return Problem{
+			Status: http.StatusBadRequest, Code: CodePhotoNotUploaded,
+			Title: "A foto não foi enviada. Tente de novo.",
+		}
+	}
 	if errors.Is(err, identity.ErrInvalidCode) {
 		return Problem{
 			Status: http.StatusBadRequest, Code: CodeInvalidCode,

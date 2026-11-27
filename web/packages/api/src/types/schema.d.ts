@@ -885,7 +885,9 @@ export interface paths {
          *     (ADR 0024). Upload the file with `method` to `uploadUrl`, sending
          *     exactly `headers` and no `Authorization`, before `expiresAt`; then
          *     confirm it on the owner's `/photos`. An upload never confirmed is
-         *     removed after a day.
+         *     removed after a day. Limited to 30 requests a minute per user and 60
+         *     per store (ADR 0021); over that, `429 rate_limited` with
+         *     `Retry-After`.
          */
         post: operations["requestPhotoUpload"];
         delete?: never;
@@ -2885,12 +2887,14 @@ export interface operations {
                     "application/json": components["schemas"]["Item"];
                 };
             };
+            400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             /**
-             * @description `item_in_kit`: kits that are not archived hold the item;
-             *     `references` names them. `version_conflict`: someone saved first.
+             * @description `item_in_kit`: kits that are not archived hold the item, as a
+             *     member or as a swap alternative (ADR 0027); `references` names
+             *     them. `version_conflict`: someone saved first.
              */
             409: {
                 headers: {
@@ -2927,6 +2931,7 @@ export interface operations {
                     "application/json": components["schemas"]["Item"];
                 };
             };
+            400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -3214,6 +3219,7 @@ export interface operations {
                     "application/json": components["schemas"]["Kit"];
                 };
             };
+            400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -3245,6 +3251,7 @@ export interface operations {
                     "application/json": components["schemas"]["Kit"];
                 };
             };
+            400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -3384,6 +3391,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["PhotoLimit"];
+            429: components["responses"]["RateLimited"];
             "5XX": components["responses"]["ServerFailure"];
         };
     };
