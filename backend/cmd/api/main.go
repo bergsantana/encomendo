@@ -202,29 +202,36 @@ func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, err
 		return services{}, err
 	}
 	tenancySvc := apptenancy.NewService(tenancyDeps)
-	suppliers, catalog, err := buildCatalog(cfg, log, w, tenancySvc, tx, ids)
+	suppliers, catalog, err := buildCatalog(cfg.Storage, basePorts{tx: tx, ids: ids, cache: redis.NewCache(w.cache, log)}, tenancySvc, log)
 	if err != nil {
 		return services{}, err
 	}
 	return services{identity: identity, tenancy: tenancySvc, catalog: catalog, suppliers: suppliers, tokens: tokens}, nil
 }
 
+// basePorts are the adapters every context's service is built on.
+type basePorts struct {
+	tx    appshared.TxManager
+	ids   appshared.IDGenerator
+	cache appshared.Cache
+}
+
 // buildCatalog wires the supplier and catalog contexts. The catalog reads
 // supplier names and the store's defaults through inproc ports, so the
 // dependency runs one way, catalog to supplier and tenancy (ADR 0025).
 func buildCatalog(
-	cfg config.Config, log *slog.Logger, w wiring, tenancySvc *apptenancy.Service, tx appshared.TxManager, ids appshared.IDGenerator,
+	store config.Storage, base basePorts, tenancySvc *apptenancy.Service, log *slog.Logger,
 ) (*appsupplier.Service, *appcatalog.Service, error) {
-	photos, err := newPhotoStore(cfg.Storage, log)
+	photos, err := newPhotoStore(store, log)
 	if err != nil {
 		return nil, nil, err
 	}
-	suppliers := appsupplier.NewService(appsupplier.Deps{Suppliers: postgres.NewSuppliers(), Tx: tx, IDs: ids})
+	suppliers := appsupplier.NewService(appsupplier.Deps{Suppliers: postgres.NewSuppliers(), Tx: base.tx, IDs: base.ids})
 	catalog := appcatalog.NewService(appcatalog.Deps{
 		Categories: postgres.NewCategories(), Attributes: postgres.NewAttributes(), Items: postgres.NewItems(),
 		Kits: postgres.NewKits(), Photos: postgres.NewPhotos(), Storage: photos,
 		Suppliers: inproc.NewCatalogSuppliers(suppliers), Defaults: inproc.NewCatalogDefaults(tenancySvc),
-		Cache: redis.NewCache(w.cache, log), Tx: tx, IDs: ids,
+		Cache: base.cache, Tx: base.tx, IDs: base.ids,
 	})
 	return suppliers, catalog, nil
 }
