@@ -2,6 +2,7 @@ package br.com.encomendo.core.di
 
 import br.com.encomendo.core.data.catalog.ApiCatalogRepository
 import br.com.encomendo.core.data.catalog.ApiSupplierRepository
+import br.com.encomendo.core.data.catalog.CatalogCacheDaos
 import br.com.encomendo.core.data.failure.StoreCalls
 import br.com.encomendo.core.data.members.ApiInvitationsRepository
 import br.com.encomendo.core.data.members.ApiMembersRepository
@@ -71,7 +72,12 @@ val databaseModule: Module =
     module {
         single<EncomendoDatabase> { buildDatabase(builder = get(), queryContext = Dispatchers.IO) }
         single { get<EncomendoDatabase>().syncStateDao() }
-        single { get<EncomendoDatabase>().catalogCacheDao() }
+        single {
+            CatalogCacheDaos(
+                pages = get<EncomendoDatabase>().catalogPageDao(),
+                details = get<EncomendoDatabase>().catalogDetailDao(),
+            )
+        }
     }
 
 /** The token store: one per process, because DataStore allows one instance per file. */

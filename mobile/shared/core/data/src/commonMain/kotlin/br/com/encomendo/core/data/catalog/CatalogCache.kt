@@ -1,14 +1,18 @@
 package br.com.encomendo.core.data.catalog
 
 import androidx.sqlite.SQLiteException
-import br.com.encomendo.core.database.CatalogCacheDao
+import br.com.encomendo.core.database.CatalogDetailDao
 import br.com.encomendo.core.database.CatalogDetailEntity
+import br.com.encomendo.core.database.CatalogPageDao
 import br.com.encomendo.core.database.CatalogPageEntity
 import br.com.encomendo.core.domain.catalog.seesCosts
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.network.ApiPayloadJson
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Clock
 
 /**
@@ -16,16 +20,19 @@ import kotlin.time.Clock
  * lists and details still open without a signal (milestone 3; mobile/CLAUDE.md,
  * Auth and offline). It guarantees that:
  *
- * - a row is kept for one store and one costs view (the owner's, or every other
- *   role's), so another store's rows, and the owner's costs once the role
- *   changed, are never read: a [view] drops what belongs to the other view;
+ * - a row is kept for one store, and another store's rows are never read;
  * - it stores what the API sent, with an owner-only field left out when the
  *   API left it out, and never computes a cost or margin;
+ * - a row carries costs when its payload has a `cost`, `productionCost` or
+ *   `margin` key, whatever role the device thought it had when it saved it, and
+ *   a [view] for a role that does not see costs first deletes every such row,
+ *   so a demoted owner never reads the costs kept for them;
  * - a broken cache never breaks a read: a row that cannot be read or decoded is
  *   a miss, and one that cannot be written is skipped.
  */
 internal class CatalogCache(
-    private val dao: CatalogCacheDao,
+    private val pages: CatalogPageDao,
+    private val details: CatalogDetailDao,
     private val sessions: SessionRepository,
     private val clock: Clock,
 ) {
@@ -36,8 +43,8 @@ internal class CatalogCache(
     suspend fun view(): CacheView? {
         val session = sessions.session.first()
         val tenant = session?.tenant ?: return null
-        val view = CacheView(dao, clock, tenant.id, costs = session.role?.seesCosts() == true)
-        view.dropTheOtherView()
+        val view = CacheView(pages, details, clock, tenant.id)
+        if (session.role?.seesCosts() != true) view.dropCosts()
         return view
     }
 }
@@ -48,17 +55,17 @@ internal class Cached<D>(
     val atEpochMillis: Long,
 )
 
-/** The cache of one store for one costs view; see [CatalogCache]. */
+/** The cache of one store; see [CatalogCache]. */
 internal class CacheView(
-    private val dao: CatalogCacheDao,
+    private val pages: CatalogPageDao,
+    private val details: CatalogDetailDao,
     private val clock: Clock,
     private val tenantId: String,
-    private val costs: Boolean,
 ) {
-    suspend fun dropTheOtherView() {
+    suspend fun dropCosts() {
         quietly {
-            dao.dropOtherViewPages(tenantId, costs)
-            dao.dropOtherViewDetails(tenantId, costs)
+            pages.dropCosts(tenantId)
+            details.dropCosts(tenantId)
         }
     }
 
@@ -69,7 +76,7 @@ internal class CacheView(
         serializer: KSerializer<D>,
     ): Cached<D>? =
         quietly {
-            dao.page(tenantId, costs, kind, query, cursor.orEmpty())?.let {
+            pages.page(tenantId, kind, query, cursor.orEmpty())?.let {
                 Cached(ApiPayloadJson.decodeFromString(serializer, it.payload), it.cachedAtEpochMillis)
             }
         }
@@ -82,10 +89,12 @@ internal class CacheView(
         value: D,
     ) {
         quietly {
-            val payload = ApiPayloadJson.encodeToString(serializer, value)
+            val tree = ApiPayloadJson.encodeToJsonElement(serializer, value)
             val now = clock.now().toEpochMilliseconds()
-            dao.savePage(CatalogPageEntity(tenantId, costs, kind, query, cursor.orEmpty(), payload, now))
-            dao.trimLists(tenantId, costs, kind, keep = MAX_LISTS)
+            pages.savePage(
+                CatalogPageEntity(tenantId, kind, query, cursor.orEmpty(), tree.hasCosts(), tree.toString(), now),
+            )
+            pages.trimLists(tenantId, kind, keep = MAX_LISTS)
         }
     }
 
@@ -95,7 +104,7 @@ internal class CacheView(
         serializer: KSerializer<D>,
     ): Cached<D>? =
         quietly {
-            dao.detail(tenantId, costs, kind, id)?.let {
+            details.detail(tenantId, kind, id)?.let {
                 Cached(ApiPayloadJson.decodeFromString(serializer, it.payload), it.cachedAtEpochMillis)
             }
         }
@@ -107,11 +116,25 @@ internal class CacheView(
         value: D,
     ) {
         quietly {
-            val payload = ApiPayloadJson.encodeToString(serializer, value)
-            dao.upsertDetail(
-                CatalogDetailEntity(tenantId, costs, kind, id, payload, clock.now().toEpochMilliseconds()),
-            )
-            dao.trimDetails(tenantId, costs, kind, keep = MAX_DETAILS)
+            val tree = ApiPayloadJson.encodeToJsonElement(serializer, value)
+            val now = clock.now().toEpochMilliseconds()
+            details.upsertDetail(CatalogDetailEntity(tenantId, kind, id, tree.hasCosts(), tree.toString(), now))
+            details.trimDetails(tenantId, kind, keep = MAX_DETAILS)
+        }
+    }
+
+    /**
+     * Forgets what a write made stale: every cached page of the [listKind] lists (a row's name, price or cover
+     * may sit in any of them) and, when given, the detail [id] of [detailKind].
+     */
+    suspend fun invalidate(
+        listKind: String,
+        detailKind: String? = null,
+        id: String? = null,
+    ) {
+        quietly {
+            pages.deleteKind(tenantId, listKind)
+            if (detailKind != null && id != null) details.deleteDetail(tenantId, detailKind, id)
         }
     }
 
@@ -126,6 +149,17 @@ internal class CacheView(
             null
         }
 }
+
+/** The keys only the owner is sent (ADR 0025). */
+private val COST_KEYS = setOf("cost", "productionCost", "margin")
+
+/** True when any object in the tree has a key in [COST_KEYS], so the payload is the owner's view. */
+private fun JsonElement.hasCosts(): Boolean =
+    when (this) {
+        is JsonObject -> keys.any { it in COST_KEYS } || values.any { it.hasCosts() }
+        is JsonArray -> any { it.hasCosts() }
+        else -> false
+    }
 
 /** How many lists (a filter and all its pages) and how many details of each kind a store keeps. */
 private const val MAX_LISTS = 10

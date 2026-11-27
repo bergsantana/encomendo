@@ -9,8 +9,9 @@ import br.com.encomendo.core.domain.catalog.PickedPhoto
  *
  * Both calls return null when the user backs out, and when the app has no
  * screen in front to ask on (it went to the background): nothing was chosen,
- * and the form simply stays as it was. What the file is worth (10 MB,
- * JPEG, PNG or WebP) is for the API to say; this does not look at the pixels.
+ * and the form simply stays as it was. The API decides the type (JPEG, PNG or
+ * WebP) from the file's content; the picker only refuses a file over the API's
+ * 10 MB limit, before reading it into memory, by throwing `Failure.PhotoInvalid`.
  */
 interface PhotoPicker {
     /** Opens the system gallery picker and returns the photo chosen, or null. */

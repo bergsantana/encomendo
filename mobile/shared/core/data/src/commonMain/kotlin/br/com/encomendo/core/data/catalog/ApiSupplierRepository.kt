@@ -1,7 +1,6 @@
 package br.com.encomendo.core.data.catalog
 
 import br.com.encomendo.core.data.failure.StoreCalls
-import br.com.encomendo.core.database.CatalogCacheDao
 import br.com.encomendo.core.domain.catalog.Fetched
 import br.com.encomendo.core.domain.paging.Page
 import br.com.encomendo.core.domain.session.SessionRepository
@@ -26,10 +25,10 @@ class ApiSupplierRepository internal constructor(
     constructor(
         api: SuppliersApi,
         calls: StoreCalls,
-        cache: CatalogCacheDao,
+        cache: CatalogCacheDaos,
         sessions: SessionRepository,
         clock: Clock = Clock.System,
-    ) : this(api, CatalogReads(calls, CatalogCache(cache, sessions, clock)))
+    ) : this(api, CatalogReads(calls, CatalogCache(cache.pages, cache.details, sessions, clock)))
 
     override suspend fun page(
         query: String?,
@@ -57,7 +56,7 @@ class ApiSupplierRepository internal constructor(
     ): Supplier = saved { api.replace(id, draft.toWrite(version)) }
 
     private suspend fun saved(call: suspend () -> SupplierDto): Supplier =
-        reads.write(SUPPLIER, SupplierDto.serializer(), SupplierDto::id, call, SupplierDto::toSupplier)
+        reads.write("suppliers", SUPPLIER, SupplierDto.serializer(), SupplierDto::id, call, SupplierDto::toSupplier)
 
     private companion object {
         const val SUPPLIER = "supplier"

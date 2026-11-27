@@ -1,7 +1,8 @@
 package br.com.encomendo.core.data.catalog
 
-import br.com.encomendo.core.database.CatalogCacheDao
+import br.com.encomendo.core.database.CatalogDetailDao
 import br.com.encomendo.core.database.CatalogDetailEntity
+import br.com.encomendo.core.database.CatalogPageDao
 import br.com.encomendo.core.database.CatalogPageEntity
 import br.com.encomendo.core.domain.catalog.AttributeDraft
 import br.com.encomendo.core.domain.catalog.AttributeValueDraft
@@ -110,73 +111,84 @@ class FixedClock(
 }
 
 /**
- * The offline cache's DAO in memory, so the repository tests need no database. It follows the contract the
- * real DAO has (one row per key; a first page replaces its list), which the Room tests of core:database check.
+ * The offline cache's DAOs in memory, so the repository tests need no database. They follow the contract the
+ * real DAOs have (one row per key; a first page replaces its list), which the Room tests of core:database check.
  */
-class InMemoryCatalogCacheDao : CatalogCacheDao() {
-    /** The pages saved, by (store, costs, kind, query, cursor). */
+class InMemoryCatalogCache {
+    /** The pages saved, by (store, kind, query, cursor). */
     val pages = mutableMapOf<List<Any>, CatalogPageEntity>()
 
-    /** The details saved, by (store, costs, kind, id). */
+    /** The details saved, by (store, kind, id). */
     val details = mutableMapOf<List<Any>, CatalogDetailEntity>()
 
-    override suspend fun page(
-        tenantId: String,
-        costs: Boolean,
-        kind: String,
-        query: String,
-        cursor: String,
-    ): CatalogPageEntity? = pages[listOf(tenantId, costs, kind, query, cursor)]
+    /** The DAOs the repositories take. */
+    val daos = CatalogCacheDaos(pages = PageDao(), details = DetailDao())
 
-    override suspend fun detail(
-        tenantId: String,
-        costs: Boolean,
-        kind: String,
-        id: String,
-    ): CatalogDetailEntity? = details[listOf(tenantId, costs, kind, id)]
+    private inner class PageDao : CatalogPageDao() {
+        override suspend fun page(
+            tenantId: String,
+            kind: String,
+            query: String,
+            cursor: String,
+        ): CatalogPageEntity? = pages[listOf(tenantId, kind, query, cursor)]
 
-    override suspend fun upsertPage(page: CatalogPageEntity) {
-        pages[listOf(page.tenantId, page.costs, page.kind, page.query, page.cursor)] = page
+        override suspend fun upsertPage(page: CatalogPageEntity) {
+            pages[listOf(page.tenantId, page.kind, page.query, page.cursor)] = page
+        }
+
+        override suspend fun deleteList(
+            tenantId: String,
+            kind: String,
+            query: String,
+        ) {
+            pages.keys.removeAll { it.take(3) == listOf(tenantId, kind, query) }
+        }
+
+        override suspend fun trimLists(
+            tenantId: String,
+            kind: String,
+            keep: Int,
+        ) = Unit
+
+        override suspend fun deleteKind(
+            tenantId: String,
+            kind: String,
+        ) {
+            pages.keys.removeAll { it.take(2) == listOf(tenantId, kind) }
+        }
+
+        override suspend fun dropCosts(tenantId: String) {
+            pages.entries.removeAll { it.key[0] == tenantId && it.value.costs }
+        }
     }
 
-    override suspend fun upsertDetail(detail: CatalogDetailEntity) {
-        details[listOf(detail.tenantId, detail.costs, detail.kind, detail.id)] = detail
-    }
+    private inner class DetailDao : CatalogDetailDao() {
+        override suspend fun detail(
+            tenantId: String,
+            kind: String,
+            id: String,
+        ): CatalogDetailEntity? = details[listOf(tenantId, kind, id)]
 
-    override suspend fun deletePagesOfList(
-        tenantId: String,
-        costs: Boolean,
-        kind: String,
-        query: String,
-    ) {
-        pages.keys.removeAll { it.take(4) == listOf(tenantId, costs, kind, query) }
-    }
+        override suspend fun upsertDetail(detail: CatalogDetailEntity) {
+            details[listOf(detail.tenantId, detail.kind, detail.id)] = detail
+        }
 
-    override suspend fun trimLists(
-        tenantId: String,
-        costs: Boolean,
-        kind: String,
-        keep: Int,
-    ) = Unit
+        override suspend fun trimDetails(
+            tenantId: String,
+            kind: String,
+            keep: Int,
+        ) = Unit
 
-    override suspend fun trimDetails(
-        tenantId: String,
-        costs: Boolean,
-        kind: String,
-        keep: Int,
-    ) = Unit
+        override suspend fun deleteDetail(
+            tenantId: String,
+            kind: String,
+            id: String,
+        ) {
+            details.remove(listOf(tenantId, kind, id))
+        }
 
-    override suspend fun dropOtherViewPages(
-        tenantId: String,
-        costs: Boolean,
-    ) {
-        pages.keys.removeAll { it[0] == tenantId && it[1] != costs }
-    }
-
-    override suspend fun dropOtherViewDetails(
-        tenantId: String,
-        costs: Boolean,
-    ) {
-        details.keys.removeAll { it[0] == tenantId && it[1] != costs }
+        override suspend fun dropCosts(tenantId: String) {
+            details.entries.removeAll { it.key[0] == tenantId && it.value.costs }
+        }
     }
 }

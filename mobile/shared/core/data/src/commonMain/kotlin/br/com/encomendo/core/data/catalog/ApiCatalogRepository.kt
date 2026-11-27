@@ -1,7 +1,6 @@
 package br.com.encomendo.core.data.catalog
 
 import br.com.encomendo.core.data.failure.StoreCalls
-import br.com.encomendo.core.database.CatalogCacheDao
 import br.com.encomendo.core.domain.catalog.Attribute
 import br.com.encomendo.core.domain.catalog.AttributeDraft
 import br.com.encomendo.core.domain.catalog.AttributeRepository
@@ -53,7 +52,7 @@ class ApiCatalogRepository(
     apis: CatalogApis,
     storage: PhotoStorageApi,
     calls: StoreCalls,
-    cache: CatalogCacheDao,
+    cache: CatalogCacheDaos,
     sessions: SessionRepository,
     clock: Clock = Clock.System,
 ) : CatalogRepository,
@@ -61,14 +60,14 @@ class ApiCatalogRepository(
     AttributeRepository by ApiAttributeRepository(apis.categories, reads(calls, cache, sessions, clock)),
     ItemRepository by ApiItemRepository(apis.items, reads(calls, cache, sessions, clock)),
     KitRepository by ApiKitRepository(apis.kits, reads(calls, cache, sessions, clock)),
-    PhotoRepository by ApiPhotoRepository(apis.photos, storage, calls)
+    PhotoRepository by ApiPhotoRepository(apis.photos, storage, reads(calls, cache, sessions, clock))
 
 private fun reads(
     calls: StoreCalls,
-    cache: CatalogCacheDao,
+    cache: CatalogCacheDaos,
     sessions: SessionRepository,
     clock: Clock,
-): CatalogReads = CatalogReads(calls, CatalogCache(cache, sessions, clock))
+): CatalogReads = CatalogReads(calls, CatalogCache(cache.pages, cache.details, sessions, clock))
 
 internal class ApiCategoryRepository(
     private val api: CategoriesApi,
@@ -76,7 +75,7 @@ internal class ApiCategoryRepository(
 ) : CategoryRepository {
     override suspend fun categories(): Fetched<List<Category>> =
         reads.list(
-            kind = "categories",
+            kind = CATEGORIES,
             query = "",
             cursor = null,
             serializer = CategoryListDto.serializer(),
@@ -84,19 +83,22 @@ internal class ApiCategoryRepository(
             map = { list -> list.items.map { it.toCategory() } },
         )
 
-    override suspend fun createCategory(name: String): Category = reads.write { api.createCategory(name).toCategory() }
+    override suspend fun createCategory(name: String): Category =
+        reads.write(CATEGORIES) {
+            api.createCategory(name).toCategory()
+        }
 
     override suspend fun renameCategory(
         id: String,
         name: String,
-    ): Category = reads.write { api.updateCategory(id, name = name, position = null).toCategory() }
+    ): Category = reads.write(CATEGORIES) { api.updateCategory(id, name = name, position = null).toCategory() }
 
     override suspend fun moveCategory(
         id: String,
         position: Int,
-    ): Category = reads.write { api.updateCategory(id, name = null, position = position).toCategory() }
+    ): Category = reads.write(CATEGORIES) { api.updateCategory(id, name = null, position = position).toCategory() }
 
-    override suspend fun deleteCategory(id: String) = reads.write { api.deleteCategory(id) }
+    override suspend fun deleteCategory(id: String) = reads.write(CATEGORIES) { api.deleteCategory(id) }
 }
 
 internal class ApiAttributeRepository(
@@ -105,7 +107,7 @@ internal class ApiAttributeRepository(
 ) : AttributeRepository {
     override suspend fun attributes(): Fetched<List<Attribute>> =
         reads.list(
-            kind = "attributes",
+            kind = ATTRIBUTES,
             query = "",
             cursor = null,
             serializer = AttributeListDto.serializer(),
@@ -114,14 +116,14 @@ internal class ApiAttributeRepository(
         )
 
     override suspend fun createAttribute(draft: AttributeDraft): Attribute =
-        reads.write { api.createAttribute(draft.toWrite()).toAttribute() }
+        reads.write(ATTRIBUTES) { api.createAttribute(draft.toWrite()).toAttribute() }
 
     override suspend fun replaceAttribute(
         id: String,
         draft: AttributeDraft,
-    ): Attribute = reads.write { api.replaceAttribute(id, draft.toWrite()).toAttribute() }
+    ): Attribute = reads.write(ATTRIBUTES) { api.replaceAttribute(id, draft.toWrite()).toAttribute() }
 
-    override suspend fun deleteAttribute(id: String) = reads.write { api.deleteAttribute(id) }
+    override suspend fun deleteAttribute(id: String) = reads.write(ATTRIBUTES) { api.deleteAttribute(id) }
 }
 
 internal class ApiItemRepository(
@@ -134,7 +136,7 @@ internal class ApiItemRepository(
         limit: Int,
     ): Fetched<Page<ItemSummary>> =
         reads.list(
-            kind = "items",
+            kind = ITEMS,
             query = filter.cacheKey(),
             cursor = cursor,
             serializer = ItemPageDto.serializer(),
@@ -170,7 +172,7 @@ internal class ApiItemRepository(
     ): Item = saved { api.restore(id, version) }
 
     private suspend fun saved(call: suspend () -> ItemDto): Item =
-        reads.write(ITEM, ItemDto.serializer(), ItemDto::id, call, ItemDto::toItem)
+        reads.write(ITEMS, ITEM, ItemDto.serializer(), ItemDto::id, call, ItemDto::toItem)
 
     private companion object {
         const val ITEM = "item"
@@ -187,7 +189,7 @@ internal class ApiKitRepository(
         limit: Int,
     ): Fetched<Page<KitSummary>> =
         reads.list(
-            kind = "kits",
+            kind = KITS,
             query = filter.cacheKey(),
             cursor = cursor,
             serializer = KitPageDto.serializer(),
@@ -223,7 +225,7 @@ internal class ApiKitRepository(
     ): Kit = saved { api.restore(id, version) }
 
     private suspend fun saved(call: suspend () -> KitDto): Kit =
-        reads.write(KIT, KitDto.serializer(), KitDto::id, call, KitDto::toKit)
+        reads.write(KITS, KIT, KitDto.serializer(), KitDto::id, call, KitDto::toKit)
 
     private companion object {
         const val KIT = "kit"
@@ -237,7 +239,7 @@ internal class ApiKitRepository(
 internal class ApiPhotoRepository(
     private val api: PhotosApi,
     private val storage: PhotoStorageApi,
-    private val calls: StoreCalls,
+    private val reads: CatalogReads,
 ) : PhotoRepository {
     override suspend fun uploadPhoto(
         owner: PhotoOwner,
@@ -246,20 +248,35 @@ internal class ApiPhotoRepository(
         // The API takes only these types; refusing here saves an upload the server would delete again.
         if (photo.contentType !in ACCEPTED_TYPES) throw Failure.PhotoInvalid()
         val type = owner.kind.toApi()
-        val upload = calls.inStore { api.requestUpload(type, owner.id, photo.contentType) }
-        calls.inStore { storage.put(upload.uploadUrl, upload.headers, photo.bytes) }
-        return calls.inStore { api.confirm(type, owner.id, upload.key).toPhoto() }
+        // One write in the store, so the owner's cached detail and lists are forgotten once the photo is in.
+        return reads.write(owner.listKind(), owner.detailKind(), owner.id) {
+            val upload = api.requestUpload(type, owner.id, photo.contentType)
+            storage.put(upload.uploadUrl, upload.headers, photo.bytes)
+            api.confirm(type, owner.id, upload.key).toPhoto()
+        }
     }
 
     override suspend fun orderPhotos(
         owner: PhotoOwner,
         photoIds: List<String>,
-    ): List<Photo> = calls.inStore { api.order(owner.kind.toApi(), owner.id, photoIds).items.map { it.toPhoto() } }
+    ): List<Photo> =
+        reads.write(owner.listKind(), owner.detailKind(), owner.id) {
+            api.order(owner.kind.toApi(), owner.id, photoIds).items.map { it.toPhoto() }
+        }
 
     override suspend fun deletePhoto(
         owner: PhotoOwner,
         photoId: String,
-    ) = calls.inStore { api.delete(owner.kind.toApi(), owner.id, photoId) }
+    ) = reads.write(
+        owner.listKind(),
+        owner.detailKind(),
+        owner.id,
+    ) { api.delete(owner.kind.toApi(), owner.id, photoId) }
+
+    // The list and detail a photo change makes stale: the owner's row (its cover is in the lists).
+    private fun PhotoOwner.listKind(): String = if (kind == PhotoOwnerKind.Item) ITEMS else KITS
+
+    private fun PhotoOwner.detailKind(): String = if (kind == PhotoOwnerKind.Item) "item" else "kit"
 
     private fun PhotoOwnerKind.toApi(): PhotoOwnerType =
         when (this) {
@@ -276,3 +293,9 @@ internal class ApiPhotoRepository(
 private fun ItemFilter.cacheKey(): String = "q=${query.orEmpty()}&c=${categoryId.orEmpty()}&a=$includeArchived"
 
 private fun KitFilter.cacheKey(): String = "q=${query.orEmpty()}&a=$includeArchived"
+
+// The kinds of cached list the catalog keeps, which a write to one of them forgets.
+private const val CATEGORIES = "categories"
+private const val ATTRIBUTES = "attributes"
+private const val ITEMS = "items"
+private const val KITS = "kits"

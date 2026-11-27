@@ -10,10 +10,12 @@ import kotlinx.serialization.KSerializer
  * calls and the offline cache. A read asks the server; when the server cannot
  * be reached ([Failure.Offline]) it answers from the copy saved by the last
  * successful read of the same list or detail, and says when that copy was
- * saved. Any other failure, and a read with no copy, throws as it came.
+ * saved. Any other failure, and a read with no usable copy, throws as it came.
  *
  * Writes use [write] and never fall back: an offline write is a failure, since
- * catalog writes are not queued (ADR 0025).
+ * catalog writes are not queued (ADR 0025). A successful write forgets the
+ * cached list pages and the detail it made stale, so an offline read never
+ * shows the row as it was before the user's own change.
  */
 internal class CatalogReads(
     private val calls: StoreCalls,
@@ -51,11 +53,13 @@ internal class CatalogReads(
         )
 
     /**
-     * Makes a write in the store and keeps the detail it returned, so the saved row opens offline as saved.
-     * [kind] and [serializer] say which detail; [idOf] reads its id from the answer.
+     * Makes a write that returns the saved row of [detailKind] and keeps that row as the cached detail, so it
+     * opens offline as saved; every cached page of the [listKind] lists is forgotten. [idOf] reads the id from
+     * the answer.
      */
     suspend fun <D, T> write(
-        kind: String,
+        listKind: String,
+        detailKind: String,
         serializer: KSerializer<D>,
         idOf: (D) -> String,
         call: suspend () -> D,
@@ -63,12 +67,29 @@ internal class CatalogReads(
     ): T {
         val view = cache.view()
         val saved = calls.inStore { call().let { dto -> dto to map(dto) } }
-        view?.saveDetail(kind, idOf(saved.first), serializer, saved.first)
+        view?.invalidate(listKind)
+        view?.saveDetail(detailKind, idOf(saved.first), serializer, saved.first)
         return saved.second
     }
 
-    /** Makes a write that returns nothing worth keeping. */
-    suspend fun <T> write(call: suspend () -> T): T = calls.inStore(call)
+    /**
+     * Makes a write that returns nothing worth keeping, then forgets the cached pages of the [listKind] lists
+     * and, when [detailKind] and [id] are given, that cached detail.
+     */
+    suspend fun <T> write(
+        listKind: String,
+        detailKind: String? = null,
+        id: String? = null,
+        call: suspend () -> T,
+    ): T {
+        val view = cache.view()
+        val answer = calls.inStore(call)
+        view?.invalidate(listKind, detailKind, id)
+        return answer
+    }
+
+    /** Runs a step that is not itself one call, such as the photo upload's three, through the store's calls. */
+    suspend fun <T> inStore(call: suspend () -> T): T = calls.inStore(call)
 
     private suspend fun <D, T> read(
         fetch: suspend () -> D,
@@ -83,7 +104,19 @@ internal class CatalogReads(
             return Fetched(answer.second)
         } catch (offline: Failure.Offline) {
             val cached = view?.let { load(it) } ?: throw offline
-            return Fetched(map(cached.value), cached.atEpochMillis)
+            return fromCopy(cached, map, offline)
         }
     }
+
+    // A copy that no longer maps is no copy: the caller learns what happened (no signal), not what the copy lacks.
+    private fun <D, T> fromCopy(
+        cached: Cached<D>,
+        map: (D) -> T,
+        offline: Failure.Offline,
+    ): Fetched<T> =
+        try {
+            Fetched(map(cached.value), cached.atEpochMillis)
+        } catch (_: Failure.Unexpected) {
+            throw offline
+        }
 }

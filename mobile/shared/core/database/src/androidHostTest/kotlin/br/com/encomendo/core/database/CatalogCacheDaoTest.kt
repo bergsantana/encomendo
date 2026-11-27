@@ -11,7 +11,8 @@ import kotlin.test.assertNull
 
 class CatalogCacheDaoTest {
     private val database = buildDatabase(Room.inMemoryDatabaseBuilder<EncomendoDatabase>(), Dispatchers.Default)
-    private val dao = database.catalogCacheDao()
+    private val pages = database.catalogPageDao()
+    private val details = database.catalogDetailDao()
 
     @AfterTest
     fun close() = database.close()
@@ -23,115 +24,127 @@ class CatalogCacheDaoTest {
         costs: Boolean = false,
         at: Long = 1,
         payload: String = """{"items":[]}""",
-    ) = CatalogPageEntity(tenant, costs, "items", query, cursor, payload, at)
+    ) = CatalogPageEntity(tenant, "items", query, cursor, costs, payload, at)
 
     private fun detail(
         id: String,
         tenant: String = ALTA,
         costs: Boolean = false,
         at: Long = 1,
-    ) = CatalogDetailEntity(tenant, costs, "item", id, """{"id":"$id"}""", at)
+    ) = CatalogDetailEntity(tenant, "item", id, costs, """{"id":"$id"}""", at)
 
     @Test
     fun aSavedPageComesBackAsTheApiSentIt() =
         runTest {
             val payload = """{"items":[{"id":"1"}],"nextCursor":"c2"}"""
 
-            dao.savePage(page(payload = payload, at = SAVED_AT))
+            pages.savePage(page(payload = payload, at = SAVED_AT))
 
-            val saved = assertNotNull(dao.page(ALTA, false, "items", "", ""))
+            val saved = assertNotNull(pages.page(ALTA, "items", "", ""))
             assertEquals(payload, saved.payload)
             assertEquals(SAVED_AT, saved.cachedAtEpochMillis)
-            assertNull(dao.page(ALTA, false, "items", "", "c2"), "a page never read is not there")
+            assertNull(pages.page(ALTA, "items", "", "c2"), "a page never read is not there")
         }
 
     @Test
     fun aNewFirstPageReplacesTheListsOldPages() =
         runTest {
-            dao.savePage(page())
-            dao.savePage(page(cursor = "c2"))
-            dao.savePage(page(query = "banco"))
+            pages.savePage(page())
+            pages.savePage(page(cursor = "c2"))
+            pages.savePage(page(query = "banco"))
 
-            dao.savePage(page(payload = """{"items":[{"id":"new"}]}"""))
+            pages.savePage(page(payload = """{"items":[{"id":"new"}]}"""))
 
-            assertNull(dao.page(ALTA, false, "items", "", "c2"), "the old cursor no longer leads anywhere")
-            assertNotNull(dao.page(ALTA, false, "items", "banco", ""), "another list is untouched")
-            assertEquals("""{"items":[{"id":"new"}]}""", dao.page(ALTA, false, "items", "", "")?.payload)
+            assertNull(pages.page(ALTA, "items", "", "c2"), "the old cursor no longer leads anywhere")
+            assertNotNull(pages.page(ALTA, "items", "banco", ""), "another list is untouched")
+            assertEquals("""{"items":[{"id":"new"}]}""", pages.page(ALTA, "items", "", "")?.payload)
         }
 
     @Test
     fun aSecondPageDoesNotReplaceTheFirst() =
         runTest {
-            dao.savePage(page())
+            pages.savePage(page())
 
-            dao.savePage(page(cursor = "c2"))
+            pages.savePage(page(cursor = "c2"))
 
-            assertNotNull(dao.page(ALTA, false, "items", "", ""))
-            assertNotNull(dao.page(ALTA, false, "items", "", "c2"))
+            assertNotNull(pages.page(ALTA, "items", "", ""))
+            assertNotNull(pages.page(ALTA, "items", "", "c2"))
         }
 
     @Test
     fun storesNeverShareRows() =
         runTest {
-            dao.savePage(page(tenant = ALTA))
-            dao.upsertDetail(detail("1", tenant = ALTA))
+            pages.savePage(page(tenant = ALTA))
+            details.upsertDetail(detail("1", tenant = ALTA))
 
-            assertNull(dao.page(OTHER, false, "items", "", ""))
-            assertNull(dao.detail(OTHER, false, "item", "1"))
+            assertNull(pages.page(OTHER, "items", "", ""))
+            assertNull(details.detail(OTHER, "item", "1"))
         }
 
     @Test
-    fun theOwnersViewAndTheOthersAreApart() =
+    fun droppingCostsKeepsTheRowsWithoutThemAndOnlyInThatStore() =
         runTest {
-            dao.savePage(page(costs = true))
-            dao.upsertDetail(detail("1", costs = true))
+            pages.savePage(page(query = "owner", costs = true))
+            pages.savePage(page(query = "plain", costs = false))
+            pages.savePage(page(query = "owner", costs = true, tenant = OTHER))
+            details.upsertDetail(detail("1", costs = true))
+            details.upsertDetail(detail("2", costs = false))
 
-            assertNull(dao.page(ALTA, false, "items", "", ""), "an admin never reads the owner's page")
-            assertNull(dao.detail(ALTA, false, "item", "1"))
+            pages.dropCosts(ALTA)
+            details.dropCosts(ALTA)
+
+            assertNull(pages.page(ALTA, "items", "owner", ""))
+            assertNotNull(pages.page(ALTA, "items", "plain", ""))
+            assertNotNull(pages.page(OTHER, "items", "owner", ""))
+            assertNull(details.detail(ALTA, "item", "1"))
+            assertNotNull(details.detail(ALTA, "item", "2"))
         }
 
     @Test
-    fun aRoleChangeDropsTheOtherViewsRows() =
+    fun aWriteDropsTheKindsPagesAndOneDetail() =
         runTest {
-            dao.savePage(page(costs = true))
-            dao.upsertDetail(detail("1", costs = true))
-            dao.savePage(page(costs = false, tenant = OTHER))
+            pages.savePage(page(query = "a"))
+            pages.savePage(page(query = "a", cursor = "c2"))
+            pages.savePage(page(tenant = OTHER))
+            details.upsertDetail(detail("1"))
+            details.upsertDetail(detail("2"))
 
-            // The owner became an admin: what was kept with costs goes, in this store only.
-            dao.dropOtherViewPages(ALTA, costs = false)
-            dao.dropOtherViewDetails(ALTA, costs = false)
+            pages.deleteKind(ALTA, "items")
+            details.deleteDetail(ALTA, "item", "1")
 
-            assertNull(dao.page(ALTA, true, "items", "", ""))
-            assertNull(dao.detail(ALTA, true, "item", "1"))
-            assertNotNull(dao.page(OTHER, false, "items", "", ""))
+            assertNull(pages.page(ALTA, "items", "a", ""))
+            assertNull(pages.page(ALTA, "items", "a", "c2"))
+            assertNotNull(pages.page(OTHER, "items", "", ""))
+            assertNull(details.detail(ALTA, "item", "1"))
+            assertNotNull(details.detail(ALTA, "item", "2"))
         }
 
     @Test
     fun keepsOnlyTheMostRecentlyReadDetails() =
         runTest {
-            for (n in 1..DETAILS_READ) dao.upsertDetail(detail("$n", at = n.toLong()))
+            for (n in 1..DETAILS_READ) details.upsertDetail(detail("$n", at = n.toLong()))
 
-            dao.trimDetails(ALTA, false, "item", keep = 2)
+            details.trimDetails(ALTA, "item", keep = 2)
 
-            assertNull(dao.detail(ALTA, false, "item", "3"))
-            assertNotNull(dao.detail(ALTA, false, "item", "4"))
-            assertNotNull(dao.detail(ALTA, false, "item", "$DETAILS_READ"))
+            assertNull(details.detail(ALTA, "item", "3"))
+            assertNotNull(details.detail(ALTA, "item", "4"))
+            assertNotNull(details.detail(ALTA, "item", "$DETAILS_READ"))
         }
 
     @Test
     fun keepsOnlyTheMostRecentlyReadLists() =
         runTest {
-            dao.savePage(page(query = "a", at = 1))
-            dao.savePage(page(query = "a", cursor = "c2", at = 1))
-            dao.savePage(page(query = "b", at = 2))
-            dao.savePage(page(query = "c", at = 3))
+            pages.savePage(page(query = "a", at = 1))
+            pages.savePage(page(query = "a", cursor = "c2", at = 1))
+            pages.savePage(page(query = "b", at = 2))
+            pages.savePage(page(query = "c", at = 3))
 
-            dao.trimLists(ALTA, false, "items", keep = 2)
+            pages.trimLists(ALTA, "items", keep = 2)
 
-            assertNull(dao.page(ALTA, false, "items", "a", ""))
-            assertNull(dao.page(ALTA, false, "items", "a", "c2"), "a list goes with all its pages")
-            assertNotNull(dao.page(ALTA, false, "items", "b", ""))
-            assertNotNull(dao.page(ALTA, false, "items", "c", ""))
+            assertNull(pages.page(ALTA, "items", "a", ""))
+            assertNull(pages.page(ALTA, "items", "a", "c2"), "a list goes with all its pages")
+            assertNotNull(pages.page(ALTA, "items", "b", ""))
+            assertNotNull(pages.page(ALTA, "items", "c", ""))
         }
 
     private companion object {

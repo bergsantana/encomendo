@@ -40,7 +40,7 @@ typealias Handler = suspend MockRequestHandleScope.(HttpRequestData) -> HttpResp
 class CatalogWiring(
     val catalog: ApiCatalogRepository,
     val suppliers: ApiSupplierRepository,
-    val cache: InMemoryCatalogCacheDao,
+    val cache: InMemoryCatalogCache,
     val clock: FixedClock,
     val sessions: FakeSessionRepository,
     private val state: HandlerState,
@@ -120,13 +120,20 @@ suspend fun TestScope.catalogWiring(role: Role = Role.Owner): CatalogWiring {
             },
         )
     val calls = storeCalls(store, client, turns)
-    val cache = InMemoryCatalogCacheDao()
+    val cache = InMemoryCatalogCache()
     val clock = FixedClock()
     val sessions = FakeSessionRepository(session)
     return CatalogWiring(
         catalog =
-            ApiCatalogRepository(CatalogApis(client), PhotoStorageApi(storageClient), calls, cache, sessions, clock),
-        suppliers = ApiSupplierRepository(SuppliersApi(client), calls, cache, sessions, clock),
+            ApiCatalogRepository(
+                CatalogApis(client),
+                PhotoStorageApi(storageClient),
+                calls,
+                cache.daos,
+                sessions,
+                clock,
+            ),
+        suppliers = ApiSupplierRepository(SuppliersApi(client), calls, cache.daos, sessions, clock),
         cache = cache,
         clock = clock,
         sessions = sessions,

@@ -13,10 +13,10 @@ Step 3.14 of the milestone 3 plan gives the Android app its catalog and supplier
 
 - Room holds two tables, `catalog_pages` (a list page, by list and cursor) and `catalog_details` (an item, kit or supplier). Each row keeps the API's own JSON in a `payload` column and when it was saved. The categories, item fields, items, kits and suppliers lists are cached the same way.
 - Keeping the JSON means an owner-only field the API left out stays left out, and one it sent as `null` stays `null`. The app never builds a cost, so it can never fill one for a role that does not see costs.
-- Rows are keyed by store and by a costs view (the owner's, or every other role's). Every cache access first deletes the store's rows of the other view, so an owner who is demoted never reads the costs kept for them, and an admin's rows never hold a cost.
+- Rows are keyed by store. Each row has a `costs` flag, set from its payload: true when any `cost`, `productionCost` or `margin` key is present, whatever role the device thought it had at the time. Every cache access for a role that does not see costs first deletes the store's rows with the flag, so an owner who is demoted never reads the costs kept for them, even when the device's session was out of date when it saved them.
 - Rows are keyed by store instead of being cleared on store switch or logout, because the existing cache clears nothing yet. The sync state table is not used: each row carries its own save time.
-- A read asks the server first and falls back to the cache only on `Failure.Offline`, saying when the copy was saved (`Fetched`). Any other failure (a 403, a suspended store) is shown as it is. Catalog writes are never queued offline (ADR 0025): an offline write is a failure. The detail a write returns is saved, so it opens offline as saved.
-- A page that cannot be read or decoded is a miss, and one that cannot be written is skipped, so a broken cache never fails a read. A first page replaces the other pages of its list, and each store keeps the 10 most recent lists and 100 most recent details of each kind.
+- A read asks the server first and falls back to the cache only on `Failure.Offline`, saying when the copy was saved (`Fetched`). Any other failure (a 403, a suspended store) is shown as it is. Catalog writes are never queued offline (ADR 0025): an offline write is a failure. A successful write forgets every cached list page of its kind (a row's name, price or cover may sit in any of them) and the cached detail of the row it touched, including photo uploads, orders and removals; the detail a write returns is saved again, so it opens offline as saved.
+- A copy that can no longer be mapped makes the read fail with the original `Failure.Offline`. A page that cannot be read or decoded is a miss, and one that cannot be written is skipped, so a broken cache never fails a read. A first page replaces the other pages of its list, and each store keeps the 10 most recent lists and 100 most recent details of each kind.
 - The schema moves from version 1 to 2 with an auto-migration, tested by opening a version 1 file with the current database.
 
 ### Writes leave a cost out unless the user set it
@@ -33,7 +33,7 @@ The Android build of `sqlite-bundled` only carries Android native libraries, so 
 
 ### The photo picker is attached by the activity
 
-`PhotoPicker` is a small interface in the new `core:platform` module. Its Android implementation launches the system photo picker and the camera, and needs the activity to register its result launchers before it starts, so `MainActivity` attaches itself in `onCreate`. Without an activity it answers like a user who backed out.
+`PhotoPicker` is a small interface in the new `core:platform` module. Its Android implementation launches the system photo picker and the camera, and needs the activity to register its result launchers before it starts, so `MainActivity` attaches itself in `onCreate`. Without an activity it answers like a user who backed out. The singleton lets go of the activity when it is destroyed, one pick is open at a time, and a file over 10 MB is refused with `Failure.PhotoInvalid` before it is read into memory.
 
 ## Consequences
 

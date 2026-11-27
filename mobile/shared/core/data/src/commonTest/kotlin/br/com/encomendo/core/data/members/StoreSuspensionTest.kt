@@ -3,7 +3,7 @@ package br.com.encomendo.core.data.members
 import br.com.encomendo.core.data.catalog.ApiCatalogRepository
 import br.com.encomendo.core.data.catalog.ApiSupplierRepository
 import br.com.encomendo.core.data.catalog.ITEM_ID
-import br.com.encomendo.core.data.catalog.InMemoryCatalogCacheDao
+import br.com.encomendo.core.data.catalog.InMemoryCatalogCache
 import br.com.encomendo.core.data.catalog.KIT_ID
 import br.com.encomendo.core.data.catalog.itemDraft
 import br.com.encomendo.core.data.session.InMemoryStoreSuspensionNotice
@@ -223,7 +223,7 @@ class StoreSuspensionTest {
         val renewals = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val calls = storeCalls(store, client, turns, notice, renewals)
         val api = MembersApi(client)
-        val cache = InMemoryCatalogCacheDao()
+        val cache = InMemoryCatalogCache().daos
         val sessions = FakeSessionRepository(testSession())
         val catalog =
             ApiCatalogRepository(

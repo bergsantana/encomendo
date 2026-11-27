@@ -53,10 +53,13 @@ class MigrationTest {
                 assertEquals(REFRESHED_AT, database.syncStateDao().get("store-1", "orders")?.refreshedAtEpochMillis)
 
                 // And the new tables work.
-                val cache = database.catalogCacheDao()
-                assertNull(cache.page("store-1", false, "items", "", ""))
-                cache.savePage(CatalogPageEntity("store-1", false, "items", "", "", """{"items":[]}""", REFRESHED_AT))
-                assertNotNull(cache.page("store-1", false, "items", "", ""))
+                val pages = database.catalogPageDao()
+                assertNull(pages.page("store-1", "items", "", ""))
+                pages.savePage(CatalogPageEntity("store-1", "items", "", "", false, """{"items":[]}""", REFRESHED_AT))
+                assertNotNull(pages.page("store-1", "items", "", ""))
+                val details = database.catalogDetailDao()
+                details.upsertDetail(CatalogDetailEntity("store-1", "item", "i-1", false, "{}", REFRESHED_AT))
+                assertNotNull(details.detail("store-1", "item", "i-1"))
             } finally {
                 database.close()
             }
