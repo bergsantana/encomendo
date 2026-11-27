@@ -2,7 +2,7 @@
 
 Tracks how much of the system is built, milestone by milestone. The milestones and their order come from `docs/architecture.md` section 11; the scope of each item comes from sections 4, 7 and 8 of the same document. This file records **status only**. If it disagrees with the architecture or the product docs, those win.
 
-**Last audited:** 2026-11-24. Run locally: backend lint (golangci-lint v2.15.0), unit and integration tests pass; web lint, typecheck and tests pass. Mobile `./gradlew check` and `:androidApp:assembleDebug` pass in a container (`scripts/mobile-docker.sh`) after raising `compileSdk` to 37 and fixing the ktlint setup. **Not run:** CI.
+**Last audited:** 2026-11-27, at the close of milestone 3. Run locally: backend lint (golangci-lint v2.15.0), unit, contract and integration tests (Postgres, RLS, Redis, and storage on Silo) pass; the coverage gate passes on the merged unit and integration profiles (94.6% overall, 96.6% domain and app); web lint, typecheck, unit tests and the Playwright suite against the real stack pass; mobile `./gradlew check` and `:androidApp:assembleDebug` pass in a container (`scripts/mobile-docker.sh`). CI is green on every milestone 3 PR (#52 to #71). **Not run:** the Android device walkthrough, which waits for KVM in the WSL VM.
 
 ## How to keep this file honest
 
