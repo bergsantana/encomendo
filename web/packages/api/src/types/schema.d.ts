@@ -972,6 +972,11 @@ export interface components {
             references?: components["schemas"]["Reference"][];
         };
         FieldIssue: {
+            /**
+             * @description The path of the invalid value in the request body: property
+             *     names joined by dots, with zero-based indexes in brackets, for
+             *     example `mainSupplier.leadDays` or `options[0].choices[1].label`.
+             */
             field: string;
             /** @description pt-BR text the client may show next to the field. */
             message: string;

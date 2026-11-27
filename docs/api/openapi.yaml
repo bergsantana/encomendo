@@ -2214,6 +2214,10 @@ components:
       properties:
         field:
           type: string
+          description: |
+            The path of the invalid value in the request body: property
+            names joined by dots, with zero-based indexes in brackets, for
+            example `mainSupplier.leadDays` or `options[0].choices[1].label`.
         message:
           type: string
           description: pt-BR text the client may show next to the field.

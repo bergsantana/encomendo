@@ -142,6 +142,14 @@ func TestTypedIDs_ParseFormatAndZero(t *testing.T) {
 	t.Run("InvitationID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseInvitationID) })
 	t.Run("WorkflowID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseWorkflowID) })
 	t.Run("SupplierID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseSupplierID) })
+	t.Run("ItemID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseItemID) })
+	t.Run("KitID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseKitID) })
+	t.Run("CategoryID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseCategoryID) })
+	t.Run("AttributeID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseAttributeID) })
+	t.Run("AttributeValueID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseAttributeValueID) })
+	t.Run("PhotoID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParsePhotoID) })
+	t.Run("OptionID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseOptionID) })
+	t.Run("ChoiceID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseChoiceID) })
 }
 
 func TestTypedIDs_RoundTripThroughJSON(t *testing.T) {
@@ -188,6 +196,14 @@ func TestTypedIDs_UnmarshalRejectsMalformed(t *testing.T) {
 	targets := map[string]any{
 		"TenantID": new(TenantID), "UserID": new(UserID), "ClientAccountID": new(ClientAccountID),
 		"InvitationID": new(InvitationID), "WorkflowID": new(WorkflowID), "SupplierID": new(SupplierID), "ID": new(ID),
+		"ItemID":           new(ItemID),
+		"KitID":            new(KitID),
+		"CategoryID":       new(CategoryID),
+		"AttributeID":      new(AttributeID),
+		"AttributeValueID": new(AttributeValueID),
+		"PhotoID":          new(PhotoID),
+		"OptionID":         new(OptionID),
+		"ChoiceID":         new(ChoiceID),
 	}
 	for name, dst := range targets {
 		if err := json.Unmarshal([]byte(`"not-an-id"`), dst); !errors.Is(err, ErrInvalidID) {

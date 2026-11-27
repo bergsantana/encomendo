@@ -219,3 +219,149 @@ func (id SupplierID) MarshalText() ([]byte, error) { return marshalTyped(id) }
 
 // UnmarshalText works as ID.UnmarshalText.
 func (id *SupplierID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// ItemID identifies a catalog item.
+type ItemID ID
+
+// ParseItemID parses an item id; see ParseID for the errors.
+func ParseItemID(s string) (ItemID, error) { return parseTyped[ItemID](s) }
+
+// String returns the canonical form.
+func (id ItemID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id ItemID) IsZero() bool { return id == ItemID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id ItemID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *ItemID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// KitID identifies a catalog kit.
+type KitID ID
+
+// ParseKitID parses a kit id; see ParseID for the errors.
+func ParseKitID(s string) (KitID, error) { return parseTyped[KitID](s) }
+
+// String returns the canonical form.
+func (id KitID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id KitID) IsZero() bool { return id == KitID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id KitID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *KitID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// CategoryID identifies an item category.
+type CategoryID ID
+
+// ParseCategoryID parses a category id; see ParseID for the errors.
+func ParseCategoryID(s string) (CategoryID, error) { return parseTyped[CategoryID](s) }
+
+// String returns the canonical form.
+func (id CategoryID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id CategoryID) IsZero() bool { return id == CategoryID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id CategoryID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *CategoryID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// AttributeID identifies an item field such as "Serve em".
+type AttributeID ID
+
+// ParseAttributeID parses an attribute id; see ParseID for the errors.
+func ParseAttributeID(s string) (AttributeID, error) { return parseTyped[AttributeID](s) }
+
+// String returns the canonical form.
+func (id AttributeID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id AttributeID) IsZero() bool { return id == AttributeID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id AttributeID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *AttributeID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// AttributeValueID identifies one value of an item field, such as "CB 500X".
+type AttributeValueID ID
+
+// ParseAttributeValueID parses an attribute value id; see ParseID for the errors.
+func ParseAttributeValueID(s string) (AttributeValueID, error) {
+	return parseTyped[AttributeValueID](s)
+}
+
+// String returns the canonical form.
+func (id AttributeValueID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id AttributeValueID) IsZero() bool { return id == AttributeValueID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id AttributeValueID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *AttributeValueID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// PhotoID identifies a photo of an item or kit.
+type PhotoID ID
+
+// ParsePhotoID parses a photo id; see ParseID for the errors.
+func ParsePhotoID(s string) (PhotoID, error) { return parseTyped[PhotoID](s) }
+
+// String returns the canonical form.
+func (id PhotoID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id PhotoID) IsZero() bool { return id == PhotoID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id PhotoID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *PhotoID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// OptionID identifies a customization option of an item.
+type OptionID ID
+
+// ParseOptionID parses an option id; see ParseID for the errors.
+func ParseOptionID(s string) (OptionID, error) { return parseTyped[OptionID](s) }
+
+// String returns the canonical form.
+func (id OptionID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id OptionID) IsZero() bool { return id == OptionID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id OptionID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *OptionID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// ChoiceID identifies one choice of a customization option.
+type ChoiceID ID
+
+// ParseChoiceID parses a choice id; see ParseID for the errors.
+func ParseChoiceID(s string) (ChoiceID, error) { return parseTyped[ChoiceID](s) }
+
+// String returns the canonical form.
+func (id ChoiceID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id ChoiceID) IsZero() bool { return id == ChoiceID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id ChoiceID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *ChoiceID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
