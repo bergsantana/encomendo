@@ -36,6 +36,11 @@ var (
 	// ErrPhotoLimit means the item or kit already has 8 photos: 409
 	// photo_limit.
 	ErrPhotoLimit = fmt.Errorf("catalog: at most %d photos: %w", maxPhotos, shared.ErrConflict)
+	// ErrSwapPriceNotPositive means a swap in keep mode would leave the kit at
+	// a price of zero or less: the owner's discount is larger than the
+	// remaining items. The swap is impossible; the store page decides how to
+	// show that (milestone 7).
+	ErrSwapPriceNotPositive = fmt.Errorf("catalog: swapped kit price is not above zero: %w", shared.ErrConflict)
 	// ErrPublishArchived means an archived item or kit cannot be published:
 	// restore it first.
 	ErrPublishArchived = fmt.Errorf("catalog: archived rows cannot be published: %w", shared.ErrConflict)
@@ -50,7 +55,7 @@ var (
 	// ErrSwapNotInKit means a swap names an item the kit does not hold.
 	ErrSwapNotInKit = fmt.Errorf("catalog: swap of an item not in the kit: %w", shared.ErrInvalid)
 	// ErrSwapNotAllowed means a swap names a kit item the client cannot
-	// swap.
+	// swap, or an item the kit already holds as another member.
 	ErrSwapNotAllowed = fmt.Errorf("catalog: item is not swappable: %w", shared.ErrInvalid)
 	// ErrSwapNotListed means a swap's new item is not one of the item's
 	// listed alternatives.

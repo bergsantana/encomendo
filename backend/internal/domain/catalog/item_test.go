@@ -597,3 +597,28 @@ func TestItem_Photos(t *testing.T) {
 		t.Errorf("photos = %d, want 8", len(i.Photos()))
 	}
 }
+
+// TestNewItem_FieldPathsAreTheBodyPath pins the convention the API documents
+// for errors[].field: the path in the request body, dotted, with zero-based
+// indexes (docs/api/openapi.yaml, FieldIssue).
+func TestNewItem_FieldPathsAreTheBodyPath(t *testing.T) {
+	t.Parallel()
+
+	in := toOrderInput(t)
+	in.Sourcing.Main.LeadDays = 400
+	in.Sourcing.Backup = link(2, 5, SetCost(moneyOf(t, -1)))
+	bad := validOption(t, 1)
+	bad.Choices[1].ExtraDays = 999
+	in.Options = []OptionInput{validOption(t, 2), bad}
+
+	_, err := NewItem(tenantID, itemID(1), in)
+	got := fieldsOf(t, err)
+	for _, field := range []string{"mainSupplier.leadDays", "backupSupplier.costCents", "options[1].choices[1].extraDays"} {
+		if _, ok := got[field]; !ok {
+			t.Errorf("fields = %v, want %q", got, field)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("fields = %v, want exactly those three", got)
+	}
+}

@@ -550,10 +550,39 @@ func TestRestoreKit(t *testing.T) {
 	if k, err := RestoreKit(rec, now); err != nil || !k.Archived() {
 		t.Errorf("RestoreKit of an archived kit = %v, %v", k, err)
 	}
-	// A live kit never holds one.
+	// A live kit loads too: an item may be archived after the kit was saved.
 	rec.Archived = false
-	if _, err := RestoreKit(rec, now); !errors.Is(err, ErrInvalidKit) {
-		t.Errorf("RestoreKit of a live kit with an archived item = %v, want ErrInvalidKit", err)
+	live, err := RestoreKit(rec, now)
+	if err != nil || live.Archived() {
+		t.Fatalf("RestoreKit of a live kit with an archived member = %v, %v, want it loaded", live, err)
+	}
+	// It can only be saved again once the item is replaced.
+	if err := live.Replace(KitInput{Name: rec.Name, Price: rec.Price, Items: rec.Items}, now); !errors.Is(err, ErrItemArchived) {
+		t.Errorf("Replace keeping the archived member = %v, want ErrItemArchived", err)
+	}
+}
+
+func TestRestoreKit_LiveKitWithAnArchivedAlternative(t *testing.T) {
+	t.Parallel()
+
+	in := validKitInput(t)
+	rec := KitRecord{Tenant: tenantID, ID: kitID(1), Name: in.Name, Price: in.Price, SwapMode: SwapKeepDiscount, Items: in.Items, Published: true, Version: 2}
+	now := validLookup(t)
+	f := now[itemID(richSeat)]
+	f.Archived = true
+	now[itemID(richSeat)] = f
+
+	k, err := RestoreKit(rec, now)
+	if err != nil || !k.Published() {
+		t.Fatalf("RestoreKit = %v, %v, want a published kit that loads", k, err)
+	}
+	_, err = k.PriceWithSwaps(now, []Swap{swapOf(seat, richSeat)})
+	var ae *ArchivedItemsError
+	if !errors.As(err, &ae) || len(ae.Items) != 1 || ae.Items[0] != itemID(richSeat) {
+		t.Errorf("a swap to the archived alternative = %v, want ArchivedItemsError", err)
+	}
+	if _, err := k.PriceWithSwaps(now, []Swap{swapOf(seat, cheapSeat)}); err != nil {
+		t.Errorf("a swap to a live alternative = %v, want none", err)
 	}
 }
 
@@ -589,5 +618,45 @@ func TestRestoreKit_RefusesABrokenRecord(t *testing.T) {
 	}
 	if _, err := RestoreKit(good(), validLookup(t)); err != nil {
 		t.Errorf("the base record must be valid: %v", err)
+	}
+}
+
+// TestKit_MoneyBounds uses the largest kit the rules allow: 50 items of
+// R$ 1.000.000.000,00 each, 99 of each, at a cost equal to the price. Every
+// sum and the margin must stay inside int64.
+func TestKit_MoneyBounds(t *testing.T) {
+	t.Parallel()
+
+	const perItem = int64(maxAmountCents)
+	const total = int64(50) * 99 * perItem
+	lookup := ItemLookup{}
+	items := make([]KitItem, 50)
+	for i := range items {
+		id := shared.ItemID(shared.NewV7(int64(i+1), [10]byte{byte(i), 7}))
+		lookup[id] = ItemFacts{Price: moneyOf(t, perItem), ReadyDays: 365, Cost: costPtr(t, perItem)}
+		items[i] = KitItem{Item: id, Quantity: 99}
+	}
+	for _, price := range []int64{maxAmountCents, 1} {
+		in := KitInput{Name: "Kit enorme", Price: moneyOf(t, price), Items: items}
+		k := newKit(t, 1, in, lookup)
+
+		got, err := k.SingleItemsTotal(lookup)
+		if err != nil || got.Cents() != total {
+			t.Fatalf("SingleItemsTotal = %v, %v, want %d", got, err, total)
+		}
+		if d, err := k.Discount(lookup); err != nil || d.Cents() != total-price {
+			t.Errorf("Discount = %v, %v, want %d", d, err, total-price)
+		}
+		cost, err := k.Cost(lookup)
+		if err != nil || cost == nil || cost.Cents() != total {
+			t.Fatalf("Cost = %v, %v, want %d", cost, err, total)
+		}
+		want := Margin{Cents: price - total, BasisPoints: (price - total) * 10000 / price}
+		if m, ok, err := k.Margin(lookup); err != nil || !ok || m != want {
+			t.Errorf("price %d: Margin = %+v, %v, %v, want %+v", price, m, ok, err, want)
+		}
+		if days, err := k.Days(lookup, 60, 60); err != nil || days.Total != 485 {
+			t.Errorf("Days = %+v, %v, want 485", days, err)
+		}
 	}
 }

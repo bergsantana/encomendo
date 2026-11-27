@@ -289,8 +289,12 @@ type KitRecord struct {
 	Version          int
 }
 
-// RestoreKit rebuilds a stored kit. An archived kit may hold archived items,
-// so the lookup is checked for unknown items only. It returns ErrInvalidKit
+// RestoreKit rebuilds a stored kit. The lookup is checked for unknown items
+// only, never for archived ones: an item may be archived after the kit was
+// saved (the item's archive check only looks at kits that are not archived
+// at that moment), and such a kit must stay readable. It can be saved again
+// only once the item is replaced, and a swap to an archived alternative is
+// refused by PriceWithSwaps. It returns ErrInvalidKit
 // when the record breaks a rule a stored kit always keeps: a version below
 // 1, text that is not trimmed, an empty swap mode, an archived kit that is
 // published, or anything NewKit refuses.
@@ -305,10 +309,7 @@ func RestoreKit(r KitRecord, lookup ItemLookup) (*Kit, error) {
 		AssemblyDays: r.AssemblyDays, SafetyMarginDays: r.SafetyMarginDays, Items: r.Items,
 		AttributeValues: r.Attributes,
 	}
-	if r.Archived {
-		lookup = withoutArchived(lookup)
-	}
-	k, err := NewKit(r.Tenant, r.ID, in, lookup)
+	k, err := NewKit(r.Tenant, r.ID, in, withoutArchived(lookup))
 	if err != nil {
 		// The cause is text only: wrapping a ValidationError would make a bad
 		// stored row match shared.ErrInvalid and answer 400, not 500.
@@ -322,8 +323,8 @@ func RestoreKit(r KitRecord, lookup ItemLookup) (*Kit, error) {
 	return k, nil
 }
 
-// withoutArchived returns lookup with every item marked as not archived: an
-// archived kit keeps the items it held when it was archived.
+// withoutArchived returns lookup with every item marked as not archived: a
+// stored kit keeps the items it held, even once they are archived.
 func withoutArchived(lookup ItemLookup) ItemLookup {
 	out := make(ItemLookup, len(lookup))
 	for id, f := range lookup {
@@ -400,8 +401,10 @@ func (k *Kit) CheckVersion(expected int) error {
 	return nil
 }
 
-// Replace replaces everything the contract's KitInput holds. It returns the
-// errors of NewKit; nothing changes then.
+// Replace replaces everything the contract's KitInput holds; an empty
+// SwapMode means the default, keep. It returns the errors of NewKit, so a kit
+// holding an archived item can be saved only once the item is replaced;
+// nothing changes then.
 func (k *Kit) Replace(in KitInput, lookup ItemLookup) error {
 	d, err := buildKit(in, lookup)
 	if err != nil {
@@ -528,16 +531,21 @@ func costOf(f ItemFacts) *shared.Money  { return f.Cost }
 // price × quantity. It returns ErrItemMissing when the lookup lacks an item,
 // and shared.ErrCurrencyMismatch when an item is priced in another currency.
 func (k *Kit) SingleItemsTotal(lookup ItemLookup) (shared.Money, error) {
-	return singleTotal(k.lines(), lookup)
+	return k.singleTotal(k.lines(), lookup)
 }
 
-func singleTotal(lines []line, lookup ItemLookup) (shared.Money, error) {
+// singleTotal adds the single-item prices of lines. The total must be in the
+// kit's currency, so a kit never charges a price made of mixed currencies.
+func (k *Kit) singleTotal(lines []line, lookup ItemLookup) (shared.Money, error) {
 	total, err := sumLines(lines, lookup, priceOf)
 	if err != nil {
 		return shared.Money{}, err
 	}
 	if total == nil {
 		return shared.Money{}, fmt.Errorf("total of no items: %w", ErrInvalidKit)
+	}
+	if total.Currency() != k.price.Currency() {
+		return shared.Money{}, shared.ErrCurrencyMismatch
 	}
 	return *total, nil
 }

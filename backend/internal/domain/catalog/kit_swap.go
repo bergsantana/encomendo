@@ -18,8 +18,9 @@ type Swap struct {
 // swapped checks swaps against the kit and returns what each one removes and
 // adds, plus the kit's lines after all of them. The checks, in order for
 // each swap: the item is in the kit (ErrSwapNotInKit), it is not swapped
-// twice (ErrSwapRepeated), it is swappable (ErrSwapNotAllowed), and With is
-// one of its listed alternatives (ErrSwapNotListed). An alternative that was
+// twice (ErrSwapRepeated), it is swappable (ErrSwapNotAllowed), With is one
+// of its listed alternatives (ErrSwapNotListed), and With is not another
+// member of the kit (ErrSwapNotAllowed). An alternative that was
 // archived since the kit was saved gives an *ArchivedItemsError.
 func (k *Kit) swapped(lookup ItemLookup, swaps []Swap) (lines, removed, added []line, err error) {
 	lines = k.lines()
@@ -60,6 +61,10 @@ func (k *Kit) checkSwap(i int, sw Swap, done map[shared.ItemID]struct{}) error {
 	if !slices.Contains(ki.Alternatives, sw.With) {
 		return fmt.Errorf("swap of %v for %v in kit %v: %w", sw.Item, sw.With, k.id, ErrSwapNotListed)
 	}
+	// The kit must not end up holding the same item in two places.
+	if slices.ContainsFunc(k.items, func(other KitItem) bool { return other.Item == sw.With }) {
+		return fmt.Errorf("swap of %v for %v, already in kit %v: %w", sw.Item, sw.With, k.id, ErrSwapNotAllowed)
+	}
 	return nil
 }
 
@@ -73,10 +78,12 @@ func (k *Kit) checkSwap(i int, sw Swap, done map[shared.ItemID]struct{}) error {
 //     quantity.
 //
 // It returns ErrSwapNotInKit, ErrSwapNotAllowed, ErrSwapNotListed or
-// ErrSwapRepeated for a swap that breaks the rules (see Swap), an
+// ErrSwapRepeated for a swap that breaks the rules (see Swap),
+// ErrSwapPriceNotPositive when keeping the discount would leave a price of
+// zero or less (the owner's discount makes that swap impossible), an
 // *ArchivedItemsError for an archived alternative, ErrItemMissing when the
 // lookup lacks an item, and shared.ErrCurrencyMismatch when an item is priced
-// in another currency than the kit.
+// in another currency than the kit, in either mode.
 func (k *Kit) PriceWithSwaps(lookup ItemLookup, swaps []Swap) (shared.Money, error) {
 	lines, removed, added, err := k.swapped(lookup, swaps)
 	if err != nil {
@@ -85,15 +92,24 @@ func (k *Kit) PriceWithSwaps(lookup ItemLookup, swaps []Swap) (shared.Money, err
 	if len(swaps) == 0 {
 		return k.price, nil
 	}
+	var price shared.Money
 	if k.swapMode == SwapLoseDiscount {
-		return singleTotal(lines, lookup)
+		price, err = k.singleTotal(lines, lookup)
+	} else {
+		price, err = k.keepPrice(lookup, removed, added)
 	}
-	return keepPrice(k.price, lookup, removed, added)
+	if err != nil {
+		return shared.Money{}, err
+	}
+	if price.Cents() <= 0 {
+		return shared.Money{}, fmt.Errorf("swapped kit %v would cost %v: %w", k.id, price, ErrSwapPriceNotPositive)
+	}
+	return price, nil
 }
 
 // keepPrice is the price − removed + added of SwapKeepDiscount.
-func keepPrice(price shared.Money, lookup ItemLookup, removed, added []line) (shared.Money, error) {
-	out := price
+func (k *Kit) keepPrice(lookup ItemLookup, removed, added []line) (shared.Money, error) {
+	out := k.price
 	for _, step := range []struct {
 		lines []line
 		sign  int
@@ -101,7 +117,7 @@ func keepPrice(price shared.Money, lookup ItemLookup, removed, added []line) (sh
 		if len(step.lines) == 0 {
 			continue
 		}
-		total, err := singleTotal(step.lines, lookup)
+		total, err := k.singleTotal(step.lines, lookup)
 		if err != nil {
 			return shared.Money{}, err
 		}

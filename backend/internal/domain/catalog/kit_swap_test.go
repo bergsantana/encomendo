@@ -209,3 +209,82 @@ func TestKit_Swaps_DoNotChangeTheKit(t *testing.T) {
 		t.Errorf("a swap changed the kit: first item %v price %v", got, k.Price())
 	}
 }
+
+func TestKit_PriceWithSwaps_KeepNeverLeavesAPriceOfZeroOrLess(t *testing.T) {
+	t.Parallel()
+
+	// A kit of R$ 50,00 for R$ 900,00 of items: the owner's discount is so
+	// large that swapping the R$ 400,00 seat for the R$ 250,00 one would
+	// leave 5000 − 40000 + 25000 = −10000.
+	lookup := validLookup(t)
+	tests := []struct {
+		name  string
+		price int64
+		swaps []Swap
+		want  int64 // cents; 0 when the swap must be refused
+	}{
+		{"negative result", 5000, []Swap{swapOf(seat, cheapSeat)}, 0},
+		{"exactly zero", 15000, []Swap{swapOf(seat, cheapSeat)}, 0},
+		{"one cent", 15001, []Swap{swapOf(seat, cheapSeat)}, 1},
+		{"a swap that raises the price", 5000, []Swap{swapOf(seat, richSeat)}, 20000},
+		{"no swap is the kit price, however low", 5000, nil, 5000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			in := validKitInput(t)
+			in.Price = moneyOf(t, tt.price)
+			got, err := newKit(t, 1, in, lookup).PriceWithSwaps(lookup, tt.swaps)
+			if tt.want == 0 {
+				if !errors.Is(err, ErrSwapPriceNotPositive) || !errors.Is(err, shared.ErrConflict) {
+					t.Errorf("PriceWithSwaps = %v, %v, want ErrSwapPriceNotPositive (409)", got, err)
+				}
+				return
+			}
+			if err != nil || got.Cents() != tt.want {
+				t.Errorf("PriceWithSwaps = %v, %v, want %d", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestKit_PriceWithSwaps_LoseChecksTheKitsCurrency(t *testing.T) {
+	t.Parallel()
+
+	usd := ItemLookup{}
+	for id, f := range validLookup(t) {
+		usd[id] = ItemFacts{Price: mustMoney(t, f.Price.Cents(), "USD"), ReadyDays: f.ReadyDays}
+	}
+	k := scrambler(t, SwapLoseDiscount)
+	if _, err := k.PriceWithSwaps(usd, []Swap{swapOf(seat, cheapSeat)}); !errors.Is(err, shared.ErrCurrencyMismatch) {
+		t.Errorf("lose with every item in USD = %v, want ErrCurrencyMismatch", err)
+	}
+	if _, err := k.SingleItemsTotal(usd); !errors.Is(err, shared.ErrCurrencyMismatch) {
+		t.Errorf("SingleItemsTotal with every item in USD = %v, want ErrCurrencyMismatch", err)
+	}
+	if _, err := scrambler(t, SwapKeepDiscount).PriceWithSwaps(usd, []Swap{swapOf(seat, cheapSeat)}); !errors.Is(err, shared.ErrCurrencyMismatch) {
+		t.Errorf("keep with every item in USD = %v, want ErrCurrencyMismatch", err)
+	}
+}
+
+func TestKit_PriceWithSwaps_RefusesAnItemTheKitAlreadyHolds(t *testing.T) {
+	t.Parallel()
+
+	in := validKitInput(t)
+	in.Items[0].Alternatives = []shared.ItemID{itemID(cheapSeat), itemID(exhaust)} // exhaust is another member
+	lookup := validLookup(t)
+	for _, mode := range []SwapMode{SwapKeepDiscount, SwapLoseDiscount} {
+		in.SwapMode = mode
+		k := newKit(t, 1, in, lookup)
+		swaps := []Swap{swapOf(seat, exhaust)}
+		if _, err := k.PriceWithSwaps(lookup, swaps); !errors.Is(err, ErrSwapNotAllowed) {
+			t.Errorf("%s: swap to a member = %v, want ErrSwapNotAllowed", mode, err)
+		}
+		if _, err := k.DaysWithSwaps(lookup, swaps, 3, 2); !errors.Is(err, ErrSwapNotAllowed) {
+			t.Errorf("%s: days with a swap to a member = %v, want ErrSwapNotAllowed", mode, err)
+		}
+		if _, err := k.PriceWithSwaps(lookup, []Swap{swapOf(seat, cheapSeat)}); err != nil {
+			t.Errorf("%s: a swap to a non-member = %v, want none", mode, err)
+		}
+	}
+}
