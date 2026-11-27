@@ -30,7 +30,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <table>
+  <table class="enc-cards">
     <thead>
       <tr>
         <th scope="col">
@@ -52,12 +52,19 @@ const emit = defineEmits<{
         v-for="invitation in invitations"
         :key="invitationKey(invitation)"
       >
-        <td>{{ invitation.email }}</td>
-        <td>{{ roleLabel(invitation.role) }}</td>
-        <td class="enc-number">
+        <td data-label="E-mail">
+          {{ invitation.email }}
+        </td>
+        <td data-label="Papel">
+          {{ roleLabel(invitation.role) }}
+        </td>
+        <td
+          class="enc-number"
+          data-label="Vale até"
+        >
           {{ formatDate(invitation.expiresAt) }}
         </td>
-        <td class="actions">
+        <td class="actions enc-cards__actions">
           <BaseButton
             :disabled="busy === invitationKey(invitation)"
             @click="emit('resend', invitation)"

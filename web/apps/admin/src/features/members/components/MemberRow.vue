@@ -88,11 +88,13 @@ async function cancel(): Promise<void> {
 
 <template>
   <tr ref="row">
-    <td>
+    <td data-label="Nome">
       {{ member.name }}<span v-if="isMe"> (você)</span>
     </td>
-    <td>{{ member.email }}</td>
-    <td>
+    <td data-label="E-mail">
+      {{ member.email }}
+    </td>
+    <td data-label="Papel">
       <span v-if="member.role === 'owner'">{{ roleLabel('owner') }}</span>
       <BaseSelect
         v-else
@@ -104,7 +106,7 @@ async function cancel(): Promise<void> {
     </td>
     <td
       ref="actions"
-      class="actions"
+      class="actions enc-cards__actions"
     >
       <template v-if="member.role !== 'owner'">
         <span

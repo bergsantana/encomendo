@@ -7,12 +7,18 @@
  * Equipe comes after them, for the roles that manage the team. The foot of
  * the menu shows who is signed in, in which store, and logs out; App leaves
  * for login once the session has ended.
+ *
+ * On phones (640 px and narrower) the menu is a drawer behind the "Menu"
+ * button of a top bar. CSS does the layout; the script only keeps the drawer
+ * honest for the keyboard: focus goes in, Tab stays in, Escape closes and
+ * gives focus back to the button, and choosing an entry closes it and moves
+ * focus to the page.
  */
 import type { Permission } from '@encomendo/api'
-import { BaseButton } from '@encomendo/ui'
+import { BaseButton, IconMenu2, IconX, trapTab, useIsPhone } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 import { useAuthStore } from '../features/auth/store'
 import { useSessionStore } from '../stores/session'
@@ -35,13 +41,110 @@ const { user, tenant, memberships } = storeToRefs(session)
 const menu = computed(() => items.filter((item) => item.permission === undefined || session.can(item.permission)))
 const auth = useAuthStore()
 const { loggingOut, logOutError } = storeToRefs(auth)
+
+const drawerOpen = ref(false)
+const menuButton = useTemplateRef<HTMLButtonElement>('menuButton')
+const closeButton = useTemplateRef<HTMLButtonElement>('closeButton')
+const drawer = useTemplateRef<HTMLElement>('drawer')
+const page = useTemplateRef<HTMLElement>('page')
+const route = useRoute()
+const isPhone = useIsPhone()
+
+async function openDrawer(): Promise<void> {
+  drawerOpen.value = true
+  await nextTick()
+  closeButton.value?.focus()
+}
+
+/** closeDrawer shuts the drawer; focus goes back to the button that opened it, or to the page after a choice. */
+async function closeDrawer(focus: 'button' | 'page' | 'none'): Promise<void> {
+  if (!drawerOpen.value) return
+  drawerOpen.value = false
+  await nextTick()
+  if (focus === 'button') menuButton.value?.focus()
+  else if (focus === 'page') page.value?.focus()
+}
+
+// On the document, not the drawer: a tap on the scrim or the page can leave focus on <body>,
+// and Escape and Tab must still work then.
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.stopPropagation()
+    void closeDrawer('button')
+    return
+  }
+  const menuEl = drawer.value
+  if (event.key !== 'Tab' || menuEl === null) return
+  if (menuEl.contains(document.activeElement)) {
+    trapTab(event, menuEl)
+    return
+  }
+  event.preventDefault()
+  closeButton.value?.focus()
+}
+
+// Choosing an entry closes the drawer, also the page already open, which changes no route.
+function onDrawerClick(event: MouseEvent): void {
+  if (event.target instanceof Element && event.target.closest('a') !== null) void closeDrawer('page')
+}
+
+watch(drawerOpen, (open) => {
+  if (open) document.addEventListener('keydown', onKeydown)
+  else document.removeEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+
+watch(
+  () => route.fullPath,
+  () => closeDrawer('page'),
+)
+// A phone turned sideways, or a window widened, shows the full menu: nothing stays open behind it.
+watch(isPhone, (phone) => {
+  if (!phone) void closeDrawer('none')
+})
 </script>
 
 <template>
-  <div class="layout">
+  <div
+    class="layout"
+    :class="{ 'layout--open': drawerOpen }"
+  >
+    <!-- inert is set or removed, never "false": an older WebView without the property would read the bare attribute as inert. -->
+    <header
+      class="topbar"
+      :inert="drawerOpen ? true : undefined"
+    >
+      <button
+        ref="menuButton"
+        type="button"
+        class="topbar__button"
+        aria-controls="main-menu"
+        :aria-expanded="drawerOpen"
+        @click="openDrawer"
+      >
+        <IconMenu2
+          :size="20"
+          aria-hidden="true"
+        />
+        Menu
+      </button>
+      <span
+        v-if="tenant"
+        class="topbar__store"
+      >{{ tenant.name }}</span>
+    </header>
+    <div
+      class="scrim"
+      data-testid="menu-scrim"
+      aria-hidden="true"
+      @click="closeDrawer('button')"
+    />
     <nav
+      id="main-menu"
+      ref="drawer"
       class="menu"
       aria-label="Menu principal"
+      @click="onDrawerClick"
     >
       <div class="brand">
         <span
@@ -49,6 +152,18 @@ const { loggingOut, logOutError } = storeToRefs(auth)
           aria-hidden="true"
         />
         Encomendo
+        <button
+          ref="closeButton"
+          type="button"
+          class="menu__close"
+          @click="closeDrawer('button')"
+        >
+          <IconX
+            :size="20"
+            aria-hidden="true"
+          />
+          Fechar menu
+        </button>
       </div>
       <p
         v-if="tenant"
@@ -89,7 +204,12 @@ const { loggingOut, logOutError } = storeToRefs(auth)
         </p>
       </div>
     </nav>
-    <main class="page">
+    <main
+      ref="page"
+      class="page"
+      tabindex="-1"
+      :inert="drawerOpen ? true : undefined"
+    >
       <RouterView />
     </main>
   </div>
@@ -98,8 +218,13 @@ const { loggingOut, logOutError } = storeToRefs(auth)
 <style scoped>
 .layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 100vh;
+}
+.topbar,
+.scrim,
+.menu__close {
+  display: none;
 }
 .menu {
   display: flex;
@@ -156,5 +281,87 @@ const { loggingOut, logOutError } = storeToRefs(auth)
 }
 .page {
   padding: 24px 32px;
+}
+.page:focus {
+  outline: none;
+}
+
+/* Phone: a top bar with the "Menu" button, and the menu as a drawer from the left. */
+@media (max-width: 640px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 4px 8px;
+    background: var(--enc-surface);
+    border-bottom: 1px solid var(--enc-hairline);
+  }
+  .topbar__button,
+  .menu__close {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--enc-control-height);
+    padding: 0 12px;
+    border: 1px solid var(--enc-secondary-border);
+    border-radius: var(--enc-radius-card);
+    background: var(--enc-surface);
+    color: var(--enc-ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .topbar__store {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .menu {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    display: none;
+    box-sizing: border-box;
+    width: min(300px, 85vw);
+    padding: 16px;
+    overflow-y: auto;
+    box-shadow: 0 4px 24px rgb(27 29 32 / 20%);
+  }
+  .layout--open .menu {
+    display: flex;
+  }
+  .layout--open .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    display: block;
+    background: rgb(27 29 32 / 40%);
+  }
+  .brand {
+    margin-bottom: 12px;
+  }
+  .menu__close {
+    margin-left: auto;
+  }
+  .menu-link,
+  .account-link {
+    display: flex;
+    align-items: center;
+    min-height: var(--enc-control-height);
+    padding: 0 10px;
+  }
+  .page {
+    padding: 16px;
+  }
 }
 </style>

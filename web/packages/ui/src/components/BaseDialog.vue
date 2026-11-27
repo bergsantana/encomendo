@@ -4,8 +4,14 @@
  * the right for forms. It names itself by its title, moves the keyboard in
  * when it opens, keeps Tab inside, closes on Escape, and hands focus back to
  * what opened it. Closing is the parent's decision: it only asks (`close`).
+ *
+ * On phones (640 px and narrower, see responsive.ts) both variants become a
+ * full-screen sheet: no backdrop to tap, and no Escape key on a phone, so
+ * the slot must always carry its own "Fechar" or "Cancelar" button.
  */
 import { nextTick, onBeforeUnmount, onMounted, useId, useTemplateRef } from 'vue'
+
+import { trapTab } from '../focusTrap'
 
 withDefaults(
   defineProps<{
@@ -21,8 +27,6 @@ const emit = defineEmits<{ close: [] }>()
 const titleId = useId()
 const surface = useTemplateRef<HTMLElement>('surface')
 let opener: Element | null = null
-
-const focusable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 onMounted(async () => {
   opener = document.activeElement
@@ -41,19 +45,7 @@ function onKeydown(event: KeyboardEvent): void {
     emit('close')
     return
   }
-  if (event.key !== 'Tab' || surface.value === null) return
-  const inside = [...surface.value.querySelectorAll<HTMLElement>(focusable)]
-  const first = inside[0]
-  const last = inside[inside.length - 1]
-  if (first === undefined || last === undefined) return
-  const active = document.activeElement
-  if (event.shiftKey && (active === first || active === surface.value)) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && active === last) {
-    event.preventDefault()
-    first.focus()
-  }
+  if (surface.value !== null) trapTab(event, surface.value)
 }
 </script>
 
@@ -138,5 +130,23 @@ function onKeydown(event: KeyboardEvent): void {
 .enc-dialog__body {
   overflow-y: auto;
   padding: 16px 24px 24px;
+}
+
+/* Phone: a full-screen sheet. After the variants, with the same specificity, so it wins. */
+@media (max-width: 640px) {
+  .enc-dialog .enc-dialog__surface {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .enc-dialog__header {
+    padding: 12px 16px;
+  }
+  .enc-dialog__body {
+    flex: 1;
+    padding: 16px;
+  }
 }
 </style>

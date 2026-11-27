@@ -92,3 +92,71 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/*
+ * Phone layouts (ADR 0029): 640 px and narrower, the one breakpoint of the
+ * admin (phoneMaxWidth in responsive.ts). A 390 px phone is the design size.
+ * CSS custom properties cannot sit inside a media query, so the number is
+ * written out here and in each component's own `@media (max-width: 640px)`.
+ */
+@media (max-width: 640px) {
+  /* Thumb-sized controls: every BaseButton, BaseInput and BaseSelect follows. */
+  .enc-density-admin {
+    --enc-control-height: 48px;
+  }
+
+  /*
+   * enc-cards: put it on a <table> and, at phone width, each body row
+   * becomes a card and the header row stays for screen readers only. Give
+   * every <td> a `data-label` with its column's name (it is drawn above the
+   * value), and the actions cell the class `enc-cards__actions`. Desktop
+   * keeps the table untouched. The selectors are longer than the usual
+   * scoped `td` rules so the cards win over a component's table styles.
+   */
+  table.enc-cards,
+  table.enc-cards tbody {
+    display: block;
+  }
+  table.enc-cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  table.enc-cards tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid var(--enc-hairline);
+    border-radius: var(--enc-radius-card);
+    background: var(--enc-surface);
+  }
+  table.enc-cards tbody td {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  table.enc-cards tbody td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--enc-ink-secondary);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  table.enc-cards tbody td.enc-cards__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  table.enc-cards tbody td.enc-cards__actions > * {
+    margin: 0;
+  }
+  table.enc-cards tbody td.enc-cards__actions > .enc-button {
+    flex: 1 1 auto;
+  }
+}

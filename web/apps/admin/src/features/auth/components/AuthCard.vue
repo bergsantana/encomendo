@@ -65,4 +65,34 @@
   color: var(--enc-ink);
   font-weight: 600;
 }
+
+/* Phone: the card is the screen itself, edge to edge. */
+@media (max-width: 640px) {
+  .auth {
+    place-items: start stretch;
+    padding: 0;
+  }
+  .auth__card {
+    box-sizing: border-box;
+    max-width: none;
+    padding: 16px;
+    border: 0;
+    border-radius: 0;
+  }
+}
+</style>
+
+<!-- Not scoped: the buttons and links to size live inside the screens' slots, deeper than :slotted reaches. -->
+<style>
+/* Phone: buttons are full width, and standalone links (Esqueci a senha, Criar conta, Voltar para o login) are as tall as the controls. Links inside a sentence would need their own rule. */
+@media (max-width: 640px) {
+  .auth__card .enc-button {
+    width: 100%;
+  }
+  .auth__card a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--enc-control-height);
+  }
+}
 </style>

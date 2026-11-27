@@ -164,6 +164,22 @@ async function create(): Promise<void> {
   color: var(--enc-ink-secondary);
   font-family: var(--enc-font-mono);
 }
+
+/* Phone: the store's button takes the whole row, its link and badge wrap under it. */
+@media (max-width: 640px) {
+  .store {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: 8px;
+  }
+  .store > :first-child {
+    flex: 1 0 100%;
+  }
+  .store__address {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
 h2 {
   margin: 8px 0 0;
   font-size: 16px;
