@@ -328,16 +328,20 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
     - checks `catalog:write`, that the owner exists in the tenant, and the count (< 8);
     - builds the key `t/{tid}/{items|kits}/{ownerID}/{photoID}`;
     - signs for 5 minutes, with the content type bound.
-  - **`ConfirmPhoto`:**
-    - the key must match the tenant and the owner prefix;
-    - `Stat` gives the size (≤ 10 MB);
-    - the sniffed type must be JPEG, PNG or WebP;
-    - it records the row;
-    - on any failure, it deletes the object and returns `photo_invalid` (or `photo_not_uploaded`).
+  - **`ConfirmPhoto`**, in this order (tenancy review of 3.1):
+    1. **Parse the key** exactly as `t/{principal's tenant}/{items|kits}/{path owner id}/{photoID}`, with nothing after it. On failure, return `photo_not_uploaded` and never touch storage. The answer is the same as for a missing object, so it is no existence oracle.
+    2. **A row already exists for `photoID`:**
+       - on the same owner, return it with `200`;
+       - otherwise, `photo_not_uploaded`.
+       - Never read or delete in either case.
+    3. **`Stat`.** A missing object is `photo_not_uploaded`.
+    4. **Check the object:** size ≤ 10 MB and a sniffed type of JPEG, PNG or WebP. On failure, delete the object and return `photo_invalid`.
+    5. **Record the row** with `photoID` as its primary key. A unique-violation race returns the existing photo; it is not a delete.
   - Views sign `GET` URLs for 10 minutes.
   - Config holds the endpoint, the public endpoint, the bucket, the region, and the access key and secret. Secrets are never logged.
 - **Tests:**
-  - unit: key building and the prefix check, including another tenant's key, `..` and a URL-encoded slash;
+  - unit: key building and parsing, including another tenant's key, another owner's key, a trailing segment, `..` and a URL-encoded slash. None of them reaches storage, checked with a fake that fails on any call;
+  - a repeat confirm returns the existing photo and deletes nothing;
   - use cases with a fake store;
   - integration with MinIO:
     - presign, then a `PUT` with `net/http`, then confirm;
@@ -361,8 +365,16 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
 - **Tests:**
   - `httptest` with fake use cases: status codes, problem codes, DTO validation with unknown fields refused, `version_conflict`;
   - responses validated against `openapi.yaml`;
-  - **visibility:** for viewer, staff and admin principals, every catalog and supplier response JSON has no `cost` or `margin` key, at any depth; the owner's response has them;
-  - the M2 route test that lists every route, updated.
+  - **cost fields are tri-state in requests:** absent keeps the cost, `null` clears it, and a value sets it. Use a small `Optional[T]` DTO type whose `UnmarshalJSON` runs only when the key is present. Use flat structs for `Replace…Request`, never an embedded input, so a promoted `UnmarshalJSON` cannot swallow `version`. Test all three states, plus a non-owner sending the key, even as `null`, which gets 403;
+  - **cost fields in responses:** present as `null` for an owner with no cost, absent for others. Plain `*Money` with `omitempty` cannot do this, so use separate owner and non-owner view structs, or a `Nullable[T]`;
+  - an unknown field in every request body gives `400 invalid`. The schemas under `allOf` cannot say so, so only `DisallowUnknownFields` and this test enforce it;
+  - **visibility:** for viewer, staff and admin principals, every catalog and supplier response JSON has no `cost`, `productionCost` or `margin` key, at any depth; the owner's response has them;
+  - the M2 route test that lists every route, updated;
+  - an admin `PUT` that leaves costs out keeps each supplier's own cost:
+    - when the main supplier is replaced, the new one starts with none;
+    - when main and backup swap, each keeps its own;
+    - when a supplier is unlinked, its cost goes;
+    - when the item leaves `in_house`, the production cost goes (tenancy review of 3.1).
 - **Reviewers:** `go-reviewer`, `tenancy-security-reviewer`.
 - **Depends on:** 3.5 to 3.9.
 

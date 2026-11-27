@@ -32,6 +32,12 @@ Planning milestone 3 raised questions that neither `docs/architecture.md` nor AD
 
 - Each supplier item (the main supplier and an optional backup) has its own lead time and its own cost. The cost is optional, since an admin can create the link without it.
 - The item's margin is its price minus the main supplier's cost.
+- A cost belongs to the pair of item and supplier, not to the main or backup slot:
+  - a newly linked supplier starts with no cost;
+  - swapping main and backup keeps each supplier's own cost;
+  - unlinking a supplier drops its cost;
+  - leaving `in_house` drops the production cost.
+  - So a write from a non-owner, which leaves costs out, can never move a cost to another supplier.
 - `item_costs` keeps only the own cost of in-house items (`in_house`), which have no supplier. It is a staff-only table, as in ADR 0024.
 - Margins are computed in the app layer and never stored.
 
@@ -92,7 +98,12 @@ Planning milestone 3 raised questions that neither `docs/architecture.md` nor AD
 
 - Items and kits each have up to 8 photos. They are ordered, and the first is the cover.
 - Upload follows ADR 0024: a signed `PUT`, then a confirm step. Keys are `t/{tenantID}/{items|kits}/{ownerID}/{photoID}`.
-- The confirm step accepts only keys under the caller's tenant and the photo's owner.
+- The confirm step checks the key first, before touching storage:
+  - it must parse exactly as `t/{caller's tenant}/{items|kits}/{the path's owner id}/{uuid}`;
+  - a key that fails is answered like a missing upload, and is never read or deleted;
+  - the photo's id is the key's last part, so its primary key makes each key single-use;
+  - a repeat confirm of a recorded key returns that photo;
+  - only an object that passed the check and has no photo row is deleted when refused.
 - Admin views carry short-lived signed `GET` URLs. The store page's public read path is planned in milestone 7.
 - In development, the signed URLs point at MinIO on `localhost:9000`. The Android emulator reaches it through `adb reverse tcp:9000 tcp:9000`, so every signed URL keeps one host.
 

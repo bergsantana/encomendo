@@ -641,9 +641,17 @@ export interface paths {
         /**
          * Record a photo uploaded to the key from `/catalog/photo-uploads`.
          * @description Needs `catalog:write`. The server reads the stored object: at most
-         *     10 MB, and JPEG, PNG or WebP by its content, not its name. A refused
-         *     object is deleted (ADR 0024). The photo goes last; the first photo is
-         *     the cover.
+         *     10 MB, and JPEG, PNG or WebP by its content, not its name (ADR 0024).
+         *     The photo goes last; the first photo is the cover.
+         *     The key is checked first, before storage is touched: it must parse
+         *     exactly as `t/{this store}/items/{itemId}/{photoId}` (or `kits/`),
+         *     with this path's id and a UUID `photoId`, and nothing after it. A key
+         *     that fails is `photo_not_uploaded`, the same answer as a key nobody
+         *     uploaded to, and is never read or deleted. The photo's id is the
+         *     key's last part, so a key is used once: confirming a key already
+         *     recorded on this item answers `200` with that photo and changes
+         *     nothing. Only an object that passed the key check and has no photo
+         *     yet is deleted when refused.
          */
         post: operations["confirmItemPhoto"];
         delete?: never;
@@ -811,7 +819,9 @@ export interface paths {
         put?: never;
         /**
          * Record a photo uploaded to the key from `/catalog/photo-uploads`.
-         * @description Needs `catalog:write`. The same checks as for an item's photo.
+         * @description Needs `catalog:write`. The same checks as for an item's photo, with
+         *     `kits/` in the key; confirming a key already recorded on this kit
+         *     answers `200` with that photo.
          */
         post: operations["confirmKitPhoto"];
         delete?: never;
@@ -1303,6 +1313,10 @@ export interface components {
             /**
              * @description Owner only: any other role sending it, even null, gets
              *     `403 forbidden`. Absent keeps the stored cost; null clears it.
+             *     A cost belongs to the item and this supplier, not to the main or
+             *     backup slot: a supplier newly linked to the item starts with no
+             *     cost, swapping main and backup keeps each supplier's own cost,
+             *     and unlinking a supplier drops its cost.
              */
             costCents?: components["schemas"]["Cents"] | null;
         };
@@ -1456,7 +1470,11 @@ export interface components {
             priceCents: number;
             /** @description Required for `in_house`; must be absent or null otherwise. */
             productionDays?: number | null;
-            /** @description Owner only, `in_house` only; as `SupplierItemInput.costCents`. */
+            /**
+             * @description Owner only, `in_house` only; as `SupplierItemInput.costCents`.
+             *     Changing the sourcing mode away from `in_house` drops the
+             *     production cost; coming back starts with none.
+             */
             productionCostCents?: components["schemas"]["Cents"] | null;
             /** @description Required for `to_order` and `stock`; must be absent or null for `in_house`. */
             mainSupplier?: components["schemas"]["SupplierItemInput"] | null;
@@ -1546,7 +1564,7 @@ export interface components {
             published: boolean;
             archived: boolean;
             version: number;
-            /** @description Owner only; absent for every other role. The sum of the items' costs; null when one has none. */
+            /** @description Owner only; absent for every other role. The sum of the items' costs times their quantities; null when one has none. */
             cost?: components["schemas"]["Money"] | null;
             /** @description Owner only; absent for every other role. Kit price minus cost; null without a cost. */
             margin?: components["schemas"]["Margin"] | null;
@@ -1722,8 +1740,9 @@ export interface components {
         /**
          * @description `photo_invalid`: the stored object is over 10 MB or not a JPEG, PNG
          *     or WebP image; it was deleted. `photo_not_uploaded`: nothing was
-         *     uploaded to the key, or the key is not one this store's owner may
-         *     use. `invalid`: the body breaks a rule.
+         *     uploaded to the key, or the key is not one issued for this item or
+         *     kit in this store (the two are not told apart). `invalid`: the body
+         *     breaks a rule.
          */
         PhotoRefused: {
             headers: {
@@ -2925,6 +2944,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description The key was already confirmed on this item; the photo it recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photo"];
+                };
+            };
             /** @description The photo, with a short-lived URL. */
             201: {
                 headers: {
@@ -3242,6 +3270,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description The key was already confirmed on this kit; the photo it recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Photo"];
+                };
+            };
             /** @description The photo, with a short-lived URL. */
             201: {
                 headers: {

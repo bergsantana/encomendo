@@ -95,9 +95,13 @@ func TestSeesCosts_OwnerOnly(t *testing.T) {
 		shared.Role(""):       false,
 	}
 	for role, want := range cases {
-		if got := SeesCosts(role); got != want {
-			t.Errorf("SeesCosts(%q) = %v, want %v", role, got, want)
-		}
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+
+			if got := SeesCosts(role); got != want {
+				t.Errorf("SeesCosts(%q) = %v, want %v", role, got, want)
+			}
+		})
 	}
 }
 
