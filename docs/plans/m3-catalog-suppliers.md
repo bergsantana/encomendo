@@ -2,6 +2,14 @@
 
 Written 2026-11-26 on Opus with `/plan-milestone 3`, against `main` at `c3777ce`. Build each step with `/build-step 3.<n>`.
 
+## Result (2026-11-27)
+
+Steps 3.1 to 3.16 are done and merged, through PRs #52 to #71 (#69 was replaced by #70). Step 3.17 is half done:
+
+- **Web walkthrough: done.** `web/e2e/catalogo.spec.ts` runs against `make stack-up`. An owner creates an item with a new supplier, a lead time and a cost, uploads a photo that really reaches Silo and sees its thumbnail, then makes a kit with a swappable item and an alternative. An admin, invited through Equipe, sees the item without Custo or Margem. A second flow creates an item through the API alone and finds it in the web list.
+- **Android walkthrough: pending KVM.** The emulator walkthrough (create on Android, edit the web item's price, offline list, and the M2 keyboard-inset and two-store device gaps) has not run, so the last "Done when" box of the build plan stays unticked, marked partial.
+- **Docs:** the build plan, `docs/architecture.md` (sections 4.4, 5 and 7 as built) and this plan are closed out for everything the web side proves.
+
 Goal (build plan): the owner can describe what they sell, where it comes from and what it costs, and the store page can read it fast.
 
 ## Blocked

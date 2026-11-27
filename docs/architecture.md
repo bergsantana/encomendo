@@ -110,7 +110,7 @@ internal/domain/
 ├── identity/              user.go, client_account.go, email.go, password_policy.go, role.go, permission.go
 ├── tenancy/               tenant.go, membership.go, settings.go, plan.go
 ├── catalog/               item.go, sourcing_mode.go, category.go, attribute.go ("Serve em"),
-│                          customization_option.go, kit.go, kit_swap.go
+│                          customization_option.go, kit.go, kit_swap.go, photo.go, photo_key.go
 ├── supplier/              supplier.go, supplier_item.go (lead time, cost, backup supplier)
 ├── purchasing/            purchase_line.go, supplier_order.go, supplier_message.go, receipt.go
 ├── customer/              customer.go, address.go, phone.go
@@ -349,7 +349,8 @@ internal/adapter/
 ├── inproc/
 │   ├── stock_reserver.go      order.StockReserver backed by inventory.UseCases
 │   └── workflow_source.go     order.WorkflowSource backed by workflow queries + tenant settings
-├── storage/                   local.go (dev), s3.go (S3-compatible) for item, invoice, receiving and logo/cover photos
+├── storage/                   s3.go: S3-compatible only, with signed PUT URLs, a confirm step and staging (R2 in production,
+│                              Silo, the MinIO fork, in development and CI; ADRs 0024, 0025, 0028) for item, kit, invoice, receiving and logo/cover photos
 └── notify/                    whatsapp_link.go (wa.me links with prefilled text, no paid API),
                                smtp.go (staff invites, password reset, client login codes)
 ```
@@ -431,6 +432,7 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 5. Store page routes resolve the tenant from the Host subdomain, then set the same variable; public reads expose only published data.
 6. Cross-tenant platform jobs (the deadline check) use a separate `encomendo_platform` role from `cmd/worker`, never from the API.
 7. Client area requests set `app.client_account_id` instead of `app.tenant_id`. The tables a client reads (`orders`, `order_items`, `payments`, `tenants` name only, and the global `status_workflows` / `workflow_statuses` for step names) get a second, `SELECT`-only policy: `current_tenant_id() IS NULL AND client_account_id = current_client_account_id()` (the global workflow tables need no tenant policy). The tenant guard keeps it off in every store scope, like the store picker policies (ADR 0010), and the RLS suite lists every policy besides `tenant_isolation`. No write policy uses it, and supplier, cost and purchasing tables have no client policy at all.
+8. **Staff-only tier (ADR 0024).** Internal tables (`item_costs`, `suppliers`, `supplier_items`, and later the purchasing tables) use a `staff_only` policy: a row is visible only with a tenant **and** a staff user set. A store page scope (tenant, no user) reads zero rows from them whatever its query, so a wrong query cannot leak a supplier or a cost. `audit_log` reads are staff-only too, while its inserts keep the tenant check (`0010`). Tables the store page reads (`items`, `kits`, `photos`) keep `tenant_isolation`, and the queries select published rows only.
 
 ```sql
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
@@ -472,10 +474,14 @@ internal/adapter/postgres/migrations/
 │                                   audit trigger function
 ├── 0006_platform.sql               audit_log, outbox_events
 ├── 0007_rls_policies.sql           ENABLE + FORCE RLS, policies and grants for the tables of 0004 and 0006
+├── 0008_catalog.sql                categories, attributes, attribute_values, items, item_attribute_values,
+│                                   customization_options, item_costs (staff-only), kits, kit_items,
+│                                   kit_item_alternatives, kit_attribute_values, photos
+├── 0009_suppliers.sql              suppliers, supplier_items (both staff-only)
+├── 0010_audit_log_staff_reads.sql  audit_log reads become staff-only (writes keep the tenant check)
+├── 0011_lower_name_indexes.sql     lower(name) indexes for the keyset pages (ADR 0027)
 └── planned, in the order they are expected to land; each takes the next free number and
     carries its own RLS policies (ADR 0014):
-    catalog          categories, items, item_attributes, customization_options, kits, kit_items, media
-    suppliers        suppliers, supplier_items
     customers        customers, customer_addresses
     orders           orders, order_items, order_status_history, payments, order_messages
     idempotency      idempotency_keys
@@ -500,11 +506,15 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. V
 | `memberships` | Yes | `(tenant_id, user_id) unique`, `role`; policy also lets a user see their own memberships for tenant switching |
 | `invitations` | Yes | `email citext`, `role` (never owner), `token_hash`, `invited_by`, `expires_at`, `accepted_at`, `revoked_at`; one pending per `(tenant_id, email)` (ADR 0011) |
 | `tenant_settings` | Yes | `status_workflow_id` + `status_workflow_version`, `stock_enabled`, `production_enabled`, `purchase_before_deposit`, `deposit_percent` (50), `assembly_days` (3), `safety_margin_days` (2), currency, WhatsApp phone |
-| `items` | Yes | `sourcing_mode`, `price_cents`, `cost_cents`, `production_days`, `published` ("No portal"), `version` |
-| `item_attributes` | Yes | Template-defined fields such as "Serve em" (motorcycle model, roof type, room) |
-| `customization_options` | Yes | Per-item client options with `jsonb` rules |
-| `kits`, `kit_items` | Yes | Fixed kit price; `swappable` flag per kit item; assembly and margin overrides |
-| `suppliers`, `supplier_items` | Yes | Lead time days, cost, backup supplier |
+| `categories` | Yes | Store-made, name unique ignoring case; deleting one in use is refused (`category_in_use`); audited (ADR 0024) |
+| `attributes`, `attribute_values`, `item_attribute_values`, `kit_attribute_values` | Yes | Template-style fields such as "Serve em" as ordered value lists; values keep their ids across edits; items and kits point at values |
+| `items` | Yes | `sourcing_mode`, `price_cents`, `currency`, `production_days`, `ready_days` (the main supplier's lead time or `production_days`, kept by the catalog repository so the store page never reads supplier tables), `published` ("No portal"), `archived_at` (items are archived, never deleted), `version`. No cost here (ADR 0025) |
+| `customization_options` | Yes | Per-item client options as choices with extra price and extra days (`jsonb`, ADR 0024) |
+| `item_costs` | Yes, staff-only | The own cost of an in-house item, the owner's only; not audited (ADR 0025) |
+| `kits`, `kit_items`, `kit_item_alternatives` | Yes | Fixed kit price; `swap_discount` (`keep` / `lose`, per kit, ADR 0023); nullable `assembly_days` and `safety_margin_days` overrides; `swappable` per kit item with its owner-picked alternatives |
+| `photos` | Yes | One row per confirmed photo of an item or kit: key `t/{tenant}/{items\|kits}/{owner}/{photo id}`, `position`; replaces the `media` table the plan sketched (ADRs 0025, 0028) |
+| `suppliers` | Yes, staff-only | Name (not unique: two suppliers may share one, and `lower(name)` is only a paging index), `whatsapp_phone` (`55` + DDD + number); no cost |
+| `supplier_items` | Yes, staff-only | An item's `main` or `backup` supplier with `lead_days` and `cost_cents`: the cost is per item and supplier, not per slot, and is null when none was recorded (ADR 0025) |
 | `customers` | Yes | Name, WhatsApp phone unique per tenant; optional `client_account_id` |
 | `stock_items`, `stock_movements`, `stock_reservations` | Yes | Movements append-only; on-hand quantity derived from them; minimum quantity per item |
 | `orders`, `order_items` | Yes | Items carry a `jsonb` snapshot and an item status; orders carry `workflow_id`, `workflow_version`, `status_key`, `delivery_date`, `assembly_days`, `safety_margin_days`, `handover` (delivery/pickup), `tracking_token_hash`, optional `client_account_id`, `version` |
@@ -516,7 +526,7 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. V
 | `production_jobs`, `production_stages`, `production_capacity` | Yes | One job per in-house item; ordered stages; weekly capacity |
 | `templates` | No | Global niche presets: categories, attributes, default sourcing per category, sample kits, wording, suggested status workflow; read-only to tenants |
 | `storefronts`, `storefront_sections` | Yes | Template id, logo, brand color, cover photo; sections on/off (Kits prontos, Monte o seu, Acompanhar pedido) |
-| `audit_log`, `outbox_events`, `idempotency_keys` | Yes | Written by triggers or in the same transaction; append-only for `encomendo_app`, which never reads the outbox |
+| `audit_log`, `outbox_events`, `idempotency_keys` | Yes | Written by triggers or in the same transaction; append-only for `encomendo_app`, which never reads the outbox. `audit_log` is read by staff only (a scope with a tenant and no user reads nothing, 0010); `item_costs`, `suppliers` and `supplier_items` stay out of the audit because every role reads it and costs are the owner's |
 
 **Conventions:** UUIDv7 primary keys generated in Go. The exception is rows written by a trigger or an adapter rather than built as aggregates (`audit_log`, `outbox_events`): `bigint` identity, which gives insert order, not commit order, so never read it as a cursor. Every tenant table has `tenant_id uuid not null references tenants`, an index starting with `tenant_id`, `created_at`, `updated_at`. Money = `bigint` cents + `char(3)` currency. Composite foreign keys `(tenant_id, id)` so a row can never reference another tenant's row.
 
