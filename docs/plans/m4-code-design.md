@@ -882,7 +882,7 @@ type ChooseWorkflowInput struct {
 func (s *Service) ChooseStatusWorkflow(ctx context.Context, in ChooseWorkflowInput) (SettingsView, error) // settings:write; workflow_not_found
 ```
 
-- `SettingsView` and `UpdateSettingsInput` gain `TimeZone`. `SettingsView.Workflow` gains the statuses (the screen previews them).
+- `SettingsView` and `UpdateSettingsInput` gain `TimeZone`. An empty `TimeZone` in `UpdateSettingsInput` (an older client that leaves it out) keeps the stored zone, as the contract says; it never falls back to São Paulo. Test: `TestUpdateSettings_OmittedTimeZoneKeepsTheStoredOne`. `SettingsView.Workflow` gains the statuses (the screen previews them).
 - The port `WorkflowPresets` (today `DefaultWorkflow`) gains `Exists(ctx, id, version) (tenancy.WorkflowRef, error)`; `inproc.TenancyWorkflows` implements it over `app/workflow.Source`, replacing the M2 adapter.
 - `StoreDefaultsView` gains `DepositPercent`, `TimeZone`, `Slug`, `StoreName`, `WhatsAppPhone`, `Workflow tenancy.WorkflowRef`.
 
