@@ -83,6 +83,15 @@ services:
       SMTP_ADDR: mailpit:1025
       SMTP_FROM: nao-responda@encomendo.localhost
       SMTP_REQUIRE_TLS: "false" # Mailpit only
+      # Photos (ADRs 0024, 0025 and 0028): the minio service. The API reads
+      # and copies at minio:9000; signed URLs name localhost, which browsers
+      # and the Android emulator (adb reverse tcp:9000 tcp:9000) reach.
+      STORAGE_ENDPOINT: minio:9000
+      STORAGE_PUBLIC_ENDPOINT: localhost:${MINIO_PORT:-9000}
+      STORAGE_BUCKET: encomendo-photos
+      STORAGE_ACCESS_KEY: encomendo
+      STORAGE_SECRET_KEY: encomendo_minio_dev # local only
+      STORAGE_USE_SSL: "false" # local MinIO only
     ports:
       - "${API_PORT:-8081}:8080"
     depends_on:
