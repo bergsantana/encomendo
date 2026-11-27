@@ -14,6 +14,12 @@ value class Permission(
 ) {
     /** The permissions the app's menu and screens ask for, named as in docs/api/openapi.yaml (`Permission`). */
     companion object {
+        /** Read the catalog and the suppliers, without costs (every role, ADR 0025). */
+        val CatalogRead = Permission("catalog:read")
+
+        /** Change the catalog and the suppliers (owner, admin). */
+        val CatalogWrite = Permission("catalog:write")
+
         /** Read and change the team: Equipe. */
         val MembersManage = Permission("members:manage")
     }

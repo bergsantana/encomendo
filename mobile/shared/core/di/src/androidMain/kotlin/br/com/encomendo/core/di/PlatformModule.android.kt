@@ -3,6 +3,8 @@ package br.com.encomendo.core.di
 import br.com.encomendo.core.data.session.deviceDataStore
 import br.com.encomendo.core.database.databaseBuilder
 import br.com.encomendo.core.network.okHttpEngine
+import br.com.encomendo.core.platform.AndroidPhotoPicker
+import br.com.encomendo.core.platform.PhotoPicker
 import br.com.encomendo.core.security.KeystoreCipher
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.sessionDataStore
@@ -26,4 +28,7 @@ actual val platformModule: Module =
             deviceDataStore(androidContext(), scope = CoroutineScope(Dispatchers.IO + SupervisorJob()))
         }
         single<HttpClientEngine> { okHttpEngine() }
+        // One picker for the process: MainActivity attaches itself to it, and screens take the interface.
+        single { AndroidPhotoPicker(context = androidContext(), ioDispatcher = Dispatchers.IO) }
+        single<PhotoPicker> { get<AndroidPhotoPicker>() }
     }

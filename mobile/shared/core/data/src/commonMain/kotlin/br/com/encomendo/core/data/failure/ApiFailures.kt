@@ -2,6 +2,7 @@ package br.com.encomendo.core.data.failure
 
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.failure.InputIssue
+import br.com.encomendo.core.domain.failure.Reference
 import br.com.encomendo.core.network.ApiError
 import br.com.encomendo.core.network.ApiErrorCode
 import kotlinx.io.IOException
@@ -54,6 +55,22 @@ private fun ApiError.toRefusalFailure(): Failure =
         code == ApiErrorCode.SlugTaken -> Failure.AlreadyTaken(field = "slug", cause = this)
         code == ApiErrorCode.EmailTaken -> Failure.AlreadyTaken(field = "email", cause = this)
         code == ApiErrorCode.InvalidCode -> Failure.WrongCode(cause = this)
+        else -> toCatalogFailure()
+    }
+
+/** Maps the catalog's refusals (ADR 0025) and the photo ones (ADR 0024); anything else is [Failure.Unexpected]. */
+private fun ApiError.toCatalogFailure(): Failure =
+    when (code) {
+        ApiErrorCode.VersionConflict -> Failure.VersionConflict(cause = this)
+        ApiErrorCode.NameTaken -> Failure.AlreadyTaken(field = "name", cause = this)
+        ApiErrorCode.CategoryInUse -> Failure.CategoryInUse(cause = this)
+        ApiErrorCode.ItemInKit -> Failure.ItemInKit(kits = references.map { Reference(it.id, it.name) }, cause = this)
+        ApiErrorCode.ItemArchived ->
+            Failure.ItemArchived(items = references.map { Reference(it.id, it.name) }, cause = this)
+        ApiErrorCode.PhotoLimit -> Failure.PhotoLimit(cause = this)
+        ApiErrorCode.PhotoInvalid -> Failure.PhotoInvalid(cause = this)
+        // A key nobody uploaded to, and an upload the storage host refused, ask the same of the user: pick again.
+        ApiErrorCode.PhotoNotUploaded, ApiErrorCode.UploadFailed -> Failure.PhotoNotUploaded(cause = this)
         else -> Failure.Unexpected(status = status, code = code.value, title = title, cause = this)
     }
 

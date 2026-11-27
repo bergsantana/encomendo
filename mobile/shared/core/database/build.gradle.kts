@@ -18,6 +18,7 @@ kotlin {
             libs.versions.android.minSdk
                 .get()
                 .toInt()
+        withHostTestBuilder {} // runs the in-memory Room and migration tests on the JVM
     }
 
     sourceSets {
@@ -25,6 +26,13 @@ kotlin {
             api(libs.room.runtime)
             implementation(libs.sqlite.bundled)
             implementation(libs.kotlinx.coroutines.core)
+        }
+        // Host tests open real SQLite files on the JVM; the Android build of the bundled driver only has
+        // Android native libraries, so the JVM build replaces it there (see the exclude below).
+        getByName("androidHostTest").dependencies {
+            implementation(libs.sqlite.bundled.jvm)
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
@@ -36,4 +44,8 @@ room3 {
 
 dependencies {
     add("kspAndroid", libs.room.compiler)
+}
+
+configurations.matching { it.name.startsWith("androidHostTest") }.configureEach {
+    exclude(group = "androidx.sqlite", module = "sqlite-bundled-android")
 }

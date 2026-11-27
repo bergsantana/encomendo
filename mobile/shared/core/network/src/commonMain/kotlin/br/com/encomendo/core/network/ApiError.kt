@@ -22,6 +22,8 @@ class ApiError(
     val fieldIssues: List<FieldIssue> = emptyList(),
     /** The wait `Retry-After` asked for, in whole seconds; null when the answer gave none or not in seconds. */
     val retryAfterSeconds: Int? = null,
+    /** The rows a refusal names (the kits of `item_in_kit`, the archived items of `item_archived`). */
+    val references: List<ErrorReference> = emptyList(),
     cause: Throwable? = null,
 ) : Exception("HTTP $status ${code.value}", cause)
 
@@ -98,6 +100,30 @@ value class ApiErrorCode(
         /** Inviting: the invitation was saved but the email could not be sent; invite again. */
         val EmailUnavailable = ApiErrorCode("email_unavailable")
 
+        /** Catalog: another row of this kind has the name, ignoring case. */
+        val NameTaken = ApiErrorCode("name_taken")
+
+        /** Catalog: items still use the category being deleted. */
+        val CategoryInUse = ApiErrorCode("category_in_use")
+
+        /** Catalog: the item being archived is in kits that are not archived; see [ApiError.references]. */
+        val ItemInKit = ApiErrorCode("item_in_kit")
+
+        /** Catalog: an item of the kit, or one of its alternatives, is archived; see [ApiError.references]. */
+        val ItemArchived = ApiErrorCode("item_archived")
+
+        /** Photos: the item or kit already has 8. */
+        val PhotoLimit = ApiErrorCode("photo_limit")
+
+        /** Photos: the stored object is over 10 MB or not a JPEG, PNG or WebP image. */
+        val PhotoInvalid = ApiErrorCode("photo_invalid")
+
+        /** Photos: nothing was uploaded to the key, or it is not one issued for this item or kit. */
+        val PhotoNotUploaded = ApiErrorCode("photo_not_uploaded")
+
+        /** Client side: the upload to the storage host failed or was refused. */
+        val UploadFailed = ApiErrorCode("upload_failed")
+
         /** Client side: the request never reached the server (offline, timeout, DNS). */
         val Network = ApiErrorCode("network")
 
@@ -105,6 +131,14 @@ value class ApiErrorCode(
         val Unknown = ApiErrorCode("unknown")
     }
 }
+
+/** ErrorReference is a row a refusal names, such as a kit that holds an item. */
+data class ErrorReference(
+    /** The row's id (a UUID). */
+    val id: String,
+    /** The row's name. */
+    val name: String,
+)
 
 /** FieldIssue is one invalid field of a 400 problem response. */
 data class FieldIssue(

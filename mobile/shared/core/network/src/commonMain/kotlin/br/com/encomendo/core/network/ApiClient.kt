@@ -35,6 +35,13 @@ internal val ApiJson: Json =
     }
 
 /**
+ * The JSON of API bodies, for code outside this module that keeps them: the
+ * offline cache stores what a DTO encodes to, and reads it back with the
+ * same settings, so owner-only fields keep their absent / null / value form.
+ */
+val ApiPayloadJson: Json get() = ApiJson
+
+/**
  * Creates the HTTP client for the Encomendo API. It guarantees that:
  *
  * - every non-2xx response throws [ApiError] read from its problem+json body,

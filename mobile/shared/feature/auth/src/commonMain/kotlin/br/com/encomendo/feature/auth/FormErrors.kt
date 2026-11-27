@@ -58,6 +58,14 @@ internal fun Failure.toFormError(): FormError =
         is Failure.NotFound,
         is Failure.AlreadyMember,
         is Failure.EmailNotSent,
+        // The catalog's refusals: its own screens word them, so an account form never sees them.
+        is Failure.VersionConflict,
+        is Failure.CategoryInUse,
+        is Failure.ItemInKit,
+        is Failure.ItemArchived,
+        is Failure.PhotoLimit,
+        is Failure.PhotoInvalid,
+        is Failure.PhotoNotUploaded,
         is Failure.Unexpected,
         -> FormError.General(toFailureMessage())
     }

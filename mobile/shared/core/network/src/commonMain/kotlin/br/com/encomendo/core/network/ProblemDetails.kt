@@ -13,6 +13,13 @@ internal data class ProblemBody(
     val code: String? = null,
     val detail: String? = null,
     val errors: List<FieldIssueBody> = emptyList(),
+    val references: List<ReferenceBody> = emptyList(),
+)
+
+@Serializable
+internal data class ReferenceBody(
+    val id: String,
+    val name: String,
 )
 
 @Serializable
@@ -34,6 +41,7 @@ internal suspend fun HttpResponse.toApiError(json: Json): ApiError {
         title = problem?.title,
         detail = problem?.detail,
         fieldIssues = problem?.errors.orEmpty().map { FieldIssue(field = it.field, message = it.message) },
+        references = problem?.references.orEmpty().map { ErrorReference(id = it.id, name = it.name) },
         retryAfterSeconds = headers[HttpHeaders.RetryAfter]?.let(::wholeSeconds),
     )
 }

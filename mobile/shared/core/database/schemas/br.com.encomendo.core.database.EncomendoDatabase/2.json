@@ -1,0 +1,151 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "cd77ab8fd66d8ded37da808e371d7fec",
+    "entities": [
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tenantId` TEXT NOT NULL, `collection` TEXT NOT NULL, `refreshedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`tenantId`, `collection`))",
+        "fields": [
+          {
+            "fieldPath": "tenantId",
+            "columnName": "tenantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "collection",
+            "columnName": "collection",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "refreshedAtEpochMillis",
+            "columnName": "refreshedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tenantId",
+            "collection"
+          ]
+        }
+      },
+      {
+        "tableName": "catalog_pages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tenantId` TEXT NOT NULL, `kind` TEXT NOT NULL, `query` TEXT NOT NULL, `cursor` TEXT NOT NULL, `costs` INTEGER NOT NULL, `payload` TEXT NOT NULL, `cachedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`tenantId`, `kind`, `query`, `cursor`))",
+        "fields": [
+          {
+            "fieldPath": "tenantId",
+            "columnName": "tenantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "query",
+            "columnName": "query",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursor",
+            "columnName": "cursor",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costs",
+            "columnName": "costs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedAtEpochMillis",
+            "columnName": "cachedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tenantId",
+            "kind",
+            "query",
+            "cursor"
+          ]
+        }
+      },
+      {
+        "tableName": "catalog_details",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tenantId` TEXT NOT NULL, `kind` TEXT NOT NULL, `id` TEXT NOT NULL, `costs` INTEGER NOT NULL, `payload` TEXT NOT NULL, `cachedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`tenantId`, `kind`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "tenantId",
+            "columnName": "tenantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costs",
+            "columnName": "costs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedAtEpochMillis",
+            "columnName": "cachedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tenantId",
+            "kind",
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cd77ab8fd66d8ded37da808e371d7fec')"
+    ]
+  }
+}

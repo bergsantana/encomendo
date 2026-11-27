@@ -23,6 +23,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":shared:core:domain"))
             api(project(":shared:core:security"))
+            api(project(":shared:core:platform"))
             api(libs.kotlinx.coroutines.core)
         }
     }

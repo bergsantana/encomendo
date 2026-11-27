@@ -25,6 +25,7 @@ include(
     ":shared:core:data",
     ":shared:core:testing",
     ":shared:core:network",
+    ":shared:core:platform",
     ":shared:core:navigation",
     ":shared:core:di",
     ":shared:feature:auth",

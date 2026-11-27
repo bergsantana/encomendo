@@ -75,6 +75,13 @@ class FailureMessageTest {
                 Failure.WrongCredentials(),
                 Failure.AlreadyMember(),
                 Failure.EmailNotSent(),
+                Failure.VersionConflict(),
+                Failure.CategoryInUse(),
+                Failure.ItemInKit(emptyList()),
+                Failure.ItemArchived(emptyList()),
+                Failure.PhotoLimit(),
+                Failure.PhotoInvalid(),
+                Failure.PhotoNotUploaded(),
             )
         failures.forEach { assertEquals(FailureMessage.Unexpected, it.toFailureMessage(), it.message) }
     }
