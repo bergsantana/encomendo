@@ -22,7 +22,7 @@ func TestDefaultSettings(t *testing.T) {
 	}
 	// docs/architecture.md 4.2: deposit 50%, assembly 3 days, safety margin
 	// 2 days; stock and production off; purchases only after the deposit.
-	want := Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2}
+	want := Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, TimeZone: ZoneSaoPaulo}
 	if s.Editable() != want {
 		t.Errorf("defaults = %+v, want %+v", s.Editable(), want)
 	}
@@ -41,9 +41,9 @@ func TestEditable_Validate(t *testing.T) {
 	t.Parallel()
 
 	ok := []Editable{
-		{DepositPercent: 0, AssemblyDays: 0, SafetyMarginDays: 0},
-		{DepositPercent: 100, AssemblyDays: 365, SafetyMarginDays: 365, WhatsAppPhone: "5592991234567"},
-		{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, WhatsAppPhone: "551133334444"},
+		{DepositPercent: 0, AssemblyDays: 0, SafetyMarginDays: 0, TimeZone: ZoneNoronha},
+		{DepositPercent: 100, AssemblyDays: 365, SafetyMarginDays: 365, WhatsAppPhone: "5592991234567", TimeZone: ZoneRioBranco},
+		{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, WhatsAppPhone: "551133334444", TimeZone: ZoneManaus},
 	}
 	for _, e := range ok {
 		if err := e.Validate(); err != nil {
@@ -51,7 +51,7 @@ func TestEditable_Validate(t *testing.T) {
 		}
 	}
 
-	bad := Editable{DepositPercent: 101, AssemblyDays: -1, SafetyMarginDays: 366, WhatsAppPhone: "(92) 99123-4567"}
+	bad := Editable{DepositPercent: 101, AssemblyDays: -1, SafetyMarginDays: 366, WhatsAppPhone: "(92) 99123-4567", TimeZone: "UTC"}
 	err := bad.Validate()
 	var ve *shared.ValidationError
 	if !errors.As(err, &ve) {
@@ -64,7 +64,7 @@ func TestEditable_Validate(t *testing.T) {
 			t.Errorf("%s has no message", f.Field)
 		}
 	}
-	want := []string{"depositPercent", "assemblyDays", "safetyMarginDays", "whatsappPhone"}
+	want := []string{"depositPercent", "assemblyDays", "safetyMarginDays", "whatsappPhone", "timeZone"}
 	if len(fields) != len(want) {
 		t.Fatalf("fields = %v, want %v", fields, want)
 	}
@@ -91,7 +91,7 @@ func TestEditable_ValidatePhone(t *testing.T) {
 		"559299123x567":    false, // the right length, not all digits
 		"5590991234567":    false, // the DDD's second digit cannot be 0
 	} {
-		err := Editable{WhatsAppPhone: phone}.Validate()
+		err := Editable{WhatsAppPhone: phone, TimeZone: ZoneSaoPaulo}.Validate()
 		if (err == nil) != ok {
 			t.Errorf("phone %q: err = %v, want ok = %v", phone, err, ok)
 		}
@@ -103,9 +103,9 @@ func TestSettings_Change(t *testing.T) {
 
 	s, _ := RestoreSettings(SettingsRecord{
 		Tenant: tenantID, Workflow: defaultWorkflow, Currency: "BRL", Version: 4,
-		Editable: Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2},
+		Editable: Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, TimeZone: ZoneSaoPaulo},
 	})
-	next := Editable{StockEnabled: true, DepositPercent: 30, AssemblyDays: 5, SafetyMarginDays: 1, WhatsAppPhone: "5592991234567"}
+	next := Editable{StockEnabled: true, DepositPercent: 30, AssemblyDays: 5, SafetyMarginDays: 1, WhatsAppPhone: "5592991234567", TimeZone: ZoneManaus}
 
 	if err := s.Change(next, 3); !errors.Is(err, shared.ErrVersionConflict) {
 		t.Errorf("stale version: %v, want ErrVersionConflict", err)
@@ -113,7 +113,7 @@ func TestSettings_Change(t *testing.T) {
 	if s.Editable().DepositPercent != 50 {
 		t.Error("a refused change changed the settings")
 	}
-	if err := s.Change(Editable{DepositPercent: 200}, 4); !errors.Is(err, shared.ErrInvalid) || s.Editable().DepositPercent != 50 {
+	if err := s.Change(Editable{DepositPercent: 200, TimeZone: ZoneSaoPaulo}, 4); !errors.Is(err, shared.ErrInvalid) || s.Editable().DepositPercent != 50 {
 		t.Errorf("invalid change: %v; settings %+v", err, s.Editable())
 	}
 	if err := s.Change(next, 4); err != nil {
@@ -128,10 +128,52 @@ func TestSettings_Change(t *testing.T) {
 	}
 }
 
+func TestSettings_ChooseWorkflow(t *testing.T) {
+	t.Parallel()
+
+	other := WorkflowRef{ID: shared.WorkflowID(shared.NewV7(t0.UnixMilli(), [10]byte{6})), Version: 2, Name: "Produção própria"}
+	newSettings := func(t *testing.T) *Settings {
+		t.Helper()
+		s, err := RestoreSettings(SettingsRecord{
+			Tenant: tenantID, Workflow: defaultWorkflow, Currency: "BRL", Version: 4,
+			Editable: Editable{DepositPercent: 50, TimeZone: ZoneSaoPaulo},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	t.Run("replaces the workflow and keeps the version", func(t *testing.T) {
+		t.Parallel()
+		s := newSettings(t)
+		if err := s.ChooseWorkflow(other, 4); err != nil {
+			t.Fatal(err)
+		}
+		if s.Workflow() != other || s.Version() != 4 {
+			t.Errorf("workflow %+v, version %d", s.Workflow(), s.Version())
+		}
+	})
+	t.Run("a stale version changes nothing", func(t *testing.T) {
+		t.Parallel()
+		s := newSettings(t)
+		if err := s.ChooseWorkflow(other, 3); !errors.Is(err, shared.ErrVersionConflict) || s.Workflow() != defaultWorkflow {
+			t.Errorf("err = %v, workflow %+v", err, s.Workflow())
+		}
+	})
+	t.Run("a zero reference is refused", func(t *testing.T) {
+		t.Parallel()
+		s := newSettings(t)
+		if err := s.ChooseWorkflow(WorkflowRef{}, 4); !errors.Is(err, ErrInvalidSettings) || s.Workflow() != defaultWorkflow {
+			t.Errorf("err = %v, workflow %+v", err, s.Workflow())
+		}
+	})
+}
+
 func TestRestoreSettings_Refuses(t *testing.T) {
 	t.Parallel()
 
-	good := SettingsRecord{Tenant: tenantID, Workflow: defaultWorkflow, Currency: "BRL", Version: 1, Editable: Editable{DepositPercent: 50}}
+	good := SettingsRecord{Tenant: tenantID, Workflow: defaultWorkflow, Currency: "BRL", Version: 1, Editable: Editable{DepositPercent: 50, TimeZone: ZoneSaoPaulo}}
 	if _, err := RestoreSettings(good); err != nil {
 		t.Fatal(err)
 	}

@@ -1647,9 +1647,9 @@ export interface components {
             name: string;
             /**
              * @description The workflow's statuses in order, for the settings screen's
-             *     preview. Served from step 4.8, which makes it required.
+             *     preview. Always present (served since step 4.8).
              */
-            statuses?: components["schemas"]["OrderStatus"][];
+            statuses: components["schemas"]["OrderStatus"][];
         };
         /**
          * @description The store's WhatsApp number, digits only with country and area code
@@ -2134,10 +2134,10 @@ export interface components {
         CivilDate: string;
         /**
          * @description The store's time zone, one per Brazilian offset (ADR 0030). It
-         *     decides which day "today" is for dates and alerts. Absent until step
-         *     4.8 serves it, which makes it required. A store starts on
-         *     America/Sao_Paulo; a settings update that leaves it out keeps the
-         *     stored zone.
+         *     decides which day "today" is for dates and alerts. Always present in
+         *     the settings the server answers (served since step 4.8), and
+         *     optional in a settings update. A store starts on America/Sao_Paulo;
+         *     an update that leaves it out keeps the stored zone.
          * @default America/Sao_Paulo
          * @enum {string}
          */

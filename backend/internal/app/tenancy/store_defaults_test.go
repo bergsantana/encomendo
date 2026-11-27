@@ -16,7 +16,10 @@ func TestStoreDefaults_AStorePageScopeReadsThem(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	store, owner := h.newStore(t, "altarpm")
-	next := tenancy.Editable{StockEnabled: true, ProductionEnabled: true, DepositPercent: 30, AssemblyDays: 4, SafetyMarginDays: 2}
+	next := tenancy.Editable{
+		StockEnabled: true, ProductionEnabled: true, DepositPercent: 30, AssemblyDays: 4, SafetyMarginDays: 2,
+		WhatsAppPhone: "5592991234567", TimeZone: tenancy.ZoneManaus,
+	}
 	if _, err := h.svc.UpdateSettings(as(t, owner, store, shared.RoleOwner), apptenancy.UpdateSettingsInput{Settings: next, Version: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +27,11 @@ func TestStoreDefaults_AStorePageScopeReadsThem(t *testing.T) {
 
 	got, err := h.svc.StoreDefaults(storePage)
 
-	want := apptenancy.StoreDefaultsView{Currency: "BRL", AssemblyDays: 4, SafetyMarginDays: 2, StockEnabled: true, ProductionEnabled: true}
+	want := apptenancy.StoreDefaultsView{
+		Currency: "BRL", AssemblyDays: 4, SafetyMarginDays: 2, StockEnabled: true, ProductionEnabled: true,
+		DepositPercent: 30, TimeZone: tenancy.ZoneManaus, Slug: "altarpm", StoreName: "Loja altarpm",
+		WhatsAppPhone: "5592991234567", Workflow: h.preset,
+	}
 	if err != nil || got != want {
 		t.Errorf("StoreDefaults = %+v, %v; want %+v", got, err, want)
 	}

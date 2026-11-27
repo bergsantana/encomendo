@@ -77,3 +77,13 @@ type SettingsUpdated struct {
 
 // EventName implements appshared.Event.
 func (SettingsUpdated) EventName() string { return "tenancy.settings_updated" }
+
+// WorkflowChosen is published when the owner picks the status workflow new
+// orders take. Version is the workflow's own version, not the settings'.
+type WorkflowChosen struct {
+	Workflow shared.WorkflowID `json:"workflow"`
+	Version  int               `json:"version"`
+}
+
+// EventName implements appshared.Event.
+func (WorkflowChosen) EventName() string { return "tenancy.workflow_chosen" }
