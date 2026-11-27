@@ -16,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
@@ -108,6 +110,19 @@ func TestError_MapsDomainErrors(t *testing.T) {
 		{"already member", tenancy.ErrAlreadyMember, 409, CodeAlreadyMember},
 		{"invalid code", identity.ErrInvalidCode, 400, CodeInvalidCode},
 		{"invitation not pending", tenancy.ErrInvitationNotPending, 404, CodeNotFound},
+		{"name taken", fmt.Errorf("insert: %w", catalog.ErrNameTaken), 409, CodeNameTaken},
+		{"category in use", catalog.ErrCategoryInUse, 409, CodeCategoryInUse},
+		{"item in a kit", &appcatalog.RefusalError{Err: catalog.ErrItemInKit}, 409, CodeItemInKit},
+		{"item in a kit, bare", catalog.ErrItemInKit, 409, CodeItemInKit},
+		{"archived item", &appcatalog.RefusalError{Err: catalog.ErrItemArchived}, 409, CodeItemArchived},
+		{"archived items, from the domain", &catalog.ArchivedItemsError{}, 409, CodeItemArchived},
+		{"photo limit", catalog.ErrPhotoLimit, 409, CodePhotoLimit},
+		{"photo invalid", catalog.ErrPhotoInvalid, 400, CodePhotoInvalid},
+		{"photo not uploaded", fmt.Errorf("confirm: %w", catalog.ErrPhotoNotUploaded), 400, CodePhotoNotUploaded},
+		{"cost from a role that cannot", appcatalog.ErrCostForbidden, 403, CodeForbidden},
+		{"publish archived", catalog.ErrPublishArchived, 400, CodeInvalid},
+		{"swap price", catalog.ErrSwapPriceNotPositive, 409, CodeConflict},
+		{"storage down", fmt.Errorf("storage: %w", shared.ErrUnavailable), 503, CodeNotReady},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -375,10 +390,37 @@ func TestCodes_AreInTheContract(t *testing.T) {
 		CodeInvalid, CodeNotFound, CodeConflict, CodeForbidden, CodeInternal, CodeNotReady, CodeMethodNotAllowed,
 		CodeUnauthenticated, CodeInvalidCredentials, CodeTenantRequired, CodeVersionConflict, CodeRateLimited,
 		CodeEmailTaken, CodeSlugTaken, CodeAlreadyMember, CodeInvalidCode, CodeEmailUnavailable, CodeTenantSuspended,
+		CodeNameTaken, CodeCategoryInUse, CodeItemInKit, CodeItemArchived, CodePhotoLimit, CodePhotoInvalid, CodePhotoNotUploaded,
 	}
 	for _, code := range codes {
 		if !listed[code] {
 			t.Errorf("code %q is not in the contract's Problem enum", code)
 		}
+	}
+}
+
+// item_in_kit and item_archived carry the rows they name, in references; a
+// refusal that names none has no references key.
+func TestError_ReferencesNameTheRows(t *testing.T) {
+	t.Parallel()
+
+	kit := shared.ID{1}
+	err := fmt.Errorf("archive: %w", &appcatalog.RefusalError{
+		Err: catalog.ErrItemInKit, References: []appcatalog.Reference{{ID: kit, Name: "Kit Scrambler"}},
+	})
+	rec := httptest.NewRecorder()
+	Error(rec, httptest.NewRequest("POST", "/x", nil), discardLogger(), err)
+	var p Problem
+	if e := json.Unmarshal(rec.Body.Bytes(), &p); e != nil {
+		t.Fatal(e)
+	}
+	if len(p.References) != 1 || p.References[0].ID != kit.String() || p.References[0].Name != "Kit Scrambler" {
+		t.Errorf("references = %+v", p.References)
+	}
+
+	rec = httptest.NewRecorder()
+	Error(rec, httptest.NewRequest("POST", "/x", nil), discardLogger(), catalog.ErrCategoryInUse)
+	if strings.Contains(rec.Body.String(), "references") {
+		t.Errorf("a refusal that names no rows has references: %s", rec.Body.String())
 	}
 }
