@@ -4,16 +4,18 @@ import (
 	"fmt"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
+	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
 // The request types below mirror the contract's request schemas. The
 // handler decodes them with unknown fields refused, and every required key
-// that is missing is reported by name (400 invalid). A Replace…Request is a
-// flat struct that repeats its input's fields next to version: embedding
-// the input would also promote any UnmarshalJSON it has and swallow
-// version.
+// that is missing is reported by name (400 invalid). A Replace…Request
+// embeds its base request next to the version read. That is safe only while
+// the base has no UnmarshalJSON of its own: a promoted one would decode the
+// whole body and swallow version. TestCatalog_ReplaceReachesTheUseCaseWhole
+// fails if that ever happens.
 
 // CategoryRequest is POST /api/v1/admin/catalog/categories.
 type CategoryRequest struct {
@@ -162,6 +164,11 @@ func (r ItemRequest) input(f *fields) appcatalog.ItemInput {
 		Published:         need(f, r.Published, "published"),
 	}
 	if r.ProductionDays != nil {
+		// 0 means "none" to the use case, so a 0 sent is refused here,
+		// not read as absent (the contract's minimum is 1).
+		if *r.ProductionDays < 1 {
+			f.add("productionDays", "Informe os dias de produção, a partir de 1.")
+		}
 		in.ProductionDays = *r.ProductionDays
 	}
 	needKey(f, r.CategoryID, "categoryId")
@@ -175,33 +182,17 @@ func (r ItemRequest) input(f *fields) appcatalog.ItemInput {
 }
 
 // ReplaceItemRequest is PUT /api/v1/admin/catalog/items/{id}: an
-// ItemRequest and the version read, flat (see the note at the top).
+// ItemRequest and the version read.
 type ReplaceItemRequest struct {
-	Name                *string              `json:"name"`
-	Description         *string              `json:"description"`
-	CategoryID          Optional[string]     `json:"categoryId"`
-	SourcingMode        *string              `json:"sourcingMode"`
-	PriceCents          *int64               `json:"priceCents"`
-	ProductionDays      *int                 `json:"productionDays"`
-	ProductionCostCents Optional[int64]      `json:"productionCostCents"`
-	MainSupplier        *SupplierItemRequest `json:"mainSupplier"`
-	BackupSupplier      *SupplierItemRequest `json:"backupSupplier"`
-	AttributeValueIDs   []string             `json:"attributeValueIds"`
-	Options             []OptionRequest      `json:"options"`
-	Published           *bool                `json:"published"`
-	Version             *int                 `json:"version"`
+	ItemRequest
+	Version *int `json:"version"`
 }
 
 // Input returns the use case's input for the item id, or a
 // ValidationError.
 func (r ReplaceItemRequest) Input(id shared.ItemID) (appcatalog.ReplaceItemInput, error) {
 	var f fields
-	item := ItemRequest{
-		Name: r.Name, Description: r.Description, CategoryID: r.CategoryID, SourcingMode: r.SourcingMode,
-		PriceCents: r.PriceCents, ProductionDays: r.ProductionDays, ProductionCostCents: r.ProductionCostCents,
-		MainSupplier: r.MainSupplier, BackupSupplier: r.BackupSupplier, AttributeValueIDs: r.AttributeValueIDs,
-		Options: r.Options, Published: r.Published,
-	}.input(&f)
+	item := r.input(&f)
 	version := needVersion(&f, r.Version)
 	return appcatalog.ReplaceItemInput{ID: id, Item: item, Version: version}, f.err()
 }
@@ -302,28 +293,16 @@ func daysOf(o Optional[int]) *int {
 }
 
 // ReplaceKitRequest is PUT /api/v1/admin/catalog/kits/{id}: a KitRequest
-// and the version read, flat.
+// and the version read.
 type ReplaceKitRequest struct {
-	Name              *string          `json:"name"`
-	Description       *string          `json:"description"`
-	PriceCents        *int64           `json:"priceCents"`
-	SwapDiscount      *string          `json:"swapDiscount"`
-	AssemblyDays      Optional[int]    `json:"assemblyDays"`
-	SafetyMarginDays  Optional[int]    `json:"safetyMarginDays"`
-	Items             []KitItemRequest `json:"items"`
-	AttributeValueIDs []string         `json:"attributeValueIds"`
-	Published         *bool            `json:"published"`
-	Version           *int             `json:"version"`
+	KitRequest
+	Version *int `json:"version"`
 }
 
 // Input returns the use case's input for the kit id, or a ValidationError.
 func (r ReplaceKitRequest) Input(id shared.KitID) (appcatalog.ReplaceKitInput, error) {
 	var f fields
-	kit := KitRequest{
-		Name: r.Name, Description: r.Description, PriceCents: r.PriceCents, SwapDiscount: r.SwapDiscount,
-		AssemblyDays: r.AssemblyDays, SafetyMarginDays: r.SafetyMarginDays, Items: r.Items,
-		AttributeValueIDs: r.AttributeValueIDs, Published: r.Published,
-	}.input(&f)
+	kit := r.input(&f)
 	version := needVersion(&f, r.Version)
 	return appcatalog.ReplaceKitInput{ID: id, Kit: kit, Version: version}, f.err()
 }
@@ -373,4 +352,35 @@ func (r OrderPhotosRequest) Input() ([]shared.PhotoID, error) {
 	var f fields
 	ids := parseIDs[shared.PhotoID](&f, needList(&f, r.PhotoIDs, "photoIds"), "photoIds")
 	return ids, f.err()
+}
+
+// SupplierRequest is the body of POST /api/v1/admin/suppliers.
+type SupplierRequest struct {
+	Name          *string `json:"name"`
+	WhatsAppPhone *string `json:"whatsappPhone"`
+}
+
+// Input returns the use case's input, or a ValidationError.
+func (r SupplierRequest) Input() (appsupplier.CreateInput, error) {
+	var f fields
+	in := appsupplier.CreateInput{Name: need(&f, r.Name, "name"), WhatsAppPhone: need(&f, r.WhatsAppPhone, "whatsappPhone")}
+	return in, f.err()
+}
+
+// ReplaceSupplierRequest is PUT /api/v1/admin/suppliers/{id}: a
+// SupplierRequest and the version read.
+type ReplaceSupplierRequest struct {
+	SupplierRequest
+	Version *int `json:"version"`
+}
+
+// Input returns the use case's input for the supplier id, or a
+// ValidationError.
+func (r ReplaceSupplierRequest) Input(id shared.SupplierID) (appsupplier.ReplaceInput, error) {
+	var f fields
+	in := appsupplier.ReplaceInput{
+		ID: id, Name: need(&f, r.Name, "name"), WhatsAppPhone: need(&f, r.WhatsAppPhone, "whatsappPhone"),
+		Version: needVersion(&f, r.Version),
+	}
+	return in, f.err()
 }

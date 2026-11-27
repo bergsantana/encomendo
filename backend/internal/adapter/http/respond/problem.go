@@ -232,6 +232,7 @@ func conflictFor(err error) Problem {
 	case errors.Is(err, catalog.ErrCategoryInUse):
 		p.Code, p.Title = CodeCategoryInUse, "Há itens nesta categoria. Mude os itens de categoria antes de apagá-la."
 	case errors.Is(err, catalog.ErrPhotoLimit):
+		// 8 photos: the most an item or kit holds (ADR 0025).
 		p.Code, p.Title = CodePhotoLimit, "Este registro já tem 8 fotos. Remova uma para enviar outra."
 	case errors.Is(err, catalog.ErrItemInKit):
 		p.Code, p.Title = CodeItemInKit, "Este item está em kits. Tire o item dos kits antes de arquivá-lo."
@@ -271,6 +272,7 @@ func invalidFor(err error) Problem {
 	case errors.Is(err, catalog.ErrPhotoInvalid):
 		return Problem{
 			Status: http.StatusBadRequest, Code: CodePhotoInvalid,
+			// 10 MB and the three types: what ConfirmPhoto accepts (ADR 0024).
 			Title: "A foto precisa ser JPEG, PNG ou WebP, com até 10 MB.",
 		}
 	case errors.Is(err, catalog.ErrPhotoNotUploaded):

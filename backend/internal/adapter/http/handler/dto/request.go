@@ -1,7 +1,6 @@
 package dto
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -23,22 +22,18 @@ type Optional[T any] struct {
 	Value T
 }
 
-// UnmarshalJSON records that the key was sent. It decodes with the same
-// strictness as the request: an unknown field inside a value is an error,
-// because a nested decoder would otherwise not inherit
-// DisallowUnknownFields.
+// UnmarshalJSON records that the key was sent. It resets the whole value
+// first, so a key repeated in the body (`"costCents":null,"costCents":5`)
+// reads as its last occurrence, like any other field. T is a scalar in
+// every request, so there are no nested fields to refuse.
 func (o *Optional[T]) UnmarshalJSON(b []byte) error {
-	o.Set = true
+	var zero T
+	*o = Optional[T]{Set: true, Value: zero}
 	if string(b) == "null" {
 		o.Null = true
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&o.Value); err != nil {
-		return err
-	}
-	return nil
+	return json.Unmarshal(b, &o.Value)
 }
 
 // CostField turns a cost key of a request into the use case's tri-state:

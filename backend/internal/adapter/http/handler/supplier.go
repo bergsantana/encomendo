@@ -35,7 +35,7 @@ func NewSuppliers(d SuppliersDeps) (*Suppliers, error) {
 
 // List is GET /api/v1/admin/suppliers.
 func (h *Suppliers) List(w http.ResponseWriter, r *http.Request) {
-	q, err := readListQuery(r)
+	q, err := readListQuery(r, false)
 	if err != nil {
 		respond.Error(w, r, h.log, err)
 		return

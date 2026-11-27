@@ -124,7 +124,7 @@ func (h *Catalog) DeleteAttribute(w http.ResponseWriter, r *http.Request) {
 
 // ListItems is GET /api/v1/admin/catalog/items.
 func (h *Catalog) ListItems(w http.ResponseWriter, r *http.Request) {
-	q, err := readListQuery(r)
+	q, err := readListQuery(r, true)
 	if err != nil {
 		respond.Error(w, r, h.log, err)
 		return

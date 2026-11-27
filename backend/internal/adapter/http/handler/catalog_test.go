@@ -2,9 +2,9 @@ package handler_test
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -165,25 +165,29 @@ func withUnknownField(t *testing.T, body string) string {
 	return string(out)
 }
 
-// Nested objects refuse unknown fields too, including the ones inside an
-// Optional value, which decodes with its own decoder.
+// Nested objects refuse unknown fields too, at every depth the bodies have:
+// the supplier, option and choice of an item, the items of a kit and the
+// values of a field. A cost key next to an unknown one does not hide it.
 func TestCatalog_RefusesUnknownNestedFields(t *testing.T) {
 	t.Parallel()
 
 	sup := fmt.Sprintf(`{"supplierId":%q,"leadDays":7`, ctSupplier.String())
-	tests := map[string]string{
-		"supplier":    strings.Replace(ctItemBody, sup, sup+`,"bogus":1`, 1) + `}`,
-		"cost":        strings.Replace(ctItemBody, sup, sup+`,"costCents":5`, 1) + `,"productionCostCents":1,"bogus":1}`,
-		"option":      strings.Replace(ctItemBody, `"required":true`, `"required":true,"bogus":1`, 1) + `}`,
-		"choice":      strings.Replace(ctItemBody, `"extraDays":0`, `"extraDays":0,"bogus":1`, 1) + `}`,
-		"category id": strings.Replace(ctItemBody, `"categoryId":null`, `"categoryId":{"bogus":1}`, 1) + `}`,
+	const items, kits, attributes = "/api/v1/admin/catalog/items", "/api/v1/admin/catalog/kits", "/api/v1/admin/catalog/attributes"
+	tests := []struct{ name, path, body string }{
+		{"supplier", items, strings.Replace(ctItemBody, sup, sup+`,"bogus":1`, 1) + `}`},
+		{"supplier with a cost", items, strings.Replace(ctItemBody, sup, sup+`,"costCents":5,"bogus":1`, 1) + `}`},
+		{"option", items, strings.Replace(ctItemBody, `"required":true`, `"required":true,"bogus":1`, 1) + `}`},
+		{"choice", items, strings.Replace(ctItemBody, `"extraDays":0`, `"extraDays":0,"bogus":1`, 1) + `}`},
+		{"category id of the wrong type", items, strings.Replace(ctItemBody, `"categoryId":null`, `"categoryId":{"bogus":1}`, 1) + `}`},
+		{"kit item", kits, strings.Replace(ctKitBody, `"swappable":false`, `"swappable":false,"bogus":1`, 1) + `}`},
+		{"attribute value", attributes, strings.Replace(ctAttributeBody, `"label":"CB 500X"`, `"label":"CB 500X","bogus":1`, 1)},
 	}
-	for name, body := range tests {
-		t.Run(name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			f := newCtFixture(t)
-			rec := f.call(t, "POST", "/api/v1/admin/catalog/items", body)
+			rec := f.call(t, "POST", tt.path, tt.body)
 			if rec.Code != 400 || code(t, rec) != respond.CodeInvalid || f.uses() != 0 {
 				t.Errorf("answer %d %s after %d use-case calls, want 400 invalid and none", rec.Code, rec.Body.String(), f.uses())
 			}
@@ -235,6 +239,7 @@ func TestCatalog_ValidationNamesTheField(t *testing.T) {
 		{"bad category filter", "/api/v1/admin/catalog/items?categoryId=nope", "", "GET", "categoryId"},
 		{"bad includeArchived", "/api/v1/admin/catalog/kits?includeArchived=maybe", "", "GET", "includeArchived"},
 		{"search too long", "/api/v1/admin/suppliers?q=" + strings.Repeat("a", 101), "", "GET", "q"},
+		{"production days zero", "/api/v1/admin/catalog/items", strings.Replace(ctItemBody, `"productionDays":null`, `"productionDays":0`, 1) + `}`, "POST", "productionDays"},
 		{"forged cursor limit", "/api/v1/admin/suppliers?limit=0x", "", "GET", "limit"},
 	}
 	for _, tt := range tests {
@@ -330,21 +335,28 @@ func TestCatalog_MapsErrorsToProblems(t *testing.T) {
 func TestCatalog_RefusalsCarryReferences(t *testing.T) {
 	t.Parallel()
 
-	for _, sentinel := range []error{catalog.ErrItemInKit, catalog.ErrItemArchived} {
-		f := newCtFixture(t)
-		f.fail(refusal(sentinel))
-		path := "/api/v1/admin/catalog/items/" + ctItem.String() + "/archive"
-		if errors.Is(sentinel, catalog.ErrItemArchived) {
-			path = "/api/v1/admin/catalog/kits/" + ctKit.String() + "/restore"
-		}
-		rec := f.call(t, "POST", path, `{"version":1}`)
-		var p respond.Problem
-		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
-			t.Fatal(err)
-		}
-		if len(p.References) != 1 || p.References[0].ID != ctKit.String() || p.References[0].Name != "Kit Scrambler" {
-			t.Errorf("%v: references = %+v, want the kit", sentinel, p.References)
-		}
+	tests := []struct {
+		name, path string
+		sentinel   error
+	}{
+		{"item in a kit", "/api/v1/admin/catalog/items/" + ctItem.String() + "/archive", catalog.ErrItemInKit},
+		{"archived item", "/api/v1/admin/catalog/kits/" + ctKit.String() + "/restore", catalog.ErrItemArchived},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newCtFixture(t)
+			f.fail(refusal(tt.sentinel))
+			rec := f.call(t, "POST", tt.path, `{"version":1}`)
+			var p respond.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+				t.Fatal(err)
+			}
+			if len(p.References) != 1 || p.References[0].ID != ctKit.String() || p.References[0].Name != "Kit Scrambler" {
+				t.Errorf("references = %+v, want the kit", p.References)
+			}
+		})
 	}
 }
 
@@ -365,25 +377,32 @@ func TestCatalog_PhotoRefusalsAreNotGenericInvalid(t *testing.T) {
 func TestCatalog_ConfirmPhotoAnswers200ForARepeat(t *testing.T) {
 	t.Parallel()
 
-	for _, owner := range []string{"items/" + ctItem.String(), "kits/" + ctKit.String()} {
+	owners := map[string]struct {
+		path  string
+		owner catalog.PhotoOwner
+	}{
+		"item": {"items/" + ctItem.String(), catalog.ItemPhotos(ctItem)},
+		"kit":  {"kits/" + ctKit.String(), catalog.KitPhotos(ctKit)},
+	}
+	for name, o := range owners {
 		for _, again := range []bool{false, true} {
-			f := newCtFixture(t)
-			f.catalog.confirmation = appcatalog.PhotoConfirmation{AlreadyRecorded: again}
-			rec := f.call(t, "POST", "/api/v1/admin/catalog/"+owner+"/photos", `{"key":"t/a/b/c/d"}`)
-			want := http.StatusCreated
-			if again {
-				want = http.StatusOK
-			}
-			if rec.Code != want {
-				t.Errorf("%s with AlreadyRecorded=%v answered %d, want %d", owner, again, rec.Code, want)
-			}
-			wantOwner := catalog.ItemPhotos(ctItem)
-			if strings.HasPrefix(owner, "kits") {
-				wantOwner = catalog.KitPhotos(ctKit)
-			}
-			if f.catalog.owner != wantOwner || f.catalog.got != "t/a/b/c/d" {
-				t.Errorf("%s: use case got owner %+v key %v", owner, f.catalog.owner, f.catalog.got)
-			}
+			t.Run(fmt.Sprintf("%s, already recorded: %v", name, again), func(t *testing.T) {
+				t.Parallel()
+
+				f := newCtFixture(t)
+				f.catalog.confirmation = appcatalog.PhotoConfirmation{AlreadyRecorded: again}
+				rec := f.call(t, "POST", "/api/v1/admin/catalog/"+o.path+"/photos", `{"key":"t/a/b/c/d"}`)
+				want := http.StatusCreated
+				if again {
+					want = http.StatusOK
+				}
+				if rec.Code != want {
+					t.Errorf("answered %d, want %d", rec.Code, want)
+				}
+				if f.catalog.owner != o.owner || f.catalog.got != "t/a/b/c/d" {
+					t.Errorf("use case got owner %+v key %v", f.catalog.owner, f.catalog.got)
+				}
+			})
 		}
 	}
 }
@@ -391,51 +410,149 @@ func TestCatalog_ConfirmPhotoAnswers200ForARepeat(t *testing.T) {
 func TestCatalog_PassesInput(t *testing.T) {
 	t.Parallel()
 
-	f := newCtFixture(t)
-	f.call(t, "GET", "/api/v1/admin/catalog/items?cursor=abc&limit=5&q=ban&includeArchived=true&categoryId="+ctCategory.String(), "")
-	got, _ := f.catalog.got.([]any)
-	filter, page := got[0].(appcatalog.ItemFilter), got[1].(shared.PageRequest)
-	if filter.Query != "ban" || !filter.IncludeArchived || filter.Category != ctCategory || page.Cursor() != "abc" || page.Limit() != 5 {
-		t.Errorf("use case got %+v %q %d", filter, page.Cursor(), page.Limit())
-	}
+	t.Run("item list", func(t *testing.T) {
+		t.Parallel()
 
-	f.call(t, "PUT", "/api/v1/admin/catalog/items/"+ctItem.String()+"/photos/order", fmt.Sprintf(`{"photoIds":[%q]}`, ctPhoto.String()))
-	if ids, _ := f.catalog.got.([]shared.PhotoID); len(ids) != 1 || ids[0] != ctPhoto || f.catalog.owner != catalog.ItemPhotos(ctItem) {
-		t.Errorf("order got %+v for %+v", f.catalog.got, f.catalog.owner)
-	}
+		f := newCtFixture(t)
+		f.call(t, "GET", "/api/v1/admin/catalog/items?cursor=abc&limit=5&q=ban&includeArchived=true&categoryId="+ctCategory.String(), "")
+		got, ok := f.catalog.got.([]any)
+		if !ok || len(got) != 2 {
+			t.Fatalf("use case got %#v", f.catalog.got)
+		}
+		filter, okFilter := got[0].(appcatalog.ItemFilter)
+		page, okPage := got[1].(shared.PageRequest)
+		if !okFilter || !okPage {
+			t.Fatalf("use case got %#v", got)
+		}
+		if filter.Query != "ban" || !filter.IncludeArchived || filter.Category != ctCategory || page.Cursor() != "abc" || page.Limit() != 5 {
+			t.Errorf("use case got %+v %q %d", filter, page.Cursor(), page.Limit())
+		}
+	})
+	t.Run("photo order", func(t *testing.T) {
+		t.Parallel()
 
-	f.call(t, "PATCH", "/api/v1/admin/catalog/categories/"+ctCategory.String(), `{"position":2}`)
-	if in, _ := f.catalog.got.(appcatalog.UpdateCategoryInput); in.ID != ctCategory || in.Name != nil || in.Position == nil || *in.Position != 2 {
-		t.Errorf("update category got %+v", f.catalog.got)
-	}
+		f := newCtFixture(t)
+		f.call(t, "PUT", "/api/v1/admin/catalog/items/"+ctItem.String()+"/photos/order", fmt.Sprintf(`{"photoIds":[%q]}`, ctPhoto.String()))
+		if ids, _ := f.catalog.got.([]shared.PhotoID); len(ids) != 1 || ids[0] != ctPhoto || f.catalog.owner != catalog.ItemPhotos(ctItem) {
+			t.Errorf("order got %+v for %+v", f.catalog.got, f.catalog.owner)
+		}
+	})
+	t.Run("category update", func(t *testing.T) {
+		t.Parallel()
 
-	f.call(t, "PUT", "/api/v1/admin/catalog/kits/"+ctKit.String(), strings.Replace(ctKitBody, `"assemblyDays":null`, `"assemblyDays":4`, 1)+`,"version":3}`)
-	in, _ := f.catalog.got.(appcatalog.ReplaceKitInput)
-	if in.ID != ctKit || in.Version != 3 || in.Kit.AssemblyDays == nil || *in.Kit.AssemblyDays != 4 || in.Kit.SafetyMarginDays != nil ||
-		in.Kit.SwapDiscount != catalog.SwapKeepDiscount || len(in.Kit.Items) != 1 || in.Kit.Items[0].Item != ctItem {
-		t.Errorf("replace kit got %+v", in)
-	}
+		f := newCtFixture(t)
+		f.call(t, "PATCH", "/api/v1/admin/catalog/categories/"+ctCategory.String(), `{"position":2}`)
+		if in, _ := f.catalog.got.(appcatalog.UpdateCategoryInput); in.ID != ctCategory || in.Name != nil || in.Position == nil || *in.Position != 2 {
+			t.Errorf("update category got %+v", f.catalog.got)
+		}
+	})
+	t.Run("kit replace", func(t *testing.T) {
+		t.Parallel()
 
-	f.call(t, "POST", "/api/v1/admin/suppliers", `{"name":"Couros","whatsappPhone":"5511987654321"}`)
-	if in, _ := f.suppliers.got.(appsupplier.CreateInput); in.Name != "Couros" || in.WhatsAppPhone != "5511987654321" {
-		t.Errorf("create supplier got %+v", f.suppliers.got)
-	}
+		f := newCtFixture(t)
+		f.call(t, "PUT", "/api/v1/admin/catalog/kits/"+ctKit.String(), strings.Replace(ctKitBody, `"assemblyDays":null`, `"assemblyDays":4`, 1)+`,"version":3}`)
+		in, _ := f.catalog.got.(appcatalog.ReplaceKitInput)
+		if in.ID != ctKit || in.Version != 3 || in.Kit.AssemblyDays == nil || *in.Kit.AssemblyDays != 4 || in.Kit.SafetyMarginDays != nil ||
+			in.Kit.SwapDiscount != catalog.SwapKeepDiscount || len(in.Kit.Items) != 1 || in.Kit.Items[0].Item != ctItem {
+			t.Errorf("replace kit got %+v", in)
+		}
+	})
+	t.Run("supplier create", func(t *testing.T) {
+		t.Parallel()
+
+		f := newCtFixture(t)
+		f.call(t, "POST", "/api/v1/admin/suppliers", `{"name":"Couros","whatsappPhone":"5511987654321"}`)
+		if in, _ := f.suppliers.got.(appsupplier.CreateInput); in.Name != "Couros" || in.WhatsAppPhone != "5511987654321" {
+			t.Errorf("create supplier got %+v", f.suppliers.got)
+		}
+	})
+	t.Run("suppliers are never archived", func(t *testing.T) {
+		t.Parallel()
+
+		f := newCtFixture(t)
+		if rec := f.call(t, "GET", "/api/v1/admin/suppliers?includeArchived=maybe", ""); rec.Code != 200 {
+			t.Errorf("answered %d %s, want 200: the parameter is not read", rec.Code, rec.Body.String())
+		}
+	})
 }
 
-// Replace bodies keep version: a flat struct, not an embedded input whose
-// UnmarshalJSON would swallow it.
-func TestCatalog_ReplaceReadsTheVersion(t *testing.T) {
+// A PUT reaches the use case with every field of its body and the version.
+// The Replace requests embed their base request, which is safe only while
+// the base has no UnmarshalJSON: a promoted one would swallow version or the
+// fields. This fails if one is ever added.
+func TestCatalog_ReplaceReachesTheUseCaseWhole(t *testing.T) {
 	t.Parallel()
 
-	f := newCtFixture(t)
-	f.call(t, "PUT", "/api/v1/admin/catalog/items/"+ctItem.String(), ctItemBody+`,"version":7}`)
-	if in, _ := f.catalog.got.(appcatalog.ReplaceItemInput); in.Version != 7 || in.ID != ctItem || in.Item.Name != "Banco" {
-		t.Errorf("replace item got %+v", f.catalog.got)
-	}
-	f.call(t, "PUT", "/api/v1/admin/suppliers/"+ctSupplier.String(), `{"name":"Couros","whatsappPhone":"5511987654321","version":9}`)
-	if in, _ := f.suppliers.got.(appsupplier.ReplaceInput); in.Version != 9 || in.ID != ctSupplier {
-		t.Errorf("replace supplier got %+v", f.suppliers.got)
-	}
+	t.Run("item", func(t *testing.T) {
+		t.Parallel()
+
+		body := fmt.Sprintf(`{"name":"Bolo","description":"De festa","categoryId":%q,"sourcingMode":"in_house","priceCents":15000,`+
+			`"productionDays":3,"productionCostCents":2000,`+
+			`"mainSupplier":{"supplierId":%q,"leadDays":7,"costCents":4000},`+
+			`"backupSupplier":{"supplierId":%q,"leadDays":9,"costCents":null},`+
+			`"attributeValueIds":[%q],`+
+			`"options":[{"id":%q,"name":"Cor","required":true,"choices":[{"id":%q,"label":"Preta","extraPriceCents":300,"extraDays":2}]}],`+
+			`"published":true,"version":7}`,
+			ctCategory.String(), ctSupplier.String(), ctSupplier.String(), ctValue.String(), ctOption.String(), ctChoice.String())
+		f := newCtFixture(t)
+		if rec := f.call(t, "PUT", "/api/v1/admin/catalog/items/"+ctItem.String(), body); rec.Code != 200 {
+			t.Fatalf("answered %d %s", rec.Code, rec.Body.String())
+		}
+		got, ok := f.catalog.got.(appcatalog.ReplaceItemInput)
+		if !ok {
+			t.Fatalf("use case got %#v", f.catalog.got)
+		}
+		it := got.Item
+		want := appcatalog.ItemInput{
+			Name: "Bolo", Description: "De festa", CategoryID: ctCategory, SourcingMode: catalog.ModeInHouse, PriceCents: 15000,
+			ProductionDays: 3, ProductionCost: appcatalog.SetCost(2000),
+			MainSupplier:      &appcatalog.SupplierInput{SupplierID: ctSupplier, LeadDays: 7, Cost: appcatalog.SetCost(4000)},
+			BackupSupplier:    &appcatalog.SupplierInput{SupplierID: ctSupplier, LeadDays: 9, Cost: appcatalog.ClearCost()},
+			AttributeValueIDs: []shared.AttributeValueID{ctValue},
+			Options: []appcatalog.OptionInput{{ID: ctOption, Name: "Cor", Required: true, Choices: []appcatalog.ChoiceInput{
+				{ID: ctChoice, Label: "Preta", ExtraPriceCents: 300, ExtraDays: 2},
+			}}},
+			Published: true,
+		}
+		if got.ID != ctItem || got.Version != 7 || !reflect.DeepEqual(it, want) {
+			t.Errorf("use case got id %v version %d\n%+v\nwant\n%+v", got.ID, got.Version, it, want)
+		}
+	})
+	t.Run("kit", func(t *testing.T) {
+		t.Parallel()
+
+		body := fmt.Sprintf(`{"name":"Kit","description":"Completo","priceCents":25000,"swapDiscount":"lose","assemblyDays":4,"safetyMarginDays":0,`+
+			`"items":[{"itemId":%q,"quantity":2,"swappable":true,"alternativeItemIds":[%q]}],"attributeValueIds":[%q],"published":true,"version":5}`,
+			ctItem.String(), ctItem.String(), ctValue.String())
+		f := newCtFixture(t)
+		if rec := f.call(t, "PUT", "/api/v1/admin/catalog/kits/"+ctKit.String(), body); rec.Code != 200 {
+			t.Fatalf("answered %d %s", rec.Code, rec.Body.String())
+		}
+		got, ok := f.catalog.got.(appcatalog.ReplaceKitInput)
+		if !ok {
+			t.Fatalf("use case got %#v", f.catalog.got)
+		}
+		days, margin := 4, 0
+		want := appcatalog.KitInput{
+			Name: "Kit", Description: "Completo", PriceCents: 25000, SwapDiscount: catalog.SwapLoseDiscount,
+			AssemblyDays: &days, SafetyMarginDays: &margin,
+			Items:             []catalog.KitItem{{Item: ctItem, Quantity: 2, Swappable: true, Alternatives: []shared.ItemID{ctItem}}},
+			AttributeValueIDs: []shared.AttributeValueID{ctValue}, Published: true,
+		}
+		if got.ID != ctKit || got.Version != 5 || !reflect.DeepEqual(got.Kit, want) {
+			t.Errorf("use case got id %v version %d\n%+v\nwant\n%+v", got.ID, got.Version, got.Kit, want)
+		}
+	})
+	t.Run("supplier", func(t *testing.T) {
+		t.Parallel()
+
+		f := newCtFixture(t)
+		f.call(t, "PUT", "/api/v1/admin/suppliers/"+ctSupplier.String(), `{"name":"Couros","whatsappPhone":"5511987654321","version":9}`)
+		want := appsupplier.ReplaceInput{ID: ctSupplier, Name: "Couros", WhatsAppPhone: "5511987654321", Version: 9}
+		if got, _ := f.suppliers.got.(appsupplier.ReplaceInput); got != want {
+			t.Errorf("use case got %+v, want %+v", got, want)
+		}
+	})
 }
 
 // The cost keys of a request are tri-state: absent keeps the cost, null
@@ -454,6 +571,7 @@ func TestCatalog_CostKeysAreTriState(t *testing.T) {
 		{"both absent", ``, ``, appcatalog.KeepCost(), appcatalog.KeepCost()},
 		{"both null", `,"costCents":null`, `,"productionCostCents":null`, appcatalog.ClearCost(), appcatalog.ClearCost()},
 		{"both values", `,"costCents":4000`, `,"productionCostCents":1500`, appcatalog.SetCost(4000), appcatalog.SetCost(1500)},
+		{"a repeated key reads as its last", `,"costCents":null,"costCents":5`, `,"productionCostCents":7,"productionCostCents":null`, appcatalog.SetCost(5), appcatalog.ClearCost()},
 		{"zero is a value", `,"costCents":0`, ``, appcatalog.SetCost(0), appcatalog.KeepCost()},
 	}
 	for _, tt := range tests {
@@ -476,18 +594,45 @@ func TestCatalog_CostKeysAreTriState(t *testing.T) {
 func TestCatalog_RateLimitsPhotoUploads(t *testing.T) {
 	t.Parallel()
 
-	for _, rule := range []ratelimit.Rule{ratelimit.PhotoUploadByUser, ratelimit.PhotoUploadByStore} {
-		t.Run(rule.Kind, func(t *testing.T) {
+	userKey, storeKey := ratelimit.PhotoUploadByUser.Key(userID.String()), ratelimit.PhotoUploadByStore.Key(tenantID.String())
+	tests := []struct {
+		rule     ratelimit.Rule
+		wantKeys []string
+	}{
+		// A refused user never reaches the store's count.
+		{ratelimit.PhotoUploadByUser, []string{userKey}},
+		{ratelimit.PhotoUploadByStore, []string{userKey, storeKey}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rule.Kind, func(t *testing.T) {
 			t.Parallel()
 
 			f := newCtFixture(t)
-			f.limiter.refuse[rule.Name+":"+rule.Kind] = true
+			f.limiter.refuse[tt.rule.Name+":"+tt.rule.Kind] = true
 			rec := f.call(t, "POST", "/api/v1/admin/catalog/photo-uploads", ctUploadBody)
 			if rec.Code != 429 || code(t, rec) != respond.CodeRateLimited || rec.Header().Get("Retry-After") != "90" || f.uses() != 0 {
 				t.Errorf("answer %d %s (Retry-After %q) after %d use-case calls, want 429 and none",
 					rec.Code, rec.Body.String(), rec.Header().Get("Retry-After"), f.uses())
 			}
+			if fmt.Sprint(f.limiter.keys) != fmt.Sprint(tt.wantKeys) {
+				t.Errorf("counted %v, want %v", f.limiter.keys, tt.wantKeys)
+			}
 		})
+	}
+}
+
+// Without a principal nothing is counted and the use case decides, which
+// refuses it: the router's authn makes this unreachable, but the handler
+// must not spend a budget it cannot attribute.
+func TestCatalog_PhotoUploadWithoutAPrincipalIsNotCounted(t *testing.T) {
+	t.Parallel()
+
+	f := newCtFixture(t)
+	r := httptest.NewRequest("POST", "/api/v1/admin/catalog/photo-uploads", strings.NewReader(ctUploadBody))
+	rec := httptest.NewRecorder()
+	f.c.RequestPhotoUpload(rec, r)
+	if len(f.limiter.keys) != 0 || f.catalog.calls != 1 {
+		t.Errorf("counted %v and made %d use-case calls, want none counted and the use case called once", f.limiter.keys, f.catalog.calls)
 	}
 }
 

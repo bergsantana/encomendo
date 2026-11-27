@@ -378,35 +378,3 @@ type Supplier struct {
 func NewSupplier(v appsupplier.View) Supplier {
 	return Supplier{ID: v.ID, Name: v.Name, WhatsAppPhone: v.WhatsAppPhone, Version: v.Version}
 }
-
-// SupplierRequest is the body of POST /api/v1/admin/suppliers.
-type SupplierRequest struct {
-	Name          *string `json:"name"`
-	WhatsAppPhone *string `json:"whatsappPhone"`
-}
-
-// Input returns the use case's input, or a ValidationError.
-func (r SupplierRequest) Input() (appsupplier.CreateInput, error) {
-	var f fields
-	in := appsupplier.CreateInput{Name: need(&f, r.Name, "name"), WhatsAppPhone: need(&f, r.WhatsAppPhone, "whatsappPhone")}
-	return in, f.err()
-}
-
-// ReplaceSupplierRequest is PUT /api/v1/admin/suppliers/{id}: a
-// SupplierRequest and the version read, flat.
-type ReplaceSupplierRequest struct {
-	Name          *string `json:"name"`
-	WhatsAppPhone *string `json:"whatsappPhone"`
-	Version       *int    `json:"version"`
-}
-
-// Input returns the use case's input for the supplier id, or a
-// ValidationError.
-func (r ReplaceSupplierRequest) Input(id shared.SupplierID) (appsupplier.ReplaceInput, error) {
-	var f fields
-	in := appsupplier.ReplaceInput{
-		ID: id, Name: need(&f, r.Name, "name"), WhatsAppPhone: need(&f, r.WhatsAppPhone, "whatsappPhone"),
-		Version: needVersion(&f, r.Version),
-	}
-	return in, f.err()
-}

@@ -9,7 +9,9 @@ import (
 )
 
 // reply writes err as a problem, or status with body() when body is not
-// nil, or just status when it is.
+// nil, or just status when it is. It has five parameters on purpose: it is
+// the one call every handler ends with, and a responder type holding log
+// would only move the same arguments around.
 func reply(w http.ResponseWriter, r *http.Request, log *slog.Logger, status int, err error, body func() any) {
 	if err != nil {
 		respond.Error(w, r, log, err)
@@ -53,9 +55,9 @@ func idParam[T ~[16]byte](w http.ResponseWriter, r *http.Request, log *slog.Logg
 	return T(id), true
 }
 
-// listQuery reads the query parameters every catalog list shares: the page,
-// the search text and, with archived, includeArchived. A malformed one is
-// 400 invalid.
+// listQuery reads the query parameters the catalog lists share: the page,
+// the search text and, for lists that have archived rows, includeArchived.
+// A malformed one is 400 invalid.
 type listQuery struct {
 	page            shared.PageRequest
 	text            string
@@ -64,7 +66,9 @@ type listQuery struct {
 
 const maxSearchLength = 100
 
-func readListQuery(r *http.Request) (listQuery, error) {
+// readListQuery reads them from r. withArchived is false for suppliers,
+// which are never archived: includeArchived is then not read at all.
+func readListQuery(r *http.Request, withArchived bool) (listQuery, error) {
 	page, err := pageRequest(r)
 	if err != nil {
 		return listQuery{}, err
@@ -73,6 +77,9 @@ func readListQuery(r *http.Request) (listQuery, error) {
 	out := listQuery{page: page, text: q.Get("q")}
 	if len([]rune(out.text)) > maxSearchLength {
 		return listQuery{}, shared.NewValidationError(shared.FieldError{Field: "q", Message: "Use até 100 caracteres."})
+	}
+	if !withArchived {
+		return out, nil
 	}
 	switch q.Get("includeArchived") {
 	case "", "false":

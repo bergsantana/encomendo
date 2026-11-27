@@ -11,7 +11,7 @@ import (
 
 // ListKits is GET /api/v1/admin/catalog/kits.
 func (h *Catalog) ListKits(w http.ResponseWriter, r *http.Request) {
-	q, err := readListQuery(r)
+	q, err := readListQuery(r, true)
 	if err != nil {
 		respond.Error(w, r, h.log, err)
 		return

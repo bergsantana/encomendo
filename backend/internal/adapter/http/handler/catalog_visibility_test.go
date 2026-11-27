@@ -116,10 +116,10 @@ func supplierLink(id shared.SupplierID, leadDays int, cost map[string]any) map[s
 
 // seeded is what seed creates.
 type seeded struct {
-	category          string
-	banco, bolo, bare string // item ids: bought with costs, in house with a cost, bought with none
-	kit               string
-	photo             string
+	category, attribute string
+	banco, bolo, bare   string // item ids: bought with costs, in house with a cost, bought with none
+	kit                 string
+	photo               string
 }
 
 // seed creates, as the owner, a category, an item bought from two suppliers
@@ -129,6 +129,8 @@ func (r *realRig) seed() seeded {
 	r.t.Helper()
 	var s seeded
 	s.category = r.ok(shared.RoleOwner, 201, "POST", ctBase+"/categories", map[string]any{"name": "Bancos"})["id"].(string)
+	s.attribute = r.ok(shared.RoleOwner, 201, "POST", ctBase+"/attributes",
+		map[string]any{"name": "Serve em", "values": []any{map[string]any{"label": "CB 500X"}}})["id"].(string)
 	s.banco = r.ok(shared.RoleOwner, 201, "POST", ctBase+"/items", r.itemFields("Banco", map[string]any{
 		"categoryId":     s.category,
 		"mainSupplier":   supplierLink(r.couros, 7, map[string]any{"costCents": 4000}),
@@ -210,7 +212,7 @@ func TestCatalogVisibility_NonOwnersNeverSeeCostKeys(t *testing.T) {
 			}
 			// A role that may write sees no cost in the answer to a write
 			// either; one that may not gets a problem, which has none.
-			for _, w := range r.writes(s) {
+			for _, w := range r.writes(s, supplier) {
 				rec, out := r.do(role, w.method, w.path, w.body)
 				if found := findCostKeys(out, ""); len(found) > 0 {
 					t.Errorf("%s %s as %s (%d) has cost keys %v in %s", w.method, w.path, role, rec.Code, found, rec.Body.String())
@@ -220,7 +222,8 @@ func TestCatalogVisibility_NonOwnersNeverSeeCostKeys(t *testing.T) {
 				}
 				seen++
 			}
-			if seen < 19 {
+			seen += r.checkPhotoWrites(t, role, s)
+			if seen < 29 {
 				t.Errorf("only %d responses were checked", seen)
 			}
 		})
@@ -232,22 +235,75 @@ type write struct {
 	body         any
 }
 
-// writes are write operations a role with catalog:write can make without
-// sending a cost, answering the item, kit or photo.
-func (r *realRig) writes(s seeded) []write {
+// writes are the write operations a role with catalog:write can make
+// without sending a cost, in an order that keeps each version right for an
+// admin: each answers an item, a kit, a category, a field or a supplier.
+// The photo writes are in checkPhotoWrites, which needs an uploaded object.
+func (r *realRig) writes(s seeded, supplier string) []write {
 	item := r.itemFields("Banco", map[string]any{
 		"mainSupplier": supplierLink(r.couros, 7, nil), "backupSupplier": supplierLink(r.ferragens, 9, nil), "version": 1,
 	})
+	kit := func(name string, version int) map[string]any {
+		m := map[string]any{
+			"name": name, "description": "", "priceCents": 12000, "swapDiscount": "keep", "assemblyDays": nil, "safetyMarginDays": nil,
+			"items": []any{
+				map[string]any{"itemId": s.banco, "quantity": 1, "swappable": false, "alternativeItemIds": []string{}},
+				map[string]any{"itemId": s.bolo, "quantity": 2, "swappable": false, "alternativeItemIds": []string{}},
+			},
+			"attributeValueIds": []string{}, "published": false,
+		}
+		if version > 0 {
+			m["version"] = version
+		}
+		return m
+	}
 	return []write{
 		{"POST", ctBase + "/items", r.itemFields("Selim", nil)},
 		{"PUT", ctBase + "/items/" + s.banco, item},
 		{"PUT", ctBase + "/items/" + s.bare + "/published", map[string]any{"published": true, "version": 1}},
 		{"POST", ctBase + "/items/" + s.bare + "/archive", map[string]any{"version": 2}},
 		{"POST", ctBase + "/items/" + s.bare + "/restore", map[string]any{"version": 3}},
+		{"POST", ctBase + "/kits", kit("Outro kit", 0)},
 		{"PUT", ctBase + "/kits/" + s.kit + "/published", map[string]any{"published": true, "version": 1}},
+		{"PUT", ctBase + "/kits/" + s.kit, kit("Kit renomeado", 2)},
+		{"POST", ctBase + "/kits/" + s.kit + "/archive", map[string]any{"version": 3}},
+		{"POST", ctBase + "/kits/" + s.kit + "/restore", map[string]any{"version": 4}},
 		{"PUT", ctBase + "/items/" + s.banco + "/photos/order", map[string]any{"photoIds": []string{s.photo}}},
+		{"POST", ctBase + "/categories", map[string]any{"name": "Selins"}},
 		{"PATCH", ctBase + "/categories/" + s.category, map[string]any{"name": "Assentos"}},
+		{"POST", ctBase + "/attributes", map[string]any{"name": "Cor", "values": []any{map[string]any{"label": "Preta"}}}},
+		{"PUT", ctBase + "/attributes/" + s.attribute, map[string]any{"name": "Serve em", "values": []any{map[string]any{"label": "XRE 300"}}}},
 		{"POST", "/api/v1/admin/suppliers", map[string]any{"name": "Tecidos", "whatsappPhone": "5511987654321"}},
+		{"PUT", "/api/v1/admin/suppliers/" + supplier, map[string]any{"name": "Couros Novo", "whatsappPhone": "5511987654321", "version": 1}},
+	}
+}
+
+// checkPhotoWrites asks for a photo upload and confirms it, as role, and
+// walks both answers. A role that may not write gets problems, which have no
+// cost key either. It returns how many responses it checked.
+func (r *realRig) checkPhotoWrites(t *testing.T, role shared.Role, s seeded) int {
+	t.Helper()
+	rec, out := r.do(role, "POST", ctBase+"/photo-uploads", map[string]any{"ownerType": "kit", "ownerId": s.kit, "contentType": "image/jpeg"})
+	checkNoCostKeys(t, role, "POST photo-uploads", rec.Code, out)
+	key := "t/not/a/real/key"
+	if up, ok := out.(map[string]any); ok && rec.Code == 201 {
+		key, _ = up["key"].(string)
+		r.storage.Upload(key, catalog.ContentTypeJPEG, append([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, make([]byte, 64)...))
+	} else if role == shared.RoleAdmin {
+		t.Errorf("photo upload as admin answered %d", rec.Code)
+	}
+	rec, out = r.do(role, "POST", ctBase+"/kits/"+s.kit+"/photos", map[string]any{"key": key})
+	checkNoCostKeys(t, role, "POST kit photos", rec.Code, out)
+	if role == shared.RoleAdmin && rec.Code != 201 {
+		t.Errorf("photo confirm as admin answered %d %s", rec.Code, rec.Body.String())
+	}
+	return 2
+}
+
+func checkNoCostKeys(t *testing.T, role shared.Role, what string, status int, out any) {
+	t.Helper()
+	if found := findCostKeys(out, ""); len(found) > 0 {
+		t.Errorf("%s as %s (%d) has cost keys %v", what, role, status, found)
 	}
 }
 
@@ -259,49 +315,61 @@ func TestCatalogVisibility_OwnerSeesCostsAndNulls(t *testing.T) {
 	r := newRealRig(t)
 	s := r.seed()
 
-	banco := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.banco, nil)
-	wantKeys(t, "banco", banco, "cost", "margin")
-	if _, has := banco["productionCost"]; has {
-		t.Error("a bought item has a productionCost key; the contract shows it for in_house only")
-	}
-	if got := moneyOf(t, banco["cost"]); got != 4000 {
-		t.Errorf("banco cost = %d, want the main supplier's 4000", got)
-	}
-	if m := banco["margin"].(map[string]any); m["cents"] != float64(6000) || m["basisPoints"] != float64(6000) {
-		t.Errorf("banco margin = %v, want 6000 cents and 6000 bp", m)
-	}
-	main, backup := banco["mainSupplier"].(map[string]any), banco["backupSupplier"].(map[string]any)
-	if moneyOf(t, main["cost"]) != 4000 || moneyOf(t, backup["cost"]) != 4500 {
-		t.Errorf("supplier costs = %v and %v, want 4000 and 4500", main["cost"], backup["cost"])
-	}
+	t.Run("a bought item", func(t *testing.T) {
+		banco := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.banco, nil)
+		wantKeys(t, "banco", banco, "cost", "margin")
+		if _, has := banco["productionCost"]; has {
+			t.Error("a bought item has a productionCost key; the contract shows it for in_house only")
+		}
+		if got := moneyOf(t, banco["cost"]); got != 4000 {
+			t.Errorf("banco cost = %d, want the main supplier's 4000", got)
+		}
+		if m := banco["margin"].(map[string]any); m["cents"] != float64(6000) || m["basisPoints"] != float64(6000) {
+			t.Errorf("banco margin = %v, want 6000 cents and 6000 bp", m)
+		}
+		main, backup := banco["mainSupplier"].(map[string]any), banco["backupSupplier"].(map[string]any)
+		if moneyOf(t, main["cost"]) != 4000 || moneyOf(t, backup["cost"]) != 4500 {
+			t.Errorf("supplier costs = %v and %v, want 4000 and 4500", main["cost"], backup["cost"])
+		}
+	})
 
-	bolo := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.bolo, nil)
-	wantKeys(t, "bolo", bolo, "cost", "margin", "productionCost")
-	if moneyOf(t, bolo["productionCost"]) != 1500 || bolo["mainSupplier"] != nil {
-		t.Errorf("bolo productionCost %v mainSupplier %v", bolo["productionCost"], bolo["mainSupplier"])
-	}
+	t.Run("an item made in house", func(t *testing.T) {
+		bolo := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.bolo, nil)
+		wantKeys(t, "bolo", bolo, "cost", "margin", "productionCost")
+		if moneyOf(t, bolo["productionCost"]) != 1500 || bolo["mainSupplier"] != nil {
+			t.Errorf("bolo productionCost %v mainSupplier %v", bolo["productionCost"], bolo["mainSupplier"])
+		}
+	})
 
-	bare := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.bare, nil)
-	wantKeys(t, "capa", bare, "cost", "margin")
-	if bare["cost"] != nil || bare["margin"] != nil || bare["mainSupplier"].(map[string]any)["cost"] != nil {
-		t.Errorf("an item with no cost has cost %v margin %v supplier cost %v, want null", bare["cost"], bare["margin"], bare["mainSupplier"])
-	}
+	t.Run("an item with no cost", func(t *testing.T) {
+		bare := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.bare, nil)
+		wantKeys(t, "capa", bare, "cost", "margin")
+		if bare["cost"] != nil || bare["margin"] != nil || bare["mainSupplier"].(map[string]any)["cost"] != nil {
+			t.Errorf("an item with no cost has cost %v margin %v supplier cost %v, want null", bare["cost"], bare["margin"], bare["mainSupplier"])
+		}
+	})
 
-	rows := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items", nil)["items"].([]any)
-	if len(rows) != 3 {
-		t.Fatalf("%d rows, want 3", len(rows))
-	}
-	for _, row := range rows {
-		wantKeys(t, "item row", row.(map[string]any), "cost", "margin")
-	}
-	kit := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/kits/"+s.kit, nil)
-	wantKeys(t, "kit", kit, "cost", "margin")
-	if got := moneyOf(t, kit["cost"]); got != 4000+2*1500 {
-		t.Errorf("kit cost = %d, want 7000 (the items' costs times their quantities)", got)
-	}
-	for _, row := range r.ok(shared.RoleOwner, 200, "GET", ctBase+"/kits", nil)["items"].([]any) {
-		wantKeys(t, "kit row", row.(map[string]any), "cost", "margin")
-	}
+	t.Run("the item rows", func(t *testing.T) {
+		rows := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items", nil)["items"].([]any)
+		if len(rows) != 3 {
+			t.Fatalf("%d rows, want 3", len(rows))
+		}
+		for _, row := range rows {
+			wantKeys(t, "item row", row.(map[string]any), "cost", "margin")
+		}
+	})
+
+	t.Run("a kit and its rows", func(t *testing.T) {
+		kit := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/kits/"+s.kit, nil)
+		wantKeys(t, "kit", kit, "cost", "margin")
+		if got := moneyOf(t, kit["cost"]); got != 4000+2*1500 {
+			t.Errorf("kit cost = %d, want 7000 (the items' costs times their quantities)", got)
+		}
+		for _, row := range r.ok(shared.RoleOwner, 200, "GET", ctBase+"/kits", nil)["items"].([]any) {
+			wantKeys(t, "kit row", row.(map[string]any), "cost", "margin")
+		}
+	})
+
 }
 
 func wantKeys(t *testing.T, what string, m map[string]any, keys ...string) {
@@ -405,33 +473,42 @@ func TestCatalogCosts_AdminReplaceKeepsEachSuppliersCost(t *testing.T) {
 		t.Fatalf("seeded costs = %v and %v", main, backup)
 	}
 
-	// The same suppliers, costs left out: each keeps its own.
-	replace(map[string]any{"mainSupplier": supplierLink(r.couros, 8, nil), "backupSupplier": supplierLink(r.ferragens, 10, nil)})
-	if main, backup, _ = r.costsOf(s.banco); cents(main) != float64(4000) || cents(backup) != float64(4500) {
-		t.Errorf("after a replace with no costs: %v and %v, want 4000 and 4500", main, backup)
-	}
+	t.Run("the same suppliers, costs left out", func(t *testing.T) {
+		// The same suppliers, costs left out: each keeps its own.
+		replace(map[string]any{"mainSupplier": supplierLink(r.couros, 8, nil), "backupSupplier": supplierLink(r.ferragens, 10, nil)})
+		if main, backup, _ = r.costsOf(s.banco); cents(main) != float64(4000) || cents(backup) != float64(4500) {
+			t.Errorf("after a replace with no costs: %v and %v, want 4000 and 4500", main, backup)
+		}
+	})
 
-	// Main and backup swap: each supplier keeps its own cost, in its new slot.
-	replace(map[string]any{"mainSupplier": supplierLink(r.ferragens, 10, nil), "backupSupplier": supplierLink(r.couros, 8, nil)})
-	if main, backup, _ = r.costsOf(s.banco); cents(main) != float64(4500) || cents(backup) != float64(4000) {
-		t.Errorf("after a swap: main %v backup %v, want 4500 and 4000", main, backup)
-	}
+	t.Run("main and backup swap", func(t *testing.T) {
+		// Main and backup swap: each supplier keeps its own cost, in its new slot.
+		replace(map[string]any{"mainSupplier": supplierLink(r.ferragens, 10, nil), "backupSupplier": supplierLink(r.couros, 8, nil)})
+		if main, backup, _ = r.costsOf(s.banco); cents(main) != float64(4500) || cents(backup) != float64(4000) {
+			t.Errorf("after a swap: main %v backup %v, want 4500 and 4000", main, backup)
+		}
+	})
 
-	// A backup that is unlinked takes its cost with it; linked again, it starts with none.
-	replace(map[string]any{"mainSupplier": supplierLink(r.ferragens, 10, nil)})
-	if main, backup, _ = r.costsOf(s.banco); cents(main) != float64(4500) || backup != nil {
-		t.Errorf("after unlinking the backup: main %v backup %v, want 4500 and none", main, backup)
-	}
-	replace(map[string]any{"mainSupplier": supplierLink(r.ferragens, 10, nil), "backupSupplier": supplierLink(r.couros, 8, nil)})
-	if _, backup, _ = r.costsOf(s.banco); backup != nil {
-		t.Errorf("a supplier linked again has cost %v, want null", backup)
-	}
+	t.Run("an unlinked backup takes its cost, and starts with none when linked again", func(t *testing.T) {
+		// A backup that is unlinked takes its cost with it; linked again, it starts with none.
+		replace(map[string]any{"mainSupplier": supplierLink(r.ferragens, 10, nil)})
+		if main, backup, _ = r.costsOf(s.banco); cents(main) != float64(4500) || backup != nil {
+			t.Errorf("after unlinking the backup: main %v backup %v, want 4500 and none", main, backup)
+		}
+		replace(map[string]any{"mainSupplier": supplierLink(r.ferragens, 10, nil), "backupSupplier": supplierLink(r.couros, 8, nil)})
+		if _, backup, _ = r.costsOf(s.banco); backup != nil {
+			t.Errorf("a supplier linked again has cost %v, want null", backup)
+		}
+	})
 
-	// A new main supplier starts with none: the old one's cost does not move to it.
-	replace(map[string]any{"mainSupplier": supplierLink(r.couros, 8, nil)})
-	if main, backup, _ = r.costsOf(s.banco); main != nil || backup != nil {
-		t.Errorf("after replacing the main supplier: %v and %v, want null and none", main, backup)
-	}
+	t.Run("a new main supplier starts with no cost", func(t *testing.T) {
+		// A new main supplier starts with none: the old one's cost does not move to it.
+		replace(map[string]any{"mainSupplier": supplierLink(r.couros, 8, nil)})
+		if main, backup, _ = r.costsOf(s.banco); main != nil || backup != nil {
+			t.Errorf("after replacing the main supplier: %v and %v, want null and none", main, backup)
+		}
+	})
+
 }
 
 // An item that leaves in_house drops its production cost; coming back
@@ -448,17 +525,25 @@ func TestCatalogCosts_ProductionCostFollowsTheMode(t *testing.T) {
 	}
 	inHouse := map[string]any{"sourcingMode": "in_house", "priceCents": 5000, "productionDays": 4, "mainSupplier": nil}
 
-	replace(inHouse)
-	if _, _, prod := r.costsOf(s.bolo); cents(prod) != float64(1500) {
-		t.Errorf("an admin's replace changed the production cost to %v, want 1500", prod)
-	}
-	replace(map[string]any{"priceCents": 5000})
-	if _, _, prod := r.costsOf(s.bolo); prod != nil {
-		t.Errorf("a bought item has a productionCost %v", prod)
-	}
-	replace(inHouse)
-	it := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.bolo, nil)
-	if prod, has := it["productionCost"]; !has || prod != nil {
-		t.Errorf("back in house, productionCost = %v (present: %v), want null", prod, has)
-	}
+	t.Run("a replace with no cost keeps it while in house", func(t *testing.T) {
+		replace(inHouse)
+		if _, _, prod := r.costsOf(s.bolo); cents(prod) != float64(1500) {
+			t.Errorf("an admin's replace changed the production cost to %v, want 1500", prod)
+		}
+	})
+
+	t.Run("leaving in_house drops it", func(t *testing.T) {
+		replace(map[string]any{"priceCents": 5000})
+		if _, _, prod := r.costsOf(s.bolo); prod != nil {
+			t.Errorf("a bought item has a productionCost %v", prod)
+		}
+	})
+
+	t.Run("back in house it starts with none", func(t *testing.T) {
+		replace(inHouse)
+		it := r.ok(shared.RoleOwner, 200, "GET", ctBase+"/items/"+s.bolo, nil)
+		if prod, has := it["productionCost"]; !has || prod != nil {
+			t.Errorf("back in house, productionCost = %v (present: %v), want null", prod, has)
+		}
+	})
 }
