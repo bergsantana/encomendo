@@ -11,6 +11,8 @@ import br.com.encomendo.feature.catalogo.resources.message_conflict
 import br.com.encomendo.feature.catalogo.resources.message_item_in_kit
 import br.com.encomendo.feature.catalogo.resources.message_item_in_kits
 import br.com.encomendo.feature.catalogo.resources.message_item_in_unnamed_kit
+import br.com.encomendo.feature.catalogo.resources.message_kit_conflict
+import br.com.encomendo.feature.catalogo.resources.message_kit_photo_limit
 import br.com.encomendo.feature.catalogo.resources.message_photo_invalid
 import br.com.encomendo.feature.catalogo.resources.message_photo_limit
 import br.com.encomendo.feature.catalogo.resources.message_photo_not_uploaded
@@ -25,6 +27,12 @@ import br.com.encomendo.feature.catalogo.resources.problem_choice_duplicate
 import br.com.encomendo.feature.catalogo.resources.problem_choice_label_missing
 import br.com.encomendo.feature.catalogo.resources.problem_choice_price_invalid
 import br.com.encomendo.feature.catalogo.resources.problem_cost_invalid
+import br.com.encomendo.feature.catalogo.resources.problem_kit_alternatives_missing
+import br.com.encomendo.feature.catalogo.resources.problem_kit_days_range
+import br.com.encomendo.feature.catalogo.resources.problem_kit_items_missing
+import br.com.encomendo.feature.catalogo.resources.problem_kit_name_missing
+import br.com.encomendo.feature.catalogo.resources.problem_kit_price_missing
+import br.com.encomendo.feature.catalogo.resources.problem_kit_quantity_range
 import br.com.encomendo.feature.catalogo.resources.problem_lead_days_missing
 import br.com.encomendo.feature.catalogo.resources.problem_lead_days_range
 import br.com.encomendo.feature.catalogo.resources.problem_main_supplier_missing
@@ -51,11 +59,14 @@ internal fun CatalogMessage.text(): String =
     when (this) {
         CatalogMessage.CheckFields -> stringResource(Res.string.message_check_fields)
         CatalogMessage.Conflict -> stringResource(Res.string.message_conflict)
+        CatalogMessage.KitConflict -> stringResource(Res.string.message_kit_conflict)
+        is CatalogMessage.KitItemsArchived -> kitItemsArchivedText(items)
         is CatalogMessage.ItemInKit -> inKitText(kits)
         CatalogMessage.CategoryInUse -> stringResource(Res.string.message_category_in_use)
         CatalogMessage.PhotoTooBig -> stringResource(Res.string.message_photo_too_big)
         CatalogMessage.PhotoInvalid -> stringResource(Res.string.message_photo_invalid)
         CatalogMessage.PhotoLimit -> stringResource(Res.string.message_photo_limit)
+        CatalogMessage.KitPhotoLimit -> stringResource(Res.string.message_kit_photo_limit)
         CatalogMessage.PhotoNotUploaded -> stringResource(Res.string.message_photo_not_uploaded)
         is CatalogMessage.General -> message.text()
     }
@@ -111,6 +122,12 @@ internal val problemTexts: Map<FieldProblem, StringResource> =
         FieldProblem.ChoiceDuplicate to Res.string.problem_choice_duplicate,
         FieldProblem.ChoicePriceInvalid to Res.string.problem_choice_price_invalid,
         FieldProblem.ChoiceDaysInvalid to Res.string.problem_choice_days_invalid,
+        FieldProblem.KitNameMissing to Res.string.problem_kit_name_missing,
+        FieldProblem.KitPriceMissing to Res.string.problem_kit_price_missing,
+        FieldProblem.KitItemsMissing to Res.string.problem_kit_items_missing,
+        FieldProblem.KitQuantityRange to Res.string.problem_kit_quantity_range,
+        FieldProblem.KitAlternativesMissing to Res.string.problem_kit_alternatives_missing,
+        FieldProblem.KitDaysRange to Res.string.problem_kit_days_range,
     )
 
 /** "Origem": Sob encomenda, Estoque or Produção própria. */

@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import br.com.encomendo.core.domain.catalog.Photo
+import br.com.encomendo.core.domain.catalog.PhotoOwnerKind
 import br.com.encomendo.core.ui.PhotoImage
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
@@ -37,6 +38,7 @@ import br.com.encomendo.feature.catalogo.resources.photos_camera
 import br.com.encomendo.feature.catalogo.resources.photos_gallery
 import br.com.encomendo.feature.catalogo.resources.photos_hint
 import br.com.encomendo.feature.catalogo.resources.photos_save_first
+import br.com.encomendo.feature.catalogo.resources.photos_save_first_kit
 import br.com.encomendo.feature.catalogo.resources.photos_title
 import br.com.encomendo.feature.catalogo.resources.photos_uploading
 import org.jetbrains.compose.resources.stringResource
@@ -53,7 +55,13 @@ internal fun PhotosEditor(
     SectionTitle(stringResource(Res.string.photos_title))
     if (photos.ownerId == null) {
         // The upload names the owner's id.
-        Text(stringResource(Res.string.photos_save_first), style = MaterialTheme.typography.bodyLarge)
+        val saveFirst =
+            if (photos.ownerKind == PhotoOwnerKind.Kit) {
+                Res.string.photos_save_first_kit
+            } else {
+                Res.string.photos_save_first
+            }
+        Text(stringResource(saveFirst), style = MaterialTheme.typography.bodyLarge)
         return
     }
     photos.message?.let { MessageText(message = it) }

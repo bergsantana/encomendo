@@ -24,6 +24,8 @@ enum class PhotoSource {
  * change, and what the last change said. A photo change goes through at once, not with "Salvar".
  */
 data class PhotosState(
+    /** Whether the photos belong to an item or to a kit, which decides the sentences that name which. */
+    val ownerKind: PhotoOwnerKind = PhotoOwnerKind.Item,
     /** The id of the item or kit the photos belong to; null while it is not saved, so there is nothing to upload to. */
     val ownerId: String? = null,
     /** The photos, the first being the cover. */
@@ -70,14 +72,14 @@ class PhotoController(
         ownerId: String?,
         photos: List<Photo>,
         enabled: Boolean,
-    ) = slot.update { PhotosState(ownerId = ownerId, photos = photos, enabled = enabled) }
+    ) = slot.update { PhotosState(ownerKind = kind, ownerId = ownerId, photos = photos, enabled = enabled) }
 
     /** "Adicionar fotos" with [source]. Nothing happens when the user backs out. */
     fun add(source: PhotoSource) {
         val state = slot.value
         val owner = ownerOf(state) ?: return
         if (state.photos.size >= MAX_PHOTOS) {
-            slot.update { it.copy(message = CatalogMessage.PhotoLimit) }
+            slot.update { it.copy(message = failureOf(Failure.PhotoLimit())) }
             return
         }
         changing {
@@ -109,6 +111,10 @@ class PhotoController(
         }
     }
 
+    /** The message for [failure], worded for an item or a kit as the owner is. */
+    private fun failureOf(failure: Failure): CatalogMessage =
+        failure.toCatalogMessage(if (kind == PhotoOwnerKind.Kit) CatalogSubject.Kit else CatalogSubject.Item)
+
     private fun ownerOf(state: PhotosState): PhotoOwner? =
         state.ownerId?.takeIf { state.canChange }?.let { PhotoOwner(kind, it) }
 
@@ -118,7 +124,7 @@ class PhotoController(
             try {
                 change()
             } catch (failure: Failure) {
-                slot.update { it.copy(message = failure.toCatalogMessage()) }
+                slot.update { it.copy(message = failureOf(failure)) }
             } finally {
                 slot.update { it.copy(busy = false, uploading = false) }
             }

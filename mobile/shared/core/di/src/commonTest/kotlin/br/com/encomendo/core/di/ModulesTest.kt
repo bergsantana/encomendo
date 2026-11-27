@@ -36,6 +36,8 @@ import br.com.encomendo.feature.catalogo.AttributesViewModel
 import br.com.encomendo.feature.catalogo.CategoriesViewModel
 import br.com.encomendo.feature.catalogo.ItemFormViewModel
 import br.com.encomendo.feature.catalogo.ItemsViewModel
+import br.com.encomendo.feature.catalogo.KitFormViewModel
+import br.com.encomendo.feature.catalogo.KitsViewModel
 import br.com.encomendo.feature.members.MembersViewModel
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -110,6 +112,8 @@ class ModulesTest {
             koin.get<CategoriesViewModel>()
             koin.get<AttributesViewModel>()
             koin.get<ItemFormViewModel> { parametersOf(null) }
+            koin.get<KitsViewModel>()
+            koin.get<KitFormViewModel> { parametersOf(null) }
             koin.get<SettingsRepository>()
             // The photo thumbnails' loader: built over the storage client, which has no Auth plugin.
             koin.get<ImageLoader>()

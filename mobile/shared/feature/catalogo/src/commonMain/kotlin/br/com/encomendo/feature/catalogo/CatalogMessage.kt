@@ -16,12 +16,26 @@ sealed interface CatalogMessage {
     /** "Outra pessoa alterou este item. Recarregue para ver a versão atual." with "Recarregar". */
     data object Conflict : CatalogMessage
 
+    /** "Outra pessoa alterou este kit. Recarregue para ver a versão atual." with "Recarregar". */
+    data object KitConflict : CatalogMessage
+
+    /** "Cada kit pode ter até 8 fotos." */
+    data object KitPhotoLimit : CatalogMessage
+
     /**
      * "Este item está no kit {kit}. Tire-o do kit antes de arquivar.", or with no kit named "Este item está em um
      * kit…", or with several "Este item está nos kits {A}, {B} e {C}…".
      */
     data class ItemInKit(
         val kits: List<String>,
+    ) : CatalogMessage
+
+    /**
+     * "{item} está arquivado e não pode entrar no kit." once for each archived item the API names, or with none named
+     * "Um item do kit está arquivado e não pode entrar no kit."
+     */
+    data class KitItemsArchived(
+        val items: List<String>,
     ) : CatalogMessage
 
     /** "Esta categoria tem itens. Mude os itens de categoria antes de excluir." */
@@ -45,14 +59,20 @@ sealed interface CatalogMessage {
     ) : CatalogMessage
 }
 
-/** Returns the message for a failure of a Catálogo read or change. */
-internal fun Failure.toCatalogMessage(): CatalogMessage =
+/**
+ * Returns the message for a failure of a Catálogo read or change on an item or, with [subject] `Kit`, on a kit: the
+ * sentences that name which are chosen here, so the ViewModel decides them and its tests prove them.
+ */
+internal fun Failure.toCatalogMessage(subject: CatalogSubject = CatalogSubject.Item): CatalogMessage =
     when (this) {
-        is Failure.VersionConflict -> CatalogMessage.Conflict
+        is Failure.VersionConflict ->
+            if (subject == CatalogSubject.Kit) CatalogMessage.KitConflict else CatalogMessage.Conflict
         is Failure.ItemInKit -> CatalogMessage.ItemInKit(kits.map { it.name })
+        is Failure.ItemArchived -> CatalogMessage.KitItemsArchived(items.distinctBy { it.id }.map { it.name })
         is Failure.CategoryInUse -> CatalogMessage.CategoryInUse
         is Failure.PhotoInvalid -> CatalogMessage.PhotoInvalid
-        is Failure.PhotoLimit -> CatalogMessage.PhotoLimit
+        is Failure.PhotoLimit ->
+            if (subject == CatalogSubject.Kit) CatalogMessage.KitPhotoLimit else CatalogMessage.PhotoLimit
         is Failure.PhotoNotUploaded -> CatalogMessage.PhotoNotUploaded
         else -> CatalogMessage.General(toFailureMessage())
     }

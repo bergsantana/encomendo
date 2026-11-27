@@ -21,12 +21,30 @@ sealed interface CatalogChange {
     ) : CatalogChange,
         ItemNotice
 
+    /** A kit was saved from the kit editor, which stays open: the Kits list reads again, with no notice. */
+    data object KitSaved : CatalogChange
+
+    /** "{kit} foi arquivado." */
+    data class KitArchived(
+        val name: String,
+    ) : CatalogChange,
+        KitNotice
+
+    /** "{kit} voltou ao catálogo." */
+    data class KitRestored(
+        val name: String,
+    ) : CatalogChange,
+        KitNotice
+
     /** A category or a field changed: the list's filter and its rows' categories are read again. */
     data object Taxonomy : CatalogChange
 }
 
 /** ItemNotice is a [CatalogChange] that the list says in words, as a status line. */
 sealed interface ItemNotice
+
+/** KitNotice is a [CatalogChange] that the Kits list says in words, as a status line. */
+sealed interface KitNotice
 
 /**
  * CatalogChanges tells the Itens list what the screens opened from it changed, so it shows the notice and reads

@@ -404,6 +404,18 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - An archived item the API names, said once per item: "{item} está arquivado e não pode entrar no kit."; when it names none: "Um item do kit está arquivado e não pode entrar no kit." Restoring a kit holding an archived item says the same.
 - Leaving the kit form with edits not saved asks "Descartar as alterações?", as for items.
 
+**On the phone, for Kits** (added by Claude in step 3.16, for the user to review)
+
+- "Catálogo" is one screen with the tabs "Itens" and "Kits" under its title; the open tab is kept when a form is closed.
+- Each kit row is a card with one labelled line each: "Itens", "Preço do kit", "Soma avulsa", "Margem" (only when the API sent it, "{valor} ({n}%)" or "—"), "Prazo", then the "No portal" switch, read aloud as "Mostrar {kit} na página da loja". Tapping the card opens the kit. There is no search field. An archived card shows "Arquivado" beside the name.
+- On an empty list "Novo kit" is the toolbar's primary button, and the one beside "Nenhum kit ainda." is a plain button. After a failed read: "Tentar de novo".
+- Android keeps the last kits it read: with no connection it shows them under the same two lines as for items, "Sem conexão com o servidor. Confira a internet e tente de novo." and "Mostrando o catálogo salvo neste aparelho em {data}.". A kit opened from that copy is read-only, since "Salvar" would need the connection too.
+- A role that only reads opens the kit as its details in labelled lines (name, description, price, each item with its quantity and what it can be swapped for, "Ao trocar um item", the days, the totals, fields, "Mostrar na página da loja") with the title "Kit" and one "Fechar" button.
+- The editor shows "Carregando o kit…" while it reads, and "Tentar de novo" if it cannot.
+- The totals block has the visible heading "Totais do kit".
+- "Quantidade" and "Cliente pode trocar" sit on each item's card; "Pode trocar por" is a list of boxes, with the headings "Sugestões da categoria {categoria}" and "Outros itens" as on the web. The two ways to swap are a choice of two ("Manter o desconto do kit", "Cobrar a soma dos itens avulsos"), each with its hint.
+- "Salvar" shows "Kit salvo." at the top and stays on the kit; system Back is "Cancelar".
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.

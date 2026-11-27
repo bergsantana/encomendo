@@ -88,6 +88,14 @@ enum class FieldProblem {
     ChoiceDuplicate,
     ChoicePriceInvalid,
     ChoiceDaysInvalid,
+
+    // The kit editor's own checks (KitDrafts.kt).
+    KitNameMissing,
+    KitPriceMissing,
+    KitItemsMissing,
+    KitQuantityRange,
+    KitAlternativesMissing,
+    KitDaysRange,
 }
 
 /** FieldIssue is a problem marked next to a field: the client's own check, or the server's words. */

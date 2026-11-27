@@ -40,6 +40,15 @@ import org.jetbrains.compose.resources.stringResource
 
 private val WORKSHOP_BODY = 18.sp
 
+/** CatalogSubject says whether a screen is about an item or a kit, for the few sentences that name which. */
+internal enum class CatalogSubject {
+    /** The Itens screens. */
+    Item,
+
+    /** The Kits screens. */
+    Kit,
+}
+
 /** CatalogoTheme sets the body text of the Catálogo screens to the workshop size, 18 sp. */
 @Composable
 internal fun CatalogoTheme(content: @Composable () -> Unit) {
@@ -76,7 +85,7 @@ internal fun MessageText(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.announced(),
         )
-        if (message == CatalogMessage.Conflict && onReload != null) {
+        if ((message == CatalogMessage.Conflict || message == CatalogMessage.KitConflict) && onReload != null) {
             OutlinedButton(onClick = onReload, modifier = Modifier.heightIn(min = TouchTarget)) {
                 Text(stringResource(Res.string.message_reload))
             }

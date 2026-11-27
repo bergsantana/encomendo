@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import br.com.encomendo.core.domain.catalog.ItemSummary
 import br.com.encomendo.core.domain.catalog.OwnerField
 import br.com.encomendo.core.domain.catalog.valueOrNull
-import br.com.encomendo.core.domain.money.Money
 import br.com.encomendo.core.ui.PhotoImage
 import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
@@ -38,12 +37,9 @@ import br.com.encomendo.feature.catalogo.resources.col_source
 import br.com.encomendo.feature.catalogo.resources.col_supplier
 import br.com.encomendo.feature.catalogo.resources.items_archived
 import br.com.encomendo.feature.catalogo.resources.items_open
-import br.com.encomendo.feature.catalogo.resources.lead_days
 import br.com.encomendo.feature.catalogo.resources.margin_none
-import br.com.encomendo.feature.catalogo.resources.margin_value
 import br.com.encomendo.feature.catalogo.resources.no_category
 import br.com.encomendo.feature.catalogo.resources.portal_switch_of
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -91,7 +87,7 @@ internal fun ItemCard(
             summary.mainSupplierName?.let { ItemLine(stringResource(Res.string.col_supplier), it) }
             ItemLine(
                 stringResource(Res.string.col_lead),
-                pluralStringResource(Res.plurals.lead_days, summary.readyDays, summary.readyDays),
+                daysLabel(summary.readyDays),
             )
             ItemLine(stringResource(Res.string.col_price), formatMoney(summary.price))
             ItemCosts(summary)
@@ -109,47 +105,46 @@ private fun ItemCosts(summary: ItemSummary) {
             summary.cost.valueOrNull?.let(::formatMoney) ?: stringResource(Res.string.margin_none),
         )
     }
-    if (summary.margin is OwnerField.Shown) {
-        val margin = summary.margin.valueOrNull
-        val text =
-            margin?.let {
-                stringResource(
-                    Res.string.margin_value,
-                    formatMoney(Money(it.cents, summary.price.currency)),
-                    formatBasisPoints(it.basisPoints),
-                )
-            } ?: stringResource(Res.string.margin_none)
-        ItemLine(stringResource(Res.string.col_margin), text)
-    }
+    summary.margin.text(summary.price.currency)?.let { ItemLine(stringResource(Res.string.col_margin), it) }
 }
 
-/** "No portal": a switch, read aloud as "Mostrar {item} na página da loja". Only a writer can flip it. */
+/** "No portal" of an item: only a writer can flip it. */
 @Composable
 private fun PortalSwitch(
     summary: ItemSummary,
     state: ItemsUiState,
     onToggle: (ItemSummary, Boolean) -> Unit,
 ) {
-    val description = stringResource(Res.string.portal_switch_of, summary.name)
-    val enabled = state.canWrite && !summary.archived && state.savingId == null
-    // The whole row is the switch's touch target, and it is read out as the doc says, with its state.
+    PortalSwitchRow(
+        name = summary.name,
+        published = summary.published,
+        enabled = state.canWrite && !summary.archived && state.savingId == null,
+        onToggle = { onToggle(summary, it) },
+    )
+}
+
+/** "No portal": a switch read aloud as "Mostrar {name} na página da loja" with its state; the row is the target. */
+@Composable
+internal fun PortalSwitchRow(
+    name: String,
+    published: Boolean,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val description = stringResource(Res.string.portal_switch_of, name)
     val rowModifier =
         Modifier
             .fillMaxWidth()
             .heightIn(min = TouchTarget)
-            .toggleable(
-                value = summary.published,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = { onToggle(summary, it) },
-            ).semantics { contentDescription = description }
+            .toggleable(value = published, enabled = enabled, role = Role.Switch, onValueChange = onToggle)
+            .semantics { contentDescription = description }
     Row(
         modifier = rowModifier,
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = stringResource(Res.string.col_portal), style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = summary.published, onCheckedChange = null, enabled = enabled)
+        Switch(checked = published, onCheckedChange = null, enabled = enabled)
     }
 }
 

@@ -29,7 +29,7 @@ data object BackofficeGraph
 @Serializable
 data object HojeDestination
 
-/** Catálogo: the items list, for roles with `catalog:read`. */
+/** Catálogo: the Itens and Kits tabs, for roles with `catalog:read`. */
 @Serializable
 data object CatalogoDestination
 
@@ -37,6 +37,12 @@ data object CatalogoDestination
 @Serializable
 data class ItemFormDestination(
     val itemId: String? = null,
+)
+
+/** The kit editor: "Novo kit" when [kitId] is null, else "Editar kit". */
+@Serializable
+data class KitFormDestination(
+    val kitId: String? = null,
 )
 
 /** Categorias, opened from Catálogo. */
