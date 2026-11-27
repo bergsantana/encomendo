@@ -48,7 +48,11 @@ import br.com.encomendo.core.security.TokenStore
 import br.com.encomendo.feature.auth.di.authModule
 import br.com.encomendo.feature.catalogo.di.catalogoModule
 import br.com.encomendo.feature.members.di.membersModule
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.network.ktor3.KtorNetworkFetcherFactory
 import io.ktor.client.HttpClient
+import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -115,6 +119,21 @@ val networkModule: Module =
         single { PhotoStorageApi(createStorageClient(get())) }
     }
 
+/**
+ * The image loader of photo thumbnails. Signed photo URLs point at the storage host, not the API, so it loads them
+ * through a client with no Auth plugin: the session's bearer token never goes there (ADR 0024, ADR 0026). It is built
+ * on the same plain client the photo upload uses.
+ */
+val imageModule: Module =
+    module {
+        single<ImageLoader> {
+            ImageLoader
+                .Builder(get<PlatformContext>())
+                .components { add(KtorNetworkFetcherFactory(createStorageClient(get<HttpClientEngine>()))) }
+                .build()
+        }
+    }
+
 /** Names the scope that lives as long as the app, for work that must outlive the screen that started it. */
 val AppScope = named("app-scope")
 
@@ -172,7 +191,7 @@ val featureModules: List<Module> = listOf(authModule, catalogoModule, membersMod
 
 /** The modules every platform shares; tests load them with a fake platform module. */
 val commonModules: List<Module> =
-    listOf(databaseModule, securityModule, networkModule, dataModule, navigationModule) + featureModules
+    listOf(databaseModule, securityModule, networkModule, imageModule, dataModule, navigationModule) + featureModules
 
 /**
  * Returns every shared module, in the order Koin should load them, talking to

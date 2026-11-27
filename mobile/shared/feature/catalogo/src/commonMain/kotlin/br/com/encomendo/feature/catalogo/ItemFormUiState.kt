@@ -3,14 +3,14 @@ package br.com.encomendo.feature.catalogo
 import br.com.encomendo.core.domain.catalog.Attribute
 import br.com.encomendo.core.domain.catalog.Category
 import br.com.encomendo.core.domain.catalog.Item
-import br.com.encomendo.core.domain.catalog.Photo
 import br.com.encomendo.core.domain.catalog.SourcingMode
 import br.com.encomendo.core.domain.supplier.Supplier
 
 /**
  * ItemFormUiState is the item editor ("Novo item" or "Editar item"): what was typed, the problems marked next to
- * the fields, the choices to pick from, and what the role may do. A role without `catalog:write` gets the same
- * state with [canWrite] false, and the screen then shows the item read-only.
+ * the fields, the choices to pick from, and what the role may do. A role without `catalog:write`, or an editor whose
+ * store settings could not be read offline, gets the same state with [canWrite] false, and the screen then shows the
+ * item read-only.
  */
 data class ItemFormUiState(
     /** The item being edited; null for "Novo item". */
@@ -25,6 +25,8 @@ data class ItemFormUiState(
     val item: Item? = null,
     /** What was typed. */
     val fields: ItemFields = ItemFields(),
+    /** What the form started with, to tell whether anything was typed since. */
+    val initialFields: ItemFields = ItemFields(),
     /** The problems marked next to their fields. */
     val issues: Map<ItemField, FieldIssue> = emptyMap(),
     /** Why the last change failed, above the form. */
@@ -37,7 +39,7 @@ data class ItemFormUiState(
     val suppliers: List<Supplier> = emptyList(),
     /** The "Origem" choices the store allows, plus the item's own when it has one that is now off. */
     val modes: List<SourcingMode> = listOf(SourcingMode.ToOrder),
-    /** The role may change the catalog (`catalog:write`). */
+    /** The role may change the catalog (`catalog:write`) and the form could be set up for it. */
     val canWrite: Boolean = false,
     /** The API sends costs to this role, so the cost fields show. */
     val showsCosts: Boolean = false,
@@ -45,16 +47,14 @@ data class ItemFormUiState(
     val archived: Boolean = false,
     /** The version to save against; null for a new item. */
     val version: Int? = null,
-    /** The item's photos, the first being the cover. */
-    val photos: List<Photo> = emptyList(),
-    /** A photo is being uploaded, ordered or removed. */
-    val photoBusy: Boolean = false,
-    /** Why the last photo change failed, under "Fotos". */
-    val photoMessage: CatalogMessage? = null,
+    /** The "Fotos" section; its changes go through at once. */
+    val photos: PhotosState = PhotosState(),
     /** "Salvar", "Arquivar" or "Restaurar" is under way. */
     val saving: Boolean = false,
     /** "Novo fornecedor", while open. */
     val newSupplier: NewSupplierForm? = null,
+    /** "Descartar as alterações?", while it asks. */
+    val discard: DiscardAction? = null,
 ) {
     /** True for "Novo item". */
     val isNew: Boolean get() = itemId == null
@@ -62,8 +62,8 @@ data class ItemFormUiState(
     /** The form can be edited: the role may write and the item was read. */
     val editable: Boolean get() = canWrite && !loading && loadMessage == null
 
-    /** A photo change may start: a saved item the role may change, with no other photo change under way. */
-    val canChangePhotos: Boolean get() = editable && !isNew && !photoBusy
+    /** Something was typed that is not saved: leaving asks first. */
+    val dirty: Boolean get() = fields != initialFields
 
     /** The name of the supplier [id], whoever lists it. */
     fun supplierName(id: String?): String? = suppliers.firstOrNull { it.id == id }?.name
@@ -72,17 +72,20 @@ data class ItemFormUiState(
     fun issue(field: ItemField): FieldIssue? = issues[field]
 }
 
-/** ItemFormEffect is something the form asks its screen to do once. */
-sealed interface ItemFormEffect {
-    /** The item was saved, archived or restored: leave the form. */
-    data object Close : ItemFormEffect
+/** DiscardAction is what the form was about to do when it asked "Descartar as alterações?". */
+enum class DiscardAction {
+    /** Leave the form ("Cancelar", or Back). */
+    Close,
+
+    /** "Arquivar" the item. */
+    Archive,
+
+    /** "Restaurar" the item. */
+    Restore,
 }
 
-/** PhotoSource says where "Adicionar fotos" gets a photo. */
-enum class PhotoSource {
-    /** The phone's gallery. */
-    Gallery,
-
-    /** The camera. */
-    Camera,
+/** ItemFormEffect is something the form asks its screen to do once. */
+sealed interface ItemFormEffect {
+    /** The item was saved, archived or restored, or the user left: close the form. */
+    data object Close : ItemFormEffect
 }

@@ -1,19 +1,16 @@
-package br.com.encomendo.feature.catalogo
+package br.com.encomendo.core.domain.paging
 
 import br.com.encomendo.core.domain.failure.Failure
-import br.com.encomendo.core.domain.paging.Page
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * Pager reads one list a page at a time in [scope]: from the start, or the
- * next page (the same as Equipe's `Pager`). Reading from the start cancels a read under way, whose page is
- * then dropped, so a list never mixes the pages of two reads. Only the
- * latest read reports that it ended: a cancelled one may end after its
- * replacement started. Used on the main thread only.
+ * Pager reads one list a page at a time in [scope]: from the start, or the next page. Reading from the start cancels
+ * a read under way, whose page is then dropped, so a list never mixes the pages of two reads. Only the latest read
+ * reports that it ended: a cancelled one may end after its replacement started. Used on the main thread only.
  */
-internal class Pager<T>(
+class Pager<T>(
     private val scope: CoroutineScope,
     private val read: suspend (cursor: String?) -> Page<T>,
 ) {
@@ -54,13 +51,14 @@ internal class Pager<T>(
     }
 }
 
-/**
- * PageReader is what a [Pager]'s caller does as a read starts, with a page,
- * with a failure, and once the read ends.
- */
-internal class PageReader<T>(
+/** PageReader is what a [Pager]'s caller does as a read starts, with a page, with a failure, and once it ends. */
+class PageReader<T>(
+    /** Called as a read starts, before anything is read. */
     val onStart: () -> Unit = {},
+    /** Called with the page read. */
     val onPage: (Page<T>) -> Unit,
+    /** Called when the read failed. */
     val onFailure: (Failure) -> Unit,
+    /** Called once when the latest read ends, whatever its result. */
     val onEnd: () -> Unit,
 )

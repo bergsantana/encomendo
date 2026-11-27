@@ -26,6 +26,7 @@ import androidx.navigation.toRoute
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.ui.LocalGrantedPermissions
+import br.com.encomendo.core.ui.LocalPhotoLoader
 import br.com.encomendo.core.ui.PermissionGate
 import br.com.encomendo.feature.auth.AccountBarRoute
 import br.com.encomendo.feature.auth.ForgotPasswordRoute
@@ -40,7 +41,9 @@ import br.com.encomendo.feature.catalogo.ItemsNavigation
 import br.com.encomendo.feature.catalogo.ItemsRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import br.com.encomendo.feature.members.MembersRoute
+import coil3.ImageLoader
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 /** RootRoute connects [RootViewModel] to [RootNavHost]; the activity shows only this. */
@@ -50,7 +53,10 @@ fun RootRoute(
     viewModel: RootViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    RootNavHost(state = state, modifier = modifier)
+    // Photo thumbnails load through the loader with no bearer token (ADR 0026); screens only ask for an image.
+    CompositionLocalProvider(LocalPhotoLoader provides koinInject<ImageLoader>()) {
+        RootNavHost(state = state, modifier = modifier)
+    }
 }
 
 /**

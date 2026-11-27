@@ -70,6 +70,11 @@ data class ItemFields(
     val options: List<OptionFields> = emptyList(),
     /** "Mostrar na página da loja". */
     val published: Boolean = false,
+    /**
+     * The cost text the item had stored for each supplier it was loaded with, so choosing supplier A, then B, then A
+     * again shows A's cost again: a cost belongs to the item and one supplier (ADR 0025).
+     */
+    val storedCosts: Map<String, String> = emptyMap(),
 ) {
     /** Returns the fields with the main supplier set by [change]. */
     fun withMain(change: (SupplierFields) -> SupplierFields): ItemFields = copy(main = change(main))
@@ -113,8 +118,8 @@ data class ItemFields(
     ): ItemFields = if (slot == SupplierSlot.Main) withMain(change) else withBackup(change)
 
     /**
-     * Returns the fields with [supplierId] chosen for [slot]. A cost belongs to the item and one supplier, so a
-     * different supplier starts with none (ADR 0025).
+     * Returns the fields with [supplierId] chosen for [slot]. The cost shown is the one stored for that supplier, or
+     * none for a supplier new to the item, and counts as untouched, so a save leaves it to the server (ADR 0025).
      */
     fun withSupplier(
         slot: SupplierSlot,
@@ -124,7 +129,8 @@ data class ItemFields(
             if (fields.supplierId == supplierId) {
                 fields
             } else {
-                fields.copy(supplierId = supplierId, cost = "", costTouched = false)
+                val stored = storedCosts[supplierId].orEmpty()
+                fields.copy(supplierId = supplierId, cost = stored, costTouched = false)
             }
         }
 
@@ -153,7 +159,13 @@ internal fun Item.toFields(): ItemFields =
         attributeValueIds = attributeValueIds.toSet(),
         options = options.mapIndexed { index, option -> option.toFields(key = index + 1) },
         published = published,
+        storedCosts = storedCosts(),
     )
+
+private fun Item.storedCosts(): Map<String, String> =
+    listOfNotNull(mainSupplier, backupSupplier)
+        .mapNotNull { link -> link.cost.valueOrNull?.let { link.supplierId to moneyInputText(it) } }
+        .toMap()
 
 private fun SupplierItem?.toFields(): SupplierFields =
     if (this == null) {

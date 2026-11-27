@@ -77,14 +77,9 @@ internal fun NewSupplierForm.read(): SupplierRead {
             else -> null
         }
     val digits = phone.filter(Char::isDigit)
-    val national =
-        if (digits.startsWith(COUNTRY) &&
-            digits.length > NATIONAL_MAX
-        ) {
-            digits.removePrefix(COUNTRY)
-        } else {
-            digits
-        }
+    // With the country code typed, "55" and a number of up to 11 digits is longer than any national number.
+    val hasCountry = digits.startsWith(COUNTRY) && digits.length > NATIONAL_MAX
+    val national = if (hasCountry) digits.removePrefix(COUNTRY) else digits
     val phoneProblem =
         when {
             digits.isEmpty() -> SupplierProblem.PhoneMissing

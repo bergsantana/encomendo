@@ -81,6 +81,7 @@ enum class FieldProblem {
     LeadDaysRange,
     CostInvalid,
     ProductionDaysMissing,
+    ProductionDaysRange,
     OptionNameMissing,
     OptionNeedsChoice,
     ChoiceLabelMissing,
@@ -127,13 +128,7 @@ private const val MAX_DAYS = 365
 internal fun ItemFields.toDraft(seesCosts: Boolean): DraftResult {
     val check = Check(seesCosts)
     val draft = draftOrNull(check)
-    return if (draft == null ||
-        check.issues.isNotEmpty()
-    ) {
-        DraftResult.Problems(check.issues)
-    } else {
-        DraftResult.Ready(draft)
-    }
+    return if (draft != null && check.issues.isEmpty()) DraftResult.Ready(draft) else DraftResult.Problems(check.issues)
 }
 
 /** The draft when the name, price and sourcing read; null otherwise. Options mark their own problems in [check]. */
@@ -169,12 +164,7 @@ private class SourcingDraft(
 
 private fun ItemFields.sourcingOf(check: Check): SourcingDraft? =
     if (mode == SourcingMode.InHouse) {
-        val days =
-            check.require(
-                productionDays.trim().toIntOrNull()?.takeIf { it in 1..MAX_DAYS },
-                ItemField.ProductionDays,
-                FieldProblem.ProductionDaysMissing,
-            )
+        val days = check.productionDays(productionDays)
         val cost = check.cost(productionCost, productionCostTouched, ItemField.ProductionCost)
         if (days == null || cost == null) null else SourcingDraft(days, cost, main = null, backup = null)
     } else {
@@ -184,13 +174,8 @@ private fun ItemFields.sourcingOf(check: Check): SourcingDraft? =
             check.issues[ItemField.Supplier(SupplierSlot.Backup)] = FieldIssue.Known(FieldProblem.BackupSameAsMain)
         }
         // A backup that does not read is already marked; the whole form stays unsent.
-        if (mainLink == null ||
-            (backup != null && backupLink == null)
-        ) {
-            null
-        } else {
-            SourcingDraft(null, CostChange.Keep, mainLink, backupLink)
-        }
+        val backupUnread = backup != null && backupLink == null
+        if (mainLink == null || backupUnread) null else SourcingDraft(null, CostChange.Keep, mainLink, backupLink)
     }
 
 private fun OptionFields.toDraft(check: Check): OptionDraft? {
@@ -246,6 +231,13 @@ private class Check(
         issues[field] = FieldIssue.Known(problem)
     }
 
+    /** Reads "Dias de produção": 1 to 365, a blank one being a different mistake. */
+    fun productionDays(text: String): Int? {
+        val field = ItemField.ProductionDays
+        if (text.isBlank()) return require(null, field, FieldProblem.ProductionDaysMissing)
+        return require(text.trim().toIntOrNull()?.takeIf { it in 1..MAX_DAYS }, field, FieldProblem.ProductionDaysRange)
+    }
+
     fun <T> require(
         value: T?,
         field: ItemField,
@@ -272,14 +264,8 @@ private class Check(
         fields: SupplierFields,
         slot: SupplierSlot,
     ): SupplierLinkDraft? {
-        val missing =
-            if (slot ==
-                SupplierSlot.Main
-            ) {
-                FieldProblem.MainSupplierMissing
-            } else {
-                FieldProblem.BackupSupplierMissing
-            }
+        val isMain = slot == SupplierSlot.Main
+        val missing = if (isMain) FieldProblem.MainSupplierMissing else FieldProblem.BackupSupplierMissing
         val id = require(fields.supplierId, ItemField.Supplier(slot), missing)
         val days = leadDays(fields.leadDays, slot)
         val cost = cost(fields.cost, fields.costTouched, ItemField.Cost(slot))

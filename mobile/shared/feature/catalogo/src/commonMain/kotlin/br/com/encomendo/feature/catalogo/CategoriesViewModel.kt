@@ -3,7 +3,8 @@ package br.com.encomendo.feature.catalogo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import br.com.encomendo.core.domain.catalog.Category
-import br.com.encomendo.core.domain.catalog.CategoryRepository
+import br.com.encomendo.core.domain.catalog.ChangeCategories
+import br.com.encomendo.core.domain.catalog.ListCategories
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Permission
@@ -25,6 +26,8 @@ enum class NameProblem {
 /** CategoryEdit is the rename under way on one row. */
 data class CategoryEdit(
     val categoryId: String,
+    /** The name the category has now, which the field is labelled with: "Novo nome de {categoria}". */
+    val originalName: String,
     val name: String,
     val problem: NameProblem? = null,
 )
@@ -62,7 +65,8 @@ data class CategoriesUiState(
 @Suppress("TooManyFunctions") // One function per thing the user can do in the dialog, as the web's store.
 class CategoriesViewModel(
     observeSession: ObserveSession,
-    private val categories: CategoryRepository,
+    private val listCategories: ListCategories,
+    private val changeCategories: ChangeCategories,
     private val changes: CatalogChanges,
 ) : ViewModel() {
     private val state = MutableStateFlow(CategoriesUiState())
@@ -98,7 +102,7 @@ class CategoriesViewModel(
         state.update { it.copy(adding = true, message = null) }
         viewModelScope.launch {
             try {
-                categories.createCategory(name)
+                changeCategories.create(name)
                 state.update { it.copy(newName = "") }
                 changed()
             } catch (failure: Failure) {
@@ -118,7 +122,7 @@ class CategoriesViewModel(
     /** "Renomear": opens the row's name for editing. */
     fun onStartRename(category: Category) {
         if (state.value.canWrite && !state.value.busy) {
-            state.update { it.copy(edit = CategoryEdit(category.id, category.name), inUseId = null) }
+            state.update { it.copy(edit = CategoryEdit(category.id, category.name, category.name), inUseId = null) }
         }
     }
 
@@ -138,7 +142,7 @@ class CategoriesViewModel(
             return
         }
         change(edit.categoryId, onTaken = { state.update { it.copy(edit = edit.copy(problem = NameProblem.Taken)) } }) {
-            categories.renameCategory(edit.categoryId, name)
+            changeCategories.rename(edit.categoryId, name)
             state.update { it.copy(edit = null) }
         }
     }
@@ -152,13 +156,13 @@ class CategoriesViewModel(
         val index = now.categories.indexOfFirst { it.id == category.id }
         val target = if (up) index - 1 else index + 1
         if (!now.canWrite || now.busy || target !in now.categories.indices) return
-        change(category.id) { categories.moveCategory(category.id, target) }
+        change(category.id) { changeCategories.move(category.id, target) }
     }
 
     /** "Excluir". Refused while items use the category. */
     fun onDelete(category: Category) {
         if (!state.value.canWrite || state.value.busy) return
-        change(category.id) { categories.deleteCategory(category.id) }
+        change(category.id) { changeCategories.delete(category.id) }
     }
 
     /**
@@ -205,7 +209,7 @@ class CategoriesViewModel(
 
     private suspend fun readNow() {
         try {
-            val fetched = categories.categories()
+            val fetched = listCategories()
             state.update { it.copy(categories = fetched.value, offlineSince = fetched.cachedAtEpochMillis) }
         } catch (failure: Failure) {
             state.update { it.copy(message = failure.toCatalogMessage()) }

@@ -27,6 +27,7 @@ kotlin {
             implementation(project(":shared:core:domain"))
             implementation(project(":shared:core:ui"))
             implementation(project(":shared:core:platform")) // PhotoPicker
+            implementation(libs.compose.ui.backhandler) // BackHandler: Back is "Cancelar" and asks before discarding
             implementation(libs.compose.components.resources)
             implementation(libs.jetbrains.lifecycle.viewmodel.compose)
             implementation(libs.jetbrains.lifecycle.runtime.compose)

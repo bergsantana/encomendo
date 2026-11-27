@@ -7,21 +7,26 @@ import kotlinx.coroutines.flow.asSharedFlow
 /** CatalogChange is something a Catálogo screen changed that the list behind it must show. */
 sealed interface CatalogChange {
     /** "Item salvo." */
-    data object ItemSaved : CatalogChange
+    data object ItemSaved : CatalogChange, ItemNotice
 
     /** "{item} foi arquivado." */
     data class ItemArchived(
         val name: String,
-    ) : CatalogChange
+    ) : CatalogChange,
+        ItemNotice
 
     /** "{item} voltou ao catálogo." */
     data class ItemRestored(
         val name: String,
-    ) : CatalogChange
+    ) : CatalogChange,
+        ItemNotice
 
     /** A category or a field changed: the list's filter and its rows' categories are read again. */
     data object Taxonomy : CatalogChange
 }
+
+/** ItemNotice is a [CatalogChange] that the list says in words, as a status line. */
+sealed interface ItemNotice
 
 /**
  * CatalogChanges tells the Itens list what the screens opened from it changed, so it shows the notice and reads

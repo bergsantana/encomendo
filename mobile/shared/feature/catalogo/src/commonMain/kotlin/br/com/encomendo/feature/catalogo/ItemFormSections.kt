@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.form_backup_add
 import br.com.encomendo.feature.catalogo.resources.form_backup_remove
@@ -60,16 +61,8 @@ private fun SupplierBlock(
     state: ItemFormUiState,
     actions: ItemFormActions,
 ) {
-    val label =
-        stringResource(
-            if (slot ==
-                SupplierSlot.Main
-            ) {
-                Res.string.form_supplier_main
-            } else {
-                Res.string.form_supplier_backup
-            },
-        )
+    val labelRes = if (slot == SupplierSlot.Main) Res.string.form_supplier_main else Res.string.form_supplier_backup
+    val label = stringResource(labelRes)
     val newSupplier = stringResource(Res.string.form_supplier_new)
     ChoiceField(
         label = label,
@@ -156,7 +149,7 @@ internal fun AttributePicks(
                     selected = picked,
                     onClick = { actions.onEdit(null) { it.withValuePicked(value.id, !picked) } },
                     label = { Text(value.label, style = MaterialTheme.typography.bodyLarge) },
-                    modifier = Modifier.heightIn(min = TOUCH_TARGET),
+                    modifier = Modifier.heightIn(min = TouchTarget),
                 )
             }
         }
@@ -175,7 +168,7 @@ internal fun SwitchRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = TOUCH_TARGET)
+                .heightIn(min = TouchTarget)
                 .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,

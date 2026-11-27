@@ -28,11 +28,16 @@ import br.com.encomendo.feature.catalogo.resources.categories_loading
 import br.com.encomendo.feature.catalogo.resources.categories_title
 import br.com.encomendo.feature.catalogo.resources.category_cancel
 import br.com.encomendo.feature.catalogo.resources.category_delete
+import br.com.encomendo.feature.catalogo.resources.category_delete_of
 import br.com.encomendo.feature.catalogo.resources.category_move_down
+import br.com.encomendo.feature.catalogo.resources.category_move_down_of
 import br.com.encomendo.feature.catalogo.resources.category_move_up
+import br.com.encomendo.feature.catalogo.resources.category_move_up_of
 import br.com.encomendo.feature.catalogo.resources.category_name
 import br.com.encomendo.feature.catalogo.resources.category_new
+import br.com.encomendo.feature.catalogo.resources.category_new_name_of
 import br.com.encomendo.feature.catalogo.resources.category_rename
+import br.com.encomendo.feature.catalogo.resources.category_rename_of
 import br.com.encomendo.feature.catalogo.resources.category_save
 import br.com.encomendo.feature.catalogo.resources.items_retry
 import org.jetbrains.compose.resources.stringResource
@@ -152,7 +157,7 @@ private fun CategoryRename(
     actions: CategoriesActions,
 ) {
     CatalogTextField(
-        label = stringResource(Res.string.category_name),
+        label = stringResource(Res.string.category_new_name_of, edit.originalName),
         value = edit.name,
         onValueChange = actions.onRenameChange,
         problem = edit.problem?.categoryText(),
@@ -172,15 +177,20 @@ private fun CategoryButtons(
 ) {
     val first = state.categories.firstOrNull()?.id == category.id
     val last = state.categories.lastOrNull()?.id == category.id
-    val of = { label: String -> Modifier.semantics { contentDescription = "$label: ${category.name}" } }
+    // Each button is read out with the category it is about, as the design document words it.
+    val named = { label: String -> Modifier.semantics { contentDescription = label } }
     val up = stringResource(Res.string.category_move_up)
     val down = stringResource(Res.string.category_move_down)
     val rename = stringResource(Res.string.category_rename)
     val delete = stringResource(Res.string.category_delete)
+    val upOf = named(stringResource(Res.string.category_move_up_of, category.name))
+    val downOf = named(stringResource(Res.string.category_move_down_of, category.name))
+    val renameOf = named(stringResource(Res.string.category_rename_of, category.name))
+    val deleteOf = named(stringResource(Res.string.category_delete_of, category.name))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SecondaryButton(up, { actions.onMove(category, true) }, of(up), enabled = !state.busy && !first)
-        SecondaryButton(down, { actions.onMove(category, false) }, of(down), enabled = !state.busy && !last)
-        SecondaryButton(rename, { actions.onStartRename(category) }, of(rename), enabled = !state.busy)
-        SecondaryButton(delete, { actions.onDelete(category) }, of(delete), enabled = !state.busy)
+        SecondaryButton(up, { actions.onMove(category, true) }, upOf, enabled = !state.busy && !first)
+        SecondaryButton(down, { actions.onMove(category, false) }, downOf, enabled = !state.busy && !last)
+        SecondaryButton(rename, { actions.onStartRename(category) }, renameOf, enabled = !state.busy)
+        SecondaryButton(delete, { actions.onDelete(category) }, deleteOf, enabled = !state.busy)
     }
 }

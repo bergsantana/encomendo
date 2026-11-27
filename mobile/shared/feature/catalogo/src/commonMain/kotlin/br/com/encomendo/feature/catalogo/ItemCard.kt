@@ -1,11 +1,14 @@
 package br.com.encomendo.feature.catalogo
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Switch
@@ -13,6 +16,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -20,6 +25,8 @@ import br.com.encomendo.core.domain.catalog.ItemSummary
 import br.com.encomendo.core.domain.catalog.OwnerField
 import br.com.encomendo.core.domain.catalog.valueOrNull
 import br.com.encomendo.core.domain.money.Money
+import br.com.encomendo.core.ui.PhotoImage
+import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.col_category
 import br.com.encomendo.feature.catalogo.resources.col_cost
@@ -50,11 +57,20 @@ internal fun ItemCard(
     actions: ItemsActions,
 ) {
     val open = stringResource(Res.string.items_open, summary.name)
-    OutlinedCard(
-        onClick = { actions.navigation.onOpenItem(summary.id) },
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = open },
-    ) {
+    // The whole card opens the item; the click label says which, and the card's own text is read as it is.
+    val cardModifier =
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = open) { actions.navigation.onOpenItem(summary.id) }
+    OutlinedCard(modifier = cardModifier) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            summary.cover?.let { cover ->
+                PhotoImage(
+                    url = cover.url,
+                    contentDescription = null,
+                    modifier = Modifier.size(COVER_SIZE).clip(MaterialTheme.shapes.small),
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = summary.name,
@@ -115,18 +131,25 @@ private fun PortalSwitch(
     onToggle: (ItemSummary, Boolean) -> Unit,
 ) {
     val description = stringResource(Res.string.portal_switch_of, summary.name)
+    val enabled = state.canWrite && !summary.archived && state.savingId == null
+    // The whole row is the switch's touch target, and it is read out as the doc says, with its state.
+    val rowModifier =
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = TouchTarget)
+            .toggleable(
+                value = summary.published,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = { onToggle(summary, it) },
+            ).semantics { contentDescription = description }
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = TOUCH_TARGET),
+        modifier = rowModifier,
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = stringResource(Res.string.col_portal), style = MaterialTheme.typography.bodyLarge)
-        Switch(
-            checked = summary.published,
-            onCheckedChange = { onToggle(summary, it) },
-            enabled = state.canWrite && !summary.archived && state.savingId == null,
-            modifier = Modifier.semantics { contentDescription = description },
-        )
+        Switch(checked = summary.published, onCheckedChange = null, enabled = enabled)
     }
 }
 
@@ -145,3 +168,5 @@ internal fun ItemLine(
         Text(text = value, style = MaterialTheme.typography.bodyLarge)
     }
 }
+
+private val COVER_SIZE = 72.dp

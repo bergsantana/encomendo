@@ -16,7 +16,10 @@ sealed interface CatalogMessage {
     /** "Outra pessoa alterou este item. Recarregue para ver a versão atual." with "Recarregar". */
     data object Conflict : CatalogMessage
 
-    /** "Este item está no kit {kit}. Tire-o do kit antes de arquivar." */
+    /**
+     * "Este item está no kit {kit}. Tire-o do kit antes de arquivar.", or with no kit named "Este item está em um
+     * kit…", or with several "Este item está nos kits {A}, {B} e {C}…".
+     */
     data class ItemInKit(
         val kits: List<String>,
     ) : CatalogMessage
@@ -24,11 +27,11 @@ sealed interface CatalogMessage {
     /** "Esta categoria tem itens. Mude os itens de categoria antes de excluir." */
     data object CategoryInUse : CatalogMessage
 
-    /** "Esta foto passa de 10 MB." */
+    /** "Esta foto passa de 10 MB.", from the picker, which refuses a big file before it is read. */
     data object PhotoTooBig : CatalogMessage
 
-    /** "Use uma foto JPEG, PNG ou WebP." */
-    data object PhotoWrongType : CatalogMessage
+    /** "Use uma foto JPEG, PNG ou WebP de até 10 MB.", from the API, which looks at the file's content. */
+    data object PhotoInvalid : CatalogMessage
 
     /** "Cada item pode ter até 8 fotos." */
     data object PhotoLimit : CatalogMessage
@@ -42,17 +45,21 @@ sealed interface CatalogMessage {
     ) : CatalogMessage
 }
 
-/**
- * Returns the message for a failure of a Catálogo change. A photo the API found invalid is [CatalogMessage.PhotoWrongType]
- * here; the form tells a file over 10 MB apart before it asks.
- */
+/** Returns the message for a failure of a Catálogo read or change. */
 internal fun Failure.toCatalogMessage(): CatalogMessage =
     when (this) {
         is Failure.VersionConflict -> CatalogMessage.Conflict
         is Failure.ItemInKit -> CatalogMessage.ItemInKit(kits.map { it.name })
         is Failure.CategoryInUse -> CatalogMessage.CategoryInUse
-        is Failure.PhotoInvalid -> CatalogMessage.PhotoWrongType
+        is Failure.PhotoInvalid -> CatalogMessage.PhotoInvalid
         is Failure.PhotoLimit -> CatalogMessage.PhotoLimit
         is Failure.PhotoNotUploaded -> CatalogMessage.PhotoNotUploaded
         else -> CatalogMessage.General(toFailureMessage())
+    }
+
+/** Joins names as a Brazilian reads a list: "A", "A e B", "A, B e C". */
+internal fun List<String>.joinedWithE(): String =
+    when (size) {
+        0, 1 -> joinToString("")
+        else -> dropLast(1).joinToString(", ") + " e " + last()
     }

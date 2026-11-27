@@ -1,16 +1,33 @@
 package br.com.encomendo.feature.catalogo
 
+import br.com.encomendo.core.domain.catalog.ArchiveItem
+import br.com.encomendo.core.domain.catalog.Attribute
+import br.com.encomendo.core.domain.catalog.ChangeAttributes
+import br.com.encomendo.core.domain.catalog.ChangeCategories
+import br.com.encomendo.core.domain.catalog.ChangePhotos
 import br.com.encomendo.core.domain.catalog.CostChange
+import br.com.encomendo.core.domain.catalog.GetItem
 import br.com.encomendo.core.domain.catalog.Item
 import br.com.encomendo.core.domain.catalog.ItemDraft
 import br.com.encomendo.core.domain.catalog.ItemRepository
+import br.com.encomendo.core.domain.catalog.ItemSummary
+import br.com.encomendo.core.domain.catalog.ListAttributes
+import br.com.encomendo.core.domain.catalog.ListCategories
+import br.com.encomendo.core.domain.catalog.ListItems
+import br.com.encomendo.core.domain.catalog.PhotoRepository
 import br.com.encomendo.core.domain.catalog.PickedPhoto
+import br.com.encomendo.core.domain.catalog.SaveItem
+import br.com.encomendo.core.domain.catalog.SetItemPublished
 import br.com.encomendo.core.domain.catalog.SourcingMode
 import br.com.encomendo.core.domain.catalog.SupplierLinkDraft
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Role
+import br.com.encomendo.core.domain.settings.GetStoreSettings
+import br.com.encomendo.core.domain.supplier.CreateSupplier
+import br.com.encomendo.core.domain.supplier.ListSuppliers
 import br.com.encomendo.core.domain.supplier.Supplier
+import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.platform.PhotoPicker
 import br.com.encomendo.core.testing.FakeCatalogRepository
 import br.com.encomendo.core.testing.FakeCatalogState
@@ -96,30 +113,49 @@ internal class Shop(
     fun observeSession(): ObserveSession = ObserveSession(sessions)
 
     fun items(): ItemsViewModel =
-        ItemsViewModel(observeSession(), catalog, catalog, changes).also { collect(it.uiState) }
+        ItemsViewModel(
+            observeSession(),
+            ListItems(catalog),
+            SetItemPublished(catalog),
+            ListCategories(catalog),
+            changes,
+        ).also { collect(it.uiState) }
 
     fun categories(): CategoriesViewModel =
-        CategoriesViewModel(observeSession(), catalog, changes).also {
-            collect(it.uiState)
-        }
+        CategoriesViewModel(observeSession(), ListCategories(catalog), ChangeCategories(catalog), changes)
+            .also { collect(it.uiState) }
 
     fun attributes(): AttributesViewModel =
-        AttributesViewModel(observeSession(), catalog, changes).also {
-            collect(it.uiState)
-        }
+        AttributesViewModel(observeSession(), ListAttributes(catalog), ChangeAttributes(catalog), changes)
+            .also { collect(it.uiState) }
 
     fun form(
         itemId: String? = null,
         items: ItemRepository = catalog,
         picker: PhotoPicker = this.picker,
-    ): ItemFormViewModel =
-        ItemFormViewModel(
+        photos: PhotoRepository = catalog,
+        supplierRepository: SupplierRepository = suppliers,
+    ): ItemFormViewModel {
+        val useCases =
+            ItemFormUseCases(
+                getItem = GetItem(items),
+                saveItem = SaveItem(items),
+                archiveItem = ArchiveItem(items),
+                listCategories = ListCategories(catalog),
+                listAttributes = ListAttributes(catalog),
+                listSuppliers = ListSuppliers(supplierRepository),
+                getSettings = GetStoreSettings(settings),
+            )
+        return ItemFormViewModel(
             itemId = itemId,
             observeSession = observeSession(),
-            repositories = ItemFormRepositories(items, catalog, catalog, suppliers, catalog, settings),
+            useCases = useCases,
+            changePhotos = ChangePhotos(photos),
+            createSupplier = CreateSupplier(supplierRepository),
             picker = picker,
             changes = changes,
         ).also { collect(it.uiState) }
+    }
 
     private fun <T> collect(flow: kotlinx.coroutines.flow.StateFlow<T>) {
         // As the screen does: the state is shared while someone watches it.
@@ -188,3 +224,21 @@ internal fun fill(
 
 /** A photo the picker can hand out: any JPEG passes the fake API. */
 internal fun jpeg() = PickedPhoto(ByteArray(10), "image/jpeg")
+
+/** The one item the fake server holds. */
+internal val Shop.storedItem: Item get() = state.items.single()
+
+/** The one item field the fake server holds. */
+internal val Shop.storedAttribute: Attribute get() = state.attributes.single()
+
+/** The one field draft Campos shows. */
+internal val AttributesViewModel.editor: AttributeEditor get() = uiState.value.editors.single()
+
+/** The one field draft of this state. */
+internal val AttributesUiState.editor: AttributeEditor get() = editors.single()
+
+/** The one row the Itens list shows. */
+internal val ItemsUiState.row: ItemSummary get() = items.single()
+
+/** The labels of the values of a field draft, in order. */
+internal val AttributeEditor.labels: List<String> get() = values.map { it.label }

@@ -7,24 +7,30 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import br.com.encomendo.core.domain.catalog.Photo
 import br.com.encomendo.core.domain.catalog.SourcingMode
 import br.com.encomendo.feature.catalogo.resources.Res
+import br.com.encomendo.feature.catalogo.resources.discard_confirm
+import br.com.encomendo.feature.catalogo.resources.discard_keep
+import br.com.encomendo.feature.catalogo.resources.discard_title
 import br.com.encomendo.feature.catalogo.resources.form_archive
 import br.com.encomendo.feature.catalogo.resources.form_cancel
 import br.com.encomendo.feature.catalogo.resources.form_category
+import br.com.encomendo.feature.catalogo.resources.form_close
 import br.com.encomendo.feature.catalogo.resources.form_description
 import br.com.encomendo.feature.catalogo.resources.form_edit
 import br.com.encomendo.feature.catalogo.resources.form_loading
@@ -32,11 +38,13 @@ import br.com.encomendo.feature.catalogo.resources.form_name
 import br.com.encomendo.feature.catalogo.resources.form_new
 import br.com.encomendo.feature.catalogo.resources.form_price
 import br.com.encomendo.feature.catalogo.resources.form_published
+import br.com.encomendo.feature.catalogo.resources.form_readonly_title
 import br.com.encomendo.feature.catalogo.resources.form_restore
 import br.com.encomendo.feature.catalogo.resources.form_save
 import br.com.encomendo.feature.catalogo.resources.form_source
 import br.com.encomendo.feature.catalogo.resources.items_retry
 import br.com.encomendo.feature.catalogo.resources.no_category
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -64,13 +72,18 @@ fun ItemFormRoute(
                 onEdit = viewModel::onEdit,
                 onModeChange = viewModel::onModeChange,
                 onSave = viewModel::onSave,
-                onCancel = onClose,
+                onCancel = viewModel::onCancel,
                 onArchive = viewModel::onArchive,
                 onRestore = viewModel::onRestore,
                 onReload = viewModel::onReload,
-                onAddPhoto = viewModel::onAddPhoto,
-                onMakeCover = viewModel::onMakeCover,
-                onRemovePhoto = viewModel::onRemovePhoto,
+                onKeepEditing = viewModel::onKeepEditing,
+                onDiscard = viewModel::onDiscard,
+                photos =
+                    PhotoActions(
+                        onAdd = viewModel::onAddPhoto,
+                        onMakeCover = viewModel::onMakeCover,
+                        onRemove = viewModel::onRemovePhoto,
+                    ),
                 supplier =
                     NewSupplierActions(
                         onOpen = viewModel::onOpenNewSupplier,
@@ -93,9 +106,9 @@ data class ItemFormActions(
     val onArchive: () -> Unit,
     val onRestore: () -> Unit,
     val onReload: () -> Unit,
-    val onAddPhoto: (PhotoSource) -> Unit,
-    val onMakeCover: (Photo) -> Unit,
-    val onRemovePhoto: (Photo) -> Unit,
+    val onKeepEditing: () -> Unit,
+    val onDiscard: () -> Unit,
+    val photos: PhotoActions,
     val supplier: NewSupplierActions,
 )
 
@@ -111,14 +124,18 @@ data class NewSupplierActions(
 /**
  * ItemFormScreen is the item editor of Catálogo, as a full screen (docs/product/design-document.md, "Item form").
  * A role without `catalog:write` gets the item read-only, with no field to edit and no button that changes
- * anything. Cost fields exist only when [ItemFormUiState.showsCosts].
+ * anything. Cost fields exist only when [ItemFormUiState.showsCosts]. System Back is "Cancelar" through
+ * `BackHandler`, which is experimental in Compose Multiplatform but the only common way to intercept Back.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ItemFormScreen(
     state: ItemFormUiState,
     actions: ItemFormActions,
     modifier: Modifier = Modifier,
 ) {
+    // System Back is "Cancelar": it asks first when something typed is not saved.
+    BackHandler(enabled = true, onBack = actions.onCancel)
     Column(
         modifier =
             modifier
@@ -129,7 +146,7 @@ fun ItemFormScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = stringResource(if (state.isNew) Res.string.form_new else Res.string.form_edit),
+            text = stringResource(titleOf(state)),
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.semantics { heading() },
         )
@@ -138,10 +155,36 @@ fun ItemFormScreen(
             state.loading -> Text(stringResource(Res.string.form_loading), style = MaterialTheme.typography.bodyLarge)
             state.loadMessage != null -> LoadFailed(state.loadMessage, actions.onReload)
             state.canWrite -> EditableForm(state, actions)
-            else -> ItemReadOnly(state)
+            else -> {
+                ItemReadOnly(state)
+                SecondaryButton(stringResource(Res.string.form_close), actions.onCancel)
+            }
         }
     }
     state.newSupplier?.let { NewSupplierDialog(form = it, actions = actions.supplier) }
+    state.discard?.let { DiscardDialog(onKeepEditing = actions.onKeepEditing, onDiscard = actions.onDiscard) }
+}
+
+/** "Item" for a role that only reads it, else "Novo item" or "Editar item". */
+private fun titleOf(state: ItemFormUiState): StringResource =
+    when {
+        !state.loading && !state.canWrite && state.loadMessage == null -> Res.string.form_readonly_title
+        state.isNew -> Res.string.form_new
+        else -> Res.string.form_edit
+    }
+
+/** "Descartar as alterações?", with "Continuar editando" as the primary answer: leaving is the careful choice. */
+@Composable
+private fun DiscardDialog(
+    onKeepEditing: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onKeepEditing,
+        title = { Text(stringResource(Res.string.discard_title)) },
+        confirmButton = { PrimaryButton(stringResource(Res.string.discard_keep), onKeepEditing) },
+        dismissButton = { SecondaryButton(stringResource(Res.string.discard_confirm), onDiscard) },
+    )
 }
 
 @Composable
@@ -167,7 +210,7 @@ private fun EditableForm(
     }
     AttributePicks(state, actions)
     OptionsEditor(state, actions)
-    PhotosEditor(state, actions)
+    PhotosEditor(state.photos, actions.photos)
     SwitchRow(
         label = stringResource(Res.string.form_published),
         checked = state.fields.published,

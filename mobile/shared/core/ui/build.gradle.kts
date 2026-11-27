@@ -29,6 +29,7 @@ kotlin {
             api(libs.compose.foundation)
             api(libs.compose.ui)
             api(libs.compose.material3)
+            api(libs.coil.compose) // PhotoImage; its ImageLoader type is part of LocalPhotoLoader
             implementation(libs.compose.components.resources)
         }
         commonTest.dependencies {

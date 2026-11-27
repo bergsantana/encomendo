@@ -166,8 +166,7 @@ class ItemFormViewModelTest {
             assertEquals(CostChange.Keep, sent.productionCost)
             assertEquals(
                 "Banco Scrambler Preto",
-                shop.state.items
-                    .single()
+                shop.storedItem
                     .name,
             )
         }
@@ -391,8 +390,7 @@ class ItemFormViewModelTest {
             assertFalse(state.saving)
             assertTrue(shop.published.isEmpty())
             assertFalse(
-                shop.state.items
-                    .single()
+                shop.storedItem
                     .archived,
             )
         }
@@ -411,8 +409,7 @@ class ItemFormViewModelTest {
                 assertEquals(ItemFormEffect.Close, awaitItem())
             }
             assertTrue(
-                shop.state.items
-                    .single()
+                shop.storedItem
                     .archived,
             )
 
@@ -422,8 +419,7 @@ class ItemFormViewModelTest {
             shop.settle { }
 
             assertFalse(
-                shop.state.items
-                    .single()
+                shop.storedItem
                     .archived,
             )
             assertEquals(
@@ -462,8 +458,7 @@ class ItemFormViewModelTest {
             assertTrue(items.drafts.isEmpty())
             assertEquals(0, shop.picker.galleryOpened)
             assertFalse(
-                shop.state.items
-                    .single()
+                shop.storedItem
                     .archived,
             )
         }

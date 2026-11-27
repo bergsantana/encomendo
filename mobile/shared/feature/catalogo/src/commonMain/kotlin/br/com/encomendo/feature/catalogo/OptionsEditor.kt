@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.choice_add
 import br.com.encomendo.feature.catalogo.resources.choice_days
@@ -71,7 +72,7 @@ private fun OptionCard(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = TOUCH_TARGET)
+                        .heightIn(min = TouchTarget)
                         .toggleable(
                             value = option.required,
                             role = Role.Checkbox,

@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.encomendo.core.domain.catalog.ItemSummary
+import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.catalogo_title
 import br.com.encomendo.feature.catalogo.resources.items_all_categories
@@ -167,7 +168,7 @@ private fun Filters(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = TOUCH_TARGET)
+                .heightIn(min = TouchTarget)
                 .toggleable(
                     value = state.includeArchived,
                     role = Role.Checkbox,

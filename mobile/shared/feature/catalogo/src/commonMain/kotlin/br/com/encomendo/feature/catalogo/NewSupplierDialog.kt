@@ -30,7 +30,8 @@ internal fun NewSupplierDialog(
     actions: NewSupplierActions,
 ) {
     AlertDialog(
-        onDismissRequest = actions.onClose,
+        // Nothing closes it while the supplier is being saved: its answer must land here.
+        onDismissRequest = { if (!form.saving) actions.onClose() },
         title = { Text(stringResource(Res.string.form_supplier_new)) },
         text = {
             Column(
@@ -61,6 +62,8 @@ internal fun NewSupplierDialog(
                 enabled = !form.saving,
             )
         },
-        dismissButton = { SecondaryButton(stringResource(Res.string.form_cancel), actions.onClose) },
+        dismissButton = {
+            SecondaryButton(stringResource(Res.string.form_cancel), actions.onClose, enabled = !form.saving)
+        },
     )
 }

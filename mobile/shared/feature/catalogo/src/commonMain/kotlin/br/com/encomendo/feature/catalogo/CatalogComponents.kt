@@ -22,23 +22,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.encomendo.core.ui.PrimaryTarget
+import br.com.encomendo.core.ui.TouchTarget
 import br.com.encomendo.core.ui.failure.FailureMessage
 import br.com.encomendo.core.ui.failure.text
 import br.com.encomendo.feature.catalogo.resources.Res
 import br.com.encomendo.feature.catalogo.resources.message_reload
 import org.jetbrains.compose.resources.stringResource
-
-/** The height of every control of the Catálogo screens, which the workshop uses with gloves (mobile/CLAUDE.md). */
-internal val TOUCH_TARGET = 56.dp
-
-/** The height of the primary action of a screen: "Salvar", "Novo item". */
-internal val PRIMARY_TARGET = 64.dp
 
 private val WORKSHOP_BODY = 18.sp
 
@@ -50,9 +48,15 @@ internal fun CatalogoTheme(content: @Composable () -> Unit) {
         base.copy(
             bodyLarge = base.bodyLarge.copy(fontSize = WORKSHOP_BODY),
             bodyMedium = base.bodyMedium.copy(fontSize = WORKSHOP_BODY),
+            bodySmall = base.bodySmall.copy(fontSize = WORKSHOP_BODY),
             labelLarge = base.labelLarge.copy(fontSize = WORKSHOP_BODY),
         )
-    MaterialTheme(colorScheme = MaterialTheme.colorScheme, typography = workshop, content = content)
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme,
+        shapes = MaterialTheme.shapes,
+        typography = workshop,
+        content = content,
+    )
 }
 
 /** Read out once it appears or changes, without interrupting. */
@@ -73,7 +77,7 @@ internal fun MessageText(
             modifier = Modifier.announced(),
         )
         if (message == CatalogMessage.Conflict && onReload != null) {
-            OutlinedButton(onClick = onReload, modifier = Modifier.heightIn(min = TOUCH_TARGET)) {
+            OutlinedButton(onClick = onReload, modifier = Modifier.heightIn(min = TouchTarget)) {
                 Text(stringResource(Res.string.message_reload))
             }
         }
@@ -115,30 +119,20 @@ internal fun CatalogTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     singleLine: Boolean = true,
 ) {
+    // A problem is announced when it appears; a hint is just there.
+    val supportingText: (@Composable () -> Unit)? =
+        (problem ?: hint)?.let { text ->
+            { Text(text, modifier = if (problem == null) Modifier else Modifier.announced()) }
+        }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = singleLine,
         isError = problem != null,
-        supportingText =
-            (problem ?: hint)?.let { text ->
-                {
-                    Text(
-                        text,
-                        modifier =
-                            if (problem !=
-                                null
-                            ) {
-                                Modifier.announced()
-                            } else {
-                                Modifier
-                            },
-                    )
-                }
-            },
+        supportingText = supportingText,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        modifier = modifier.fillMaxWidth().heightIn(min = TOUCH_TARGET),
+        modifier = modifier.fillMaxWidth().heightIn(min = TouchTarget),
     )
 }
 
@@ -160,19 +154,21 @@ internal fun <T> ChoiceField(
     enabled: Boolean = true,
 ) {
     var open by remember { mutableStateOf(false) }
+    // The label above names the choice; the button's own text is the answer, read out as its state.
+    val buttonModifier =
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = TouchTarget)
+            .semantics {
+                role = Role.DropdownList
+                stateDescription = selectedLabel.orEmpty()
+            }
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(text = label, style = MaterialTheme.typography.labelLarge)
         Box {
-            OutlinedButton(
-                onClick = { open = true },
-                enabled = enabled,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(
-                            min = TOUCH_TARGET,
-                        ).semantics { contentDescription = label },
-            ) { Text(selectedLabel ?: "") }
+            OutlinedButton(onClick = { open = true }, enabled = enabled, modifier = buttonModifier) {
+                Text(selectedLabel.orEmpty())
+            }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 choices.forEach { choice ->
                     DropdownMenuItem(
@@ -181,7 +177,7 @@ internal fun <T> ChoiceField(
                             open = false
                             onPick(choice.value)
                         },
-                        modifier = Modifier.heightIn(min = TOUCH_TARGET),
+                        modifier = Modifier.heightIn(min = TouchTarget),
                     )
                 }
             }
@@ -205,7 +201,7 @@ internal fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    Button(onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth().heightIn(min = PRIMARY_TARGET)) {
+    Button(onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth().heightIn(min = PrimaryTarget)) {
         Text(text)
     }
 }
@@ -221,7 +217,7 @@ internal fun SecondaryButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = TOUCH_TARGET),
+        modifier = modifier.heightIn(min = TouchTarget),
     ) { Text(text) }
 }
 

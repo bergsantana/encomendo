@@ -33,7 +33,7 @@ data class ItemsUiState(
     /** The row whose "No portal" switch is being saved. */
     val savingId: String? = null,
     /** The last change that went through, for the status line. */
-    val notice: CatalogChange? = null,
+    val notice: ItemNotice? = null,
     /** Why the last read or change failed. */
     val message: CatalogMessage? = null,
 ) {

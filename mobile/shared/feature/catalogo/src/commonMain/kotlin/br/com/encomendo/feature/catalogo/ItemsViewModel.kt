@@ -2,11 +2,14 @@ package br.com.encomendo.feature.catalogo
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import br.com.encomendo.core.domain.catalog.CategoryRepository
 import br.com.encomendo.core.domain.catalog.ItemFilter
-import br.com.encomendo.core.domain.catalog.ItemRepository
 import br.com.encomendo.core.domain.catalog.ItemSummary
+import br.com.encomendo.core.domain.catalog.ListCategories
+import br.com.encomendo.core.domain.catalog.ListItems
+import br.com.encomendo.core.domain.catalog.SetItemPublished
 import br.com.encomendo.core.domain.failure.Failure
+import br.com.encomendo.core.domain.paging.PageReader
+import br.com.encomendo.core.domain.paging.Pager
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Permission
 import kotlinx.coroutines.Job
@@ -26,8 +29,9 @@ import kotlinx.coroutines.launch
  */
 class ItemsViewModel(
     observeSession: ObserveSession,
-    private val items: ItemRepository,
-    private val categories: CategoryRepository,
+    private val listItems: ListItems,
+    private val setItemPublished: SetItemPublished,
+    private val listCategories: ListCategories,
     changes: CatalogChanges,
 ) : ViewModel() {
     private val list = MutableStateFlow(ItemsUiState())
@@ -36,7 +40,7 @@ class ItemsViewModel(
 
     private val pager =
         Pager(viewModelScope) { cursor ->
-            val fetched = items.itemsPage(currentFilter(), cursor, PAGE_SIZE)
+            val fetched = listItems(currentFilter(), cursor, PAGE_SIZE)
             cachedAt = fetched.cachedAtEpochMillis
             fetched.value
         }
@@ -124,7 +128,7 @@ class ItemsViewModel(
         list.update { it.copy(savingId = item.id, message = null, notice = null) }
         viewModelScope.launch {
             try {
-                val saved = items.setItemPublished(item.id, published, item.version)
+                val saved = setItemPublished(item.id, published, item.version)
                 list.update { state ->
                     val row = { old: ItemSummary -> old.copy(published = saved.published, version = saved.version) }
                     state.copy(items = state.items.map { if (it.id == item.id) row(it) else it })
@@ -154,7 +158,7 @@ class ItemsViewModel(
                 list.update { it.copy(notice = null) }
                 readCategories()
             }
-            else -> list.update { it.copy(notice = change) }
+            is ItemNotice -> list.update { it.copy(notice = change) }
         }
         pager.readFirst(firstPage)
     }
@@ -162,7 +166,7 @@ class ItemsViewModel(
     private fun readCategories() {
         viewModelScope.launch {
             try {
-                val read = categories.categories().value
+                val read = listCategories().value
                 val before = list.value.categoryId
                 // A category deleted meanwhile cannot stay the filter, and the rows were read with it.
                 val kept = before?.takeIf { id -> read.any { it.id == id } }

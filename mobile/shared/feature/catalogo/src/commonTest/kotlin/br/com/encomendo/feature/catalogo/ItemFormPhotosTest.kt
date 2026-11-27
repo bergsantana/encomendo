@@ -41,17 +41,23 @@ class ItemFormPhotosTest {
             shop.settle { }
             form.onAddPhoto(PhotoSource.Camera)
             val two = shop.settle { form.uiState.value }
-            assertEquals(2, two.photos.size)
+            assertEquals(2, two.photos.photos.size)
             assertEquals(1, shop.picker.cameraOpened)
 
-            val second = two.photos[1]
+            val second = two.photos.photos[1]
             form.onMakeCover(second)
             val ordered = shop.settle { form.uiState.value }
 
-            assertEquals(second.id, ordered.photos.first().id, "Usar como capa")
-            assertEquals(listOf(0, 1), ordered.photos.map { it.position })
-            assertFalse(ordered.photoBusy)
-            assertNull(ordered.photoMessage)
+            assertEquals(
+                second.id,
+                ordered.photos.photos
+                    .first()
+                    .id,
+                "Usar como capa",
+            )
+            assertEquals(listOf(0, 1), ordered.photos.photos.map { it.position })
+            assertFalse(ordered.photos.busy)
+            assertNull(ordered.photos.message)
         }
 
     @Test
@@ -65,23 +71,21 @@ class ItemFormPhotosTest {
             form.onAddPhoto(PhotoSource.Gallery)
             val photo =
                 shop.settle {
-                    form.uiState.value.photos
+                    form.uiState.value.photos.photos
                         .single()
                 }
 
             form.onRemovePhoto(photo)
             shop.settle { }
 
-            assertTrue(
-                form.uiState.value.photos
-                    .isEmpty(),
-            )
-            assertTrue(
-                shop.state.items
-                    .single()
+            val stored =
+                shop.storedItem
                     .photos
+            assertTrue(
+                form.uiState.value.photos.photos
                     .isEmpty(),
             )
+            assertTrue(stored.isEmpty())
         }
 
     @Test
@@ -96,9 +100,9 @@ class ItemFormPhotosTest {
             val state = shop.settle { form.uiState.value }
 
             assertEquals(1, shop.picker.galleryOpened)
-            assertTrue(state.photos.isEmpty())
-            assertNull(state.photoMessage)
-            assertFalse(state.photoBusy)
+            assertTrue(state.photos.photos.isEmpty())
+            assertNull(state.photos.message)
+            assertFalse(state.photos.busy)
         }
 
     @Test
@@ -113,8 +117,12 @@ class ItemFormPhotosTest {
             form.onAddPhoto(PhotoSource.Gallery)
             val state = shop.settle { form.uiState.value }
 
-            assertEquals(CatalogMessage.PhotoWrongType, state.photoMessage, "Use uma foto JPEG, PNG ou WebP.")
-            assertTrue(state.photos.isEmpty())
+            assertEquals(
+                CatalogMessage.PhotoInvalid,
+                state.photos.message,
+                "Use uma foto JPEG, PNG ou WebP de até 10 MB.",
+            )
+            assertTrue(state.photos.photos.isEmpty())
         }
 
     @Test
@@ -134,8 +142,8 @@ class ItemFormPhotosTest {
             form.onAddPhoto(PhotoSource.Gallery)
             val state = shop.settle { form.uiState.value }
 
-            assertEquals(CatalogMessage.PhotoTooBig, state.photoMessage, "Esta foto passa de 10 MB.")
-            assertFalse(state.photoBusy)
+            assertEquals(CatalogMessage.PhotoTooBig, state.photos.message, "Esta foto passa de 10 MB.")
+            assertFalse(state.photos.busy)
         }
 
     @Test
@@ -150,12 +158,12 @@ class ItemFormPhotosTest {
                 form.onAddPhoto(PhotoSource.Gallery)
                 shop.settle { }
             }
-            assertEquals(8, form.uiState.value.photos.size)
+            assertEquals(8, form.uiState.value.photos.photos.size)
 
             form.onAddPhoto(PhotoSource.Gallery)
             val state = shop.settle { form.uiState.value }
 
-            assertEquals(CatalogMessage.PhotoLimit, state.photoMessage, "Cada item pode ter até 8 fotos.")
+            assertEquals(CatalogMessage.PhotoLimit, state.photos.message, "Cada item pode ter até 8 fotos.")
             assertEquals(8, shop.picker.galleryOpened)
         }
 
@@ -172,8 +180,12 @@ class ItemFormPhotosTest {
             form.onAddPhoto(PhotoSource.Gallery)
             val state = shop.settle { form.uiState.value }
 
-            assertEquals(CatalogMessage.PhotoNotUploaded, state.photoMessage, "A foto não foi enviada. Tente de novo.")
-            assertFalse(state.photoBusy)
+            assertEquals(
+                CatalogMessage.PhotoNotUploaded,
+                state.photos.message,
+                "A foto não foi enviada. Tente de novo.",
+            )
+            assertFalse(state.photos.busy)
         }
 
     @Test

@@ -2,26 +2,28 @@ package br.com.encomendo.feature.catalogo
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import br.com.encomendo.core.domain.catalog.AttributeRepository
-import br.com.encomendo.core.domain.catalog.CategoryRepository
+import br.com.encomendo.core.domain.catalog.ArchiveItem
+import br.com.encomendo.core.domain.catalog.ChangePhotos
+import br.com.encomendo.core.domain.catalog.Fetched
+import br.com.encomendo.core.domain.catalog.GetItem
 import br.com.encomendo.core.domain.catalog.Item
 import br.com.encomendo.core.domain.catalog.ItemDraft
-import br.com.encomendo.core.domain.catalog.ItemRepository
+import br.com.encomendo.core.domain.catalog.ListAttributes
+import br.com.encomendo.core.domain.catalog.ListCategories
 import br.com.encomendo.core.domain.catalog.Photo
-import br.com.encomendo.core.domain.catalog.PhotoOwner
 import br.com.encomendo.core.domain.catalog.PhotoOwnerKind
-import br.com.encomendo.core.domain.catalog.PhotoRepository
-import br.com.encomendo.core.domain.catalog.PickedPhoto
+import br.com.encomendo.core.domain.catalog.SaveItem
 import br.com.encomendo.core.domain.catalog.SourcingMode
 import br.com.encomendo.core.domain.catalog.isShown
 import br.com.encomendo.core.domain.catalog.seesCosts
 import br.com.encomendo.core.domain.failure.Failure
 import br.com.encomendo.core.domain.session.ObserveSession
 import br.com.encomendo.core.domain.session.Permission
-import br.com.encomendo.core.domain.settings.SettingsRepository
+import br.com.encomendo.core.domain.settings.GetStoreSettings
 import br.com.encomendo.core.domain.settings.StoreSettings
+import br.com.encomendo.core.domain.supplier.CreateSupplier
+import br.com.encomendo.core.domain.supplier.ListSuppliers
 import br.com.encomendo.core.domain.supplier.Supplier
-import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.platform.PhotoPicker
 import br.com.encomendo.core.ui.failure.FailureMessage
 import kotlinx.coroutines.channels.Channel
@@ -34,35 +36,60 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** ItemFormRepositories are what the item form reads and writes, so [ItemFormViewModel] takes them as one input. */
-class ItemFormRepositories(
-    val items: ItemRepository,
-    val categories: CategoryRepository,
-    val attributes: AttributeRepository,
-    val suppliers: SupplierRepository,
-    val photos: PhotoRepository,
-    val settings: SettingsRepository,
+/** ItemFormUseCases are what the item form reads and writes besides photos and suppliers, taken as one input. */
+class ItemFormUseCases(
+    val getItem: GetItem,
+    val saveItem: SaveItem,
+    val archiveItem: ArchiveItem,
+    val listCategories: ListCategories,
+    val listAttributes: ListAttributes,
+    val listSuppliers: ListSuppliers,
+    val getSettings: GetStoreSettings,
 )
 
 /**
  * ItemFormViewModel backs the item editor, as the web's item drawer (docs/product/design-document.md, "Catálogo",
  * "Item form"): the same fields, the same checks before anything is sent, the server's own words next to the
  * fields it refuses, and a photo change that goes through at once. [itemId] is the item to edit, or null for a new
- * one. Roles without `catalog:write` read the item and change nothing.
+ * one. Roles without `catalog:write` read the item and change nothing, and so does an editor whose store settings
+ * cannot be read offline, since it could not save anyway.
  *
  * The cost fields exist only when the API sends costs to this role, and a cost the owner left alone is not sent,
- * so the server keeps it (ADR 0025).
+ * so the server keeps it (ADR 0025). Leaving with something typed asks "Descartar as alterações?" first. The photos
+ * and "Novo fornecedor" have their own controllers over parts of this state.
  */
 @Suppress("TooManyFunctions") // One function per thing the user can do on the form, as the web's item store.
 class ItemFormViewModel(
     private val itemId: String?,
     private val observeSession: ObserveSession,
-    private val repositories: ItemFormRepositories,
-    private val picker: PhotoPicker,
+    private val useCases: ItemFormUseCases,
+    changePhotos: ChangePhotos,
+    createSupplier: CreateSupplier,
+    picker: PhotoPicker,
     private val changes: CatalogChanges,
 ) : ViewModel() {
     private val form = MutableStateFlow(ItemFormUiState(itemId = itemId))
     private val effectChannel = Channel<ItemFormEffect>(Channel.BUFFERED)
+
+    private val photoController =
+        PhotoController(
+            scope = viewModelScope,
+            kind = PhotoOwnerKind.Item,
+            useCases = changePhotos,
+            picker = picker,
+            slot = StateSlot({ form.value.photos }) { change -> form.update { it.copy(photos = change(it.photos)) } },
+        )
+
+    private val supplierController =
+        NewSupplierController(
+            scope = viewModelScope,
+            createSupplier = createSupplier,
+            form =
+                StateSlot({
+                    form.value.newSupplier
+                }) { change -> form.update { it.copy(newSupplier = change(it.newSupplier)) } },
+            onCreated = ::supplierCreated,
+        )
 
     /** The form as it shows now. */
     val uiState: StateFlow<ItemFormUiState> = form.asStateFlow()
@@ -83,18 +110,9 @@ class ItemFormViewModel(
         change: (ItemFields) -> ItemFields,
     ) {
         if (!form.value.editable) return
-        form.update {
-            it.copy(
-                fields = change(it.fields),
-                issues =
-                    if (field ==
-                        null
-                    ) {
-                        it.issues
-                    } else {
-                        it.issues - field
-                    },
-            )
+        form.update { state ->
+            val issues = if (field == null) state.issues else state.issues - field
+            state.copy(fields = change(state.fields), issues = issues)
         }
     }
 
@@ -123,124 +141,90 @@ class ItemFormViewModel(
         }
     }
 
-    /** "Arquivar". Refused while a kit holds the item. */
-    fun onArchive() =
-        leaveCatalogue(
-            change = { item -> repositories.items.archiveItem(item.id, requireVersion()) },
-            notice = CatalogChange::ItemArchived,
-        )
+    /** "Cancelar" or the system Back: leaves, asking first when something typed is not saved. */
+    fun onCancel() = askBeforeLeaving(DiscardAction.Close)
 
-    /** "Restaurar". */
-    fun onRestore() =
-        leaveCatalogue(
-            change = { item -> repositories.items.restoreItem(item.id, requireVersion()) },
-            notice = CatalogChange::ItemRestored,
-        )
+    /** "Arquivar". Refused while a kit holds the item; asks first when something typed is not saved. */
+    fun onArchive() = askBeforeLeaving(DiscardAction.Archive)
+
+    /** "Restaurar"; asks first when something typed is not saved. */
+    fun onRestore() = askBeforeLeaving(DiscardAction.Restore)
+
+    /** "Continuar editando". */
+    fun onKeepEditing() = form.update { it.copy(discard = null) }
+
+    /** "Descartar": goes on with what asked first, without saving what was typed. */
+    fun onDiscard() {
+        val action = form.value.discard ?: return
+        form.update { it.copy(discard = null) }
+        perform(action)
+    }
 
     /** "Adicionar fotos" with [source]. Nothing happens when the user backs out. */
-    fun onAddPhoto(source: PhotoSource) {
-        val state = form.value
-        val id = itemId
-        if (id == null || !state.canChangePhotos) return
-        if (state.photos.size >= MAX_PHOTOS) {
-            form.update { it.copy(photoMessage = CatalogMessage.PhotoLimit) }
-            return
-        }
-        changingPhotos {
-            val picked = pick(source) ?: return@changingPhotos
-            val photo =
-                try {
-                    repositories.photos.uploadPhoto(PhotoOwner(PhotoOwnerKind.Item, id), picked)
-                } catch (_: Failure.PhotoInvalid) {
-                    // The picker refuses a file over 10 MB too, but the API's own check decides the type.
-                    val message =
-                        if (picked.isOverLimit()) CatalogMessage.PhotoTooBig else CatalogMessage.PhotoWrongType
-                    form.update { it.copy(photoMessage = message) }
-                    return@changingPhotos
-                }
-            form.update { it.copy(photos = (it.photos + photo).sortedBy(Photo::position)) }
-        }
-    }
+    fun onAddPhoto(source: PhotoSource) = photoController.add(source)
 
     /** "Usar como capa": [photo] goes first. */
-    fun onMakeCover(photo: Photo) {
-        val state = form.value
-        val id = itemId
-        if (id == null || !state.canChangePhotos || state.photos.firstOrNull()?.id == photo.id) return
-        changingPhotos {
-            val order = listOf(photo.id) + state.photos.map(Photo::id).filter { it != photo.id }
-            val ordered = repositories.photos.orderPhotos(PhotoOwner(PhotoOwnerKind.Item, id), order)
-            form.update { it.copy(photos = ordered) }
-        }
-    }
+    fun onMakeCover(photo: Photo) = photoController.makeCover(photo)
 
     /** "Remover foto". */
-    fun onRemovePhoto(photo: Photo) {
-        val id = itemId
-        if (id == null || !form.value.canChangePhotos) return
-        changingPhotos {
-            repositories.photos.deletePhoto(PhotoOwner(PhotoOwnerKind.Item, id), photo.id)
-            form.update { it.copy(photos = it.photos.filter { kept -> kept.id != photo.id }) }
-        }
-    }
+    fun onRemovePhoto(photo: Photo) = photoController.remove(photo)
 
     /** "Novo fornecedor" was chosen for [slot]: opens its form. */
     fun onOpenNewSupplier(slot: SupplierSlot) {
-        if (form.value.editable) form.update { it.copy(newSupplier = NewSupplierForm(slot)) }
+        if (form.value.editable) supplierController.open(slot)
     }
 
     /** The "Nome do fornecedor" changed; its mark goes. */
-    fun onNewSupplierName(name: String) = editNewSupplier { it.copy(name = name, nameIssue = null) }
+    fun onNewSupplierName(name: String) = supplierController.onName(name)
 
     /** The "WhatsApp do fornecedor" changed; its mark goes. */
-    fun onNewSupplierPhone(phone: String) = editNewSupplier { it.copy(phone = phone, phoneIssue = null) }
+    fun onNewSupplierPhone(phone: String) = supplierController.onPhone(phone)
 
-    /** "Cancelar" in "Novo fornecedor". */
-    fun onCloseNewSupplier() = form.update { it.copy(newSupplier = null) }
+    /** "Cancelar" in "Novo fornecedor"; ignored while it saves. */
+    fun onCloseNewSupplier() = supplierController.close()
 
     /** "Adicionar fornecedor": creates it and picks it for the slot that asked. */
-    fun onAddSupplier() {
-        val dialog = form.value.newSupplier?.takeUnless { it.saving } ?: return
-        when (val read = dialog.read()) {
-            is SupplierRead.Marked -> form.update { it.copy(newSupplier = read.form) }
-            is SupplierRead.Ready -> createSupplier(dialog, read)
+    fun onAddSupplier() = supplierController.add()
+
+    private fun supplierCreated(
+        slot: SupplierSlot,
+        created: Supplier,
+    ) = form.update { state ->
+        state.copy(
+            suppliers = (state.suppliers + created).sortedBy { it.name.lowercase() },
+            fields = state.fields.withSupplier(slot, created.id),
+            issues = state.issues - ItemField.Supplier(slot),
+        )
+    }
+
+    private fun askBeforeLeaving(action: DiscardAction) {
+        val state = form.value
+        if (state.saving) return
+        if (state.editable && state.dirty) form.update { it.copy(discard = action) } else perform(action)
+    }
+
+    private fun perform(action: DiscardAction) {
+        when (action) {
+            DiscardAction.Close -> effectChannel.trySend(ItemFormEffect.Close)
+            DiscardAction.Archive -> archive()
+            DiscardAction.Restore -> restore()
         }
     }
 
-    private fun createSupplier(
-        dialog: NewSupplierForm,
-        read: SupplierRead.Ready,
-    ) {
-        form.update { it.copy(newSupplier = dialog.copy(saving = true, message = null)) }
-        viewModelScope.launch {
-            try {
-                val created = repositories.suppliers.create(read.draft)
-                form.update { state ->
-                    val suppliers = (state.suppliers + created).sortedBy { it.name.lowercase() }
-                    state.copy(
-                        suppliers = suppliers,
-                        fields = state.fields.withSupplier(dialog.slot, created.id),
-                        issues = state.issues - ItemField.Supplier(dialog.slot),
-                        newSupplier = null,
-                    )
-                }
-            } catch (failure: Failure) {
-                form.update { it.copy(newSupplier = it.newSupplier?.refusedBy(failure)) }
-            }
-        }
-    }
+    private fun archive() =
+        leaveCatalogue(CatalogChange::ItemArchived) { useCases.archiveItem(it.id, requireVersion()) }
 
-    private fun editNewSupplier(change: (NewSupplierForm) -> NewSupplierForm) =
-        form.update { state -> state.newSupplier?.let { state.copy(newSupplier = change(it)) } ?: state }
+    private fun restore() =
+        leaveCatalogue(CatalogChange::ItemRestored) { useCases.archiveItem.restore(it.id, requireVersion()) }
 
     private fun persist(draft: ItemDraft) {
         form.update { it.copy(saving = true, message = null) }
         viewModelScope.launch {
             try {
                 if (itemId == null) {
-                    repositories.items.createItem(draft)
+                    useCases.saveItem.create(draft)
                 } else {
-                    repositories.items.replaceItem(itemId, requireVersion(), draft)
+                    useCases.saveItem.replace(itemId, requireVersion(), draft)
                 }
                 changes.publish(CatalogChange.ItemSaved)
                 effectChannel.send(ItemFormEffect.Close)
@@ -254,13 +238,13 @@ class ItemFormViewModel(
 
     /** Archives or restores the item and leaves the form, saying what happened to [Item.name]. */
     private fun leaveCatalogue(
-        change: suspend (Item) -> Item,
         notice: (String) -> CatalogChange,
+        change: suspend (Item) -> Item,
     ) {
         val state = form.value
         val item = state.item
         if (!state.editable || state.saving || item == null) return
-        form.update { it.copy(saving = true, message = null) }
+        form.update { it.copy(saving = true, message = null, discard = null) }
         viewModelScope.launch {
             try {
                 changes.publish(notice(change(item).name))
@@ -273,41 +257,15 @@ class ItemFormViewModel(
         }
     }
 
-    private fun changingPhotos(change: suspend () -> Unit) {
-        form.update { it.copy(photoBusy = true, photoMessage = null) }
-        viewModelScope.launch {
-            try {
-                change()
-            } catch (failure: Failure) {
-                form.update { it.copy(photoMessage = failure.toCatalogMessage()) }
-            } finally {
-                form.update { it.copy(photoBusy = false) }
-            }
-        }
-    }
-
-    /** Asks the picker; a file over 10 MB is refused by the picker itself, and says so under "Fotos". */
-    private suspend fun pick(source: PhotoSource): PickedPhoto? =
-        try {
-            when (source) {
-                PhotoSource.Gallery -> picker.pickFromGallery()
-                PhotoSource.Camera -> picker.takePhoto()
-            }
-        } catch (_: Failure.PhotoInvalid) {
-            form.update { it.copy(photoMessage = CatalogMessage.PhotoTooBig) }
-            null
-        }
-
     private fun requireVersion(): Int = requireNotNull(form.value.version) { "an item is saved against its version" }
 
     private fun load() {
-        form.update {
-            ItemFormUiState(itemId = itemId, canWrite = it.canWrite, newSupplier = null)
-        }
+        form.update { ItemFormUiState(itemId = itemId) }
         viewModelScope.launch {
             try {
                 // Nothing edits the form while it loads, so reading from the state as it was is safe.
                 form.value = readEverything(form.value)
+                form.value.let { photoController.open(it.item?.id, it.item?.photos.orEmpty(), enabled = it.canWrite) }
             } catch (failure: Failure) {
                 form.update { it.copy(loadMessage = failure.toCatalogMessage()) }
             } finally {
@@ -319,17 +277,20 @@ class ItemFormViewModel(
     /** Reads the item and what its pickers offer; a role that cannot write needs no suppliers or settings. */
     private suspend fun readEverything(state: ItemFormUiState): ItemFormUiState {
         val session = observeSession().first()
-        val canWrite = session?.permissions?.allows(Permission.CatalogWrite) == true
-        val fetched = itemId?.let { repositories.items.item(it) }
+        val fetched = itemId?.let { useCases.getItem(it) }
         val item = fetched?.value
-        val settings = if (canWrite) repositories.settings.settings() else null
+        val mayWrite = session?.permissions?.allows(Permission.CatalogWrite) == true
+        val settings = if (mayWrite) settingsOrNull(fetched) else null
+        val canWrite = settings != null
+        val fields = item?.toFields() ?: ItemFields()
         return state.copy(
             canWrite = canWrite,
             item = item,
             offlineSince = fetched?.cachedAtEpochMillis,
-            fields = item?.toFields() ?: ItemFields(),
-            categories = repositories.categories.categories().value,
-            attributes = repositories.attributes.attributes().value,
+            fields = fields,
+            initialFields = fields,
+            categories = useCases.listCategories().value,
+            attributes = useCases.listAttributes().value,
             suppliers = if (canWrite) allSuppliers() else emptyList(),
             modes = modesOf(settings, item?.sourcingMode),
             showsCosts =
@@ -337,15 +298,25 @@ class ItemFormViewModel(
                     ?: (session?.role?.seesCosts() == true),
             archived = item?.archived == true,
             version = item?.version,
-            photos = item?.photos.orEmpty(),
         )
     }
+
+    /**
+     * Reads the store's settings for an editor. Offline with the item itself read from the device's copy, the editor
+     * could not save anyway, so the item opens read-only (null) with its offline banner instead of failing.
+     */
+    private suspend fun settingsOrNull(item: Fetched<Item>?): StoreSettings? =
+        try {
+            useCases.getSettings()
+        } catch (failure: Failure.Offline) {
+            if (item?.fromCache == true) null else throw failure
+        }
 
     private suspend fun allSuppliers(): List<Supplier> {
         val all = mutableListOf<Supplier>()
         var cursor: String? = null
         do {
-            val page = repositories.suppliers.page(query = null, cursor = cursor, limit = SUPPLIER_PAGE).value
+            val page = useCases.listSuppliers(cursor = cursor, limit = SUPPLIER_PAGE).value
             all += page.items
             cursor = page.nextCursor
         } while (cursor != null)
@@ -353,7 +324,6 @@ class ItemFormViewModel(
     }
 
     private companion object {
-        const val MAX_PHOTOS = 8
         const val SUPPLIER_PAGE = 100
     }
 }
@@ -388,36 +358,3 @@ private fun ItemFormUiState.refusedBy(failure: Failure): ItemFormUiState {
         unplaced?.let { CatalogMessage.General(FailureMessage.Refused(it.message)) } ?: CatalogMessage.CheckFields
     return copy(issues = placed.placed, message = message)
 }
-
-/** What "Novo fornecedor" says about a refusal: the server's words next to its fields, or one above them. */
-private fun NewSupplierForm.refusedBy(failure: Failure): NewSupplierForm {
-    val cleared = copy(saving = false, message = null)
-    return when {
-        failure is Failure.AlreadyTaken && failure.field == "name" ->
-            cleared.copy(
-                nameIssue = SupplierProblem.NameTaken,
-            )
-        failure is Failure.InvalidInput -> {
-            val name =
-                failure.issues
-                    .firstOrNull { it.field == "name" }
-                    ?.message
-                    ?.let(SupplierProblem::Server)
-            val phone =
-                failure.issues.firstOrNull { it.field == "whatsappPhone" }?.message?.let(
-                    SupplierProblem::Server,
-                )
-            if (name == null && phone == null) {
-                cleared.copy(message = failure.toCatalogMessage())
-            } else {
-                cleared.copy(nameIssue = name, phoneIssue = phone)
-            }
-        }
-        else -> cleared.copy(message = failure.toCatalogMessage())
-    }
-}
-
-private const val MAX_PHOTO_BYTES = 10 * 1024 * 1024
-
-/** True when the file is over the API's 10 MB limit. */
-private fun PickedPhoto.isOverLimit(): Boolean = bytes.size > MAX_PHOTO_BYTES

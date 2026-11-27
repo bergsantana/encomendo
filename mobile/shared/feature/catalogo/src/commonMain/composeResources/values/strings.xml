@@ -50,9 +50,11 @@
     <string name="message_conflict">Outra pessoa alterou este item. Recarregue para ver a versão atual.</string>
     <string name="message_reload">Recarregar</string>
     <string name="message_item_in_kit">Este item está no kit %1$s. Tire-o do kit antes de arquivar.</string>
+    <string name="message_item_in_unnamed_kit">Este item está em um kit. Tire-o do kit antes de arquivar.</string>
+    <string name="message_item_in_kits">Este item está nos kits %1$s. Tire-o dos kits antes de arquivar.</string>
     <string name="message_category_in_use">Esta categoria tem itens. Mude os itens de categoria antes de excluir.</string>
     <string name="message_photo_too_big">Esta foto passa de 10 MB.</string>
-    <string name="message_photo_wrong_type">Use uma foto JPEG, PNG ou WebP.</string>
+    <string name="message_photo_invalid">Use uma foto JPEG, PNG ou WebP de até 10 MB.</string>
     <string name="message_photo_limit">Cada item pode ter até 8 fotos.</string>
     <string name="message_photo_not_uploaded">A foto não foi enviada. Tente de novo.</string>
 
@@ -61,7 +63,7 @@
     <string name="form_edit">Editar item</string>
     <string name="form_loading">Carregando o item…</string>
     <string name="form_name">Nome</string>
-    <string name="form_description">Descrição (opcional)</string>
+    <string name="form_description">Descrição</string>
     <string name="form_category">Categoria</string>
     <string name="form_source">Origem</string>
     <string name="form_price">Preço</string>
@@ -80,7 +82,11 @@
     <string name="form_cancel">Cancelar</string>
     <string name="form_archive">Arquivar</string>
     <string name="form_restore">Restaurar</string>
-    <string name="form_close">Voltar</string>
+    <string name="form_close">Fechar</string>
+    <string name="form_readonly_title">Item</string>
+    <string name="discard_title">Descartar as alterações?</string>
+    <string name="discard_keep">Continuar editando</string>
+    <string name="discard_confirm">Descartar</string>
     <string name="form_fields_title">Campos</string>
 
     <!-- Novo fornecedor. -->
@@ -109,6 +115,7 @@
     <string name="photos_gallery">Da galeria</string>
     <string name="photos_camera">Tirar foto</string>
     <string name="photos_save_first">Salve o item para adicionar fotos.</string>
+    <string name="photos_uploading">Enviando a foto…</string>
     <string name="photo_number">Foto %1$d</string>
     <string name="photo_cover_mark">Capa</string>
     <string name="photo_make_cover">Usar como capa</string>
@@ -124,9 +131,10 @@
     <string name="problem_lead_days_range">Use um prazo de 0 a 365 dias.</string>
     <string name="problem_cost_invalid">Informe um custo de zero ou mais.</string>
     <string name="problem_production_days_missing">Informe os dias de produção.</string>
+    <string name="problem_production_days_range">Use de 1 a 365 dias de produção.</string>
     <string name="problem_option_name_missing">Informe o nome da opção.</string>
     <string name="problem_option_needs_choice">Adicione ao menos uma escolha.</string>
-    <string name="problem_choice_label_missing">Informe o nome da escolha.</string>
+    <string name="problem_choice_label_missing">Informe a escolha.</string>
     <string name="problem_choice_duplicate">Já existe uma escolha com este nome.</string>
     <string name="problem_choice_price_invalid">Informe um acréscimo de zero ou mais.</string>
     <string name="problem_choice_days_invalid">Use de 0 a 365 dias a mais.</string>
@@ -143,6 +151,11 @@
     <string name="category_new">Nova categoria</string>
     <string name="category_move_up">Mover para cima</string>
     <string name="category_move_down">Mover para baixo</string>
+    <string name="category_move_up_of">Mover %1$s para cima</string>
+    <string name="category_move_down_of">Mover %1$s para baixo</string>
+    <string name="category_new_name_of">Novo nome de %1$s</string>
+    <string name="category_rename_of">Renomear %1$s</string>
+    <string name="category_delete_of">Excluir %1$s</string>
     <string name="category_rename">Renomear</string>
     <string name="category_delete">Excluir</string>
     <string name="category_save">Salvar</string>
@@ -156,17 +169,18 @@
     <string name="attributes_hint">Campos como \"Serve em\" ajudam o cliente a achar o que serve para ele.</string>
     <string name="attribute_name">Nome do campo</string>
     <string name="attribute_new">Novo campo</string>
-    <string name="attribute_values">Valores</string>
-    <string name="attribute_value">Valor</string>
+    <string name="attribute_value_n">Valor %1$d</string>
     <string name="attribute_value_add">Adicionar valor</string>
     <string name="attribute_value_remove">Remover valor</string>
-    <string name="attribute_value_remove_of">Remover valor %1$s</string>
+    <string name="attribute_value_remove_n">Remover valor %1$d</string>
+    <string name="attribute_save">Salvar campo</string>
     <string name="attribute_delete">Excluir campo</string>
     <string name="attribute_name_missing">Informe o nome do campo.</string>
     <string name="attribute_name_taken">Já existe um campo com este nome.</string>
     <string name="attribute_value_missing">Informe o valor.</string>
     <string name="attribute_value_duplicate">Este valor já existe neste campo.</string>
     <string name="attribute_ask_remove">Remover %1$s? Ele sai de %2$d itens e kits.</string>
+    <string name="attribute_ask_remove_field">Remover %1$s? Seus valores saem dos itens e kits que os usam.</string>
     <string name="attribute_cancel">Cancelar</string>
     <string name="attribute_confirm">Remover</string>
     <string name="attributes_loading">Carregando os campos…</string>

@@ -154,12 +154,11 @@ class ItemsViewModelTest {
 
             assertTrue(ownerState.showsCosts, "the API sent them: Custo and Margem show")
             assertTrue(
-                ownerState.items
-                    .single()
+                ownerState.row
                     .cost.isShown,
             )
-            assertEquals(OwnerField.Hidden, adminState.items.single().cost)
-            assertEquals(OwnerField.Hidden, adminState.items.single().margin)
+            assertEquals(OwnerField.Hidden, adminState.row.cost)
+            assertEquals(OwnerField.Hidden, adminState.row.margin)
             assertFalse(adminState.showsCosts, "no cost column for an admin")
         }
 
@@ -214,8 +213,8 @@ class ItemsViewModelTest {
             items.onTogglePublished(row, true)
             val state = shop.settle { items.uiState.value }
 
-            assertTrue(state.items.single().published)
-            assertEquals(row.version + 1, state.items.single().version, "the next change uses the new version")
+            assertTrue(state.row.published)
+            assertEquals(row.version + 1, state.row.version, "the next change uses the new version")
             assertNull(state.savingId)
         }
 
@@ -237,8 +236,7 @@ class ItemsViewModelTest {
             shop.settle { }
 
             assertFalse(
-                shop.state.items
-                    .single()
+                shop.storedItem
                     .published,
             )
         }
@@ -260,7 +258,7 @@ class ItemsViewModelTest {
             val state = shop.settle { items.uiState.value }
 
             assertEquals(CatalogMessage.Conflict, state.message, "Outra pessoa alterou este item…")
-            assertEquals(row.version + 1, state.items.single().version, "the list was read again")
+            assertEquals(row.version + 1, state.row.version, "the list was read again")
         }
 
     @Test
