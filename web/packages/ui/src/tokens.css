@@ -93,6 +93,13 @@ body {
   white-space: nowrap;
 }
 
+/* enc-check: a checkbox or radio with its words, as one label. */
+.enc-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /*
  * Phone layouts (ADR 0029): 640 px and narrower, the one breakpoint of the
  * admin (phoneMaxWidth in responsive.ts). A 390 px phone is the design size.
@@ -158,5 +165,47 @@ body {
   }
   table.enc-cards tbody td.enc-cards__actions > .enc-button {
     flex: 1 1 auto;
+  }
+  /* A row header (<th scope="row">) is the card's title: the item's name, say. */
+  table.enc-cards tbody th {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * enc-sheet-actions: the buttons that end a form ("Salvar", "Cancelar",
+   * "Fechar"). In a BaseDialog sheet they stay at the bottom of the screen
+   * while the form scrolls, so a long form never hides them. Put it on the
+   * last block of the dialog's slot; it cancels the sheet's 16 px padding to
+   * sit edge to edge.
+   */
+  .enc-sheet-actions {
+    position: sticky;
+    bottom: -16px;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 -16px -16px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--enc-hairline);
+    background: var(--enc-surface);
+  }
+  .enc-sheet-actions > .enc-button {
+    flex: 1 1 auto;
+  }
+
+  /* The whole label is the touch target, and the box itself is easier to see. */
+  .enc-check {
+    min-height: var(--enc-control-height);
+  }
+  .enc-check > input {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin: 0;
   }
 }
