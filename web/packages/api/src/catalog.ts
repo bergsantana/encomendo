@@ -1,6 +1,5 @@
-import { ApiError, type HttpClient } from './http'
-import type { PageRequest } from './members'
-import { queryString } from './query'
+import type { HttpClient } from './http'
+import { type PageRequest, queryString } from './query'
 import type { components } from './types/schema'
 
 type Schemas = components['schemas']
@@ -290,16 +289,45 @@ export class PhotoUploadError extends Error {
   }
 }
 
+/** PhotoFileCode says why a file was refused before any request was made. */
+export type PhotoFileCode = 'photo_type_unsupported' | 'photo_too_large'
+
+/**
+ * PhotoFileError means the file itself cannot be uploaded: it is not JPEG,
+ * PNG or WebP (`photo_type_unsupported`) or it is over 10 MB
+ * (`photo_too_large`). uploadPhoto throws it before making any request, so
+ * nothing was requested, stored or confirmed. The UI shows its own pt-BR
+ * wording; this class carries none.
+ */
+export class PhotoFileError extends Error {
+  /** code is stable, like ApiError.code, so callers branch on it. */
+  readonly code: PhotoFileCode
+
+  constructor(code: PhotoFileCode) {
+    super(`photo file refused (${code})`)
+    this.name = 'PhotoFileError'
+    this.code = code
+  }
+}
+
 /** PhotoUploadInput names the photo's owner and the file to upload. */
 export interface PhotoUploadInput {
   ownerType: PhotoUploadRequest['ownerType']
   ownerId: string
   file: Blob
-  /** signal aborts the storage `PUT`, e.g. when the dialog closes. */
+  /** signal aborts the storage `PUT`, e.g. when the dialog closes. The abort is rethrown as is, not as PhotoUploadError. */
   signal?: AbortSignal
+  /** storageTimeoutMs bounds the storage `PUT`. Defaults to 2 minutes. */
+  storageTimeoutMs?: number
 }
 
 const photoTypes: readonly string[] = ['image/jpeg', 'image/png', 'image/webp']
+
+// The server is the gate at the margin (ADR 0024); this only spares a
+// pointless upload of a file that is clearly too big.
+const maxPhotoBytes = 10 * 1024 * 1024
+
+const defaultStorageTimeoutMs = 120_000
 
 function isPhotoType(type: string): type is PhotoUploadRequest['contentType'] {
   return photoTypes.includes(type)
@@ -308,23 +336,30 @@ function isPhotoType(type: string): type is PhotoUploadRequest['contentType'] {
 /**
  * uploadPhoto stores one photo of an item or kit: it requests an upload,
  * sends the file to storage and confirms it, and resolves the recorded
- * Photo. A file that is not JPEG, PNG or WebP throws ApiError `photo_invalid`
- * without a request. The API's own refusals throw ApiError with their code
- * (`photo_invalid`, `photo_not_uploaded`, `photo_limit`); a failed storage
- * `PUT` throws PhotoUploadError and confirms nothing.
+ * Photo. A file that is not JPEG, PNG or WebP, or is over 10 MB, throws
+ * PhotoFileError before any request is made. The API's own refusals throw
+ * ApiError with their code (`photo_invalid`, `photo_not_uploaded`,
+ * `photo_limit`); a failed or timed-out storage `PUT` throws
+ * PhotoUploadError and confirms nothing; a caller's abort is rethrown as is.
  */
 export async function uploadPhoto(client: HttpClient, input: PhotoUploadInput): Promise<Photo> {
   const contentType = input.file.type
-  if (!isPhotoType(contentType)) {
-    throw new ApiError(400, { code: 'photo_invalid', title: 'Foto inválida', status: 400 })
-  }
+  if (!isPhotoType(contentType)) throw new PhotoFileError('photo_type_unsupported')
+  if (input.file.size > maxPhotoBytes) throw new PhotoFileError('photo_too_large')
 
   const upload = await requestPhotoUpload(client, { ownerType: input.ownerType, ownerId: input.ownerId, contentType })
-  await putToStorage(upload, input.file, input.signal)
+  await putToStorage(upload, input.file, input.signal, input.storageTimeoutMs ?? defaultStorageTimeoutMs)
 
   return input.ownerType === 'item'
     ? confirmItemPhoto(client, input.ownerId, upload.key)
     : confirmKitPhoto(client, input.ownerId, upload.key)
+}
+
+/** storageSignal combines the caller's signal with the storage timeout where AbortSignal.any exists. */
+function storageSignal(callerSignal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  if (callerSignal === undefined) return timeout
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([callerSignal, timeout]) : callerSignal
 }
 
 /**
@@ -335,9 +370,10 @@ export async function uploadPhoto(client: HttpClient, input: PhotoUploadInput): 
  * bearer token and the cookie credentials, handing the access token to the
  * storage host, and the signed URL rejects an extra Authorization header.
  * The request carries exactly the headers the API signed and no credentials
- * (ADR 0024).
+ * (ADR 0024). A caller's abort is rethrown untouched; a timeout or network
+ * failure becomes PhotoUploadError.
  */
-async function putToStorage(upload: PhotoUpload, file: Blob, signal: AbortSignal | undefined): Promise<void> {
+async function putToStorage(upload: PhotoUpload, file: Blob, callerSignal: AbortSignal | undefined, timeoutMs: number): Promise<void> {
   let response: Response
   try {
     // Looked up on every call so a test mock or polyfill installed later applies.
@@ -346,9 +382,10 @@ async function putToStorage(upload: PhotoUpload, file: Blob, signal: AbortSignal
       headers: upload.headers,
       body: file,
       credentials: 'omit',
-      ...(signal === undefined ? {} : { signal }),
+      signal: storageSignal(callerSignal, timeoutMs),
     })
-  } catch {
+  } catch (error) {
+    if (callerSignal?.aborted) throw callerSignal.reason ?? error
     throw new PhotoUploadError(0)
   }
   if (!response.ok) throw new PhotoUploadError(response.status)

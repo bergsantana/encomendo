@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -23,6 +23,7 @@ import {
   listKits,
   orderItemPhotos,
   orderKitPhotos,
+  PhotoFileError,
   PhotoUploadError,
   replaceAttribute,
   replaceItem,
@@ -447,9 +448,87 @@ describe('uploadPhoto', () => {
     expect(failure).toMatchObject({ code: 'photo_upload_failed', status: 0 })
   })
 
-  it('refuses a file type the API does not accept without a request', async () => {
+  it('refuses a file type the API does not accept before any request', async () => {
+    const { calls } = serveUpload({})
     const gif = new Blob(['x'], { type: 'image/gif' })
-    expect(await codeOf(uploadPhoto(client, { ...input, file: gif }))).toBe('photo_invalid')
+
+    const failure = await uploadPhoto(client, { ...input, file: gif }).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(PhotoFileError)
+    expect(failure).toMatchObject({ code: 'photo_type_unsupported' })
+    expect(calls).toEqual([])
+  })
+
+  it('refuses a file over 10 MB before any request', async () => {
+    const { calls } = serveUpload({})
+    const big = new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], { type: 'image/jpeg' })
+
+    const failure = await uploadPhoto(client, { ...input, file: big }).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(PhotoFileError)
+    expect(failure).toMatchObject({ code: 'photo_too_large' })
+    expect(calls).toEqual([])
+  })
+
+  it('rethrows the caller abort mid-PUT as is and does not confirm', async () => {
+    const controller = new AbortController()
+    const calls: string[] = []
+    server.use(
+      http.post(`${base}${admin}/photo-uploads`, uploadResponse),
+      http.put(`${storage}/bucket/*`, async () => {
+        calls.push('put')
+        controller.abort(new DOMException('closed', 'AbortError'))
+        await delay(200)
+        return new HttpResponse(null, { status: 200 })
+      }),
+      http.post(`${base}${admin}/items/${itemId}/photos`, () => {
+        calls.push('confirm')
+        return HttpResponse.json(photo, { status: 201 })
+      }),
+    )
+
+    const failure = await uploadPhoto(client, { ...input, signal: controller.signal }).catch((error: unknown) => error)
+
+    expect(failure).not.toBeInstanceOf(PhotoUploadError)
+    expect(failure).toMatchObject({ name: 'AbortError' })
+    expect(calls).toEqual(['put'])
+  })
+
+  it('turns a storage timeout into PhotoUploadError and does not confirm', async () => {
+    const calls: string[] = []
+    server.use(
+      http.post(`${base}${admin}/photo-uploads`, uploadResponse),
+      http.put(`${storage}/bucket/*`, async () => {
+        calls.push('put')
+        await delay(500)
+        return new HttpResponse(null, { status: 200 })
+      }),
+      http.post(`${base}${admin}/items/${itemId}/photos`, () => {
+        calls.push('confirm')
+        return HttpResponse.json(photo, { status: 201 })
+      }),
+    )
+
+    const failure = await uploadPhoto(client, { ...input, storageTimeoutMs: 20 }).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(PhotoUploadError)
+    expect(failure).toMatchObject({ status: 0 })
+    expect(calls).toEqual(['put'])
+  })
+
+  it('still times out the PUT when the caller also passes a signal', async () => {
+    server.use(
+      http.post(`${base}${admin}/photo-uploads`, uploadResponse),
+      http.put(`${storage}/bucket/*`, async () => {
+        await delay(500)
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+    const controller = new AbortController()
+
+    const failure = await uploadPhoto(client, { ...input, signal: controller.signal, storageTimeoutMs: 20 }).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(PhotoUploadError)
   })
 
   it('surfaces photo_limit from the upload request and never calls storage', async () => {

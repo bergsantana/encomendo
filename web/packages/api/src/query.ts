@@ -1,3 +1,9 @@
+/** PageRequest asks for one page of a list: after `cursor`, at most `limit` items (the API caps it at 100). */
+export interface PageRequest {
+  cursor?: string
+  limit?: number
+}
+
 /**
  * queryString turns defined parameters into "?a=1&b=2", or "" when none is
  * set. A parameter left undefined is left out, so a caller never sends

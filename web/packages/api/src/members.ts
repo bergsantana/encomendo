@@ -1,4 +1,5 @@
 import type { HttpClient } from './http'
+import type { PageRequest } from './query'
 import type { components } from './types/schema'
 
 type Schemas = components['schemas']
@@ -16,11 +17,7 @@ export type InvitableRole = Schemas['InvitableRole']
 /** InviteMemberRequest is the body of POST /api/v1/admin/invitations. */
 export type InviteMemberRequest = Schemas['InviteMemberRequest']
 
-/** PageRequest asks for one page of a list: after `cursor`, at most `limit` items (the API caps it at 100). */
-export interface PageRequest {
-  cursor?: string
-  limit?: number
-}
+export type { PageRequest }
 
 // Every call here needs `members:manage`; the API re-reads the caller's role
 // on each one, so a demoted admin loses them at once (ADR 0011).

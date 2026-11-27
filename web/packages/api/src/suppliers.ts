@@ -1,6 +1,5 @@
 import type { HttpClient } from './http'
-import type { PageRequest } from './members'
-import { queryString } from './query'
+import { type PageRequest, queryString } from './query'
 import type { components } from './types/schema'
 
 type Schemas = components['schemas']
