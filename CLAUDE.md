@@ -4,14 +4,15 @@ Multi-tenant SaaS for small Brazilian businesses that sell made-to-order product
 
 - `backend/`: one Go modular monolith, one JSON API.
 - `web/`: Vue workspace with two apps. `admin` is the management app; `store` is each tenant's store page at `{slug}.encomendo.com.br`, plus the client area (Minhas encomendas).
-- `mobile/`: Kotlin Multiplatform **management** app, Android only. iOS is postponed. Clients never use it.
+- `web/apps/android`: the Android **management** app, a Capacitor shell that opens the hosted web admin (ADR 0029). Clients never use it.
+- `mobile/`: the earlier native Kotlin Multiplatform Android app, **frozen** since ADR 0029. It keeps building in CI and gets no new features; it is removed once the shell reaches the Play Store.
 
 ## Sources of truth
 
 - `docs/architecture.md`: layers, schema, auth, RLS, status workflows, testing, CI and build order. Follow it. If something is ambiguous, pick the option that keeps the dependency rule, tenant isolation and testability intact, and record the choice as an ADR in `docs/adr/`.
 - `docs/product/`: what the product does and why (design document, product overview). Read the section for a feature before building it. When product behaviour disagrees with the architecture, the design document wins.
 - `docs/api/openapi.yaml`: the API contract, written by hand.
-- Each app has its own `CLAUDE.md` with its conventions: `backend/`, `web/`, `mobile/`. Read it before editing that app.
+- Each app has its own `CLAUDE.md` with its conventions: `backend/`, `web/` (the Android shell included), `mobile/` (frozen). Read it before editing that app.
 
 ## Commands
 
@@ -35,7 +36,7 @@ These summarize `docs/architecture.md` section 2. Read it for the full list.
 3. **Tenant isolation is enforced three times:** JWT principal (or the store page subdomain) → app-layer authorization → Postgres RLS. A client account crosses tenants only to read its own orders.
 4. **GORM never creates schema.** No `AutoMigrate`. Schema comes only from SQL migrations.
 5. **Every feature ships with tests**, at the levels in `backend/CLAUDE.md`. Every bug fix starts with a failing test that reproduces it.
-6. **Management parity:** a management feature is done when its web admin screen and its Android screen both work against the same endpoints. The store page and client area are web only. Don't add iOS targets, files or CI jobs.
+6. **Management on every device:** a management feature is done when its web admin screen works at desktop and phone sizes, and the Android shell opens it (ADR 0029). There is no second implementation. Don't add features to the frozen `mobile/` app. The store page and client area are web only. Don't add iOS targets, files or CI jobs.
 7. **Clients never see internal data.** Store page, tracking and client area responses never contain suppliers, costs, margins or "Pode atrasar".
 8. **WhatsApp through `wa.me` links only.** No paid WhatsApp API.
 9. **Rules hang on phases, names come from data.** Each store picks its own status list. Code branches on the order's `workflow.Phase`, never on a status key or label. Niche words come from the template.
@@ -125,7 +126,7 @@ Spend the strongest model where a mistake spreads or leaks; use Sonnet where a w
 - `make lint test` passes, plus `make test-integration` when adapters changed. Show the output; don't just say it passed.
 - Tests exist at every level the change touches.
 - `docs/api/openapi.yaml` matches every endpoint added or changed.
-- Management features: the web admin and Android screens are both updated, or a follow-up exists in the same milestone.
+- Management features: the web admin screen works at desktop and phone sizes (tested at 390 × 844), and the Android shell still builds.
 - Any decision not covered by `docs/architecture.md` has an ADR.
 - No new dependency without a one-line justification in the PR description.
 
