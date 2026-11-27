@@ -53,7 +53,7 @@ func (e Editable) Validate() error {
 	if e.SafetyMarginDays < 0 || e.SafetyMarginDays > maxDays {
 		fields = append(fields, shared.FieldError{Field: "safetyMarginDays", Message: "Use de 0 a 365 dias."})
 	}
-	if e.WhatsAppPhone != "" && !whatsAppPhone(e.WhatsAppPhone) {
+	if e.WhatsAppPhone != "" && !shared.ValidWhatsAppPhone(e.WhatsAppPhone) {
 		fields = append(fields, shared.FieldError{
 			Field:   "whatsappPhone",
 			Message: "Use 55, o DDD e o número, só com dígitos. Exemplo: 5592991234567.",
@@ -63,19 +63,6 @@ func (e Editable) Validate() error {
 		return shared.NewValidationError(fields...)
 	}
 	return nil
-}
-
-// whatsAppPhone matches ^55[1-9]{2}[0-9]{8,9}$.
-func whatsAppPhone(p string) bool {
-	if len(p) != 12 && len(p) != 13 || p[0] != '5' || p[1] != '5' || p[2] == '0' || p[3] == '0' {
-		return false
-	}
-	for i := range len(p) {
-		if p[i] < '0' || p[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // Settings are one store's defaults and switches.

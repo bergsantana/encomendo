@@ -125,7 +125,7 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
 - **Files:** `backend/internal/domain/supplier/{doc,supplier,supplier_item,phone,errors}.go`, `backend/internal/domain/schedule/{doc,days}.go`, tests; typed IDs `SupplierID` in `domain/shared/id.go`.
 - **Work:**
   - `supplier.New(tenant, id, name, whatsapp)` and `Rename` / `ChangePhone`, with a version.
-  - The WhatsApp phone is normalized to E.164 digits, Brazil by default: `55` + DDD + 8 or 9 digits. Everything else is refused, so `wa.me` links (M5) always work.
+  - The WhatsApp phone is validated as 55 + DDD + 8 or 9 digits, digits only (the contract's `SupplierPhone`). Everything else is refused, so `wa.me` links (M5) always work.
   - `SupplierItem{supplier, role main|backup, leadDays 0..365, cost *Money}` with its validation.
   - `schedule.Days(ready []int, assembly, margin int)`.
 - **Tests:** table tests; fuzz the phone parser; `schedule` has `TestDays_KitScramblerCB500X` (15, 3, 2 → 20) and an empty kit.
