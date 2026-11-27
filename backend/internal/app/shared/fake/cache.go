@@ -84,7 +84,7 @@ func (c *Cache) Set(_ context.Context, key appshared.Key, value any, ttl time.Du
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("encode cached %s: %w (%w)", key, appshared.ErrInvalidCacheValue, err)
+		return fmt.Errorf("encode cached value: %w (%w)", appshared.ErrInvalidCacheValue, err)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

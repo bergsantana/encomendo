@@ -57,9 +57,9 @@ func (c *Cache) Get(ctx context.Context, key appshared.Key, dst any) (bool, erro
 	if dst == nil || target.Kind() != reflect.Pointer || target.IsNil() {
 		return false, fmt.Errorf("decode into %T: %w", dst, appshared.ErrInvalidCacheValue)
 	}
-	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
+	callCtx, cancel := context.WithTimeout(ctx, cacheTimeout)
 	defer cancel()
-	data, err := c.rdb.Get(ctx, key.String()).Bytes()
+	data, err := c.rdb.Get(callCtx, key.String()).Bytes()
 	if errors.Is(err, goredis.Nil) {
 		return false, nil
 	}
@@ -70,7 +70,7 @@ func (c *Cache) Get(ctx context.Context, key appshared.Key, dst any) (bool, erro
 	// writes part of dst.
 	fresh := reflect.New(target.Elem().Type())
 	if err := json.Unmarshal(data, fresh.Interface()); err != nil {
-		c.dropUndecodable(ctx, key, target.Elem().Type())
+		c.dropUndecodable(callCtx, key, target.Elem().Type())
 		return false, nil
 	}
 	target.Elem().Set(fresh.Elem())
@@ -103,9 +103,9 @@ func (c *Cache) Set(ctx context.Context, key appshared.Key, value any, ttl time.
 	// Redis counts expiry in whole milliseconds and refuses 0, so a shorter
 	// positive TTL is rounded up instead of failing.
 	ttl = max(ttl, time.Millisecond)
-	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
+	callCtx, cancel := context.WithTimeout(ctx, cacheTimeout)
 	defer cancel()
-	if err := c.rdb.Set(ctx, key.String(), data, ttl).Err(); err != nil {
+	if err := c.rdb.Set(callCtx, key.String(), data, ttl).Err(); err != nil {
 		return c.unavailable(ctx, "set", err)
 	}
 	return nil
@@ -117,9 +117,9 @@ func (c *Cache) Delete(ctx context.Context, key appshared.Key) error {
 	if err := checkKey(key); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
+	callCtx, cancel := context.WithTimeout(ctx, cacheTimeout)
 	defer cancel()
-	if err := c.rdb.Unlink(ctx, key.String()).Err(); err != nil {
+	if err := c.rdb.Unlink(callCtx, key.String()).Err(); err != nil {
 		return c.unavailable(ctx, "delete", err)
 	}
 	return nil
@@ -136,21 +136,21 @@ func (c *Cache) DeleteByPrefix(ctx context.Context, prefix appshared.Key) error 
 	if err := checkKey(prefix); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, deletePrefixTimeout)
+	callCtx, cancel := context.WithTimeout(ctx, deletePrefixTimeout)
 	defer cancel()
 	p := prefix.String()
-	if err := c.unlink(ctx, p); err != nil {
+	if err := c.unlink(callCtx, p); err != nil {
 		return c.unavailable(ctx, "delete by prefix", err)
 	}
 	match := escapeGlob(p) + ":*"
 	var cursor uint64
 	for {
-		keys, next, err := c.scanPage(ctx, cursor, match)
+		keys, next, err := c.scanPage(callCtx, cursor, match)
 		if err != nil {
 			return c.unavailable(ctx, "delete by prefix", err)
 		}
 		if len(keys) > 0 {
-			if err := c.unlink(ctx, keys...); err != nil {
+			if err := c.unlink(callCtx, keys...); err != nil {
 				return c.unavailable(ctx, "delete by prefix", err)
 			}
 		}
@@ -179,8 +179,14 @@ func (c *Cache) scanPage(ctx context.Context, cursor uint64, match string) ([]st
 // record of an outage. The log line carries the operation and the Redis
 // error, never the key or the value. The cause stays in the chain, so a
 // cancelled request is still context.Canceled.
+//
+// ctx is the caller's context, not the one with the call's timeout: a
+// request that ended first is not an outage and is not logged, but a Redis
+// that ran into our own timeout is.
 func (c *Cache) unavailable(ctx context.Context, op string, err error) error {
-	c.log.WarnContext(ctx, "cache unavailable; the caller falls back to Postgres", "op", op, "err", err)
+	if ctx.Err() == nil {
+		c.log.WarnContext(ctx, "cache unavailable; the caller falls back to Postgres", "op", op, "err", err)
+	}
 	return fmt.Errorf("cache %s: %w (%w)", op, shared.ErrUnavailable, err)
 }
 

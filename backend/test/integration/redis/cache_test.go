@@ -291,7 +291,7 @@ func TestCache_RedisDownReturnsUnavailableQuickly(t *testing.T) {
 				if !errors.Is(err, shared.ErrUnavailable) {
 					t.Errorf("%s error = %v, want shared.ErrUnavailable", call, err)
 				}
-				if took := time.Since(start); took > 3*time.Second {
+				if took := time.Since(start); took > 1500*time.Millisecond {
 					t.Errorf("%s took %v, want it bounded by the cache timeout", call, took)
 				}
 			}
@@ -343,5 +343,27 @@ func TestCache_RedisDownIsLoggedOnceWithoutKeyOrValue(t *testing.T) {
 		if strings.Contains(out, secret) {
 			t.Errorf("log carries %q: %s", secret, out)
 		}
+	}
+}
+
+func TestCache_ACancelledRequestIsNotLoggedAsAnOutage(t *testing.T) {
+	t.Parallel()
+	c, err := redis.Open(config.Redis{URL: closedPortURL(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	var logs bytes.Buffer
+	cache := redis.NewCache(c, slog.New(slog.NewTextHandler(&logs, nil)))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err = cache.Delete(ctx, tenantKey(t, newTenant(), "catalog"))
+
+	if !errors.Is(err, shared.ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Errorf("Delete error = %v, want ErrUnavailable and context.Canceled", err)
+	}
+	if logs.Len() != 0 {
+		t.Errorf("a cancelled request was logged: %s", logs.String())
 	}
 }
