@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -177,7 +178,7 @@ func TestStaffOnlyTables(t *testing.T) {
 				_, err := tx.ExecContext(ctx, query, args...)
 				return err
 			})
-			if !refused(err) && !refusedParent(err) {
+			if !refused(err) {
 				t.Errorf("insert into %s as a store page: err = %v, want 42501", tt.name, err)
 			}
 			for _, query := range []string{
@@ -202,13 +203,97 @@ func TestStaffOnlyTables(t *testing.T) {
 	}
 }
 
-// refusedParent reports a statement refused because a parent row it needs
-// is invisible in its scope: the item an internal row hangs on is readable
-// by a store page, but the CTE writing it first is checked against the
-// policy too, so this is still the policy answering.
-func refusedParent(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+// TestStaffOnlyTables_RefuseADirectInsert: a store page scope writing an
+// internal row straight onto store A's own seeded parents is refused by the
+// internal table's own policy, not by a parent's (security review of 3.4).
+func TestStaffOnlyTables_RefuseADirectInsert(t *testing.T) {
+	t.Parallel()
+	w := seed(t)
+	app := env.Open(t, pgtest.App)
+	db := env.Seeder(t).DB()
+	var item, supplier string
+	if err := db.QueryRowContext(t.Context(), `SELECT i.id FROM items i WHERE i.tenant_id = $1
+		AND NOT EXISTS (SELECT 1 FROM item_costs c WHERE c.tenant_id = i.tenant_id AND c.item_id = i.id)
+		AND NOT EXISTS (SELECT 1 FROM supplier_items s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id)
+		LIMIT 1`, w.a.String()).Scan(&item); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT id FROM suppliers WHERE tenant_id = $1 LIMIT 1`, w.a.String()).Scan(&supplier); err != nil {
+		t.Fatal(err)
+	}
+	for table, query := range map[string]string{
+		"item_costs": `INSERT INTO item_costs (tenant_id, item_id, cost_cents, currency) VALUES ($1, $2, 100, 'BRL')`,
+		"supplier_items": `INSERT INTO supplier_items (tenant_id, item_id, supplier_id, role, lead_days, currency)
+			VALUES ($1, $2, $3, 'main', 3, 'BRL')`,
+	} {
+		err := inScope(t, app, storePage(w), func(ctx context.Context, tx *sql.Tx) error {
+			args := []any{w.a.String(), item}
+			if table == "supplier_items" {
+				args = append(args, supplier)
+			}
+			_, err := tx.ExecContext(ctx, query, args...)
+			return err
+		})
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" || !strings.Contains(pgErr.Message, `"`+table+`"`) {
+			t.Errorf("direct insert into %s as a store page: err = %v, want 42501 from %s's own policy", table, err, table)
+		}
+	}
+}
+
+// TestAuditLog_StorePageWritesButCannotRead: a scope with a tenant and no
+// user (store page, invitation preview) still writes the audit rows its
+// changes trigger, but reads none, so drafts, roles and invitees' emails
+// never reach it (0010_audit_log_staff_reads).
+func TestAuditLog_StorePageWritesButCannotRead(t *testing.T) {
+	t.Parallel()
+	w := seed(t)
+	app := env.Open(t, pgtest.App)
+	err := inScope(t, app, storePage(w), func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (tenant_id, table_name, action)
+			VALUES ($1, 'items', 'insert')`, w.a.String()); err != nil {
+			return err
+		}
+		n, err := count(ctx, tx, "SELECT count(*) FROM audit_log")
+		if err == nil && n != 0 {
+			t.Errorf("audit_log as a store page: %d rows, want 0", n)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatalf("store page writing its audit row: %v", err)
+	}
+	err = inScope(t, app, storeA(w), func(ctx context.Context, tx *sql.Tx) error {
+		n, err := count(ctx, tx, "SELECT count(*) FROM audit_log")
+		if err == nil && n == 0 {
+			t.Error("audit_log as store A's owner: 0 rows, want the store's audit")
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAuditLogPolicies pins the pair 0010 gives audit_log: inserts checked
+// against the tenant alone, reads needing a staff user too, nothing else.
+func TestAuditLogPolicies(t *testing.T) {
+	t.Parallel()
+	db := env.Seeder(t).DB()
+	got := tableNames(t, db, `SELECT policyname || ' ' || cmd || ' ' || coalesce(qual, '-') || ' ' || coalesce(with_check, '-')
+		FROM pg_policies WHERE schemaname = 'public' AND tablename = 'audit_log' AND permissive = 'PERMISSIVE'`)
+	want := []string{
+		"audit_write INSERT - (tenant_id = current_tenant_id())",
+		"staff_read SELECT " + staffOnlyQual + " -",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("audit_log policies = %v, want %v", got, want)
+	}
+	var restrictive int
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM pg_policies
+		WHERE tablename = 'audit_log' AND permissive <> 'PERMISSIVE'`).Scan(&restrictive); err != nil || restrictive != 0 {
+		t.Errorf("restrictive audit_log policies: %d (err %v), want 0", restrictive, err)
+	}
 }
 
 // staffOnlyQual is the one policy expression an internal table may have.

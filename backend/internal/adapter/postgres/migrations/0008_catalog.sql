@@ -21,10 +21,10 @@
 -- deleting a category in use must fail (category_in_use).
 --
 -- Audit: categories, attributes, items and kits are audited. item_costs is
--- not: audit_log keeps whole rows and a store page scope can read audit_log,
--- so auditing a staff-only table would copy costs where the store page can
--- see them. Staff-only tables join the audit once audit_log reads are
--- staff-only too (audit views, milestone 8).
+-- not: audit_log keeps whole rows and every staff role reads it (0010),
+-- viewers included, while costs are the owner's only (ADR 0025). Internal
+-- tables join the audit once audit views (milestone 8) hide cost columns
+-- from roles that do not see costs.
 
 -- +goose Up
 CREATE TABLE categories (

@@ -69,7 +69,7 @@ CREATE POLICY staff_only ON supplier_items
   WITH CHECK (tenant_id = current_tenant_id() AND current_user_id() IS NOT NULL);
 ```
 
-A staff-only table has no other policy: no `tenant_isolation`, and never a client policy. It has no audit trigger while store page scopes can read `audit_log`, because the audit keeps whole rows (`0008_catalog`).
+A staff-only table has no other policy: no `tenant_isolation`, and never a client policy. It has no audit trigger: the audit keeps whole rows and every staff role reads `audit_log` (`0010`), while costs are the owner's (`0008_catalog`).
 
 Checklist:
 
