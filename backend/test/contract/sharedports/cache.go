@@ -20,6 +20,9 @@ type CacheHarness struct {
 	// cache can return at once, because the TTL case polls with a deadline
 	// either way (no sleeps in tests).
 	Elapse func(t *testing.T, d time.Duration)
+	// Down is a Cache whose store cannot be reached: a fake switched down,
+	// or a Redis client on a closed port.
+	Down appshared.Cache
 }
 
 type cachedItem struct {
@@ -43,8 +46,9 @@ func tenantKey(t *testing.T, tenant shared.TenantID, parts ...string) appshared.
 
 // RunCacheContract checks that a Cache stores JSON values per key, expires
 // them, treats an entry that no longer fits as a miss, deletes by key and by
-// prefix without touching siblings or other tenants, and refuses zero keys,
-// non-positive TTLs and values JSON cannot carry.
+// prefix without touching siblings or other tenants, reports an unreachable
+// store as shared.ErrUnavailable, and refuses zero keys, non-positive TTLs and
+// values JSON cannot carry.
 func RunCacheContract(t *testing.T, newHarness func(t *testing.T) CacheHarness) {
 	t.Run("miss on a missing key", func(t *testing.T) { cacheMiss(t, newHarness(t)) })
 	t.Run("set then get round-trips JSON", func(t *testing.T) { cacheRoundTrip(t, newHarness(t)) })
@@ -54,6 +58,7 @@ func RunCacheContract(t *testing.T, newHarness func(t *testing.T) CacheHarness) 
 	t.Run("delete removes one key", func(t *testing.T) { cacheDelete(t, newHarness(t)) })
 	t.Run("delete by prefix stays inside the prefix", func(t *testing.T) { cacheDeleteByPrefix(t, newHarness(t)) })
 	t.Run("tenants never share entries", func(t *testing.T) { cacheTenantIsolation(t, newHarness(t)) })
+	t.Run("an unreachable store is ErrUnavailable", func(t *testing.T) { cacheDown(t, newHarness(t)) })
 	t.Run("refuses invalid input", func(t *testing.T) { cacheInvalidInput(t, newHarness(t)) })
 }
 
@@ -195,6 +200,28 @@ func cacheTenantIsolation(t *testing.T, h CacheHarness) {
 	mustSet(t, h.Cache, b, cachedItem{Name: "B"}, time.Minute)
 	if got, _ := mustGet(t, h.Cache, a); got.Name != "A" {
 		t.Errorf("tenant A's entry = %+v after tenant B wrote", got)
+	}
+}
+
+func cacheDown(t *testing.T, h CacheHarness) {
+	ctx := context.Background()
+	k := tenantKey(t, cacheTenantA, "item", "1")
+	var dst cachedItem
+	checks := map[string]error{
+		"get":              second(h.Down.Get(ctx, k, &dst)),
+		"set":              h.Down.Set(ctx, k, dst, time.Minute),
+		"delete":           h.Down.Delete(ctx, k),
+		"delete by prefix": h.Down.DeleteByPrefix(ctx, k),
+	}
+	for name, err := range checks {
+		if !errors.Is(err, shared.ErrUnavailable) {
+			t.Errorf("%s: error = %v, want shared.ErrUnavailable", name, err)
+		}
+	}
+	// A cache that is down is not misuse: the use case falls back on this
+	// error and must not mistake a bad key for an outage.
+	if err := h.Down.Set(ctx, k, dst, 0); !errors.Is(err, appshared.ErrInvalidTTL) || errors.Is(err, shared.ErrUnavailable) {
+		t.Errorf("set with ttl 0 on a down cache: error = %v, want only ErrInvalidTTL", err)
 	}
 }
 
