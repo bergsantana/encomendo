@@ -60,9 +60,13 @@ func TestEveryTenantTable_ForcesRLSThroughTheHelpers(t *testing.T) {
 
 // extraPolicies is every policy besides tenant_isolation and staff_only. Each must be
 // SELECT only and apply only with no tenant set (ADR 0010), so it can never
-// widen what a store's own transactions see or let anyone write. A client
-// read policy (architecture 5.5, item 7) joins this list in its own review.
-var extraPolicies = []string{"memberships.own_memberships", "tenants.member_stores"}
+// widen what a store's own transactions see or let anyone write. The
+// client_read policies of 0013_orders (architecture 5.5, item 7) were
+// reviewed with step 4.7.
+var extraPolicies = []string{
+	"memberships.own_memberships", "order_items.client_read", "order_lines.client_read",
+	"orders.client_read", "payments.client_read", "tenants.member_stores",
+}
 
 // TestPolicies_OnlyTheListedExtrasWidenReads: tenant_isolation checks writes
 // with the same expression it reads with, and any other policy is a listed,
@@ -76,17 +80,18 @@ func TestPolicies_OnlyTheListedExtrasWidenReads(t *testing.T) {
 	if len(asymmetric) != 0 {
 		t.Errorf("tenant_isolation policies that are not FOR ALL with USING = WITH CHECK: %v", asymmetric)
 	}
-	// staff_only and the audit_log pair narrow reads; TestStaffOnlyPolicies
-	// and TestAuditLogPolicies pin their expressions.
+	// staff_only and the write-anywhere, staff-read pairs of audit_log and
+	// order_status_history narrow reads; TestStaffOnlyPolicies,
+	// TestAuditLogPolicies and TestOrderHistoryPolicies pin them.
 	got := tableNames(t, db, `SELECT tablename || '.' || policyname FROM pg_policies
 		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')
-		  AND tablename <> 'audit_log'`)
+		  AND tablename NOT IN ('audit_log', 'order_status_history')`)
 	if !slices.Equal(got, extraPolicies) {
 		t.Errorf("extra policies = %v, want exactly the reviewed %v", got, extraPolicies)
 	}
 	loose := tableNames(t, db, `SELECT tablename || '.' || policyname || ' ' || cmd || ': ' || qual FROM pg_policies
 		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')
-		  AND tablename <> 'audit_log'
+		  AND tablename NOT IN ('audit_log', 'order_status_history')
 		  AND (cmd <> 'SELECT' OR qual NOT LIKE '((current_tenant_id() IS NULL) AND %')`)
 	if len(loose) != 0 {
 		t.Errorf("extra policies that are not SELECT only behind current_tenant_id() IS NULL: %v", loose)

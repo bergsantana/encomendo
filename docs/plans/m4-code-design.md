@@ -845,6 +845,15 @@ ALTER TABLE tenant_settings ADD COLUMN time_zone text NOT NULL DEFAULT 'America/
 
 `GRANT UPDATE (time_zone) ON tenant_settings TO encomendo_app;`, next to the column grants `0007` gives the other settings.
 
+### 2.4a As built in 4.7
+
+What step 4.7 changed after the security review:
+
+- **History is the 0010 pair.** `order_status_history` has `history_write` (INSERT, checked against the tenant) and `staff_read` (SELECT, needs a staff user), as `audit_log` does. A store-page scope may write the entry its order creates, but reads none. Repositories must insert history without `RETURNING`, because that would need the read policy.
+- **`client_account_id` cannot be inserted or updated.** The INSERT grants on `orders` and `customers` are column lists without it. So 4.9's and 4.12's GORM models must leave it out on writes: tag it `<-:false` or `Omit` it. M7 adds a reviewed linking path.
+- **An item's line belongs to the item's own order.** The foreign key is `(tenant_id, order_id, line_id)`, against a new `UNIQUE (tenant_id, order_id, id)` on `order_lines`.
+- **`audit_row` already drops every `*_hash` column,** so no `audit_row_redacted()` was needed. A test pins which tables are audited, and another checks that the orders audit rows leave the token hash out.
+
 ### 2.5 RLS suite
 
 - `ordersTables` (new list): every table above enters `tenantTables`.
@@ -1515,5 +1524,10 @@ Rules that the reviewers will check:
 - `app/order.Cancel` has a comment `// M5: cancel unsent purchase lines and flag sent ones (ADR 0030).` and `// M6: release stock reservations.`, with the issue numbers once opened (`TODO(#n)` only with an issue, per `CLAUDE.md`). The session opens the two issues when it reaches 4.10.
 - M7 store-page orders run in a scope with no staff user, so `order_item_sourcing` can't be written there. M7 must decide (ADR) between filling the snapshot on the first staff touch and a narrow platform path; 4.10 states this in `app/order/doc.go`.
 - `schedule.Timing.Promised` is filled by M5; `InitialStatus(stock)` changes in M6.
+- From the security review of 4.7, for M7:
+  - **Deleting a client account fails** while an order or customer links to it. The `ON DELETE SET NULL` fires the audit trigger with no tenant set, and `audit_write` refuses it. Unlink in each store's own scope first, or delete through the platform role. Never loosen `audit_write`.
+  - **Idempotency keys are per store.** Before the store page uses them, add who made the call (staff user, client account, or a store-page marker) to the key, so an anonymous caller can neither replay nor probe another's key.
+  - **Some columns clients must never see sit on rows they can read:** `order_items.expected_date`, `orders.cancel_reason`, `released_by` and `tracking_token_hash`, and `payments.recorded_by`, `voided_by` and `void_reason`. They are readable under `client_read`, and under `tenant_isolation` by a store-page scope. Client-area and tracking repositories therefore name their columns and never load the admin models. Consider a `security_invoker` view with only the client columns. Customers' phones and emails are readable by a store-page scope too; M7 needs that to match a customer by phone, so the app layer is the only guard there.
+  - **Low:** the payment grants would let a void be undone, which only the domain stops. And any scope of the store may delete a live idempotency key: limit deletes to expired keys when the worker takes them over.
 - `order.deposit_confirmed` fires again when a voided deposit is paid again, so M5's `GeneratePurchases` must be idempotent per order item: a line that already exists for an item is never made twice.
 - M7's `PlaceOrder` reuses the find-by-phone path of `Create`. On the public store page a phone proves nothing, so for a customer matched only by phone it must answer no customer facts (name, addresses) and must not use the stored addresses; the delivery address comes from the checkout form (security review of 4.1, D5). 4.10 writes this in `app/order/doc.go`.
