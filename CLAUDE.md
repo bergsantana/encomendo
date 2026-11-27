@@ -73,6 +73,12 @@ The full table is in `docs/architecture.md` section 4.2. The names you will use 
 | Equipe, membro, papel: Dono / Admin / Funcionário / Visualizador | `tenancy.Membership`, `shared.Role` (`owner` / `admin` / `staff` / `viewer`, ADR 0017) |
 | Convite (para a equipe) | `tenancy.Invitation` (ADR 0011) |
 | Esqueci a senha, código | password reset code in `identity` (ADR 0011) |
+| Categoria; campo do item ("Serve em") e seus valores | `catalog.Category`; `catalog.Attribute` with ordered values (ADR 0025) |
+| Opções do cliente, escolha | `catalog.CustomizationOption`, its choices (extra price, extra days; ADR 0024) |
+| Fornecedor principal / fornecedor reserva | `supplier.SupplierItem` with role `main` / `backup`, held by `catalog.Item` (ADR 0025) |
+| Cliente pode trocar, pode trocar por | swappable `catalog.KitItem` and its alternatives (ADR 0025) |
+| Manter o desconto / cobrar a soma avulsa | kit swap mode `keep` / `lose` (ADR 0023) |
+| Arquivar / Restaurar | `Archive` / `Restore` on items and kits; nothing in the catalog is deleted (ADR 0025) |
 
 For a term that isn't listed, don't invent a context or a name on your own. Ask, record the decision as an ADR, and add the term here.
 

@@ -228,6 +228,115 @@ Only for roles with `members:manage` (Dono, Admin): the menu entry "Equipe" is h
   - "Reenviar" whose email did not go out, in the row: 'O convite foi salvo, mas o e-mail não saiu. Use "Reenviar" para tentar de novo.' (the list is read again for the new expiry).
   - At the top, with the lists read again: "Este convite não está mais pendente.", or "Esta pessoa já faz parte da equipe." when the person joined meanwhile.
 
+### Catálogo
+
+Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 0025). Web and Android use the same text. The messages in "Account and store screens" above (no connection, server failure, rate limit, another refusal) apply here too. `{Montagem}` is a niche word from the template, "Montagem" until templates exist.
+
+**Who sees what**
+
+- Every role sees the menu entry "Catálogo" (`catalog:read`).
+- Only Dono and Admin (`catalog:write`) see buttons that change anything. The other roles see the same screens read-only.
+- "Custo" and "Margem" show only to the Dono, and only because the API sends them. The other roles see neither the column nor the field.
+
+**Tabs:** "Itens" and "Kits".
+
+**Itens**
+
+- Table: "Item", "Categoria", "Origem", "Fornecedor", "Prazo", "Custo", "Preço", "Margem", "No portal".
+  - "Origem" is "Sob encomenda", "Estoque" or "Produção própria".
+  - "Prazo" is "{n} dias" ("1 dia").
+  - "Margem" is "{valor} ({n}%)", or "—" without a cost.
+  - "No portal" is a switch, read aloud as "Mostrar {item} na página da loja".
+- Above the table: the search field "Buscar item", the filter "Todas as categorias", the box "Mostrar arquivados", and the buttons "Novo item", "Categorias" and "Campos".
+- While loading: "Carregando o catálogo…". At the end of a page: "Carregar mais".
+- Empty catalog: "Nenhum item no catálogo ainda." with "Novo item". A search with no results: "Nenhum item encontrado."
+- An archived row shows "Arquivado" beside the name.
+
+**Item form** (drawer): title "Novo item" or "Editar item".
+
+- **Fields:**
+  - "Nome";
+  - "Descrição" (optional);
+  - "Categoria" ("Sem categoria" unless one is chosen);
+  - "Origem";
+  - "Preço".
+  - "Estoque" and "Produção própria" appear in "Origem" only when the store turned them on.
+- **Sob encomenda and Estoque**, section "Fornecedor":
+  - "Fornecedor principal", a choice of the store's suppliers plus "Novo fornecedor";
+  - "Prazo do fornecedor (dias)";
+  - "Custo" (Dono only).
+  - "Adicionar fornecedor reserva" opens the same three fields under "Fornecedor reserva", with "Remover fornecedor reserva".
+- **Produção própria:** "Dias de produção" and "Custo de produção" (Dono only).
+- **"Novo fornecedor":**
+  - fields "Nome do fornecedor" and "WhatsApp do fornecedor", with the hint "Com DDD, como (11) 98765-4321.";
+  - button "Adicionar fornecedor";
+  - empty fields: "Informe o nome do fornecedor.", "Informe o WhatsApp do fornecedor.";
+  - an invalid number: "Confira o número: use DDD e 8 ou 9 dígitos."
+- **Campos:** one choice per store field, labelled with the field's name (such as "Serve em"). Several values may be picked.
+- **"Opções do cliente":**
+  - each option has "Nome da opção", the box "Obrigatória" and its choices;
+  - each choice has "Escolha", "Acréscimo no preço" and "Dias a mais";
+  - buttons "Nova opção", "Adicionar escolha", "Remover escolha", "Remover opção";
+  - hint: "O cliente escolhe uma destas opções ao pedir. Dias a mais entram no prazo."
+- **"Fotos":**
+  - button "Adicionar fotos", hint "JPEG, PNG ou WebP, até 10 MB. A primeira é a capa.";
+  - each photo has "Usar como capa" and "Remover foto".
+- **"Mostrar na página da loja"** (the "No portal" switch).
+- **Buttons:** "Salvar" and "Cancelar". When editing, also "Arquivar", or "Restaurar" for an archived item.
+- **Empty or wrong fields**, with "Confira os campos destacados." above the form:
+  - "Informe o nome do item.", "Informe o preço.";
+  - "Escolha o fornecedor principal.", "Informe o prazo do fornecedor.", "O fornecedor reserva precisa ser outro.";
+  - "Informe os dias de produção.";
+  - "Informe o nome da opção.", "Adicione ao menos uma escolha.", "Já existe uma escolha com este nome."
+- **Photos:**
+  - "Esta foto passa de 10 MB.", "Use uma foto JPEG, PNG ou WebP.";
+  - "Cada item pode ter até 8 fotos.";
+  - "A foto não foi enviada. Tente de novo."
+- **After saving:** "Item salvo.", "{item} foi arquivado.", "{item} voltou ao catálogo."
+- **Refusals:**
+  - archiving an item in a kit: "Este item está no kit {kit}. Tire-o do kit antes de arquivar.";
+  - someone else saved first: "Outra pessoa alterou este item. Recarregue para ver a versão atual.", with the button "Recarregar".
+
+**Categorias** (dialog)
+
+- Title "Categorias". A list in the store's order, with "Mover para cima", "Mover para baixo", "Renomear" and "Excluir". Button "Nova categoria", field "Nome da categoria".
+- "Informe o nome da categoria.", "Já existe uma categoria com este nome."
+- A category in use: "Esta categoria tem itens. Mude os itens de categoria antes de excluir."
+
+**Campos** (dialog)
+
+- Title "Campos dos itens", hint "Campos como \"Serve em\" ajudam o cliente a achar o que serve para ele."
+- Each field has "Nome do campo" and its "Valores", with "Adicionar valor", "Remover valor" and "Excluir campo". Button "Novo campo".
+- "Informe o nome do campo.", "Informe o valor.", "Este valor já existe neste campo."
+- Removing a value or a field in use asks first: "Remover {valor}? Ele sai de {n} itens e kits.", buttons "Cancelar" and "Remover".
+
+**Kits**
+
+- Table: "Kit", "Itens", "Preço do kit", "Soma avulsa", "Margem", "Prazo", "No portal". Button "Novo kit". Empty: "Nenhum kit ainda."
+- **Kit editor**, title "Novo kit" or "Editar kit":
+  - **Fields:** "Nome", "Descrição" (optional), "Preço do kit".
+  - **"Itens do kit":** "Adicionar item". Each row has the item, "Quantidade", the box "Cliente pode trocar" and "Remover do kit".
+  - **A swappable item** shows "Pode trocar por", a choice of several items, with "Sugestões da categoria {categoria}" first.
+  - **"Ao trocar um item":**
+    - "Manter o desconto do kit" (the default), hint "Preço do kit − item retirado + item novo, pelos preços avulsos.";
+    - "Cobrar a soma dos itens avulsos", hint "O kit trocado custa a soma dos preços avulsos dos seus itens."
+  - **Days:**
+    - "Dias de {Montagem}" and "Margem de segurança (dias)";
+    - each with the hint "Padrão da loja: {n} dias" and blank to use it.
+  - **Totals, from the API:**
+    - "Soma dos itens avulsos: {valor}";
+    - "Desconto do kit: {valor}";
+    - "Margem: {valor} ({n}%)" (Dono only);
+    - "Prazo calculado: {n} dias (item mais lento {a} + {Montagem} {b} + margem de segurança {c})".
+  - **Other sections:** "Campos", "Fotos", "Mostrar na página da loja", "Salvar", "Cancelar", "Arquivar" / "Restaurar", as for items.
+- **Kit errors:**
+  - "Informe o nome do kit.", "Informe o preço do kit.";
+  - "Adicione ao menos um item.";
+  - "Escolha ao menos um item para a troca.";
+  - "{item} está arquivado e não pode entrar no kit.";
+  - "Outra pessoa alterou este kit. Recarregue para ver a versão atual."
+- A kit price above the single-item sum shows, without blocking: "O preço do kit está acima da soma avulsa."
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.
