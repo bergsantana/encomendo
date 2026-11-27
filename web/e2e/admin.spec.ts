@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+
+import { createStore, latestEmail, logOut, mailpitUrl, password, signUp, unique } from './support'
 
 // The flows run in a real browser against the full stack (`make stack-up`):
 // the admin app behind nginx, the API on the same origin and Mailpit catching
@@ -14,8 +16,6 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 // With E2E_BASE_URL set and E2E_MAILPIT_URL missing, the real-stack tests
 // fail on purpose rather than skip.
 const realStack = process.env.E2E_BASE_URL !== undefined && process.env.E2E_BASE_URL !== ''
-const mailpitUrl = process.env.E2E_MAILPIT_URL ?? ''
-const password = 'segredo-forte-1'
 
 test.describe('without an API', () => {
   test.skip(realStack, 'runs only against `vite preview`, which has no API')
@@ -83,58 +83,6 @@ test.describe('without an API', () => {
 
 test.describe('against the real stack', () => {
   test.skip(!realStack, 'set E2E_BASE_URL (and E2E_MAILPIT_URL) to run against `make stack-up`')
-
-  /** unique makes an email and a store link that no earlier run or parallel test used. */
-  function unique(label: string): { email: string; slug: string } {
-    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-    return { email: `${label}-${id}@e2e.test`, slug: `${label}-${id}` }
-  }
-
-  async function signUp(page: Page, name: string, email: string): Promise<void> {
-    await page.goto('/criar-conta')
-    await page.getByLabel('Nome', { exact: true }).fill(name)
-    await page.getByLabel('E-mail').fill(email)
-    await page.getByLabel('Senha').fill(password)
-    await page.getByRole('button', { name: 'Criar conta' }).click()
-    await expect(page.getByRole('heading', { name: 'Crie sua loja' })).toBeVisible()
-  }
-
-  async function createStore(page: Page, name: string, slug: string): Promise<void> {
-    await page.getByLabel('Nome da loja').fill(name)
-    await page.getByLabel('Link da loja').fill(slug)
-    await page.getByRole('button', { name: 'Criar loja' }).click()
-    await expect(page).toHaveURL(/\/hoje$/)
-    await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible()
-  }
-
-  async function logOut(page: Page): Promise<void> {
-    await page.getByRole('navigation', { name: 'Menu principal' }).getByRole('button', { name: 'Sair' }).click()
-    await expect(page.getByRole('heading', { name: 'Entrar' })).toBeVisible()
-  }
-
-  /**
-   * latestEmail polls Mailpit until `count` messages for `to` have arrived
-   * and returns the text body of the newest one. Mailpit lists newest first.
-   */
-  async function latestEmail(request: APIRequestContext, to: string, count = 1): Promise<string> {
-    let text = ''
-    await expect
-      .poll(
-        async () => {
-          const found = await request.get(`${mailpitUrl}/api/v1/search`, { params: { query: `to:${to}` } })
-          expect(found.ok(), `Mailpit at ${mailpitUrl} answered ${found.status()}`).toBe(true)
-          const messages = ((await found.json()) as { messages?: { ID: string }[] }).messages ?? []
-          if (messages.length < count) return false
-          const message = await request.get(`${mailpitUrl}/api/v1/message/${messages[0].ID}`)
-          text = ((await message.json()) as { Text: string }).Text
-          return true
-        },
-        // Reset codes go out off the request path: give slow CI time.
-        { message: `${count} email(s) to ${to} in Mailpit`, timeout: 15_000 },
-      )
-      .toBe(true)
-    return text
-  }
 
   test.beforeEach(() => {
     expect(mailpitUrl, 'E2E_MAILPIT_URL must name Mailpit').not.toBe('')
