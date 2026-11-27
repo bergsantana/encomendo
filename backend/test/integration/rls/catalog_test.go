@@ -60,9 +60,13 @@ func TestEveryTenantTable_ForcesRLSThroughTheHelpers(t *testing.T) {
 
 // extraPolicies is every policy besides tenant_isolation and staff_only. Each must be
 // SELECT only and apply only with no tenant set (ADR 0010), so it can never
-// widen what a store's own transactions see or let anyone write. A client
-// read policy (architecture 5.5, item 7) joins this list in its own review.
-var extraPolicies = []string{"memberships.own_memberships", "tenants.member_stores"}
+// widen what a store's own transactions see or let anyone write. The
+// client_read policies of 0013_orders (architecture 5.5, item 7) were
+// reviewed with step 4.7.
+var extraPolicies = []string{
+	"memberships.own_memberships", "order_items.client_read", "order_lines.client_read",
+	"orders.client_read", "payments.client_read", "tenants.member_stores",
+}
 
 // TestPolicies_OnlyTheListedExtrasWidenReads: tenant_isolation checks writes
 // with the same expression it reads with, and any other policy is a listed,

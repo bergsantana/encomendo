@@ -145,8 +145,10 @@ func TestTenantScope_HidesTheUsersOtherStores(t *testing.T) {
 	}
 }
 
-// TestClientScope_SeesNoTenantRows: no tenant table has a client policy yet,
-// so a client account sees nothing of any store (architecture 5.5, item 7).
+// TestClientScope_SeesNoTenantRows: a client account sees nothing of any
+// store but the orders linked to it (architecture 5.5, item 7), and the
+// seeded orders are linked to no account. orders_tables_test.go covers the
+// linked ones.
 func TestClientScope_SeesNoTenantRows(t *testing.T) {
 	t.Parallel()
 	w := seed(t)
