@@ -2,7 +2,7 @@
 
 Tracks how much of the system is built, milestone by milestone. The milestones and their order come from `docs/architecture.md` section 11; the scope of each item comes from sections 4, 7 and 8 of the same document. This file records **status only**. If it disagrees with the architecture or the product docs, those win.
 
-**Last audited:** 2026-11-24. Run locally: backend lint (golangci-lint v2.15.0), unit and integration tests pass; web lint, typecheck and tests pass. Mobile `./gradlew check` and `:androidApp:assembleDebug` pass in a container (`scripts/mobile-docker.sh`) after raising `compileSdk` to 37 and fixing the ktlint setup. **Not run:** CI.
+**Last audited:** 2026-11-27, at the close of milestone 3. Run locally: backend lint (golangci-lint v2.15.0), unit, contract and integration tests (Postgres, RLS, Redis, and storage on Silo) pass; the coverage gate passes on the merged unit and integration profiles (94.6% overall, 96.6% domain and app); web lint, typecheck, unit tests and the Playwright suite against the real stack pass; mobile `./gradlew check` and `:androidApp:assembleDebug` pass in a container (`scripts/mobile-docker.sh`). CI is green on every milestone 3 PR (#52 to #71). **Not run:** the Android device walkthrough, which waits for KVM in the WSL VM.
 
 ## How to keep this file honest
 
@@ -22,22 +22,24 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
-| 3 | Catalog and suppliers | 13 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier and catalog use cases (#61, #65), Postgres repositories and Redis cache (#63, step 3.7), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) and screens (#64, step 3.16) |
+| 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and Android are merged (PRs #52 to #71) and the web flows pass against the real stack; only the Android device walkthrough remains, and it waits for KVM |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
-| 7 | Store page | 0 | 12 | Not started |
+| 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **61** | **122** | **about 50%** |
+|   | **All milestones** | **61** | **123** | **about 50%** (49.6%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
 ### What exists today
 
-- **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM open with the pgx driver, Redis client, goose migration runner, the first migration (`0001_roles_and_extensions.sql`), `domain/shared` (typed UUIDv7 IDs, `Money`, `Page`, `Principal`, `Role`, sentinel errors), the `identity` permission map, `app/shared` ports with fakes and `authz`, and their contract suites in `test/contract/sharedports`. No bounded context yet, no `testkit`.
-- **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, health call, generated types) and `packages/ui` (tokens, `BaseButton`, `StatusBadge`, phase colours). Admin shows a Hoje placeholder behind a dashboard layout. The store app resolves the tenant from the subdomain and renders a shell.
-- **Mobile:** KMP shell with `core:domain` (`WorkflowPhase`), `core:ui` (theme, status tones), `core:database` (Room 3, sync-state entity), `core:network` (Ktor client, problem+json → `ApiError`, bearer with one refresh on 401, `/auth/refresh`, `SessionTurns` shared by every call that spends the refresh token, requests kept in the store they were made for), `core:security` (`TokenStore`: the session's tokens, store, role and permissions, Keystore-sealed in DataStore), `core:data` (the session-backed API client, login and logout, store switch and creation, the session renewed at each start, the store used last, `ApiError` → `Failure`) and `core:testing`, `core:navigation` (auth graph while signed out, the store picker while signed in without a store, management graph under the account bar once a store is open, with the session's permissions), `core:di` (Koin, one API client: `https://api.encomendo.com.br` in release, the local stack in debug), the login, sign-up and Esqueci a senha screens, the store picker (choose or create a store), the account bar (store, person, Trocar de loja, Sair) and a Hoje placeholder.
-- **Delivery:** `docker compose` stack, API and web Dockerfiles, Postgres init script, five GitHub workflows, Dependabot, PR template, ADRs 0001–0018, an OpenAPI file with the health endpoints plus the milestone 2 `/auth/*`, tenancy and members contract (not served yet).
+- **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers, rate limits, authn), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM with the pgx driver, Redis client and cache, goose migrations `0001`–`0011`, and the bounded contexts built so far:
+  - `domain/shared`, `identity` and `tenancy` (milestones 1–2; the default status workflow is a reference in tenant settings until the workflow context lands in milestone 4), served through `/auth/*`, tenants, settings and members;
+  - milestone 3: `domain/catalog` (items, sourcing mode, categories, "Serve em" fields, customization options, kits, kit swap, photos), `domain/supplier` (suppliers, supplier items with lead time, cost and a backup) and `domain/schedule` days; `app/catalog` and `app/supplier` with fakes and owner-only cost views; Postgres repositories with staff-only RLS for internal tables; a Redis-backed cache with tenant-prefixed keys; `adapter/storage`, the S3-compatible photo store with signed uploads staged under `uploads/` (R2 in production, Silo in development and CI); and the catalog and supplier HTTP operations.
+- **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, generated types, auth, tenancy, members, catalog, suppliers and the photo upload) and `packages/ui`. Admin has login, sign-up, the store picker, Hoje, Equipe and Catálogo (Itens with categories and fields, Kits with swappable items, photos, "No portal"; Custo and Margem only for the owner). Playwright runs the admin and Catálogo flows against the real stack. The store app resolves the tenant from the subdomain and renders a shell.
+- **Mobile:** KMP shell with the milestone 2 session, auth and Equipe screens, plus `feature/catalogo`: the Itens list and form, the Kits list and editor, and photo upload and thumbnails (Coil with a bearer-less client). `core:data` caches recent catalog reads in Room per store, keeps costs apart by role, and Sair clears it (ADR 0026). The Fornecedores data layer is built; its screens come with Compras.
+- **Delivery:** `docker compose` stack (postgres, redis, migrate, api, web, Mailpit and Silo for photos), API and web Dockerfiles, five GitHub workflows, Dependabot, PR template, ADRs 0001–0028, an OpenAPI file covering the health endpoints, milestone 2 and the whole milestone 3 catalog and supplier API (all served). `scripts/android-emulator-docker.sh` runs the Android walkthroughs in Docker.
 
 ---
 
@@ -150,16 +152,20 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 ### Web
 
 - [x] `packages/api`: `catalog.ts`, `suppliers.ts` (#55)
-- [x] Catálogo screens: items, sourcing mode, supplier, cost, price, margin, "No portal", photos; Kits tab with swappable items (#59, step 3.13; checked against the real API in 3.17)
+- [x] Catálogo screens: items, sourcing mode, supplier, cost, price, margin, "No portal", photos; Kits tab with swappable items (#59, step 3.13; checked against the real stack by the Playwright flow in `web/e2e/catalogo.spec.ts`, step 3.17)
 
 ### Mobile
 
-- [x] `feature/catalogo`: items and kits, with offline cache of recent reads (#64, step 3.16; checked against the real API in 3.17)
+- [x] `feature/catalogo`: items and kits, with offline cache of recent reads (#64, step 3.16; the emulator walkthrough against the real stack is pending KVM, step 3.17)
 - [x] Fornecedores tab data layer (screens ship with Compras in milestone 5) (#57)
+
+### Follow-ups (not milestone boxes)
+
+- Milestone 2's `nullableString` in `adapter/http/handler/dto/tenancy.go` can move to `dto.Optional[string]`, the type the catalog requests use to tell a missing field from a null.
 
 ### Done when
 
-- [ ] A catalog item with a supplier and lead time can be created on web and on Android and appears on the other
+- [ ] A catalog item with a supplier and lead time can be created on web and on Android and appears on the other (partial: the web side is checked, since a Playwright flow creates an item with a new supplier, a lead time, a cost and a photo against `make stack-up`, and a second flow shows an item created through the API in the web list; the Android device walkthrough waits for KVM)
 - [x] Kit swap price and the Kit Scrambler CB 500X reference case are covered by tests (`domain/catalog`, `domain/schedule`)
 
 ---
@@ -266,9 +272,10 @@ Goal: a client opens `{slug}.encomendo.com.br`, builds an order, pays the deposi
 - [ ] `domain/portal`: storefront, template, branding, sections, subdomain (reserved words blocked)
 - [ ] Portal migration with the niche template seed (templates are data)
 - [ ] `app/portal` and `app/storefront`: catalog, kits, Monte o seu preview (price, deposit and date calculated by the backend), place order, track by token
-- [ ] `adapter/http/middleware/storefront.go`: tenant from the Host subdomain
+- [ ] `adapter/http/middleware/storefront.go`: tenant from the Host subdomain, and a test that store page routes attach client principals only, so a staff token on a store page route is never taken for one (security review of steps 3.4 and 3.7)
 - [ ] Client accounts: email code and Google sign-in (`adapter/auth/email_code.go`, `google.go`), `app/clientarea`, `/api/v1/me/*`, SMTP notifier
 - [ ] Client-visibility tests across the whole store page, tracking and client area surface
+- [ ] Serve photos publicly for published items and kits: stable public URLs or short-lived signed ones the store page can cache (milestone 3 signs URLs per admin caller only, ADR 0027), with a test that an unpublished or archived item's photos never leave the admin routes
 
 ### Web: store app
 
@@ -312,14 +319,14 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 
 | Track | Status |
 | --- | --- |
-| Backend coverage gate (≥ 90% domain + app, ≥ 80% overall) | Script and CI job exist; there is almost no domain or app code to measure yet |
-| Port contract suites (`test/contract/`) | Shared ports (`Cache`, `TxManager`, `EventPublisher`, `Clock`, `IDGenerator`) run against the fakes in `make test`; real adapters join as they land |
-| RLS suite | Not started; arrives with the first tenant table in milestone 2 |
-| `docs/api/openapi.yaml` kept in sync | Ahead of the server: milestone 2 `/auth/*`, tenancy and members are specified; only `/healthz` and `/readyz` are served until `m2-integrate` |
+| Backend coverage gate (≥ 90% domain + app, ≥ 80% overall) | Script and CI job exist and pass with milestone 2 and 3 code behind them (see "Last audited" for the numbers) |
+| Port contract suites (`test/contract/`) | Shared, identity, tenancy, supplier and catalog ports (items, kits, `Photos` and `PhotoStore`) run against the fakes in `make test` and against the real adapters (Postgres, Redis, Silo) in `make test-integration` |
+| RLS suite | Running since milestone 2; milestone 3 added the staff-only tier (`item_costs`, `suppliers`, `supplier_items`, and `audit_log` reads) as its sixth case |
+| `docs/api/openapi.yaml` kept in sync | In sync with the server through milestone 3: `/auth/*`, tenancy, members, catalog, suppliers and photos are all served |
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
-| Parity: every management feature on web and Android | Hoje, a placeholder on both; Equipe on both |
-| Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | Nothing to leak yet; the test lands with the first store response |
-| ADRs | 0001–0020 written |
+| Parity: every management feature on web and Android | Hoje (placeholder), Equipe and Catálogo (Itens and Kits) on both; the Fornecedores screens ship with Compras in milestone 5 |
+| Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | The milestone 3 tests: public view types carry no cost or margin, the RLS staff-only case reads zero rows in a store page scope, and costs reach the owner only. The store page routes and their end-to-end test land in milestone 7 |
+| ADRs | 0001–0028 written |
 
 ## Order of migrations
 
@@ -372,3 +379,8 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12. All
 | 2026-11-26 | v1 scope for milestones 3–7: payments by hand, preset workflows only, Vite SPA with server-set meta tags, subdomains only, per-kit swap discount, R2 photos, Cloudflare DNS-01, Google sign-in in M7 | ADR 0023 |
 | 2026-11-26 | Milestone 3: internal tables staff-only in RLS, item costs in their own table; stores create categories and fields; options are choices with extra price and days; photos by signed URL to R2, MinIO in dev and tests | ADR 0024 |
 | 2026-11-26 | Milestone 3 plan: costs and margins owner-only (`identity.SeesCosts`), `catalog:read` for every role, cost per supplier item, catalog writes item sourcing (no cycle with `supplier`), `items.ready_days` for the store page, owner-picked swap alternatives, attributes as value lists, archive only, suppliers created inside the item form | ADR 0025 |
+| 2026-11-27 | Android catalog cache: the API's JSON per store and per costs view, offline fallback on `Failure.Offline` only, no offline writes, Sair clears it; photo bytes and thumbnails go through a client with no bearer | ADR 0026 |
+| 2026-11-27 | Catalog use case choices: an alternative counts as "in the kit", refusals name rows, tri-state cost fields, ids kept only when the row's own, names ordered by `lower(name)`, store page cached 5 minutes | ADR 0027 |
+| 2026-11-27 | Photo uploads are staged under `uploads/` and promoted after the confirm check; one lifecycle rule; the storage adapter returns typed errors and signs for the public endpoint | ADR 0028 |
+| 2026-11-27 | The user's decision: Silo, the maintained MinIO fork, replaces MinIO in compose, CI and tests since MinIO's images left Docker Hub; pinned by digest, the service keeps the name `minio`, the apps see only an S3 host; R2 stays the production store | ADR 0024 (amended), ADR 0028 |
+| 2026-11-27 | `audit_log` reads are staff-only (a scope with a tenant and no user reads nothing); inserts keep the tenant check; internal tables stay out of the audit until audit views hide costs (milestone 8) | migration `0010_audit_log_staff_reads` (security review of step 3.4) |
