@@ -35,7 +35,10 @@ type UpdateSettingsRequest struct {
 	SafetyMarginDays      *int  `json:"safetyMarginDays"`
 	// WhatsAppPhone is required but may be null for "no number".
 	WhatsAppPhone nullableString `json:"whatsappPhone"`
-	Version       *int           `json:"version"`
+	// TimeZone is optional: an older client that leaves it out keeps the
+	// stored zone (the use case reads an empty one that way).
+	TimeZone *string `json:"timeZone"`
+	Version  *int    `json:"version"`
 }
 
 // nullableString tells a JSON null from a missing field.
@@ -83,11 +86,15 @@ func (r UpdateSettingsRequest) Input() (apptenancy.UpdateSettingsInput, error) {
 	if r.WhatsAppPhone.value != nil {
 		phone = *r.WhatsAppPhone.value
 	}
+	zone := tenancy.TimeZone("")
+	if r.TimeZone != nil {
+		zone = tenancy.TimeZone(*r.TimeZone)
+	}
 	return apptenancy.UpdateSettingsInput{
 		Settings: tenancy.Editable{
 			StockEnabled: *r.StockEnabled, ProductionEnabled: *r.ProductionEnabled,
 			PurchaseBeforeDeposit: *r.PurchaseBeforeDeposit, DepositPercent: *r.DepositPercent,
-			AssemblyDays: *r.AssemblyDays, SafetyMarginDays: *r.SafetyMarginDays, WhatsAppPhone: phone,
+			AssemblyDays: *r.AssemblyDays, SafetyMarginDays: *r.SafetyMarginDays, WhatsAppPhone: phone, TimeZone: zone,
 		},
 		Version: *r.Version,
 	}, nil
@@ -102,6 +109,7 @@ type TenantSettings struct {
 	AssemblyDays          int               `json:"assemblyDays"`
 	SafetyMarginDays      int               `json:"safetyMarginDays"`
 	WhatsAppPhone         *string           `json:"whatsappPhone"`
+	TimeZone              string            `json:"timeZone"`
 	Currency              string            `json:"currency"`
 	StatusWorkflow        StatusWorkflowRef `json:"statusWorkflow"`
 	Version               int               `json:"version"`
@@ -109,9 +117,19 @@ type TenantSettings struct {
 
 // StatusWorkflowRef is the StatusWorkflowRef schema.
 type StatusWorkflowRef struct {
-	ID      string `json:"id"`
-	Version int    `json:"version"`
-	Name    string `json:"name"`
+	ID       string        `json:"id"`
+	Version  int           `json:"version"`
+	Name     string        `json:"name"`
+	Statuses []OrderStatus `json:"statuses"`
+}
+
+// OrderStatus is the OrderStatus schema: a status of a workflow with its
+// names for staff and for clients.
+type OrderStatus struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	ClientLabel string `json:"clientLabel"`
+	Phase       string `json:"phase"`
 }
 
 // ChangeRoleRequest is PUT /api/v1/admin/members/{userId}/role.
@@ -167,10 +185,18 @@ func NewTenantSettings(s apptenancy.SettingsView) TenantSettings {
 		StockEnabled: s.Editable.StockEnabled, ProductionEnabled: s.Editable.ProductionEnabled,
 		PurchaseBeforeDeposit: s.Editable.PurchaseBeforeDeposit, DepositPercent: s.Editable.DepositPercent,
 		AssemblyDays: s.Editable.AssemblyDays, SafetyMarginDays: s.Editable.SafetyMarginDays,
-		WhatsAppPhone: phone, Currency: s.Currency,
-		StatusWorkflow: StatusWorkflowRef{ID: s.Workflow.ID.String(), Version: s.Workflow.Version, Name: s.Workflow.Name},
+		WhatsAppPhone: phone, TimeZone: string(s.Editable.TimeZone), Currency: s.Currency,
+		StatusWorkflow: newStatusWorkflowRef(s.Workflow),
 		Version:        s.Version,
 	}
+}
+
+func newStatusWorkflowRef(w apptenancy.WorkflowView) StatusWorkflowRef {
+	statuses := make([]OrderStatus, 0, len(w.Statuses))
+	for _, s := range w.Statuses {
+		statuses = append(statuses, OrderStatus{Key: string(s.Key), Label: s.Label, ClientLabel: s.ClientLabel, Phase: string(s.Phase)})
+	}
+	return StatusWorkflowRef{ID: w.Ref.ID.String(), Version: w.Ref.Version, Name: w.Ref.Name, Statuses: statuses}
 }
 
 // NewMember maps a team member.

@@ -14,6 +14,7 @@ type UseCases interface {
 	CreateTenant(ctx context.Context, in CreateTenantInput) (TenantView, error)
 	Settings(ctx context.Context) (SettingsView, error)
 	UpdateSettings(ctx context.Context, in UpdateSettingsInput) (SettingsView, error)
+	ChooseStatusWorkflow(ctx context.Context, in ChooseWorkflowInput) (SettingsView, error)
 	Members(ctx context.Context, page shared.PageRequest) (shared.Page[MemberView], error)
 	ChangeRole(ctx context.Context, in ChangeRoleInput) (MemberView, error)
 	RemoveMember(ctx context.Context, user shared.UserID) error
@@ -41,9 +42,9 @@ type Tenants interface {
 	InsertSettings(ctx context.Context, s *tenancy.Settings) error
 	// SettingsOf returns the store's settings, with its workflow's name.
 	SettingsOf(ctx context.Context, tenant shared.TenantID) (*tenancy.Settings, error)
-	// UpdateSettings stores s's editable settings while the stored version
-	// is still s.Version(), and stores the next version. It returns
-	// shared.ErrVersionConflict otherwise.
+	// UpdateSettings stores s's editable settings and status workflow while
+	// the stored version is still s.Version(), and stores the next version.
+	// It returns shared.ErrVersionConflict otherwise.
 	UpdateSettings(ctx context.Context, s *tenancy.Settings) error
 }
 
@@ -131,11 +132,18 @@ type UserDirectory interface {
 	UsersByID(ctx context.Context, ids []shared.UserID) ([]UserSummary, error)
 }
 
-// WorkflowPresets reads the global status workflow presets (0003_workflows;
-// the workflow context of milestone 4 takes this over).
+// WorkflowPresets reads the global status workflow presets (0003_workflows)
+// through app/workflow, by adapter/inproc. Its methods run inside the
+// caller's transaction.
 type WorkflowPresets interface {
 	// DefaultWorkflow returns the preset new stores start with (ADR 0006).
 	DefaultWorkflow(ctx context.Context) (tenancy.WorkflowRef, error)
+	// Exists returns the reference of the published version, with the
+	// preset's name, or an error matching shared.ErrNotFound.
+	Exists(ctx context.Context, id shared.WorkflowID, version int) (tenancy.WorkflowRef, error)
+	// Statuses returns the statuses of a published version in order, for
+	// the settings screen's preview, or an error matching shared.ErrNotFound.
+	Statuses(ctx context.Context, id shared.WorkflowID, version int) ([]WorkflowStatus, error)
 }
 
 // InvitationEmail is the "Convite" message. The mailer builds the link

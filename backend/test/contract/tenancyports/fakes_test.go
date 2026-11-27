@@ -27,6 +27,9 @@ func TestFakeRepository_Contract(t *testing.T) {
 			Workflow: tenancy.WorkflowRef{
 				ID: shared.WorkflowID(ids.NewID()), Version: 1, Name: "Encomenda com montagem",
 			},
+			OtherWorkflow: tenancy.WorkflowRef{
+				ID: shared.WorkflowID(ids.NewID()), Version: 2, Name: "Orçamento primeiro",
+			},
 			Now:     start,
 			Suspend: func(_ *testing.T, id shared.TenantID) { store.Suspend(id) },
 		}

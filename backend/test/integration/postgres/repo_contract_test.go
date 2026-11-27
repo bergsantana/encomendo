@@ -74,13 +74,21 @@ func TestTenancyRepositories_Contract(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf.ID = parsed
+	other := tenancy.WorkflowRef{}
+	if err := s.DB().QueryRowContext(t.Context(),
+		`SELECT id, version, name FROM status_workflows WHERE NOT is_default ORDER BY key LIMIT 1`).Scan(&id, &other.Version, &other.Name); err != nil {
+		t.Fatal(err)
+	}
+	if other.ID, err = shared.ParseWorkflowID(id); err != nil {
+		t.Fatal(err)
+	}
 	tenancyports.RunRepositoryContract(t, func(*testing.T) tenancyports.Harness {
 		return tenancyports.Harness{
 			Tenants: postgres.NewTenants(), Members: postgres.NewMembers(), Invitations: postgres.NewInvitations(),
 			Tx: tx, NewID: pgtest.NewID,
 			NewUser:  func(*testing.T) shared.UserID { return s.User() },
 			NewSlug:  func(*testing.T) string { return fmt.Sprintf("loja-%s%d", hex(pgtest.NewID())[:20], uniq.Add(1)) },
-			Workflow: wf, Now: storeNow(),
+			Workflow: wf, OtherWorkflow: other, Now: storeNow(),
 			Suspend: func(t *testing.T, id shared.TenantID) {
 				// Only the platform suspends a store, by SQL (ADR 0022).
 				if _, err := s.DB().ExecContext(t.Context(), `UPDATE tenants SET status = 'suspended' WHERE id = $1`, id.String()); err != nil {

@@ -74,8 +74,8 @@ func (*Tenants) SettingsOf(ctx context.Context, tenant shared.TenantID) (*tenanc
 	return m.ToDomain()
 }
 
-// UpdateSettings stores the editable settings while the stored version is
-// still s.Version(), and the next one.
+// UpdateSettings stores the editable settings and the status workflow while
+// the stored version is still s.Version(), and the next one.
 func (*Tenants) UpdateSettings(ctx context.Context, s *tenancy.Settings) error {
 	db, err := conn(ctx)
 	if err != nil {
@@ -88,7 +88,9 @@ func (*Tenants) UpdateSettings(ctx context.Context, s *tenancy.Settings) error {
 			"stock_enabled": m.StockEnabled, "production_enabled": m.ProductionEnabled,
 			"purchase_before_deposit": m.PurchaseBeforeDeposit, "deposit_percent": m.DepositPercent,
 			"assembly_days": m.AssemblyDays, "safety_margin_days": m.SafetyMarginDays,
-			"whatsapp_phone": m.WhatsAppPhone, "version": s.Version() + 1, "updated_at": gorm.Expr("now()"),
+			"whatsapp_phone": m.WhatsAppPhone, "time_zone": m.TimeZone,
+			"status_workflow_id": m.StatusWorkflowID, "status_workflow_version": m.StatusWorkflowVersion,
+			"version": s.Version() + 1, "updated_at": gorm.Expr("now()"),
 		})
 	ok, err := affected(res, "update settings")
 	if err != nil {
@@ -376,23 +378,47 @@ func (*Invitations) RevokeInvitationsBy(ctx context.Context, tenant shared.Tenan
 	return out, nil
 }
 
-// WorkflowPresets implements apptenancy.WorkflowPresets on status_workflows.
-type WorkflowPresets struct{}
+// WorkflowPresets implements apptenancy.WorkflowPresets straight on the
+// status workflow repository, uncached. It is the M2 wiring kept alive until
+// step 4.14 switches cmd/api to inproc.TenancyWorkflows, which reads through
+// the cached app/workflow service; delete it then.
+type WorkflowPresets struct{ repo *Workflows }
+
+var _ apptenancy.WorkflowPresets = (*WorkflowPresets)(nil)
 
 // NewWorkflowPresets returns the preset reader.
-func NewWorkflowPresets() *WorkflowPresets { return &WorkflowPresets{} }
+func NewWorkflowPresets() *WorkflowPresets { return &WorkflowPresets{repo: NewWorkflows()} }
 
 // DefaultWorkflow returns the preset new stores start with (ADR 0006).
-func (*WorkflowPresets) DefaultWorkflow(ctx context.Context) (tenancy.WorkflowRef, error) {
-	db, err := conn(ctx)
+func (p *WorkflowPresets) DefaultWorkflow(ctx context.Context) (tenancy.WorkflowRef, error) {
+	w, err := p.repo.Default(ctx)
 	if err != nil {
 		return tenancy.WorkflowRef{}, err
 	}
-	var m models.Workflow
-	if err := db.Where("is_default").Take(&m).Error; err != nil {
-		return tenancy.WorkflowRef{}, wrap("read default workflow", err)
+	return tenancy.WorkflowRef{ID: w.ID(), Version: w.Version(), Name: w.Name()}, nil
+}
+
+// Exists returns the reference of one published version.
+func (p *WorkflowPresets) Exists(ctx context.Context, id shared.WorkflowID, version int) (tenancy.WorkflowRef, error) {
+	w, err := p.repo.ByVersion(ctx, id, version)
+	if err != nil {
+		return tenancy.WorkflowRef{}, err
 	}
-	return m.ToDomain()
+	return tenancy.WorkflowRef{ID: w.ID(), Version: w.Version(), Name: w.Name()}, nil
+}
+
+// Statuses returns the statuses of one published version in order.
+func (p *WorkflowPresets) Statuses(ctx context.Context, id shared.WorkflowID, version int) ([]apptenancy.WorkflowStatus, error) {
+	w, err := p.repo.ByVersion(ctx, id, version)
+	if err != nil {
+		return nil, err
+	}
+	statuses := w.Statuses()
+	out := make([]apptenancy.WorkflowStatus, 0, len(statuses))
+	for _, s := range statuses {
+		out = append(out, apptenancy.WorkflowStatus{Key: s.Key, Label: s.Label, ClientLabel: s.ClientLabel, Phase: s.Phase})
+	}
+	return out, nil
 }
 
 // pageOf turns a keyset query's rows, fetched with limit+1, into a page:

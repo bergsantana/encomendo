@@ -17,6 +17,7 @@ import (
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/workflow"
 )
 
 var (
@@ -43,6 +44,11 @@ func (u *tenancyCases) Settings(context.Context) (apptenancy.SettingsView, error
 }
 
 func (u *tenancyCases) UpdateSettings(_ context.Context, in apptenancy.UpdateSettingsInput) (apptenancy.SettingsView, error) {
+	u.got = in
+	return settingsView(), u.err
+}
+
+func (u *tenancyCases) ChooseStatusWorkflow(_ context.Context, in apptenancy.ChooseWorkflowInput) (apptenancy.SettingsView, error) {
 	u.got = in
 	return settingsView(), u.err
 }
@@ -79,8 +85,15 @@ func (u *tenancyCases) RevokeInvitation(_ context.Context, id shared.InvitationI
 
 func settingsView() apptenancy.SettingsView {
 	return apptenancy.SettingsView{
-		Editable: tenancy.Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2},
-		Currency: "BRL", Workflow: tenancy.WorkflowRef{ID: workflowID, Version: 1, Name: "Encomenda com montagem"}, Version: 3,
+		Editable: tenancy.Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, TimeZone: tenancy.ZoneManaus},
+		Currency: "BRL", Version: 3,
+		Workflow: apptenancy.WorkflowView{
+			Ref: tenancy.WorkflowRef{ID: workflowID, Version: 1, Name: "Encomenda com montagem"},
+			Statuses: []apptenancy.WorkflowStatus{
+				{Key: "draft", Label: "Rascunho", ClientLabel: "Pedido recebido", Phase: workflow.PhaseDraft},
+				{Key: "delivered", Label: "Entregue", ClientLabel: "Entregue", Phase: workflow.PhaseHandedOver},
+			},
+		},
 	}
 }
 
@@ -258,6 +271,46 @@ func TestTenancy_UpdateSettingsNeedsThePhoneField(t *testing.T) {
 	f.call(t, staffIn(t, shared.RoleOwner), "PUT", "/api/v1/admin/settings", settingsBody)
 	if in, _ := f.uc.got.(apptenancy.UpdateSettingsInput); in.Settings.WhatsAppPhone != "" || in.Version != 3 {
 		t.Errorf("null phone gave %+v, want no number", f.uc.got)
+	}
+}
+
+// timeZone is optional in the request: an older client leaves it out and the
+// use case keeps the stored zone, so the handler passes an empty one.
+func TestTenancy_UpdateSettingsTimeZoneIsOptional(t *testing.T) {
+	t.Parallel()
+
+	f := newTenancyFixture(t)
+	f.call(t, staffIn(t, shared.RoleOwner), "PUT", "/api/v1/admin/settings", settingsBody)
+	if in, _ := f.uc.got.(apptenancy.UpdateSettingsInput); in.Settings.TimeZone != "" {
+		t.Errorf("omitted timeZone gave %q, want empty (keep the stored zone)", in.Settings.TimeZone)
+	}
+	sent := strings.Replace(settingsBody, `"whatsappPhone":null,`, `"whatsappPhone":null,"timeZone":"America/Rio_Branco",`, 1)
+	if rec := f.call(t, staffIn(t, shared.RoleOwner), "PUT", "/api/v1/admin/settings", sent); rec.Code != 200 {
+		t.Fatalf("answer %d %s", rec.Code, rec.Body.String())
+	}
+	if in, _ := f.uc.got.(apptenancy.UpdateSettingsInput); in.Settings.TimeZone != tenancy.ZoneRioBranco {
+		t.Errorf("timeZone = %q, want America/Rio_Branco", in.Settings.TimeZone)
+	}
+}
+
+// The settings answer carries the zone and the workflow's statuses, in
+// order, with the client labels the preview shows.
+func TestTenancy_SettingsCarryTheZoneAndTheWorkflowStatuses(t *testing.T) {
+	t.Parallel()
+
+	got := body(t, newTenancyFixture(t).call(t, staffIn(t, shared.RoleViewer), "GET", "/api/v1/admin/settings", ""))
+
+	if got["timeZone"] != "America/Manaus" {
+		t.Errorf("timeZone = %v, want America/Manaus", got["timeZone"])
+	}
+	wf, _ := got["statusWorkflow"].(map[string]any)
+	statuses, _ := wf["statuses"].([]any)
+	if len(statuses) != 2 {
+		t.Fatalf("statuses = %v, want two", wf["statuses"])
+	}
+	first, _ := statuses[0].(map[string]any)
+	if first["key"] != "draft" || first["label"] != "Rascunho" || first["clientLabel"] != "Pedido recebido" || first["phase"] != "draft" {
+		t.Errorf("first status = %v", first)
 	}
 }
 

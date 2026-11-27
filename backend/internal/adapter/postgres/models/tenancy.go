@@ -53,6 +53,7 @@ type Settings struct {
 	SafetyMarginDays      int     `gorm:"column:safety_margin_days"`
 	Currency              string  `gorm:"column:currency"`
 	WhatsAppPhone         *string `gorm:"column:whatsapp_phone"`
+	TimeZone              string  `gorm:"column:time_zone"`
 	Version               int     `gorm:"column:version"`
 	WorkflowName          string  `gorm:"->;column:workflow_name"`
 }
@@ -67,7 +68,7 @@ func SettingsFromDomain(s *tenancy.Settings) Settings {
 		TenantID: s.TenantID().String(), StatusWorkflowID: shared.ID(s.Workflow().ID).String(),
 		StatusWorkflowVersion: s.Workflow().Version, StockEnabled: e.StockEnabled, ProductionEnabled: e.ProductionEnabled,
 		PurchaseBeforeDeposit: e.PurchaseBeforeDeposit, DepositPercent: e.DepositPercent, AssemblyDays: e.AssemblyDays,
-		SafetyMarginDays: e.SafetyMarginDays, Currency: s.Currency(), Version: s.Version(),
+		SafetyMarginDays: e.SafetyMarginDays, TimeZone: string(e.TimeZone), Currency: s.Currency(), Version: s.Version(),
 	}
 	if e.WhatsAppPhone != "" {
 		m.WhatsAppPhone = &e.WhatsAppPhone
@@ -87,7 +88,7 @@ func (m Settings) ToDomain() (*tenancy.Settings, error) {
 	}
 	e := tenancy.Editable{
 		StockEnabled: m.StockEnabled, ProductionEnabled: m.ProductionEnabled, PurchaseBeforeDeposit: m.PurchaseBeforeDeposit,
-		DepositPercent: m.DepositPercent, AssemblyDays: m.AssemblyDays, SafetyMarginDays: m.SafetyMarginDays,
+		DepositPercent: m.DepositPercent, AssemblyDays: m.AssemblyDays, SafetyMarginDays: m.SafetyMarginDays, TimeZone: tenancy.TimeZone(m.TimeZone),
 	}
 	if m.WhatsAppPhone != nil {
 		e.WhatsAppPhone = *m.WhatsAppPhone
@@ -180,23 +181,4 @@ func (m Invitation) ToDomain() (*tenancy.Invitation, error) {
 	}
 	copy(rec.Hash[:], m.TokenHash)
 	return tenancy.RestoreInvitation(rec)
-}
-
-// Workflow maps the columns of status_workflows a store needs.
-type Workflow struct {
-	ID      string `gorm:"column:id"`
-	Version int    `gorm:"column:version"`
-	Name    string `gorm:"column:name"`
-}
-
-// TableName returns status_workflows.
-func (Workflow) TableName() string { return "status_workflows" }
-
-// ToDomain returns the workflow reference.
-func (m Workflow) ToDomain() (tenancy.WorkflowRef, error) {
-	id, err := parseID[shared.WorkflowID](m.ID)
-	if err != nil {
-		return tenancy.WorkflowRef{}, err
-	}
-	return tenancy.WorkflowRef{ID: id, Version: m.Version, Name: m.Name}, nil
 }

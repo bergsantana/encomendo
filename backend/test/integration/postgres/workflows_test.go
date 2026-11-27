@@ -10,9 +10,10 @@ import (
 	"github.com/bergsantana/encomendo/backend/test/integration/pgtest"
 )
 
-// phaseOrder is the order of workflow.Phase (ADR 0004). The workflow domain
-// lands in milestone 4 and adds a test that loads every preset through
-// validate.go (ADR 0006); until then this test holds the seed to the rules.
+// phaseOrder is the order of workflow.Phase (ADR 0004). This test reads the
+// seed with plain SQL, so it still checks the rows when the repository
+// cannot load them; workflow_repo_test.go loads every preset through
+// workflow.New (ADR 0006).
 var phaseOrder = []string{"draft", "awaiting_deposit", "confirmed", "sourcing", "assembling", "ready", "handed_over"}
 
 type seededStatus struct{ key, label, clientLabel, phase string }
