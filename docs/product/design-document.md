@@ -290,6 +290,9 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - "Escolha o fornecedor principal.", "Informe o prazo do fornecedor.", "Use um prazo de 0 a 365 dias.", "Informe um custo de zero ou mais.", "O fornecedor reserva precisa ser outro.";
   - "Informe os dias de produção.";
   - "Informe o nome da opção.", "Adicione ao menos uma escolha.", "Já existe uma escolha com este nome."
+  - Also: "Use um nome de até 120 caracteres.", "Use um nome sem quebras de linha ou caracteres de controle.", "Use uma descrição de até 2000 caracteres.", "Use um valor de até R$ 1.000.000.000,00.", "Escolha a origem do item.", "Escolha o fornecedor reserva.", "Produção própria não usa fornecedor.", "Use de 1 a 365 dias de produção.", "Dias e custo de produção só valem para produção própria.", "Escolha até 200 valores.", "Cada valor só pode ser escolhido uma vez.", "Use até 20 opções.";
+  - options: "Use um nome de até 80 caracteres.", "Use até 50 escolhas.", "Informe a escolha.", "Use uma escolha de até 80 caracteres.", "Use uma escolha sem quebras de linha ou caracteres de controle.", "Informe um acréscimo de zero ou mais.", "Use de 0 a 365 dias a mais.";
+  - photos: "Liste todas as fotos, cada uma uma vez." (the order sent when moving a photo).
 - **Photos:**
   - "Esta foto passa de 10 MB.", "Use uma foto JPEG, PNG ou WebP.";
   - "Cada item pode ter até 8 fotos.";
@@ -303,6 +306,7 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 
 - Title "Categorias". A list in the store's order, with "Mover para cima", "Mover para baixo", "Renomear" and "Excluir". Button "Nova categoria", field "Nome da categoria".
 - "Informe o nome da categoria.", "Já existe uma categoria com este nome."
+- Also: "Use um nome de até 120 caracteres.", "Use um nome sem quebras de linha ou caracteres de controle.", "Use uma posição de zero ou mais."
 - A category in use: "Esta categoria tem itens. Mude os itens de categoria antes de excluir."
 
 **Campos** (dialog)
@@ -310,6 +314,7 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - Title "Campos dos itens", hint "Campos como \"Serve em\" ajudam o cliente a achar o que serve para ele."
 - Each field has "Nome do campo" and its "Valores", with "Adicionar valor", "Remover valor" and "Excluir campo". Button "Novo campo".
 - "Informe o nome do campo.", "Informe o valor.", "Este valor já existe neste campo."
+- Also: "Use um nome de até 120 caracteres.", "Use um valor de até 80 caracteres.", "Use um valor sem quebras de linha ou caracteres de controle.", "Use até 200 valores por campo."
 - Removing a value or a field in use asks first: "Remover {valor}? Ele sai de {n} itens e kits.", buttons "Cancelar" and "Remover".
 
 **Kits**
@@ -333,6 +338,9 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - **Other sections:** "Campos", "Fotos", "Mostrar na página da loja", "Salvar", "Cancelar", "Arquivar" / "Restaurar", as for items.
 - **Kit errors:**
   - "Informe o nome do kit.", "Informe o preço do kit.";
+  - the name, description and amount-too-high messages are those of items;
+  - "Escolha o que acontece ao trocar um item.", "Use de 0 a 60 dias.", "Use até 50 itens no kit.", "Escolha um item do catálogo.", "Este item já está no kit.", "Use uma quantidade de 1 a 99.";
+  - "Só itens que o cliente pode trocar têm alternativas.", "O item não pode ser trocado por ele mesmo.", "Esta alternativa já foi escolhida.", "Use até 50 alternativas.";
   - "Adicione ao menos um item.";
   - "Escolha ao menos um item para a troca.";
   - "{item} está arquivado e não pode entrar no kit.";

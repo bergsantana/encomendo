@@ -131,7 +131,7 @@ These come from `docs/product/` and `docs/architecture.md` section 4.2. Each one
 - Purchase lines are generated only after the deposit, unless the tenant turned on `purchase_before_deposit`. Every line points to one order item or to a stock restock.
 - **Status workflows:** code branches on `workflow.Phase`, never on a status key or label. An order keeps the workflow version it was created with; changing the store's workflow affects new orders only. Every preset passes `workflow` validation.
 - Delivery date = latest item ready date + assembly days + safety margin (`schedule`). Arrival limit = delivery − assembly days. Alerts sit on top of the status; they are not statuses.
-- Kit swap price = kit price − removed item + new item, both at single-item price. The kit discount stays.
+- Kit swap price follows the kit's own swap mode (ADR 0023, ADR 0025), always at single-item prices times quantity. `keep` (the default): kit price − removed item × quantity + new item × quantity, so the kit discount stays. `lose`: the sum of the resulting items' single-item prices × quantity, so the discount is lost. A kit with no swaps costs its own price in both modes.
 - Changing the delivery date records the change and returns a wa.me link to warn the client. Nothing notifies the client automatically.
 - Tracking tokens and login codes are stored only as hashes.
 
