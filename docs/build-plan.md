@@ -139,10 +139,10 @@ Goal: the owner can describe what they sell, where it comes from and what it cos
 - [ ] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (each kit keeps or loses its discount on a swap, both modes tested; ADR 0023)
 - [ ] `domain/supplier`: supplier, supplier item (lead time, cost, backup supplier)
 - [ ] `app/catalog` and `app/supplier` services, cached queries, fakes
-- [ ] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`)
+- [ ] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`) (decided in ADR 0024: staff-only policies and item costs in their own table; built with the migrations below)
 - [ ] Migrations for catalog and suppliers, with RLS policies and tests
 - [ ] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
-- [ ] `adapter/storage`: local and S3-compatible photo storage (Cloudflare R2 in production, ADR 0023)
+- [ ] `adapter/storage`: local and S3-compatible photo storage (Cloudflare R2 in production, ADR 0023; signed `PUT` URLs and a confirm step, MinIO in dev and tests, ADR 0024)
 - [ ] HTTP handlers, OpenAPI entries, and the "clients never see costs or suppliers" visibility test
 
 ### Web
@@ -368,3 +368,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12. All
 | 2026-11-25 | Ed25519 seeds named by thumbprint, rotated in three deploys, never printed; `at+jwt` with a one-string `aud` and at most 15 minutes; argon2id at RFC 9106's second option, within a memory budget and a 3-second wait | ADR 0019 |
 | 2026-11-25 | The Android management menu is a navigation drawer, its entries in the web's order and filtered by permission; a screen whose permission goes leaves for Hoje | ADR 0020 |
 | 2026-11-26 | v1 scope for milestones 3–7: payments by hand, preset workflows only, Vite SPA with server-set meta tags, subdomains only, per-kit swap discount, R2 photos, Cloudflare DNS-01, Google sign-in in M7 | ADR 0023 |
+| 2026-11-26 | Milestone 3: internal tables staff-only in RLS, item costs in their own table; stores create categories and fields; options are choices with extra price and days; photos by signed URL to R2, MinIO in dev and tests | ADR 0024 |
