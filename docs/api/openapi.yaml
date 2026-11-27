@@ -87,7 +87,8 @@ info:
     An operation marked `x-unserved` is written ahead of the server so the
     apps can build against it; the server answers it `404` until the plan
     step named there serves it and removes the mark. The end-to-end suite
-    checks both halves.
+    checks both halves. No operation is marked now: step 3.10 served the
+    catalog and supplier operations.
 
     ## Costs and margins (ADR 0025)
 
@@ -816,7 +817,6 @@ paths:
     get:
       tags: [catalog]
       operationId: listCategories
-      x-unserved: step 3.10
       summary: Every category of the store, in the store's order.
       description: Needs `catalog:read` (every role).
       security:
@@ -837,7 +837,6 @@ paths:
     post:
       tags: [catalog]
       operationId: createCategory
-      x-unserved: step 3.10
       summary: Add a category at the end of the list.
       description: Needs `catalog:write` (owner, admin).
       security:
@@ -870,7 +869,6 @@ paths:
     patch:
       tags: [catalog]
       operationId: updateCategory
-      x-unserved: step 3.10
       summary: Rename a category or move it in the list.
       description: |
         Needs `catalog:write`. Send `name`, `position` or both. A position
@@ -908,7 +906,6 @@ paths:
     delete:
       tags: [catalog]
       operationId: deleteCategory
-      x-unserved: step 3.10
       summary: Delete a category no item uses.
       description: Needs `catalog:write`. Archived items count as using it.
       security:
@@ -937,7 +934,6 @@ paths:
     get:
       tags: [catalog]
       operationId: listAttributes
-      x-unserved: step 3.10
       summary: Every item field of the store ("Serve em" …) with its values.
       description: Needs `catalog:read`.
       security:
@@ -958,7 +954,6 @@ paths:
     post:
       tags: [catalog]
       operationId: createAttribute
-      x-unserved: step 3.10
       summary: Add an item field with its values.
       description: Needs `catalog:write`.
       security:
@@ -991,7 +986,6 @@ paths:
     put:
       tags: [catalog]
       operationId: replaceAttribute
-      x-unserved: step 3.10
       summary: Replace a field's name and its ordered values.
       description: |
         Needs `catalog:write`. A value sent with its `id` keeps it, and the
@@ -1030,7 +1024,6 @@ paths:
     delete:
       tags: [catalog]
       operationId: deleteAttribute
-      x-unserved: step 3.10
       summary: Delete a field; its values leave every item and kit.
       description: Needs `catalog:write`.
       security:
@@ -1053,7 +1046,6 @@ paths:
     get:
       tags: [catalog]
       operationId: listItems
-      x-unserved: step 3.10
       summary: The store's catalog items, by name.
       description: Needs `catalog:read`. `cost` and `margin` follow the cost rule (see the top of this document).
       security:
@@ -1082,7 +1074,6 @@ paths:
     post:
       tags: [catalog]
       operationId: createItem
-      x-unserved: step 3.10
       summary: Add a catalog item.
       description: |
         Needs `catalog:write`. A cost field (`productionCostCents`, a
@@ -1116,7 +1107,6 @@ paths:
     get:
       tags: [catalog]
       operationId: getItem
-      x-unserved: step 3.10
       summary: One item with its suppliers, fields, options and photos.
       description: Needs `catalog:read`.
       security:
@@ -1141,7 +1131,6 @@ paths:
     put:
       tags: [catalog]
       operationId: replaceItem
-      x-unserved: step 3.10
       summary: Replace an item's details.
       description: |
         Needs `catalog:write`. Send every field with the `version` you read.
@@ -1181,7 +1170,6 @@ paths:
     put:
       tags: [catalog]
       operationId: setItemPublished
-      x-unserved: step 3.10
       summary: Show or hide the item on the store page ("No portal").
       description: Needs `catalog:write`. An archived item cannot be published (`400 invalid`).
       security:
@@ -1218,7 +1206,6 @@ paths:
     post:
       tags: [catalog]
       operationId: archiveItem
-      x-unserved: step 3.10
       summary: Archive an item; it leaves the store page and the pickers.
       description: |
         Needs `catalog:write`. Archiving also unpublishes. Nothing in the
@@ -1240,6 +1227,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1248,8 +1237,9 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: |
-            `item_in_kit`: kits that are not archived hold the item;
-            `references` names them. `version_conflict`: someone saved first.
+            `item_in_kit`: kits that are not archived hold the item, as a
+            member or as a swap alternative (ADR 0027); `references` names
+            them. `version_conflict`: someone saved first.
           content:
             application/problem+json:
               schema:
@@ -1261,7 +1251,6 @@ paths:
     post:
       tags: [catalog]
       operationId: restoreItem
-      x-unserved: step 3.10
       summary: Bring an archived item back, unpublished.
       description: Needs `catalog:write`.
       security:
@@ -1281,6 +1270,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1296,7 +1287,6 @@ paths:
     post:
       tags: [catalog]
       operationId: confirmItemPhoto
-      x-unserved: step 3.10
       summary: Record a photo uploaded to the key from `/catalog/photo-uploads`.
       description: |
         Needs `catalog:write`. The server reads the stored object: at most
@@ -1351,7 +1341,6 @@ paths:
     put:
       tags: [catalog]
       operationId: orderItemPhotos
-      x-unserved: step 3.10
       summary: Put the item's photos in a new order; the first is the cover.
       description: Needs `catalog:write`. List every photo of the item exactly once.
       security:
@@ -1386,7 +1375,6 @@ paths:
     delete:
       tags: [catalog]
       operationId: deleteItemPhoto
-      x-unserved: step 3.10
       summary: Remove a photo from the item and from storage.
       description: Needs `catalog:write`.
       security:
@@ -1410,7 +1398,6 @@ paths:
     get:
       tags: [catalog]
       operationId: listKits
-      x-unserved: step 3.10
       summary: The store's kits, by name.
       description: Needs `catalog:read`. `cost` and `margin` follow the cost rule.
       security:
@@ -1438,7 +1425,6 @@ paths:
     post:
       tags: [catalog]
       operationId: createKit
-      x-unserved: step 3.10
       summary: Add a ready kit ("Kit pronto").
       description: Needs `catalog:write`.
       security:
@@ -1471,7 +1457,6 @@ paths:
     get:
       tags: [catalog]
       operationId: getKit
-      x-unserved: step 3.10
       summary: One kit with its items, totals and days.
       description: Needs `catalog:read`.
       security:
@@ -1496,7 +1481,6 @@ paths:
     put:
       tags: [catalog]
       operationId: replaceKit
-      x-unserved: step 3.10
       summary: Replace a kit's details and items.
       description: Needs `catalog:write`. Send every field with the `version` you read. Photos are not part of it.
       security:
@@ -1537,7 +1521,6 @@ paths:
     put:
       tags: [catalog]
       operationId: setKitPublished
-      x-unserved: step 3.10
       summary: Show or hide the kit on the store page ("No portal").
       description: Needs `catalog:write`. An archived kit cannot be published (`400 invalid`).
       security:
@@ -1574,7 +1557,6 @@ paths:
     post:
       tags: [catalog]
       operationId: archiveKit
-      x-unserved: step 3.10
       summary: Archive a kit; it leaves the store page and stops holding its items.
       description: Needs `catalog:write`. Archiving also unpublishes.
       security:
@@ -1594,6 +1576,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Kit"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1609,7 +1593,6 @@ paths:
     post:
       tags: [catalog]
       operationId: restoreKit
-      x-unserved: step 3.10
       summary: Bring an archived kit back, unpublished.
       description: Needs `catalog:write`. Refused while an item of the kit is archived.
       security:
@@ -1629,6 +1612,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Kit"
+        "400":
+          $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1648,7 +1633,6 @@ paths:
     post:
       tags: [catalog]
       operationId: confirmKitPhoto
-      x-unserved: step 3.10
       summary: Record a photo uploaded to the key from `/catalog/photo-uploads`.
       description: |
         Needs `catalog:write`. The same checks as for an item's photo, with
@@ -1694,7 +1678,6 @@ paths:
     put:
       tags: [catalog]
       operationId: orderKitPhotos
-      x-unserved: step 3.10
       summary: Put the kit's photos in a new order; the first is the cover.
       description: Needs `catalog:write`. List every photo of the kit exactly once.
       security:
@@ -1729,7 +1712,6 @@ paths:
     delete:
       tags: [catalog]
       operationId: deleteKitPhoto
-      x-unserved: step 3.10
       summary: Remove a photo from the kit and from storage.
       description: Needs `catalog:write`.
       security:
@@ -1753,14 +1735,15 @@ paths:
     post:
       tags: [catalog]
       operationId: requestPhotoUpload
-      x-unserved: step 3.10
       summary: Get a short-lived URL to upload one photo of an item or kit.
       description: |
         Needs `catalog:write`. The server picks the key; apps never do
         (ADR 0024). Upload the file with `method` to `uploadUrl`, sending
         exactly `headers` and no `Authorization`, before `expiresAt`; then
         confirm it on the owner's `/photos`. An upload never confirmed is
-        removed after a day.
+        removed after a day. Limited to 30 requests a minute per user and 60
+        per store (ADR 0021); over that, `429 rate_limited` with
+        `Retry-After`.
       security:
         - bearerAuth: []
       requestBody:
@@ -1786,6 +1769,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/PhotoLimit"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "5XX":
           $ref: "#/components/responses/ServerFailure"
 
@@ -1793,7 +1778,6 @@ paths:
     get:
       tags: [suppliers]
       operationId: listSuppliers
-      x-unserved: step 3.10
       summary: The store's suppliers, by name.
       description: Needs `catalog:read` (every role). Suppliers carry no cost.
       security:
@@ -1820,7 +1804,6 @@ paths:
     post:
       tags: [suppliers]
       operationId: createSupplier
-      x-unserved: step 3.10
       summary: Add a supplier ("Novo fornecedor").
       description: Needs `catalog:write` (owner, admin; ADR 0025).
       security:
@@ -1851,7 +1834,6 @@ paths:
     get:
       tags: [suppliers]
       operationId: getSupplier
-      x-unserved: step 3.10
       summary: One supplier.
       description: Needs `catalog:read`.
       security:
@@ -1876,7 +1858,6 @@ paths:
     put:
       tags: [suppliers]
       operationId: replaceSupplier
-      x-unserved: step 3.10
       summary: Replace a supplier's name and WhatsApp.
       description: Needs `catalog:write`. Send the `version` you read.
       security:
