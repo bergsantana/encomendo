@@ -2,7 +2,8 @@
 
 pnpm workspace with two apps that share `packages/api` and `packages/ui`. The full layout is in `docs/architecture.md` section 8.1.
 
-- `apps/admin`: the management app for owners, admins and staff. Same features as the Android app.
+- `apps/admin`: the management app for owners, admins and staff, on desktop and on phones. Every screen works at phone sizes too, because the Android app opens it (ADR 0029).
+- `apps/android`: the Android shell, a Capacitor project that opens the hosted admin. It holds no UI of its own.
 - `apps/store`: each tenant's store page at `{slug}.encomendo.com.br` (Kits prontos, Monte o seu, checkout, tracking), plus the client area (Minhas encomendas, also at `conta.encomendo.com.br`). Login is optional and never blocks ordering or tracking.
 
 ## Commands

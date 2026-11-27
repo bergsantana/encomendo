@@ -34,7 +34,7 @@ Follow this document as the source of truth for architecture. Product behaviour 
 4. **GORM never creates schema.** `AutoMigrate` is never called. Schema comes only from SQL migrations.
 5. **Heavy testing.** Every feature ships with tests at the levels described in section 9. Every bug fix starts with a failing test.
 6. **Clean code everywhere:** small packages per bounded context, descriptive names (no `utils`, `common`, `helpers`), small interfaces defined next to their consumer, constructor injection, no globals, no `init()`, functions around 40 lines max, errors wrapped with context and never swallowed.
-7. **Feature parity for management.** The web admin app and the mobile app are both management apps with the same features. A management feature is done only when its web screen and its mobile screen both ship against the same API endpoints. Clients never use the management apps: they use the store page and, if they log in, the client area, both in the browser.
+7. **Management on every device.** The web admin is the one management app, on desktop and phones; on Android it runs inside a Capacitor shell (ADR 0029). A management feature is done when its web screen works at desktop and phone sizes and the shell opens it. Clients never use the management apps: they use the store page and, if they log in, the client area, both in the browser.
 8. **Clients never see internal data.** Store page and tracking responses never contain suppliers, costs, margins or "Pode atrasar" alerts. They use their own view types, and tests assert it.
 9. **WhatsApp through links only.** No paid WhatsApp API. Encomendo builds `wa.me` links with a prefilled message, the user taps to send, and the link is kept in the order history. Conversations stay in WhatsApp.
 10. **Rules hang on phases, names come from data.** Each store picks its own list of order statuses (section 4.2, Status workflows). Code branches on the fixed order phase, never on a status key or label.
@@ -564,7 +564,19 @@ web/
 - The store page is mobile-first and light (client phone sizes: 16–17 px body, 48 px controls). Login is optional and never blocks ordering or tracking; `Minhas encomendas` is reachable from every store page and at `conta.encomendo.com.br`, served by the same app.
 - Tests: Vitest + Vue Test Utils, MSW for API mocks, Playwright for main flows against docker compose.
 
-### 8.2 Mobile — Kotlin Multiplatform (`mobile/`)
+### 8.2 Android — Capacitor shell (`web/apps/android`)
+
+Since ADR 0029, the Android management app is a Capacitor project that opens the hosted web admin.
+- Release builds open `https://admin.encomendo.com.br`; debug builds open the local stack through `adb reverse`.
+- The app id is `br.com.encomendo.app`.
+- Distribution is private (signed APKs) first, with the Play Store later.
+- The page is same-origin with the API, so auth, the refresh cookie and the `/auth` origin checks work as in a browser.
+- Native code is limited to the shell: navigation limited to the admin host, external links (`wa.me`, store pages) opened outside the app, the back button, the status bar, and a release signing config read from outside the repository.
+- No offline use in v1.
+
+### 8.2a Frozen — the native Kotlin Multiplatform app (`mobile/`)
+
+Kept as built in milestones 2 and 3. It gets no new features and is removed once the shell reaches the Play Store (ADR 0029).
 
 One Kotlin Multiplatform app, **Android only in v1** (iOS postponed), with **every feature of the web admin app**: the full management side for owners, admins and staff, also used in the workshop (larger targets: 18 px body, 56 px targets, 64 px primary action). Clients never use it. Domain, data, networking, ViewModels and Compose Multiplatform UI live in `shared/` so an iOS shell can be added later without a rewrite; `androidApp` is a thin shell. Keep platform code behind `expect`/`actual` as if iOS existed, but do not add iOS targets, code or CI until it is scheduled.
 
@@ -628,7 +640,9 @@ A store page is saved as template id + branding (logo, brand color, cover photo)
 
 ### 8.4 Parity map
 
-| Feature | Web (Vue) | Mobile module (shared/) | Who uses it |
+Since ADR 0029, Android runs the same web admin screens inside the shell, at phone size. The frozen native app's modules are listed for history.
+
+| Feature | Web (Vue), also in the Android shell | Frozen native module (shared/) | Who uses it |
 | --- | --- | --- | --- |
 | Hoje | `admin/features/hoje` | `feature/hoje` | owner, admin, staff |
 | Pedidos | `admin/features/pedidos` | `feature/pedidos` | owner, admin, staff |
@@ -693,7 +707,7 @@ Rules:
 
 ## 11. Build order
 
-Build security and tenancy first. Each milestone ends with all tests green in CI and both management clients updated.
+Build security and tenancy first. Each milestone ends with all tests green in CI and every management screen working at desktop and phone sizes (ADR 0029).
 
 1. **Skeleton** — monorepo, docker compose, `platform/config` + logger, `/healthz`, goose runner, GORM setup, five CI workflows with jobs passing, KMP shell (shared, androidApp) with Koin, Room KMP and the management navigation graph.
 2. **Identity and tenancy** — users, tenants, memberships, tenant settings, JWT + refresh rotation, RBAC map, `TxManager` with tenant setting, RLS policies + RLS test suite. Login, sign-up and tenant picker on web and mobile.

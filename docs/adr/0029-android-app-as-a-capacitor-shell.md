@@ -1,8 +1,8 @@
 # 0029 — Android management app as a Capacitor shell around the web admin
 
-- Status: **proposed**. Waiting for the user's decision; nothing changes until it is accepted.
+- Status: **accepted** by the user on 2026-11-27, with the answers below.
 - Date: 2026-11-27
-- Would supersede: the native-app parts of `docs/architecture.md` section 8.2, the meaning of rule 6 (management parity), ADR 0005 (Room 3), ADR 0015, ADR 0016, ADR 0018 and ADR 0020 to ADR 0022 as they apply to Android, and ADR 0026.
+- Supersedes: the native-app parts of `docs/architecture.md` section 8.2, the meaning of rule 6 (management parity), ADR 0005 (Room 3), ADR 0015, ADR 0016, ADR 0018 and ADR 0020 to ADR 0022 as they apply to Android, and ADR 0026.
 
 ## Context
 
@@ -36,13 +36,25 @@ Android emulator checks are also blocked on this machine today: a Windows update
 3. **Capacitor shell with the web build bundled in the app.** The page runs on its own origin (`https://localhost`) and calls the API cross-origin.
 4. **A PWA only** (installable web app, no store build). This was considered and set aside: the camera and file access are weaker on some devices, and there's no Play Store listing.
 
-## Proposed decision
+## Decision
 
-Take **option 2** from the start of milestone 4.
+Take **option 2**, built in a short **milestone 3.5** before milestone 4 (plan: `docs/plans/m3_5-android-shell.md`).
 
-- **The shell.** A Capacitor project at `web/apps/admin-android` (or `mobile-shell/`), wrapping the hosted admin at `https://admin.encomendo.com.br`.
+The user's answers (2026-11-27):
+
+- **Distribution:** private first. Testers sideload release APKs, and the Google Play Store comes later.
+- **Signing:** the user creates and keeps the release keystore. The build reads it from local files or environment variables, and it is never committed. Debug builds are unsigned.
+- **App id:** the shell reuses `br.com.encomendo.app`, so testers get it as an update of the frozen native app, and the later Play listing keeps one id. The shell's `versionCode` starts above the native app's.
+- **URL:** release builds open `https://admin.encomendo.com.br`. Debug builds open the local stack through `adb reverse`.
+- **Location:** `web/apps/android`, a third app in the pnpm workspace.
+- **Native CI:** `mobile.yml` keeps building the frozen app until it is deleted.
+- **Milestone 3's last box** is reworded to "created in the web admin and in the Android shell", and is checked with the shell in milestone 3.5.
+
+The parts below are the decision as proposed and accepted.
+
+- **The shell.** A Capacitor project at `web/apps/android`, wrapping the hosted admin at `https://admin.encomendo.com.br`.
   - The web admin stays the only management UI. Android stops being a second implementation.
-  - Native plugins only where the web falls short: `@capacitor/camera` for photo capture and picking, plus status bar and back button handling. `uploadPhoto` in `packages/api` already takes a file.
+  - Native plugins only where the web falls short: the back button and status bar (`@capacitor/app`), and links that must leave the app, such as `wa.me` and the store page. Photos use the admin's file input, which Capacitor's WebView answers with the system camera and picker. `@capacitor/camera` is added only if that proves insufficient. `uploadPhoto` in `packages/api` already takes a file.
 - **Auth is unchanged.** The hosted page is same-origin with the API, so the refresh cookie, the `/auth/*` origin checks (ADR 0010) and the session rules (ADR 0012, ADR 0013) work as they do in a browser. No CORS, no body-token transport and no backend change.
 - **Phone-ready admin.** The admin screens get responsive layouts:
   - a narrow-screen menu;
@@ -90,6 +102,6 @@ About three plan steps, then less work per screen in M4 to M7.
 
 ## Not decided here
 
-- Whether offline receiving and production are required for v1. If they are, this ADR should be rejected, or amended to option 3.
-- The shell's location and app id, and Play Store or private distribution.
-- When the frozen native app is removed.
+- Whether offline receiving and production come back after v1. If they do, it is as option 3 or a service worker, with its own ADR.
+- When the frozen native app is removed (after the shell reaches the Play Store).
+- The Play Store listing itself: store assets, privacy policy, and review against the minimum-functionality policy.

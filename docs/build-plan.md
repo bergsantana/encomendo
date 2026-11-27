@@ -22,13 +22,14 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
-| 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and Android are merged (PRs #52 to #71) and the web flows pass against the real stack; only the Android device walkthrough remains, and it waits for KVM |
-| 4 | Customers, orders and deadlines | 0 | 18 | Not started |
-| 5 | Purchasing and receiving | 0 | 10 | Not started |
+| 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
+| 3.5 | Android shell | 1 | 6 | Started: ADR 0029 accepted; the Capacitor shell and phone layouts come next |
+| 4 | Customers, orders and deadlines | 0 | 17 | Not started |
+| 5 | Purchasing and receiving | 0 | 9 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **61** | **123** | **about 50%** (49.6%) |
+|   | **All milestones** | **62** | **127** | **about 49%** (48.8%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -165,8 +166,24 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 
 ### Done when
 
-- [ ] A catalog item with a supplier and lead time can be created on web and on Android and appears on the other (partial: the web side is checked, since a Playwright flow creates an item with a new supplier, a lead time, a cost and a photo against `make stack-up`, and a second flow shows an item created through the API in the web list; the Android device walkthrough waits for KVM)
+- [ ] A catalog item with a supplier and lead time can be created in the web admin and in the Android shell and appears on the other (reworded by ADR 0029; partial: the web side is checked, since a Playwright flow creates an item with a new supplier, a lead time, a cost and a photo against `make stack-up`, and a second flow shows an item created through the API in the web list; the shell walkthrough is step 3.5.5)
 - [x] Kit swap price and the Kit Scrambler CB 500X reference case are covered by tests (`domain/catalog`, `domain/schedule`)
+
+---
+
+## Milestone 3.5 — Android shell
+
+Goal: the Android management app is a Capacitor shell that opens the hosted web admin (ADR 0029), and every existing admin screen works at phone size. Plan: `docs/plans/m3_5-android-shell.md`.
+
+- [x] ADR 0029 accepted, and the docs follow it: architecture 8.2 and 8.4, rule 6 in `CLAUDE.md`, `mobile/` frozen, and this plan
+- [ ] `web/apps/android`: the Capacitor shell, with app id `br.com.encomendo.app`, the hosted admin URL per build, navigation limited to the admin host, external links (`wa.me`, store pages) opened outside the app, the back button, and release signing read from outside the repository
+- [ ] Phone layouts: login, sign-up, Esqueci a senha, the store picker, the menu, Hoje and Equipe at 390 × 844
+- [ ] Phone layouts: Catálogo, covering Itens, Kits, the drawers and dialogs, and photos from the camera or gallery through the shell
+- [ ] A signed release APK can be built and installed by following `web/apps/android/README.md`; CI builds the shell (that needs the user's workflow edit)
+
+### Done when
+
+- [ ] Milestone 3's flows run in the shell on a phone or emulator against the local stack, and an item created in the shell appears on the web, and the other way round
 
 ---
 
@@ -194,10 +211,9 @@ Goal: the core of the product. An order moves through its store's status list, a
 - [ ] Hoje (summary cards, orders by delivery date, "Precisa de você"), Pedidos (list by status, detail with item × deadline timeline), Clientes, Financeiro
 - [ ] Workflow choice in Settings, with a preview of its steps
 
-### Mobile
+### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
-- [ ] `feature/hoje`, `feature/pedidos`, `feature/clientes`, `feature/financeiro`, workflow choice in `feature/settings`
-- [ ] Offline cache of recent orders in Room
+- [ ] Hoje, Pedidos, Clientes, Financeiro and the workflow setting work at phone size
 
 ### Done when
 
@@ -225,10 +241,9 @@ Goal: the business buys only what was sold, tells the supplier without leaking t
 - [ ] Compras: by supplier, send via `wa.me`, promised dates; Fornecedores tab
 - [ ] Receber itens: checklist, item and invoice photos, Tudo certo / Com defeito
 
-### Mobile
+### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
-- [ ] `feature/compras` with the same flows, camera and photo picker (`expect`/`actual`)
-- [ ] Offline receiving checklist, queued writes retried with WorkManager and an `Idempotency-Key`
+- [ ] Compras and receiving work at phone size, with workshop sizes on the receiving screens, and item and invoice photos from the camera through the shell
 
 ### Done when
 
@@ -253,13 +268,13 @@ Goal: stores that keep stock or make things themselves get the same dates and al
 
 - [ ] Estoque (list, adjust, movements, low-stock) and Produção (board, stages, capacity)
 
-### Mobile
+### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
-- [ ] `feature/estoque` and `feature/producao`, with the production board cached offline
+- [ ] Estoque and Produção work at phone size, with the production board at workshop sizes
 
 ### Done when
 
-- [ ] An order mixing `to_order`, `stock` and `in_house` items gets a delivery date from the slowest item, on both clients
+- [ ] An order mixing `to_order`, `stock` and `in_house` items gets a delivery date from the slowest item, on desktop and in the Android shell
 
 ---
 
@@ -282,10 +297,10 @@ Goal: a client opens `{slug}.encomendo.com.br`, builds an order, pays the deposi
 - [ ] Kits prontos, Monte o seu with live price, deposit and date, checkout, tracking (steps from the order's workflow, client labels)
 - [ ] Optional login and Minhas encomendas across stores, also at `conta.encomendo.com.br`
 
-### Web: admin and mobile
+### Web: admin, desktop and phone
 
 - [ ] Portal builder on web: template, logo, brand colour, cover photo, sections
-- [ ] `feature/portal` on Android with a WebView preview of the store page
+- [ ] The portal builder works at phone size, and its live preview of the store page works inside the Android shell
 
 ### Delivery
 
@@ -302,10 +317,10 @@ Goal: a client opens `{slug}.encomendo.com.br`, builds an order, pays the deposi
 ## Milestone 8 — Hardening
 
 - [ ] Redis rate limits per IP and per user on every public route
-- [ ] Audit log views for the owner (web and Android)
+- [ ] Audit log views for the owner (desktop and phone)
 - [ ] API e2e suite: sign up → tenant → workflow → items and kit → order on the store page → deposit → purchases → receive → assemble → delivery or pickup (`test/e2e`)
 - [ ] Playwright suites for the main admin and store flows against docker compose
-- [ ] Compose UI tests for order and receiving screens on Android
+- [ ] Playwright flows at phone size for the order and receiving screens, and a smoke test of the Android shell
 - [ ] Nightly mutation testing on `internal/domain`
 - [ ] Load test of store page reads
 - [ ] Backup and restore drill, written up in `docs/`
@@ -324,7 +339,7 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | RLS suite | Running since milestone 2; milestone 3 added the staff-only tier (`item_costs`, `suppliers`, `supplier_items`, and `audit_log` reads) as its sixth case |
 | `docs/api/openapi.yaml` kept in sync | In sync with the server through milestone 3: `/auth/*`, tenancy, members, catalog, suppliers and photos are all served |
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
-| Parity: every management feature on web and Android | Hoje (placeholder), Equipe and Catálogo (Itens and Kits) on both; the Fornecedores screens ship with Compras in milestone 5 |
+| Management on every device: each admin screen at desktop and phone size, opened by the Android shell (ADR 0029) | Hoje, Equipe and Catálogo on desktop; their phone layouts and the shell are milestone 3.5. The native app (`mobile/`) is frozen with Hoje, Equipe and Catálogo built |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | The milestone 3 tests: public view types carry no cost or margin, the RLS staff-only case reads zero rows in a store page scope, and costs reach the owner only. The store page routes and their end-to-end test land in milestone 7 |
 | ADRs | 0001–0028 written |
 
@@ -347,6 +362,7 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12. All
 | Store page SEO: is a Vite SPA enough? | Vite SPA, with the store's title, description and Open Graph tags set by the server |
 | Custom domains per tenant in v1? | No; `{slug}.encomendo.com.br` only |
 | Status workflows: presets only, or can stores rename or build their own? Confirm the preset wording with real shops. | Presets only; the wording is still to be checked with real shops |
+| Offline use of the management app: cached orders, an offline receiving checklist and production board, queued writes (was M4 to M6) | Dropped for v1 by ADR 0029; to decide after v1, as a service worker or a bundled shell with its own ADR |
 
 ## Decisions log
 
@@ -384,3 +400,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12. All
 | 2026-11-27 | Photo uploads are staged under `uploads/` and promoted after the confirm check; one lifecycle rule; the storage adapter returns typed errors and signs for the public endpoint | ADR 0028 |
 | 2026-11-27 | The user's decision: Silo, the maintained MinIO fork, replaces MinIO in compose, CI and tests since MinIO's images left Docker Hub; pinned by digest, the service keeps the name `minio`, the apps see only an S3 host; R2 stays the production store | ADR 0024 (amended), ADR 0028 |
 | 2026-11-27 | `audit_log` reads are staff-only (a scope with a tenant and no user reads nothing); inserts keep the tenant check; internal tables stay out of the audit until audit views hide costs (milestone 8) | migration `0010_audit_log_staff_reads` (security review of step 3.4) |
+| 2026-11-27 | The user's decision: the Android management app becomes a Capacitor shell that opens the hosted web admin (`web/apps/android`, app id `br.com.encomendo.app`, private signed APKs first, then the Play Store); the native `mobile/` app is frozen; rule 6 now means every admin screen works at desktop and phone sizes; offline use is dropped for v1; milestone 3.5 builds it | ADR 0029 |

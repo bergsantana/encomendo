@@ -1,4 +1,6 @@
-# Mobile (Kotlin Multiplatform, Android)
+# Mobile (Kotlin Multiplatform, Android): frozen
+
+> **Frozen since ADR 0029 (2026-11-27).** The Android management app is now the Capacitor shell in `web/apps/android`, which opens the web admin. This app keeps building in CI (`mobile.yml`) and gets **no new features**. Fix only what keeps the build green, until it is removed once the shell reaches the Play Store. The rules below describe it as built.
 
 The **management** app for owners, admins and staff, with every feature of the web admin app. It is also used in the workshop. Clients never use it: the store page and client area are web only. The full layout is in `docs/architecture.md` section 8.2.
 
