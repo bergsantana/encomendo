@@ -271,7 +271,9 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - fields "Nome do fornecedor" and "WhatsApp do fornecedor", with the hint "Com DDD, como (11) 98765-4321.";
   - button "Adicionar fornecedor";
   - empty fields: "Informe o nome do fornecedor.", "Informe o WhatsApp do fornecedor.";
-  - an invalid number: "Confira o número: use DDD e 8 ou 9 dígitos."
+  - an invalid number: "Confira o número: use DDD e 8 ou 9 dígitos.";
+  - a name over 120 characters: "Use um nome de até 120 caracteres.";
+  - a name with line breaks or other control characters: "Use um nome sem quebras de linha ou caracteres de controle."
 - **Campos:** one choice per store field, labelled with the field's name (such as "Serve em"). Several values may be picked.
 - **"Opções do cliente":**
   - each option has "Nome da opção", the box "Obrigatória" and its choices;
@@ -285,7 +287,7 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - **Buttons:** "Salvar" and "Cancelar". When editing, also "Arquivar", or "Restaurar" for an archived item.
 - **Empty or wrong fields**, with "Confira os campos destacados." above the form:
   - "Informe o nome do item.", "Informe o preço.";
-  - "Escolha o fornecedor principal.", "Informe o prazo do fornecedor.", "O fornecedor reserva precisa ser outro.";
+  - "Escolha o fornecedor principal.", "Informe o prazo do fornecedor.", "Use um prazo de 0 a 365 dias.", "Informe um custo de zero ou mais.", "O fornecedor reserva precisa ser outro.";
   - "Informe os dias de produção.";
   - "Informe o nome da opção.", "Adicione ao menos uma escolha.", "Já existe uma escolha com este nome."
 - **Photos:**

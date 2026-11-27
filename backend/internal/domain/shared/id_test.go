@@ -141,6 +141,7 @@ func TestTypedIDs_ParseFormatAndZero(t *testing.T) {
 	t.Run("ClientAccountID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseClientAccountID) })
 	t.Run("InvitationID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseInvitationID) })
 	t.Run("WorkflowID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseWorkflowID) })
+	t.Run("SupplierID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseSupplierID) })
 }
 
 func TestTypedIDs_RoundTripThroughJSON(t *testing.T) {
@@ -154,6 +155,7 @@ func TestTypedIDs_RoundTripThroughJSON(t *testing.T) {
 		Account ClientAccountID `json:"account"`
 		Invite  InvitationID    `json:"invite"`
 		Flow    WorkflowID      `json:"flow"`
+		Maker   SupplierID      `json:"maker"`
 		Raw     ID              `json:"raw"`
 	}
 	in := payload{
@@ -161,6 +163,7 @@ func TestTypedIDs_RoundTripThroughJSON(t *testing.T) {
 		User:   UserID(NewV7(2, [10]byte{2})),
 		Invite: InvitationID(NewV7(3, [10]byte{3})),
 		Flow:   WorkflowID(NewV7(4, [10]byte{4})),
+		Maker:  SupplierID(NewV7(6, [10]byte{6})),
 		Raw:    NewV7(5, [10]byte{5}),
 	}
 	data, err := json.Marshal(in)
@@ -184,7 +187,7 @@ func TestTypedIDs_UnmarshalRejectsMalformed(t *testing.T) {
 
 	targets := map[string]any{
 		"TenantID": new(TenantID), "UserID": new(UserID), "ClientAccountID": new(ClientAccountID),
-		"InvitationID": new(InvitationID), "WorkflowID": new(WorkflowID), "ID": new(ID),
+		"InvitationID": new(InvitationID), "WorkflowID": new(WorkflowID), "SupplierID": new(SupplierID), "ID": new(ID),
 	}
 	for name, dst := range targets {
 		if err := json.Unmarshal([]byte(`"not-an-id"`), dst); !errors.Is(err, ErrInvalidID) {

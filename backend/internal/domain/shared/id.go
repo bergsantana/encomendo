@@ -201,3 +201,21 @@ func (id WorkflowID) MarshalText() ([]byte, error) { return marshalTyped(id) }
 
 // UnmarshalText works as ID.UnmarshalText.
 func (id *WorkflowID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// SupplierID identifies one of a store's suppliers.
+type SupplierID ID
+
+// ParseSupplierID parses a supplier id; see ParseID for the errors.
+func ParseSupplierID(s string) (SupplierID, error) { return parseTyped[SupplierID](s) }
+
+// String returns the canonical form.
+func (id SupplierID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id SupplierID) IsZero() bool { return id == SupplierID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id SupplierID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *SupplierID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
