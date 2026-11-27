@@ -18,10 +18,11 @@ func (s *Service) ListCategories(ctx context.Context) ([]CategoryView, error) {
 	}
 	var list []*catalog.Category
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		list, err = s.categories.List(ctx, by.TenantID())
+		read, err := s.categories.List(ctx, by.TenantID())
 		if err != nil {
 			return fmt.Errorf("list categories: %w", err)
 		}
+		list = read
 		return nil
 	})
 	if err != nil {
@@ -52,13 +53,14 @@ func (s *Service) CreateCategory(ctx context.Context, in CreateCategoryInput) (C
 		for _, other := range list {
 			position = max(position, other.Position()+1)
 		}
-		c, err = catalog.NewCategory(by.TenantID(), shared.CategoryID(s.ids.NewID()), in.Name, position)
+		created, err := catalog.NewCategory(by.TenantID(), shared.CategoryID(s.ids.NewID()), in.Name, position)
 		if err != nil {
 			return err
 		}
-		if err := s.categories.Insert(ctx, c); err != nil {
+		if err := s.categories.Insert(ctx, created); err != nil {
 			return fmt.Errorf("insert category: %w", err)
 		}
+		c = created
 		return nil
 	})
 	if err != nil {

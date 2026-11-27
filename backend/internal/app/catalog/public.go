@@ -94,8 +94,10 @@ type StoreKitAlternative struct {
 	ReadyDays int           `json:"readyDays"`
 }
 
-// StoreKitItem is one item of a published kit. Alternatives lists only items
-// that are not archived: a client never swaps to one.
+// StoreKitItem is one item of a published kit, shown even when the item is
+// not published on its own: the kit's contents are what the owner
+// published. Alternatives lists only items that are published and not
+// archived: a client never swaps to any other (ADR 0027).
 type StoreKitItem struct {
 	ItemID       shared.ItemID         `json:"itemId"`
 	ItemName     string                `json:"itemName"`
@@ -126,11 +128,19 @@ type StoreKit struct {
 // categories, fields, and the published items and kits that are not
 // archived. It needs only a tenant in the scope, with no principal (the
 // store page middleware sets it from the subdomain), and returns
-// authz.ErrTenantRequired without one. It is cached under
-// t:{tenant}:catalog:store for 5 minutes; a cache that fails is a miss, and
-// the catalog is read from the repositories.
+// authz.ErrTenantRequired without one and appshared.ErrInvalidScope for a
+// scope that mixes a client account with a tenant, before the cache is
+// read. A staff scope may call it too (a store preview) and gets the same
+// public data. It is cached under t:{tenant}:catalog:store for 5 minutes; a
+// cache that fails is a miss, and the catalog is read from the
+// repositories. Kit days may lag a change of the store's defaults by up to
+// those 5 minutes (ADR 0027).
 func (s *Service) PublicCatalog(ctx context.Context) (StoreCatalog, error) {
-	tenant := appshared.ScopeFrom(ctx).TenantID
+	scope := appshared.ScopeFrom(ctx)
+	if err := scope.Validate(); err != nil {
+		return StoreCatalog{}, err
+	}
+	tenant := scope.TenantID
 	if tenant.IsZero() {
 		return StoreCatalog{}, authz.ErrTenantRequired
 	}
@@ -156,8 +166,7 @@ func (s *Service) PublicCatalog(ctx context.Context) (StoreCatalog, error) {
 
 // PublicKit returns one kit of the store page catalog, through the same
 // cache. It returns catalog.ErrKitNotFound for a kit that is not published,
-// archived, or another store's, and authz.ErrTenantRequired without a
-// tenant in the scope.
+// archived, or another store's, and the scope errors of PublicCatalog.
 func (s *Service) PublicKit(ctx context.Context, id shared.KitID) (StoreKit, error) {
 	c, err := s.PublicCatalog(ctx)
 	if err != nil {
@@ -188,29 +197,44 @@ func (s *Service) readStoreCatalog(ctx context.Context, tenant shared.TenantID) 
 	}
 	var rows storeRows
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if rows.categories, err = s.categories.List(ctx, tenant); err != nil {
-			return fmt.Errorf("list categories: %w", err)
+		read, err := s.loadStoreRows(ctx, tenant)
+		if err != nil {
+			return err
 		}
-		if rows.attributes, err = s.attributes.List(ctx, tenant); err != nil {
-			return fmt.Errorf("list attributes: %w", err)
-		}
-		if rows.items, err = s.items.Published(ctx, tenant); err != nil {
-			return fmt.Errorf("list published items: %w", err)
-		}
-		if rows.kits, err = s.kits.Published(ctx, tenant); err != nil {
-			return fmt.Errorf("list published kits: %w", err)
-		}
-		var members []catalog.KitItem
-		for _, k := range rows.kits {
-			members = append(members, k.Items()...)
-		}
-		rows.facts, err = s.kitFacts(ctx, tenant, members)
-		return err
+		rows = read
+		return nil
 	})
 	if err != nil {
 		return StoreCatalog{}, err
 	}
 	return storeCatalogOf(rows, d)
+}
+
+// loadStoreRows reads the rows of the store page catalog inside the
+// transaction.
+func (s *Service) loadStoreRows(ctx context.Context, tenant shared.TenantID) (storeRows, error) {
+	var rows storeRows
+	var err error
+	if rows.categories, err = s.categories.List(ctx, tenant); err != nil {
+		return storeRows{}, fmt.Errorf("list categories: %w", err)
+	}
+	if rows.attributes, err = s.attributes.List(ctx, tenant); err != nil {
+		return storeRows{}, fmt.Errorf("list attributes: %w", err)
+	}
+	if rows.items, err = s.items.Published(ctx, tenant); err != nil {
+		return storeRows{}, fmt.Errorf("list published items: %w", err)
+	}
+	if rows.kits, err = s.kits.Published(ctx, tenant); err != nil {
+		return storeRows{}, fmt.Errorf("list published kits: %w", err)
+	}
+	var members []catalog.KitItem
+	for _, k := range rows.kits {
+		members = append(members, k.Items()...)
+	}
+	if rows.facts, err = s.kitFacts(ctx, tenant, members); err != nil {
+		return storeRows{}, err
+	}
+	return rows, nil
 }
 
 func storeCatalogOf(rows storeRows, d Defaults) (StoreCatalog, error) {
@@ -286,14 +310,14 @@ func storeKit(k *catalog.Kit, facts map[shared.ItemID]ItemFacts, d Defaults) (St
 		}
 		for _, alt := range ki.Alternatives {
 			af := facts[alt]
-			if af.Facts.Archived {
+			if af.Facts.Archived || !af.Published {
 				continue
 			}
 			item.Alternatives = append(item.Alternatives, StoreKitAlternative{
 				ItemID: alt, ItemName: af.Name, UnitPrice: af.Facts.Price, ReadyDays: af.Facts.ReadyDays,
 			})
 		}
-		// A kit item whose alternatives were all archived cannot be swapped.
+		// A kit item left with no alternative to offer cannot be swapped.
 		item.Swappable = item.Swappable && len(item.Alternatives) > 0
 		out.Items = append(out.Items, item)
 	}

@@ -54,16 +54,31 @@ type StoreQueries interface {
 // the tenant explicitly too, so the SQL filters on it as well. Every method
 // runs inside TxManager.WithinTx and returns appshared.ErrNoTransaction
 // outside it. Other failures pass through unchanged.
+//
+// Lists order names by lower(name), then id, so "alfa" comes before
+// "Bravo" whatever the database collation. Paged lists take an opaque
+// cursor that holds only the id of the last row of the previous page; it
+// resolves even when that row has since left the filter (renamed,
+// archived), and a cursor naming no row the scope sees is a ValidationError
+// on "cursor". The last page has no NextCursor, also when it ends exactly at
+// a page boundary. A filter's Query is literal text, matched ignoring case:
+// "%" and "_" match only themselves.
+//
+// Update tells the two misses apart: a row that is gone, or another
+// store's, is the not-found error of its kind; a row that is there at
+// another version is shared.ErrVersionConflict.
 
 // Categories stores the store's categories.
 type Categories interface {
-	// List returns every category of the store, by position, then name,
-	// then id.
+	// List returns every category of the store, by position, then
+	// lower(name), then id.
 	List(ctx context.Context, tenant shared.TenantID) ([]*catalog.Category, error)
 	// ByID returns the category, or catalog.ErrCategoryNotFound.
 	ByID(ctx context.Context, tenant shared.TenantID, id shared.CategoryID) (*catalog.Category, error)
 	// Insert stores a new category. It returns catalog.ErrNameTaken when
-	// another category of the store has the name, ignoring case.
+	// another category of the store has the name, ignoring case, and an
+	// error matching shared.ErrConflict when a category of any store has
+	// the id.
 	Insert(ctx context.Context, c *catalog.Category) error
 	// Update stores c's name and position while the stored version is still
 	// c.Version(), and stores the next version. It returns
@@ -107,11 +122,13 @@ type Attributes interface {
 }
 
 // ItemFacts is what a kit needs to know about one item, with the item's id
-// and name to show it and to name it in a refusal.
+// and name to show it and to name it in a refusal, and whether it is on the
+// store page: an alternative that is not is never offered there (ADR 0027).
 type ItemFacts struct {
-	ID    shared.ItemID
-	Name  string
-	Facts catalog.ItemFacts
+	ID        shared.ItemID
+	Name      string
+	Published bool
+	Facts     catalog.ItemFacts
 }
 
 // PublishedItem is a published item that is not archived, as any scope of
@@ -146,18 +163,25 @@ type ItemFilter struct {
 // the stored ready days always match the sourcing. They never touch photos,
 // which are their own resource (step 3.9).
 //
-// ByID and List rebuild whole items, supplier links and costs included, so
-// they need a staff scope (a tenant and a user). In a scope with no user
-// they find nothing (catalog.ErrItemNotFound, an empty page) rather than
-// fail; such a scope reads items through ByIDs and Published, which never
-// read a staff-only table.
+// What needs a staff scope (a tenant and a user): ByID and List rebuild
+// whole items, supplier links and costs included, and Insert and Update
+// write staff-only rows. In a scope with no user ByID and List find nothing
+// (catalog.ErrItemNotFound, an empty page) rather than fail, and Insert and
+// Update are refused with an error that matches no sentinel (a bug, 500).
+// Such a scope reads items through ByIDs (no cost) and Published, which
+// never read a staff-only table. The adapter decides this from
+// appshared.Scope.UserID, in one helper, before any SQL: RLS would hide the
+// supplier rows and turn a rebuild or a replace into a silent loss.
 type Items interface {
 	// Insert stores a new item at its version. It returns an error matching
-	// shared.ErrConflict when an item, of any store, already has the id.
+	// shared.ErrConflict when an item, of any store, already has the id,
+	// and one matching shared.ErrInvalid when its category, a field value or
+	// a supplier is not its store's (a foreign key).
 	Insert(ctx context.Context, it *catalog.Item) error
 	// Update stores it while the stored version is still it.Version(), and
 	// stores the next version. It returns shared.ErrVersionConflict for a
-	// stale version and catalog.ErrItemNotFound when it is gone.
+	// stale version, catalog.ErrItemNotFound when it is gone or another
+	// store's, and shared.ErrInvalid as Insert does.
 	Update(ctx context.Context, it *catalog.Item) error
 	// ByID returns the item, or catalog.ErrItemNotFound.
 	ByID(ctx context.Context, tenant shared.TenantID, id shared.ItemID) (*catalog.Item, error)
@@ -166,16 +190,14 @@ type Items interface {
 	// In a scope with no user every Cost is nil, and nothing fails.
 	ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.ItemID) ([]ItemFacts, error)
 	// List returns one page of the store's items matching filter, ordered
-	// by name and then id. The cursor is opaque and holds the id of the last
-	// row of the previous page. A cursor whose id does not parse, or names
-	// no item the scope sees, is a ValidationError on "cursor". The last
-	// page has no NextCursor.
+	// by lower(name) and then id, with cursors as described above.
 	List(ctx context.Context, tenant shared.TenantID, filter ItemFilter, page shared.PageRequest) (shared.Page[*catalog.Item], error)
 	// ActiveKitsHolding returns the kits that are not archived and hold the
-	// item as a member or as an alternative, by name then id, each once.
+	// item as a member or as an alternative, by lower(name) then id, each
+	// once.
 	ActiveKitsHolding(ctx context.Context, tenant shared.TenantID, id shared.ItemID) ([]Reference, error)
 	// Published returns the store's published items that are not archived,
-	// by name then id. It works in any scope of the store.
+	// by lower(name) then id. It works in any scope of the store.
 	Published(ctx context.Context, tenant shared.TenantID) ([]PublishedItem, error)
 }
 
@@ -193,19 +215,22 @@ type KitFilter struct {
 // and Update never touch photos.
 type Kits interface {
 	// Insert stores a new kit at its version. It returns an error matching
-	// shared.ErrConflict when a kit, of any store, already has the id.
+	// shared.ErrConflict when a kit, of any store, already has the id, and
+	// one matching shared.ErrInvalid when an item (member or alternative)
+	// or a field value is not its store's.
 	Insert(ctx context.Context, k *catalog.Kit) error
 	// Update stores k while the stored version is still k.Version(), and
-	// stores the next version. It returns shared.ErrVersionConflict and
-	// catalog.ErrKitNotFound.
+	// stores the next version. It returns shared.ErrVersionConflict for a
+	// stale version, catalog.ErrKitNotFound when it is gone or another
+	// store's, and shared.ErrInvalid as Insert does.
 	Update(ctx context.Context, k *catalog.Kit) error
 	// ByID returns the kit, or catalog.ErrKitNotFound.
 	ByID(ctx context.Context, tenant shared.TenantID, id shared.KitID) (*catalog.Kit, error)
 	// List returns one page of the store's kits matching filter, ordered by
-	// name and then id, with cursors as Items.List.
+	// lower(name) and then id, with cursors as described above.
 	List(ctx context.Context, tenant shared.TenantID, filter KitFilter, page shared.PageRequest) (shared.Page[*catalog.Kit], error)
 	// Published returns the store's published kits that are not archived,
-	// by name then id.
+	// by lower(name) then id.
 	Published(ctx context.Context, tenant shared.TenantID) ([]*catalog.Kit, error)
 }
 

@@ -6,37 +6,41 @@ import (
 )
 
 // CostField is one cost field of a write as the client sent it, in the three
-// states of the contract (ADR 0025):
-//   - absent (Sent false): keep the stored cost;
-//   - null (Sent true, Cents nil): clear it;
-//   - a value (Sent true, Cents set): set it, in the store's currency.
+// states of the contract (ADR 0025), built only by its constructors:
+//   - KeepCost: the key is absent; keep the stored cost;
+//   - ClearCost: the key is sent as null; clear it;
+//   - SetCost: the key is sent with an amount; set it, in the store's
+//     currency.
 //
-// The zero value is "absent". A handler sets Sent whenever the JSON key is
-// present, even with null, because a role that does not see costs is
-// refused for sending the key at all.
+// The zero value is KeepCost. A handler uses ClearCost or SetCost whenever
+// the JSON key is present, even with null, because a role that does not see
+// costs is refused for sending the key at all.
 type CostField struct {
-	Sent  bool
-	Cents *int64
+	sent  bool
+	cents *int64
 }
 
 // KeepCost is the absent cost field.
 func KeepCost() CostField { return CostField{} }
 
 // ClearCost is a cost field sent as null.
-func ClearCost() CostField { return CostField{Sent: true} }
+func ClearCost() CostField { return CostField{sent: true} }
 
 // SetCost is a cost field sent with an amount in cents.
-func SetCost(cents int64) CostField { return CostField{Sent: true, Cents: &cents} }
+func SetCost(cents int64) CostField { return CostField{sent: true, cents: &cents} }
+
+// Sent reports whether the key was in the request, with a value or null.
+func (c CostField) Sent() bool { return c.sent }
 
 // change returns the domain's cost change in currency.
 func (c CostField) change(currency string) (catalog.CostChange, error) {
 	switch {
-	case !c.Sent:
+	case !c.sent:
 		return catalog.KeepCost(), nil
-	case c.Cents == nil:
+	case c.cents == nil:
 		return catalog.ClearCost(), nil
 	}
-	m, err := shared.NewMoney(*c.Cents, currency)
+	m, err := shared.NewMoney(*c.cents, currency)
 	if err != nil {
 		return catalog.CostChange{}, err
 	}
@@ -128,11 +132,11 @@ type ItemInput struct {
 // sendsCosts reports whether any cost field was sent, even as null.
 func (in ItemInput) sendsCosts() bool {
 	for _, s := range []*SupplierInput{in.MainSupplier, in.BackupSupplier} {
-		if s != nil && s.Cost.Sent {
+		if s != nil && s.Cost.sent {
 			return true
 		}
 	}
-	return in.ProductionCost.Sent
+	return in.ProductionCost.sent
 }
 
 // ReplaceItemInput replaces an item at the version read (PUT

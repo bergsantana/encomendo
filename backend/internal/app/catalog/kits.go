@@ -27,15 +27,20 @@ func (s *Service) ListKits(ctx context.Context, filter KitFilter, page shared.Pa
 	var got shared.Page[*catalog.Kit]
 	var facts map[shared.ItemID]ItemFacts
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if got, err = s.kits.List(ctx, by.TenantID(), filter, page); err != nil {
+		listed, err := s.kits.List(ctx, by.TenantID(), filter, page)
+		if err != nil {
 			return fmt.Errorf("list kits: %w", err)
 		}
 		var items []catalog.KitItem
-		for _, k := range got.Items {
+		for _, k := range listed.Items {
 			items = append(items, k.Items()...)
 		}
-		facts, err = s.kitFacts(ctx, by.TenantID(), items)
-		return err
+		read, err := s.kitFacts(ctx, by.TenantID(), items)
+		if err != nil {
+			return err
+		}
+		got, facts = listed, read
+		return nil
 	})
 	if err != nil {
 		return shared.Page[KitSummaryView]{}, err
@@ -70,11 +75,16 @@ func (s *Service) GetKit(ctx context.Context, id shared.KitID) (KitView, error) 
 	var k *catalog.Kit
 	var facts map[shared.ItemID]ItemFacts
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if k, err = s.kits.ByID(ctx, by.TenantID(), id); err != nil {
+		loaded, err := s.kits.ByID(ctx, by.TenantID(), id)
+		if err != nil {
 			return fmt.Errorf("load kit %s: %w", id, err)
 		}
-		facts, err = s.kitFacts(ctx, by.TenantID(), k.Items())
-		return err
+		read, err := s.kitFacts(ctx, by.TenantID(), loaded.Items())
+		if err != nil {
+			return err
+		}
+		k, facts = loaded, read
+		return nil
 	})
 	if err != nil {
 		return KitView{}, err

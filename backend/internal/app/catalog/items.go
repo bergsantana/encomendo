@@ -45,10 +45,11 @@ func (s *Service) ListItems(ctx context.Context, filter ItemFilter, page shared.
 	filter.Query = strings.TrimSpace(filter.Query)
 	var got shared.Page[*catalog.Item]
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		got, err = s.items.List(ctx, by.TenantID(), filter, page)
+		listed, err := s.items.List(ctx, by.TenantID(), filter, page)
 		if err != nil {
 			return fmt.Errorf("list items: %w", err)
 		}
+		got = listed
 		return nil
 	})
 	if err != nil {
@@ -85,10 +86,11 @@ func (s *Service) GetItem(ctx context.Context, id shared.ItemID) (ItemView, erro
 	}
 	var it *catalog.Item
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		it, err = s.items.ByID(ctx, by.TenantID(), id)
+		loaded, err := s.items.ByID(ctx, by.TenantID(), id)
 		if err != nil {
 			return fmt.Errorf("load item %s: %w", id, err)
 		}
+		it = loaded
 		return nil
 	})
 	if err != nil {
@@ -127,16 +129,17 @@ func (s *Service) CreateItem(ctx context.Context, in ItemInput) (ItemView, error
 		if err != nil {
 			return err
 		}
-		it, err = catalog.NewItem(by.TenantID(), shared.ItemID(s.ids.NewID()), din)
+		created, err := catalog.NewItem(by.TenantID(), shared.ItemID(s.ids.NewID()), din)
 		if err := shared.MergeValidation(srcErr, refErr, err); err != nil {
 			return err
 		}
-		if err := setItemPublished(it, in.Published); err != nil {
+		if err := setItemPublished(created, in.Published); err != nil {
 			return err
 		}
-		if err := s.items.Insert(ctx, it); err != nil {
+		if err := s.items.Insert(ctx, created); err != nil {
 			return fmt.Errorf("insert item: %w", err)
 		}
+		it = created
 		return nil
 	})
 	if err != nil {
@@ -168,24 +171,26 @@ func (s *Service) ReplaceItem(ctx context.Context, in ReplaceItemInput) (ItemVie
 	}
 	var it *catalog.Item
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if it, err = s.loadItem(ctx, by.TenantID(), in.ID, in.Version); err != nil {
+		loaded, err := s.loadItem(ctx, by.TenantID(), in.ID, in.Version)
+		if err != nil {
 			return err
 		}
 		refErr, err := s.checkRefs(ctx, by.TenantID(), in.Item)
 		if err != nil {
 			return err
 		}
-		din, err := s.itemDomainInput(in.Item, it.Price().Currency(), it.Options())
+		din, err := s.itemDomainInput(in.Item, loaded.Price().Currency(), loaded.Options())
 		if err != nil {
 			return err
 		}
-		if err := shared.MergeValidation(srcErr, refErr, it.Replace(din)); err != nil {
+		if err := shared.MergeValidation(srcErr, refErr, loaded.Replace(din)); err != nil {
 			return err
 		}
-		if err := setItemPublished(it, in.Item.Published); err != nil {
+		if err := setItemPublished(loaded, in.Item.Published); err != nil {
 			return err
 		}
-		return s.saveItem(ctx, it)
+		it = loaded
+		return s.saveItem(ctx, loaded)
 	})
 	if err != nil {
 		return ItemView{}, err
@@ -241,13 +246,15 @@ func (s *Service) changeItem(ctx context.Context, id shared.ItemID, version int,
 	}
 	var it *catalog.Item
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if it, err = s.loadItem(ctx, by.TenantID(), id, version); err != nil {
+		loaded, err := s.loadItem(ctx, by.TenantID(), id, version)
+		if err != nil {
 			return err
 		}
-		if err := change(ctx, it); err != nil {
+		if err := change(ctx, loaded); err != nil {
 			return err
 		}
-		return s.saveItem(ctx, it)
+		it = loaded
+		return s.saveItem(ctx, loaded)
 	})
 	if err != nil {
 		return ItemView{}, err

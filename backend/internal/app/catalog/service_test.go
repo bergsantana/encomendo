@@ -78,6 +78,7 @@ func newHarness(t *testing.T) *harness {
 func (h *harness) supplier(tenant shared.TenantID, name string) shared.SupplierID {
 	id := shared.SupplierID(h.ids.NewID())
 	h.suppliers.Add(tenant, id, name)
+	h.store.AddSupplier(tenant, id)
 	return id
 }
 

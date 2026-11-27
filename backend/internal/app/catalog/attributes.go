@@ -19,12 +19,15 @@ func (s *Service) ListAttributes(ctx context.Context) ([]AttributeView, error) {
 	var list []PlacedAttribute
 	var usage map[shared.AttributeValueID]int
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if list, err = s.attributes.List(ctx, by.TenantID()); err != nil {
+		read, err := s.attributes.List(ctx, by.TenantID())
+		if err != nil {
 			return fmt.Errorf("list attributes: %w", err)
 		}
-		if usage, err = s.attributes.UsageCounts(ctx, by.TenantID()); err != nil {
+		counts, err := s.attributes.UsageCounts(ctx, by.TenantID())
+		if err != nil {
 			return fmt.Errorf("count attribute usage: %w", err)
 		}
+		list, usage = read, counts
 		return nil
 	})
 	if err != nil {
@@ -85,20 +88,22 @@ func (s *Service) ReplaceAttribute(ctx context.Context, in ReplaceAttributeInput
 	var placed PlacedAttribute
 	var usage map[shared.AttributeValueID]int
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		placed, err = s.attributes.ByID(ctx, by.TenantID(), in.ID)
+		loaded, err := s.attributes.ByID(ctx, by.TenantID(), in.ID)
 		if err != nil {
 			return fmt.Errorf("load attribute %s: %w", in.ID, err)
 		}
-		removed, err := placed.Attribute.Replace(s.attributeInput(in.Attribute, placed.Attribute.Values()))
+		removed, err := loaded.Attribute.Replace(s.attributeInput(in.Attribute, loaded.Attribute.Values()))
 		if err != nil {
 			return err
 		}
-		if err := s.attributes.Update(ctx, placed.Attribute, removed); err != nil { // optimistic lock on version
+		if err := s.attributes.Update(ctx, loaded.Attribute, removed); err != nil { // optimistic lock on version
 			return fmt.Errorf("save attribute %s: %w", in.ID, err)
 		}
-		if usage, err = s.attributes.UsageCounts(ctx, by.TenantID()); err != nil {
+		counts, err := s.attributes.UsageCounts(ctx, by.TenantID())
+		if err != nil {
 			return fmt.Errorf("count attribute usage: %w", err)
 		}
+		placed, usage = loaded, counts
 		return nil
 	})
 	if err != nil {

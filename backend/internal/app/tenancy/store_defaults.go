@@ -10,8 +10,9 @@ import (
 
 // StoreDefaultsView is the part of a store's settings the catalog builds on:
 // the currency of its prices, the default assembly days and safety margin of
-// its kits, and which sourcing modes are on. None of it is internal data, so
-// the store page may read it too.
+// its kits, and which sourcing modes are on. The store page may compute
+// with these values (a kit's total days), but never shows the safety margin
+// on its own: it is the store's buffer.
 type StoreDefaultsView struct {
 	Currency          string
 	AssemblyDays      int

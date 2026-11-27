@@ -58,6 +58,8 @@ type Store struct {
 	costs      map[shared.ItemID]shared.Money
 	kits       map[shared.KitID]catalog.KitRecord
 	faults     map[string]error
+	// suppliers are the suppliers rows supplier_items points at, per store.
+	suppliers map[shared.TenantID]map[shared.SupplierID]bool
 
 	// The four repositories over these maps.
 	Categories *Categories
@@ -95,9 +97,22 @@ func NewStore() *Store {
 		costs:      map[shared.ItemID]shared.Money{},
 		kits:       map[shared.KitID]catalog.KitRecord{},
 		faults:     map[string]error{},
+		suppliers:  map[shared.TenantID]map[shared.SupplierID]bool{},
 	}
 	s.Categories, s.Attributes, s.Items, s.Kits = &Categories{s}, &Attributes{s}, &Items{s}, &Kits{s}
 	return s
+}
+
+// AddSupplier records a supplier of tenant, so items of that store may
+// link to it; a link to any other supplier is refused as the foreign key of
+// supplier_items refuses it.
+func (s *Store) AddSupplier(tenant shared.TenantID, id shared.SupplierID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.suppliers[tenant] == nil {
+		s.suppliers[tenant] = map[shared.SupplierID]bool{}
+	}
+	s.suppliers[tenant][id] = true
 }
 
 // Fail makes every later call of method (such as "ItemsByIDs" or
@@ -159,8 +174,9 @@ type named struct {
 	name string
 }
 
+// compareNamed orders by lower(name), then id, as the port says.
 func compareNamed(a, b named) int {
-	return cmp.Or(strings.Compare(a.name, b.name), strings.Compare(a.id.String(), b.id.String()))
+	return cmp.Or(strings.Compare(strings.ToLower(a.name), strings.ToLower(b.name)), strings.Compare(a.id.String(), b.id.String()))
 }
 
 // pageIDs cuts one page of ids from rows, the rows the scope sees, sorted
@@ -229,7 +245,8 @@ func (s *Categories) List(ctx context.Context, tenant shared.TenantID) ([]*catal
 		}
 	}
 	slices.SortFunc(recs, func(a, b catalog.CategoryRecord) int {
-		return cmp.Or(cmp.Compare(a.Position, b.Position), strings.Compare(a.Name, b.Name), strings.Compare(a.ID.String(), b.ID.String()))
+		return cmp.Or(cmp.Compare(a.Position, b.Position), strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			strings.Compare(a.ID.String(), b.ID.String()))
 	})
 	out := make([]*catalog.Category, 0, len(recs))
 	for _, r := range recs {

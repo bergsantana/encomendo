@@ -1,7 +1,6 @@
 package catalog_test
 
 import (
-	"context"
 	"errors"
 	"slices"
 	"testing"
@@ -69,20 +68,35 @@ func TestKitViews_OnlyTheOwnerGetsCosts(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	s := h.scrambler(t)
-	for role, ctx := range map[shared.Role]context.Context{shared.RoleAdmin: h.admin(t), shared.RoleStaff: h.staff(t), shared.RoleViewer: h.viewer(t)} {
-		v, err := h.svc.GetKit(ctx, s.kit.ID)
-		if err != nil || v.Costs != nil || v.SingleItemsTotal != brl(t, 70000) {
-			t.Errorf("%s reading the kit: %+v, %v; want totals and no costs", role, v.Costs, err)
-		}
-		list, err := h.svc.ListKits(ctx, appcatalog.KitFilter{}, mustPage(t, "", 10))
-		if err != nil || len(list.Items) != 1 || list.Items[0].Costs != nil {
-			t.Errorf("%s listing kits: %+v, %v", role, list, err)
-		}
+	// The subtests only read the shared harness.
+	for _, role := range []shared.Role{shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer} {
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+			ctx := h.as(t, h.store1, role)
+			v, err := h.svc.GetKit(ctx, s.kit.ID)
+			if err != nil || v.Costs != nil || v.SingleItemsTotal != brl(t, 70000) {
+				t.Errorf("reading the kit: %+v, %v; want totals and no costs", v.Costs, err)
+			}
+			list, err := h.svc.ListKits(ctx, appcatalog.KitFilter{}, mustPage(t, "", 10))
+			if err != nil || len(list.Items) != 1 || list.Items[0].Costs != nil {
+				t.Errorf("listing kits: %+v, %v", list, err)
+			}
+		})
 	}
+	t.Run("a kit with an item without a cost", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		s := h.scrambler(t)
+		h.ownerSeesNoKitCost(t, s)
+	})
+}
+
+func (h *harness) ownerSeesNoKitCost(t *testing.T, s scrambler) {
+	t.Helper()
 	free := h.createItem(t, inHouseInput("Capa", 3000, 2))
 	k := h.createKit(t, kitOf("Sem custo", 9000, one(s.seat.ID), one(free.ID)))
 	if k.Costs == nil || k.Costs.Cost != nil || k.Costs.Margin != nil {
-		t.Errorf("a kit with an item without a cost: %+v; want costs present with no value", k.Costs)
+		t.Errorf("the owner's view: %+v; want costs present with no value", k.Costs)
 	}
 }
 
@@ -250,21 +264,24 @@ func TestListKits_RowsWithTotalsAndCovers(t *testing.T) {
 
 func TestKitUseCases_FailuresPassThrough(t *testing.T) {
 	t.Parallel()
-	calls := map[string]func(h *harness, s scrambler) error{
-		"list": func(h *harness, _ scrambler) error {
+	calls := map[string]func(t *testing.T, h *harness, s scrambler) error{
+		"list": func(t *testing.T, h *harness, _ scrambler) error {
 			_, err := h.svc.ListKits(h.viewer(t), appcatalog.KitFilter{}, mustPage(t, "", 10))
 			return err
 		},
-		"get": func(h *harness, s scrambler) error { _, err := h.svc.GetKit(h.viewer(t), s.kit.ID); return err },
-		"create": func(h *harness, s scrambler) error {
+		"get": func(t *testing.T, h *harness, s scrambler) error {
+			_, err := h.svc.GetKit(h.viewer(t), s.kit.ID)
+			return err
+		},
+		"create": func(t *testing.T, h *harness, s scrambler) error {
 			_, err := h.svc.CreateKit(h.admin(t), kitOf("Novo", 100, one(s.wheel.ID)))
 			return err
 		},
-		"replace": func(h *harness, s scrambler) error {
+		"replace": func(t *testing.T, h *harness, s scrambler) error {
 			_, err := h.svc.ReplaceKit(h.admin(t), appcatalog.ReplaceKitInput{ID: s.kit.ID, Kit: kitOf("Novo", 100, one(s.wheel.ID)), Version: 1})
 			return err
 		},
-		"archive": func(h *harness, s scrambler) error {
+		"archive": func(t *testing.T, h *harness, s scrambler) error {
 			_, err := h.svc.ArchiveKit(h.admin(t), appcatalog.KitVersionInput{ID: s.kit.ID, Version: 1})
 			return err
 		},
@@ -274,17 +291,20 @@ func TestKitUseCases_FailuresPassThrough(t *testing.T) {
 		"ItemsByIDs": {"list", "get", "create", "replace", "archive"}, "defaults": {"list", "get", "create", "replace", "archive"},
 	}
 	for fault, names := range faults {
-		h := newHarness(t)
-		s := h.scrambler(t)
-		if fault == "defaults" {
-			h.defaults.Fail(errBoom)
-		} else {
-			h.store.Fail(fault, errBoom)
-		}
-		for _, name := range names {
-			if err := calls[name](h, s); !errors.Is(err, errBoom) {
-				t.Errorf("%s failing, %s: %v; want it passed through", fault, name, err)
+		t.Run(fault, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			s := h.scrambler(t)
+			if fault == "defaults" {
+				h.defaults.Fail(errBoom)
+			} else {
+				h.store.Fail(fault, errBoom)
 			}
-		}
+			for _, name := range names {
+				if err := calls[name](t, h, s); !errors.Is(err, errBoom) {
+					t.Errorf("%s: %v; want it passed through", name, err)
+				}
+			}
+		})
 	}
 }

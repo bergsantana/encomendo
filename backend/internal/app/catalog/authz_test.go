@@ -103,15 +103,18 @@ func TestUseCases_RefuseCallersWithoutThePermission(t *testing.T) {
 		"a staff member writing":         {h.staff(t), shared.ErrForbidden, true},
 	}
 	before := len(h.tx.Scopes())
+	// The subtests share the harness, so they run one after another.
 	for name, c := range callers {
-		for _, uc := range cases {
-			if c.writeOnly && !uc.write {
-				continue
+		t.Run(name, func(t *testing.T) {
+			for _, uc := range cases {
+				if c.writeOnly && !uc.write {
+					continue
+				}
+				if err := uc.call(c.ctx); !errors.Is(err, c.want) {
+					t.Errorf("%s: %v, want %v", uc.name, err, c.want)
+				}
 			}
-			if err := uc.call(c.ctx); !errors.Is(err, c.want) {
-				t.Errorf("%s calling %s: %v, want %v", name, uc.name, err, c.want)
-			}
-		}
+		})
 	}
 	if got := len(h.tx.Scopes()); got != before {
 		t.Errorf("%d transactions started for refused callers, want none", got-before)
@@ -120,31 +123,39 @@ func TestUseCases_RefuseCallersWithoutThePermission(t *testing.T) {
 
 func TestUseCases_EveryRoleReads(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	for _, uc := range h.useCases(t) {
-		if uc.write {
-			continue
-		}
-		for _, ctx := range []context.Context{h.viewer(t), h.staff(t), h.admin(t)} {
-			if err := uc.call(ctx); err != nil {
-				t.Errorf("%s: %v", uc.name, err)
+	for _, role := range []shared.Role{shared.RoleViewer, shared.RoleStaff, shared.RoleAdmin} {
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			ctx := h.as(t, h.store1, role)
+			for _, uc := range h.useCases(t) {
+				if uc.write {
+					continue
+				}
+				if err := uc.call(ctx); err != nil {
+					t.Errorf("%s: %v", uc.name, err)
+				}
 			}
-		}
+		})
 	}
 }
 
 func TestUseCases_AdminWrites(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t)
-	for _, uc := range h.useCases(t) {
-		if !uc.write || uc.name == "DeleteCategory" || uc.name == "DeleteAttribute" {
+	for _, uc := range newHarness(t).useCases(t) {
+		if !uc.write {
 			continue
 		}
-		err := uc.call(h.admin(t))
-		// Each case runs once on the same rows; a version moved on by an
-		// earlier case is a conflict, which means the admin got past authz.
-		if err != nil && !errors.Is(err, shared.ErrConflict) {
-			t.Errorf("admin %s: %v", uc.name, err)
-		}
+		t.Run(uc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t) // each write runs on rows of its own
+			for _, c := range h.useCases(t) {
+				if c.name == uc.name {
+					if err := c.call(h.admin(t)); err != nil {
+						t.Errorf("admin: %v", err)
+					}
+				}
+			}
+		})
 	}
 }

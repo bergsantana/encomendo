@@ -15,10 +15,14 @@ func TestFakeRepositories_Contract(t *testing.T) {
 		store := fake.NewStore()
 		return Harness{
 			Categories: store.Categories, Attributes: store.Attributes, Items: store.Items, Kits: store.Kits,
-			Tx:          sharedfake.NewTxManager(),
-			NewID:       ids.NewID,
-			NewTenant:   func(*testing.T) shared.TenantID { return shared.TenantID(ids.NewID()) },
-			NewSupplier: func(*testing.T, shared.TenantID) shared.SupplierID { return shared.SupplierID(ids.NewID()) },
+			Tx:        sharedfake.NewTxManager(),
+			NewID:     ids.NewID,
+			NewTenant: func(*testing.T) shared.TenantID { return shared.TenantID(ids.NewID()) },
+			NewSupplier: func(_ *testing.T, tenant shared.TenantID) shared.SupplierID {
+				id := shared.SupplierID(ids.NewID())
+				store.AddSupplier(tenant, id)
+				return id
+			},
 		}
 	})
 }

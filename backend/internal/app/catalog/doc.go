@@ -10,7 +10,7 @@
 //     RLS is the third line of defense after the token and the permission.
 //   - Costs and margins are the owner's only (identity.SeesCosts, ADR 0025).
 //     One builder makes every admin view, and for any other role the
-//     owner-only part (ItemCosts, KitCosts) is nil: no cost value is copied
+//     owner-only part (ItemCosts, Costs) is nil: no cost value is copied
 //     into a view a non-owner receives. A write that sends any cost field,
 //     even a null one, from another role is shared.ErrForbidden before any
 //     transaction starts; a cost field left out keeps the stored cost, and
@@ -38,6 +38,11 @@
 //     margin or lead-time-by-supplier field at all
 //     (docs/product/design-document.md, System rules). They read items
 //     through methods that never touch staff-only tables, so a store page
-//     scope (a tenant and no user) reads them under RLS.
+//     scope (a tenant and no user) reads them under RLS. A staff scope may
+//     call them too (a store preview) and gets the same public data. An
+//     alternative that is archived or not published is never offered; an
+//     unpublished member of a published kit still shows inside it. Kit days
+//     there may lag a change of the store's default days by up to the
+//     5-minute TTL: tenancy settings do not drop the catalog cache.
 //   - M3 publishes no outbox events: nothing consumes a catalog change yet.
 package catalog

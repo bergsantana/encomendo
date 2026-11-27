@@ -55,15 +55,21 @@ func (s *Store) restore(row itemRow) (*catalog.Item, error) {
 	return catalog.RestoreItem(rec)
 }
 
-// checkItemWrite refuses what RLS and the foreign keys of 0008_catalog
-// would refuse for row with its staff-only rows. Call it with s.mu held.
-func (s *Store) checkItemWrite(scope appshared.Scope, row itemRow, l links, cost *shared.Money) error {
-	staffRows := l.main != nil || l.backup != nil || cost != nil
-	if !sees(scope, row.rec.Tenant) || (staffRows && !seesStaff(scope, row.rec.Tenant)) {
+// checkItemWrite refuses what the port, RLS and the foreign keys of
+// 0008_catalog and 0009_suppliers refuse for an item write. Writes need a
+// staff scope: the port refuses them with no user, as staff-only rows are
+// involved. Call it with s.mu held.
+func (s *Store) checkItemWrite(scope appshared.Scope, row itemRow, l links) error {
+	if !seesStaff(scope, row.rec.Tenant) {
 		return ErrRowSecurity
 	}
 	if c, ok := s.categories[row.rec.Category]; !row.rec.Category.IsZero() && (!ok || c.Tenant != row.rec.Tenant) {
 		return fmt.Errorf("items category: %w", errForeignKey)
+	}
+	for _, link := range []*supplier.SupplierItem{l.main, l.backup} {
+		if link != nil && !s.suppliers[row.rec.Tenant][link.SupplierID()] {
+			return fmt.Errorf("supplier_items supplier: %w", errForeignKey)
+		}
 	}
 	if !s.knownValues(row.rec.Tenant, row.rec.Attributes) {
 		return fmt.Errorf("item_attribute_values value: %w", errForeignKey)
@@ -94,7 +100,7 @@ func (s *Items) Insert(ctx context.Context, it *catalog.Item) error {
 	}
 	defer s.mu.Unlock()
 	row, l, cost := split(it)
-	if err := s.checkItemWrite(scope, row, l, cost); err != nil {
+	if err := s.checkItemWrite(scope, row, l); err != nil {
 		return err
 	}
 	if _, taken := s.items[it.ID()]; taken {
@@ -120,7 +126,7 @@ func (s *Items) Update(ctx context.Context, it *catalog.Item) error {
 		return shared.ErrVersionConflict
 	}
 	row, l, cost := split(it)
-	if err := s.checkItemWrite(scope, row, l, cost); err != nil {
+	if err := s.checkItemWrite(scope, row, l); err != nil {
 		return err
 	}
 	row.rec.Photos, row.rec.Version = stored.rec.Photos, stored.rec.Version+1
@@ -163,7 +169,7 @@ func (s *Items) ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.
 		if seesStaff(scope, tenant) {
 			f.Cost = s.costOf(row)
 		}
-		out = append(out, appcatalog.ItemFacts{ID: id, Name: row.rec.Name, Facts: f})
+		out = append(out, appcatalog.ItemFacts{ID: id, Name: row.rec.Name, Published: row.rec.Published, Facts: f})
 	}
 	return out, nil
 }

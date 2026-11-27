@@ -80,24 +80,37 @@ func TestItemViews_OnlyTheOwnerGetsCosts(t *testing.T) {
 	})
 	page := mustPage(t, "", 10)
 
-	for role, ctx := range map[shared.Role]context.Context{shared.RoleAdmin: h.admin(t), shared.RoleStaff: h.staff(t), shared.RoleViewer: h.viewer(t)} {
-		for _, id := range []shared.ItemID{it.ID, own.ID} {
-			v, err := h.svc.GetItem(ctx, id)
-			if err != nil || v.Costs != nil {
-				t.Errorf("%s reading an item: costs %+v, %v; want none", role, v.Costs, err)
+	// The subtests only read the shared harness.
+	for _, role := range []shared.Role{shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer} {
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+			ctx := h.as(t, h.store1, role)
+			for _, id := range []shared.ItemID{it.ID, own.ID} {
+				v, err := h.svc.GetItem(ctx, id)
+				if err != nil || v.Costs != nil {
+					t.Errorf("reading an item: costs %+v, %v; want none", v.Costs, err)
+				}
 			}
-		}
-		list, err := h.svc.ListItems(ctx, appcatalog.ItemFilter{}, page)
-		if err != nil || len(list.Items) != 2 {
-			t.Fatalf("%s listing: %+v, %v", role, list, err)
-		}
-		for _, row := range list.Items {
-			if row.Costs != nil {
-				t.Errorf("%s listing %s: costs %+v; want none", role, row.Name, row.Costs)
+			list, err := h.svc.ListItems(ctx, appcatalog.ItemFilter{}, page)
+			if err != nil || len(list.Items) != 2 {
+				t.Fatalf("listing: %+v, %v", list, err)
 			}
-		}
+			for _, row := range list.Items {
+				if row.Costs != nil {
+					t.Errorf("listing %s: costs %+v; want none", row.Name, row.Costs)
+				}
+			}
+		})
 	}
-	v, _ := h.svc.GetItem(h.owner(t), own.ID)
+	t.Run("owner", func(t *testing.T) {
+		t.Parallel()
+		h.ownerSeesItemCosts(t, own.ID, page)
+	})
+}
+
+func (h *harness) ownerSeesItemCosts(t *testing.T, own shared.ItemID, page shared.PageRequest) {
+	t.Helper()
+	v, _ := h.svc.GetItem(h.owner(t), own)
 	if c := v.Costs; c == nil || !sameMoney(c.ProductionCost, ptr(brl(t, 1000))) || !sameMoney(c.Cost, ptr(brl(t, 1000))) || c.MainSupplierCost != nil {
 		t.Errorf("the owner's in-house costs = %+v", v.Costs)
 	}
@@ -121,15 +134,22 @@ func TestItemWrites_ACostFromANonOwnerIsForbidden(t *testing.T) {
 		"a null backup cost":     func(in *appcatalog.ItemInput) { in.BackupSupplier.Cost = appcatalog.ClearCost() },
 		"a null production cost": func(in *appcatalog.ItemInput) { in.ProductionCost = appcatalog.ClearCost() },
 	}
+	// The subtests share the harness and count its transactions, so they
+	// run one after another.
 	for name, send := range sends {
-		in := h.suppliedInput("Banco")
-		send(&in)
-		if _, err := h.svc.CreateItem(h.admin(t), in); !errors.Is(err, shared.ErrForbidden) || !errors.Is(err, appcatalog.ErrCostForbidden) {
-			t.Errorf("admin creating with %s: %v, want ErrCostForbidden", name, err)
-		}
-		if _, err := h.svc.ReplaceItem(h.admin(t), appcatalog.ReplaceItemInput{ID: it.ID, Item: in, Version: 1}); !errors.Is(err, appcatalog.ErrCostForbidden) {
-			t.Errorf("admin replacing with %s: %v, want ErrCostForbidden", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			in := h.suppliedInput("Banco")
+			send(&in)
+			if !in.ProductionCost.Sent() && !in.MainSupplier.Cost.Sent() && !in.BackupSupplier.Cost.Sent() {
+				t.Fatal("the case sends no cost")
+			}
+			if _, err := h.svc.CreateItem(h.admin(t), in); !errors.Is(err, shared.ErrForbidden) || !errors.Is(err, appcatalog.ErrCostForbidden) {
+				t.Errorf("admin creating: %v, want ErrCostForbidden", err)
+			}
+			if _, err := h.svc.ReplaceItem(h.admin(t), appcatalog.ReplaceItemInput{ID: it.ID, Item: in, Version: 1}); !errors.Is(err, appcatalog.ErrCostForbidden) {
+				t.Errorf("admin replacing: %v, want ErrCostForbidden", err)
+			}
+		})
 	}
 	if got := len(h.tx.Scopes()); got != before {
 		t.Errorf("%d transactions started; a refused cost starts none", got-before)
@@ -448,24 +468,24 @@ func TestItemPhotos_SignedAndNeverMoveTheVersion(t *testing.T) {
 
 func TestItemUseCases_FailuresPassThrough(t *testing.T) {
 	t.Parallel()
-	type op func(h *harness, it appcatalog.ItemView) error
-	create := func(h *harness, _ appcatalog.ItemView) error {
+	type op func(t *testing.T, h *harness, it appcatalog.ItemView) error
+	create := func(t *testing.T, h *harness, _ appcatalog.ItemView) error {
 		_, err := h.svc.CreateItem(h.owner(t), h.refsInput())
 		return err
 	}
-	replace := func(h *harness, it appcatalog.ItemView) error {
+	replace := func(t *testing.T, h *harness, it appcatalog.ItemView) error {
 		_, err := h.svc.ReplaceItem(h.owner(t), appcatalog.ReplaceItemInput{ID: it.ID, Item: h.refsInput(), Version: 1})
 		return err
 	}
-	archive := func(h *harness, it appcatalog.ItemView) error {
+	archive := func(t *testing.T, h *harness, it appcatalog.ItemView) error {
 		_, err := h.svc.ArchiveItem(h.owner(t), appcatalog.ItemVersionInput{ID: it.ID, Version: 1})
 		return err
 	}
-	list := func(h *harness, _ appcatalog.ItemView) error {
+	list := func(t *testing.T, h *harness, _ appcatalog.ItemView) error {
 		_, err := h.svc.ListItems(h.viewer(t), appcatalog.ItemFilter{}, mustPage(t, "", 10))
 		return err
 	}
-	get := func(h *harness, it appcatalog.ItemView) error {
+	get := func(t *testing.T, h *harness, it appcatalog.ItemView) error {
 		_, err := h.svc.GetItem(h.viewer(t), it.ID)
 		return err
 	}
@@ -485,18 +505,21 @@ func TestItemUseCases_FailuresPassThrough(t *testing.T) {
 		{"list", func(h *harness) { h.store.Fail("ItemsList", errBoom) }, []op{list}},
 	}
 	for _, c := range cases {
-		h := newHarness(t)
-		cat := h.categories(t, "Bancos")[0]
-		attr := h.attribute(t, "Serve em", "CB 500X")
-		h.refs = func(in *appcatalog.ItemInput) {
-			in.CategoryID, in.AttributeValueIDs = cat.ID, []shared.AttributeValueID{attr.Values[0].ID}
-		}
-		it := h.createItem(t, h.refsInput())
-		c.fail(h)
-		for i, run := range c.ops {
-			if err := run(h, it); !errors.Is(err, errBoom) {
-				t.Errorf("%s failing, operation %d: %v; want it passed through", c.name, i, err)
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			cat := h.categories(t, "Bancos")[0]
+			attr := h.attribute(t, "Serve em", "CB 500X")
+			h.refs = func(in *appcatalog.ItemInput) {
+				in.CategoryID, in.AttributeValueIDs = cat.ID, []shared.AttributeValueID{attr.Values[0].ID}
 			}
-		}
+			it := h.createItem(t, h.refsInput())
+			c.fail(h)
+			for i, run := range c.ops {
+				if err := run(t, h, it); !errors.Is(err, errBoom) {
+					t.Errorf("operation %d: %v; want it passed through", i, err)
+				}
+			}
+		})
 	}
 }
