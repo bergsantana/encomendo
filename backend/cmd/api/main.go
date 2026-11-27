@@ -22,8 +22,12 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/adapter/notify"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/postgres"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/redis"
+	"github.com/bergsantana/encomendo/backend/internal/adapter/storage"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/system"
+	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	appidentity "github.com/bergsantana/encomendo/backend/internal/app/identity"
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
+	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/platform/config"
@@ -96,6 +100,8 @@ type wiring struct {
 type services struct {
 	identity   *appidentity.Service
 	tenancy    *apptenancy.Service
+	catalog    *appcatalog.Service
+	suppliers  *appsupplier.Service
 	tokens     *auth.AccessTokens
 	limiter    ratelimit.Limiter
 	pseudonyms ratelimit.Pseudonyms
@@ -149,7 +155,15 @@ func buildHandlers(cfg config.Config, log *slog.Logger, svc services) (apihttp.H
 	if err != nil {
 		return apihttp.Handlers{}, err
 	}
-	return apihttp.Handlers{Auth: authH, Tenancy: tenancyH}, nil
+	catalogH, err := handler.NewCatalog(handler.CatalogDeps{UseCases: svc.catalog, Limiter: svc.limiter, Log: log})
+	if err != nil {
+		return apihttp.Handlers{}, err
+	}
+	suppliersH, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: svc.suppliers, Log: log})
+	if err != nil {
+		return apihttp.Handlers{}, err
+	}
+	return apihttp.Handlers{Auth: authH, Tenancy: tenancyH, Catalog: catalogH, Suppliers: suppliersH}, nil
 }
 
 func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, error) {
@@ -187,7 +201,43 @@ func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, err
 	if err != nil {
 		return services{}, err
 	}
-	return services{identity: identity, tenancy: apptenancy.NewService(tenancyDeps), tokens: tokens}, nil
+	tenancySvc := apptenancy.NewService(tenancyDeps)
+	suppliers, catalog, err := buildCatalog(cfg, log, w, tenancySvc, tx, ids)
+	if err != nil {
+		return services{}, err
+	}
+	return services{identity: identity, tenancy: tenancySvc, catalog: catalog, suppliers: suppliers, tokens: tokens}, nil
+}
+
+// buildCatalog wires the supplier and catalog contexts. The catalog reads
+// supplier names and the store's defaults through inproc ports, so the
+// dependency runs one way, catalog to supplier and tenancy (ADR 0025).
+func buildCatalog(
+	cfg config.Config, log *slog.Logger, w wiring, tenancySvc *apptenancy.Service, tx appshared.TxManager, ids appshared.IDGenerator,
+) (*appsupplier.Service, *appcatalog.Service, error) {
+	photos, err := newPhotoStore(cfg.Storage, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	suppliers := appsupplier.NewService(appsupplier.Deps{Suppliers: postgres.NewSuppliers(), Tx: tx, IDs: ids})
+	catalog := appcatalog.NewService(appcatalog.Deps{
+		Categories: postgres.NewCategories(), Attributes: postgres.NewAttributes(), Items: postgres.NewItems(),
+		Kits: postgres.NewKits(), Photos: postgres.NewPhotos(), Storage: photos,
+		Suppliers: inproc.NewCatalogSuppliers(suppliers), Defaults: inproc.NewCatalogDefaults(tenancySvc),
+		Cache: redis.NewCache(w.cache, log), Tx: tx, IDs: ids,
+	})
+	return suppliers, catalog, nil
+}
+
+// newPhotoStore opens the photo bucket's client. The secret goes straight
+// from the configuration's Secret into the client. Neither the
+// configuration nor storage.Config is logged or printed: both redact the
+// secret, but the client is the only place that needs its value.
+func newPhotoStore(c config.Storage, log *slog.Logger) (*storage.S3, error) {
+	return storage.New(storage.Config{
+		Endpoint: c.Endpoint, PublicEndpoint: c.PublicEndpoint, Bucket: c.Bucket, Region: c.Region,
+		AccessKey: c.AccessKey, SecretKey: c.SecretKey.Value(), UseSSL: c.UseSSL,
+	}, log)
 }
 
 func closeAndLog(log *slog.Logger, name string, closeFn func() error) {
