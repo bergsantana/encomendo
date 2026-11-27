@@ -28,7 +28,19 @@ export async function createStore(page: Page, name: string, slug: string): Promi
   await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible()
 }
 
+/**
+ * openMenu opens the menu drawer when the page is at phone width, where the
+ * menu hides behind the "Menu" button, and does nothing at desktop width.
+ */
+export async function openMenu(page: Page): Promise<void> {
+  const menu = page.getByRole('navigation', { name: 'Menu principal' })
+  const button = page.getByRole('button', { name: 'Menu', exact: true })
+  if (!(await menu.isVisible()) && (await button.isVisible())) await button.click()
+  await expect(menu).toBeVisible()
+}
+
 export async function logOut(page: Page): Promise<void> {
+  await openMenu(page)
   await page.getByRole('navigation', { name: 'Menu principal' }).getByRole('button', { name: 'Sair' }).click()
   await expect(page.getByRole('heading', { name: 'Entrar' })).toBeVisible()
 }

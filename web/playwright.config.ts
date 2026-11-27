@@ -6,6 +6,7 @@ import { defineConfig, devices } from '@playwright/test'
  * docker compose stack (set E2E_BASE_URL to skip the preview servers).
  */
 const external = process.env.E2E_BASE_URL
+const phoneSpecs = /phone.*\.spec\.ts$/
 
 export default defineConfig({
   testDir: './e2e',
@@ -18,7 +19,12 @@ export default defineConfig({
     trace: 'retain-on-failure',
     locale: 'pt-BR',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', testIgnore: phoneSpecs, use: { ...devices['Desktop Chrome'] } },
+    // The phone layouts (ADR 0029): a 390 x 844 Chromium with touch, as the Android WebView renders them.
+    // Only the phone*.spec.ts files run here; the desktop specs keep the desktop project.
+    { name: 'phone', testMatch: phoneSpecs, use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
+  ],
   webServer: external
     ? undefined
     : [{ command: 'pnpm --filter @encomendo/admin preview --strictPort', url: 'http://localhost:4173', reuseExistingServer: !process.env.CI }],

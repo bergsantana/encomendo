@@ -109,4 +109,12 @@ p {
   align-items: flex-end;
   gap: 12px;
 }
+
+/* Phone: one field per row, the button last and full width. */
+@media (max-width: 640px) {
+  .fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 </style>

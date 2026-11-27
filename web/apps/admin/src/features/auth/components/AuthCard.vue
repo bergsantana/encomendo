@@ -33,6 +33,7 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  box-sizing: border-box;
   max-width: 400px;
   padding: 24px;
   border: 1px solid var(--enc-hairline);
@@ -64,5 +65,34 @@
   margin: 0;
   color: var(--enc-ink);
   font-weight: 600;
+}
+
+/* Phone: the card is the screen itself, edge to edge. */
+@media (max-width: 640px) {
+  .auth {
+    place-items: start stretch;
+    padding: 0;
+  }
+  .auth__card {
+    max-width: none;
+    padding: 16px;
+    border: 0;
+    border-radius: 0;
+  }
+}
+</style>
+
+<!-- Not scoped: the buttons and links to size live inside the screens' slots, deeper than :slotted reaches. -->
+<style>
+/* Phone: buttons are full width, and links are as tall as the controls. */
+@media (max-width: 640px) {
+  .auth__card .enc-button {
+    width: 100%;
+  }
+  .auth__card a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--enc-control-height);
+  }
 }
 </style>

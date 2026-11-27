@@ -98,7 +98,10 @@ async function revoke(invitation: Invitation): Promise<void> {
       Tentar de novo
     </BaseButton>
 
-    <table v-if="members.length > 0">
+    <table
+      v-if="members.length > 0"
+      class="enc-cards"
+    >
       <thead>
         <tr>
           <th scope="col">
@@ -202,5 +205,12 @@ th {
 }
 .loading {
   color: var(--enc-ink-secondary);
+}
+
+/* Phone: the page is one column of full-width pieces; the tables are cards (enc-cards). */
+@media (max-width: 640px) {
+  .members {
+    align-items: stretch;
+  }
 }
 </style>

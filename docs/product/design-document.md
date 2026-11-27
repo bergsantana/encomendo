@@ -204,6 +204,7 @@ The exact wording of the screens that start, move and end a staff session. Web a
 **Menu**
 
 - The store's name under the logo; the member's name and "Sair" at the foot.
+- On a phone (640 px wide or less) the menu is a drawer: a top bar shows the button "Menu" and the store's name, and the drawer holds everything above, plus a button "Fechar menu". Choosing an entry closes it. *Drafted by Claude on 2026-11-27 for milestone 3.5, for the user to review: the words "Menu" and "Fechar menu".*
 - When the server cannot be reached: "Não foi possível sair. {the connection or server message}"
 
 ### Equipe (the team)
