@@ -22,6 +22,7 @@ import (
 	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/test/contract/catalogports"
 	"github.com/bergsantana/encomendo/backend/test/integration/pgtest"
 )
 
@@ -222,13 +223,59 @@ func TestPhoto_AnExpiredURLIsRefused(t *testing.T) {
 	}
 }
 
-func TestPhoto_StatOfAMissingKey(t *testing.T) {
-	t.Parallel()
-	s := newStore(t)
-	key := catalog.PhotoKey(shared.TenantID(pgtest.NewID()), catalog.KitPhotos(shared.KitID(pgtest.NewID())), shared.PhotoID(pgtest.NewID()))
-	if _, err := s.Stat(t.Context(), key); !errors.Is(err, appcatalog.ErrObjectMissing) {
-		t.Errorf("Stat = %v, want ErrObjectMissing", err)
+// The PhotoStore contract, the same suite the fake passes in
+// test/contract: missing keys, staged uploads, ETag-bound reads and copies,
+// repeated promotions and deletes, and caller bugs.
+func TestS3_Contract(t *testing.T) {
+	catalogports.RunPhotoStoreContract(t, func(t *testing.T) catalogports.PhotoStoreHarness {
+		s := newStore(t)
+		return catalogports.PhotoStoreHarness{
+			Store: s,
+			Upload: func(t *testing.T, key, contentType string, data []byte) {
+				t.Helper()
+				up, err := s.PresignPut(t.Context(), key, contentType, time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if code := put(t, up, data); code != http.StatusOK {
+					t.Fatalf("PUT = %d, want 200", code)
+				}
+			},
+			Read:  read,
+			NewID: pgtest.NewID,
+		}
+	})
+}
+
+// read returns the object at name and its content type, through a plain
+// client.
+func read(t *testing.T, name string) ([]byte, string, bool) {
+	t.Helper()
+	if !exists(t, name) {
+		return nil, "", false
 	}
+	c, err := rawClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := c.GetObject(t.Context(), bucket, name, minio.GetObjectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = obj.Close() }() // a read-only body
+	info, err := obj.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data, info.ContentType, true
+}
+
+func TestPhoto_AConfirmOfAKeyNobodyUploadedTo(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	missing := catalog.PhotoKey(e.tenant, e.owner, shared.PhotoID(pgtest.NewID()))
 	if _, err := e.svc.ConfirmPhoto(e.ctx, e.owner, missing); !errors.Is(err, catalog.ErrPhotoNotUploaded) {
@@ -236,39 +283,31 @@ func TestPhoto_StatOfAMissingKey(t *testing.T) {
 	}
 }
 
-// An upload replaced after its Stat is neither read nor promoted: Head and
-// Promote are bound to the ETag the check saw (ADR 0028).
-func TestPhoto_AReplacedUploadIsNotReadNorPromoted(t *testing.T) {
+// A bucket that is not there is a broken store, not a missing upload: the
+// server names it NoSuchBucket, even on a HEAD.
+func TestS3_AMissingBucketIsUnavailable(t *testing.T) {
 	t.Parallel()
-	e := newEnv(t)
-	up := e.upload(t, catalog.ContentTypeJPEG, jpeg)
-	info, err := e.s3.Stat(t.Context(), up.Key)
+	s, err := storage.New(storage.Config{
+		Endpoint: endpoint, PublicEndpoint: endpoint, Bucket: "no-such-bucket", Region: "us-east-1",
+		AccessKey: accessKey, SecretKey: secretKey,
+	}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
-	head, err := e.s3.Head(t.Context(), up.Key, info.ETag, catalog.SniffLen)
-	if err != nil || !bytes.Equal(head, jpeg[:catalog.SniffLen]) {
-		t.Fatalf("Head = %d bytes, %v; want the first 512", len(head), err)
+	key := catalog.PhotoKey(shared.TenantID(pgtest.NewID()), catalog.ItemPhotos(shared.ItemID(pgtest.NewID())), shared.PhotoID(pgtest.NewID()))
+	if _, err := s.Stat(t.Context(), key); !errors.Is(err, shared.ErrUnavailable) {
+		t.Errorf("Stat = %v, want ErrUnavailable", err)
 	}
-	if code := put(t, signed(up), []byte("trocado depois da checagem")); code != http.StatusOK {
-		t.Fatalf("second PUT = %d", code)
-	}
-	if _, err := e.s3.Head(t.Context(), up.Key, info.ETag, catalog.SniffLen); !errors.Is(err, appcatalog.ErrObjectChanged) {
-		t.Errorf("Head at the old ETag = %v, want ErrObjectChanged", err)
-	}
-	if err := e.s3.Promote(t.Context(), up.Key, info.ETag, catalog.ContentTypeJPEG); !errors.Is(err, appcatalog.ErrObjectChanged) {
-		t.Errorf("Promote at the old ETag = %v, want ErrObjectChanged", err)
-	}
-	if exists(t, up.Key) {
-		t.Error("the replaced upload was promoted")
-	}
-	if err := e.s3.Promote(t.Context(), "t/nada/items/nada/nada", "abc", catalog.ContentTypeJPEG); !errors.Is(err, appcatalog.ErrObjectMissing) {
-		t.Errorf("Promote of a missing upload = %v, want ErrObjectMissing", err)
+	if err := s.Promote(t.Context(), key, "abc", catalog.ContentTypeJPEG); !errors.Is(err, shared.ErrUnavailable) {
+		t.Errorf("Promote = %v, want ErrUnavailable", err)
 	}
 }
 
 // The bucket-init job's lifecycle rule, as the stack sets it, applies to
-// uploads/ only: a confirmed photo never expires.
+// uploads/ only: a confirmed photo never expires. This checks that the
+// server takes the rule; the compose job that sets it (minio-init in
+// deploy/docker-compose.yml) is checked by hand, from its log, when the
+// stack changes.
 func TestPhoto_LifecycleRuleCoversUploadsOnly(t *testing.T) {
 	t.Parallel()
 	c, err := rawClient()
@@ -300,7 +339,11 @@ func TestPhoto_DeleteRemovesTheObject(t *testing.T) {
 	if err := e.svc.DeletePhoto(e.ctx, e.owner, c.Photo.ID); err != nil {
 		t.Fatal(err)
 	}
-	if exists(t, up.Key) {
-		t.Error("the photo's object is still stored")
+	if exists(t, up.Key) || exists(t, storage.UploadPrefix+up.Key) {
+		t.Error("the photo's object or its staged upload is still stored")
+	}
+	// The key is single-use (ADR 0025): confirming it again finds nothing.
+	if _, err := e.svc.ConfirmPhoto(e.ctx, e.owner, up.Key); !errors.Is(err, catalog.ErrPhotoNotUploaded) {
+		t.Errorf("a confirm after the delete = %v, want ErrPhotoNotUploaded", err)
 	}
 }
