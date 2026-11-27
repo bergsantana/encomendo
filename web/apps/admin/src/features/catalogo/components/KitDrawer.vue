@@ -373,5 +373,9 @@ legend {
   .alert {
     flex-wrap: wrap;
   }
+  /* Under the radio's words: its 24 px box (enc-check, tokens.css) and the 8 px gap. */
+  .hint {
+    margin-left: 32px;
+  }
 }
 </style>

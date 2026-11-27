@@ -48,7 +48,11 @@ function onChange(event: Event): void {
   accent-color: var(--enc-primary);
 }
 
-/* Phone: the box is drawn smaller inside a 48 px square, so the touch target is thumb-sized. */
+/*
+ * Phone: a box drawn inside a square as tall as a control (48 px), so the touch
+ * target is thumb-sized. The box is the square minus 10 px on each side (28 px at
+ * 48), and the tick sits at the square's centre.
+ */
 @media (max-width: 640px) {
   .switch {
     appearance: none;
@@ -76,17 +80,32 @@ function onChange(event: Event): void {
   .switch:checked::after {
     content: '';
     position: absolute;
-    top: 14px;
-    left: 20px;
+    top: 44%;
+    left: 50%;
     width: 8px;
     height: 14px;
     border: solid var(--enc-primary-text);
     border-width: 0 3px 3px 0;
-    transform: rotate(45deg);
+    transform: translate(-50%, -50%) rotate(45deg);
   }
   .switch:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+/* Forced colors replace the custom colours: keep the box and the tick apart in the system's own. */
+@media (max-width: 640px) and (forced-colors: active) {
+  .switch::before {
+    border-color: ButtonText;
+    background: Canvas;
+  }
+  .switch:checked::before {
+    border-color: Highlight;
+    background: Highlight;
+  }
+  .switch:checked::after {
+    border-color: HighlightText;
   }
 }
 </style>

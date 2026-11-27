@@ -768,14 +768,14 @@ describe('photos', () => {
     )
   }
 
-  it('offers any image and no `capture`, so a phone offers both the camera and the gallery', async () => {
+  it('offers the types the server accepts and no `capture`, so a phone offers both the camera and the gallery', async () => {
     signedInAs('admin', writer)
     serveUpload(() => HttpResponse.json(photo('p2', 1), { status: 201 }))
     const { wrapper } = await openCatalog()
     await button(wrapper, 'Banco de couro Scrambler').trigger('click')
     await flushPromises()
     const input = field(wrapper.get('[role=dialog]'), 'Adicionar fotos')
-    expect(input.attributes('accept')).toBe('image/*')
+    expect(input.attributes('accept')).toBe('image/jpeg,image/png,image/webp')
     expect(input.attributes('capture')).toBeUndefined()
   })
 

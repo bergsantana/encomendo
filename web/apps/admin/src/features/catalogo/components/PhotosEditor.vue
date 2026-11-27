@@ -99,7 +99,7 @@ function chosen(event: Event): void {
           class="enc-visually-hidden"
           type="file"
           multiple
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           :disabled="busy"
           @change="chosen"
         >

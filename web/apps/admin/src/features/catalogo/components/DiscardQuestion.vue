@@ -51,11 +51,10 @@ onMounted(() => question.value?.querySelector('button')?.focus())
   font-weight: 600;
 }
 
-/* Phone: the question takes a row, the two answers share the next, and it clears the sticky buttons below. */
+/* Phone: the question takes a row and the two answers share the next. */
 @media (max-width: 640px) {
   .discard {
     flex-wrap: wrap;
-    scroll-margin-bottom: 160px;
   }
   .discard p {
     flex-basis: 100%;

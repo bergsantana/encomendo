@@ -322,10 +322,10 @@ test.describe('without an API', () => {
       expect(second?.y).toBe(first?.y)
       expect(first?.width).toBeGreaterThan(100)
 
-      // The camera or the gallery, the shell decides: no `capture`, any image.
+      // The camera or the gallery, the shell decides: no `capture`, only the types the server accepts.
       const input = sheet.getByLabel('Adicionar fotos')
       await expect(input).toHaveAttribute('type', 'file')
-      await expect(input).toHaveAttribute('accept', 'image/*')
+      await expect(input).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp')
       await expect(input).not.toHaveAttribute('capture')
 
       // The supplier, backup and options editors fit in one column, with 48 px fields.
@@ -338,6 +338,28 @@ test.describe('without an API', () => {
       await sheet.getByRole('button', { name: 'Nova opção' }).click()
       await expectSheetFits(page, 'Editar item')
       await expectThumbSized(sheet.getByRole('button', { name: 'Remover escolha' }).first(), sheet.getByRole('button', { name: 'Adicionar escolha' }).first(), sheet.getByLabel('Obrigatória').first())
+
+      // Tabbing down the whole form never leaves the focused field under the sticky buttons.
+      await body.evaluate((element) => element.scrollTo(0, 0))
+      await sheet.getByLabel('Nome', { exact: true }).focus()
+      let stops = 0
+      for (; stops < 120; stops++) {
+        await page.keyboard.press('Tab')
+        const stop = await page.evaluate(() => {
+          const active = document.activeElement
+          const footer = document.querySelector('.enc-sheet-actions')
+          if (active === null || footer === null) return { footer: true, covered: false, html: '' }
+          if (footer.contains(active)) return { footer: true, covered: false, html: '' }
+          const box = active.getBoundingClientRect()
+          // The file input is clipped to a pixel: its label shows the focus ring.
+          const covered = box.width > 1 && box.bottom > footer.getBoundingClientRect().top
+          return { footer: false, covered, html: active.outerHTML.slice(0, 100) }
+        })
+        expect(stop.covered, `focus went under the buttons: ${stop.html}`).toBe(false)
+        if (stop.footer) break
+      }
+      expect(stops, 'Tab reached the buttons after the fields').toBeGreaterThan(20)
+      expect(stops, 'Tab reached the buttons').toBeLessThan(120)
 
       // An edit then "Cancelar" asks first, and the question is on screen with its answers.
       await sheet.getByLabel('Nome', { exact: true }).fill('Outro nome')

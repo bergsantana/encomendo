@@ -242,7 +242,7 @@ legend {
     align-items: stretch;
   }
   .choices {
-    max-height: 60vh;
+    max-height: 60dvh;
   }
 }
 </style>
