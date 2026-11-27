@@ -22,13 +22,13 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
-| 3 | Catalog and suppliers | 10 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier and catalog use cases (#61, #65), Postgres repositories and Redis cache (#63, step 3.7), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) |
+| 3 | Catalog and suppliers | 11 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier and catalog use cases (#61, #65), Postgres repositories and Redis cache (#63, step 3.7), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) and screens (#64, step 3.16) |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **58** | **122** | **about 48%** |
+|   | **All milestones** | **59** | **122** | **about 48%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -154,7 +154,7 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 
 ### Mobile
 
-- [ ] `feature/catalogo`: items and kits, with offline cache of recent reads
+- [x] `feature/catalogo`: items and kits, with offline cache of recent reads (#64, step 3.16; checked against the real API in 3.17)
 - [x] Fornecedores tab data layer (screens ship with Compras in milestone 5) (#57)
 
 ### Done when
