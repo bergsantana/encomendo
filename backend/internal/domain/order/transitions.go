@@ -1,6 +1,7 @@
 package order
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
@@ -13,17 +14,21 @@ import (
 // release date becomes today and every date counts from it, as a paid
 // deposit would. Only the owner may (order:override), which the app layer
 // checks; the domain records who did it. It returns ErrOrderClosed after
-// handover or cancel, ErrInvalidTransition past awaiting_deposit, and
-// ErrAlreadyReleased when the deposit was paid or the order already
-// released.
+// handover or cancel, ErrInvalidTransition past awaiting_deposit,
+// ErrAlreadyReleased when the deposit is paid or the owner already released
+// it, and shared.ErrInvalid without a user or today. A deposit that was
+// voided can be replaced by a release: the release date becomes today.
 func (o *Order) Release(by shared.Principal, today shared.CivilDate, now time.Time) error {
+	if by.UserID().IsZero() || today.IsZero() {
+		return fmt.Errorf("order: release needs who and today: %w", shared.ErrInvalid)
+	}
 	if o.Closed() {
 		return ErrOrderClosed
 	}
 	if o.Phase().Rank() > workflow.PhaseAwaitingDeposit.Rank() {
 		return ErrInvalidTransition
 	}
-	if !o.releaseDate.IsZero() || !o.releasedBy.IsZero() || o.hasDeposit() {
+	if !o.releasedBy.IsZero() || o.hasDeposit() {
 		return ErrAlreadyReleased
 	}
 	o.releasedBy = by.UserID()
@@ -52,6 +57,9 @@ func (o *Order) hasDeposit() bool { return !o.DepositDue().IsZero() && o.Deposit
 // guards already hold. Cancelling goes through Cancel: moving to cancelled
 // here is ErrInvalidTransition. Guards fail as a *GuardError.
 func (o *Order) Advance(to workflow.StatusKey, handover *Handover, by shared.Principal, today shared.CivilDate, now time.Time) error {
+	if today.IsZero() {
+		return errMissingToday
+	}
 	if to == workflow.Cancelled.Key {
 		return ErrInvalidTransition
 	}
@@ -142,6 +150,9 @@ func contains(ps []workflow.Phase, p workflow.Phase) bool {
 // alerts follow the item's new state (ADR 0030). It returns ErrOrderClosed,
 // ErrItemNotFound and ErrInvalidItemMove.
 func (o *Order) MoveItem(id shared.OrderItemID, to ItemStatus, check *Check, today shared.CivilDate, now time.Time, by shared.Principal) error {
+	if today.IsZero() {
+		return errMissingToday
+	}
 	if o.Closed() {
 		return ErrOrderClosed
 	}
@@ -181,6 +192,9 @@ func (o *Order) MoveItem(id shared.OrderItemID, to ItemStatus, check *Check, tod
 // ErrItemNotFound, and ErrNoBackupSupplier for an in-house item, an item
 // past to_buy or one with no backup.
 func (o *Order) UseBackupSupplier(id shared.OrderItemID, today shared.CivilDate, now time.Time, by shared.Principal) error {
+	if today.IsZero() {
+		return errMissingToday
+	}
 	if o.Closed() {
 		return ErrOrderClosed
 	}

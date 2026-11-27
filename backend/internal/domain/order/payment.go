@@ -95,10 +95,11 @@ type PaymentSpec struct {
 }
 
 // RecordPayment records a payment and reports whether it confirmed the
-// deposit: the deposit payments reach the deposit due for the first time.
-// When it does and the order was not released yet, the release date
-// becomes Today and every date counts from it; the promise follows unless
-// it was changed by hand (ADR 0030). It returns ErrOrderClosed after
+// deposit: the deposit payments that are not void reach the deposit due,
+// when they did not before. The deposit due is then fixed at that amount.
+// Unless the owner released the order, the release date becomes Today and
+// every date counts from it; the promise follows unless it was changed by
+// hand (ADR 0030). It returns ErrOrderClosed after
 // handover or cancel, a ValidationError for an unknown kind or method or an
 // amount that is not above zero, and ErrPaymentExceedsDue for an amount
 // above the balance due.
@@ -118,10 +119,19 @@ func (o *Order) RecordPayment(s PaymentSpec) (depositConfirmed bool, err error) 
 	})
 	o.addHistory(HistoryEntry{Kind: HistoryPayment, By: s.By.UserID(), At: s.At, Payment: s.ID, Amount: s.Amount, PaymentKind: s.Kind, PaymentMethod: s.Method})
 	confirmed := !wasPaid && o.DepositPaid()
-	if confirmed && o.releaseDate.IsZero() {
+	if !confirmed {
+		return false, nil
+	}
+	if o.depositFrozen == nil {
+		due := o.DepositDue().Cents()
+		o.depositFrozen = &due
+	}
+	// A deposit paid again after a void releases the order again, from the
+	// day it was paid; an owner's release stands.
+	if o.releasedBy.IsZero() {
 		o.release(s.Today)
 	}
-	return confirmed, nil
+	return true, nil
 }
 
 func (o *Order) checkPayment(s PaymentSpec) error {

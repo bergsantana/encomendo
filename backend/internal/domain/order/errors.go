@@ -124,4 +124,14 @@ const (
 	msgItemName       = "Informe o nome do item."
 	msgLeadDays       = "Use de 0 a 365 dias."
 	msgSourcingMode   = "Escolha a origem do item."
+	msgAmountTooHigh  = "Use um valor de até R$ 1.000.000.000,00."
 )
+
+// maxAmountCents is the largest price, freight or cost an order takes: the
+// catalog's bound (R$ 1.000.000.000,00, the contract's Cents maximum). With
+// at most 50 lines of 99 items, every sum stays far from int64 overflow.
+const maxAmountCents = 100_000_000_000
+
+// errMissingToday is the error a move gets without the store's day: a bug
+// in the caller, never bad input from a person.
+var errMissingToday = fmt.Errorf("order: today is required: %w", shared.ErrInvalid)

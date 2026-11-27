@@ -43,10 +43,15 @@ func (o *Order) total() shared.Money {
 }
 
 // DepositDue returns the deposit ("Sinal"): the total times the order's
-// deposit percent, rounded half up to the cent (ADR 0030).
+// deposit percent, rounded half up to the cent (ADR 0030). Once the deposit
+// was confirmed it stays the amount confirmed, never above the total: a
+// higher total or percent later adds to the balance, not to the deposit.
 func (o *Order) DepositDue() shared.Money {
-	cents := o.total().Cents()
-	return mustMoney((cents*int64(o.terms.DepositPercent)+50)/100, o.currency())
+	total := o.total().Cents()
+	if o.depositFrozen != nil {
+		return mustMoney(min(*o.depositFrozen, max(total, 0)), o.currency())
+	}
+	return mustMoney((total*int64(o.terms.DepositPercent)+50)/100, o.currency())
 }
 
 // Paid returns the sum of the payments that are not void.

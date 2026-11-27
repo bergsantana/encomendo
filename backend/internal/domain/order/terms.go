@@ -75,6 +75,8 @@ func (t Terms) checkMoney(subtotal shared.Money) []error {
 		errs = append(errs, fieldError("freightCents", msgCurrency))
 	case t.Freight.IsNegative():
 		errs = append(errs, fieldError("freightCents", msgNegative))
+	case t.Freight.Cents() > maxAmountCents:
+		errs = append(errs, fieldError("freightCents", msgAmountTooHigh))
 	case t.Handover == HandoverPickup && !t.Freight.IsZero():
 		errs = append(errs, fieldError("freightCents", msgFreightPickup))
 	}

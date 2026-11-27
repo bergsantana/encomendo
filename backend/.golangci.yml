@@ -100,6 +100,16 @@ linters:
           allow:
             - $gostd
             - github.com/bergsantana/encomendo/backend/internal/domain
+        # testkit is for tests too: it imports "testing", which no binary
+        # should carry, and builds data no request should see.
+        testkit-for-tests:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+          deny:
+            - pkg: github.com/bergsantana/encomendo/backend/internal/testkit
+              desc: testkit is for tests only
         # Fakes are for tests. A fake wired into the API would issue
         # predictable secrets and keep no data, so only tests, the contract
         # suites and the fakes themselves may import them.

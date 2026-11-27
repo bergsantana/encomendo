@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bergsantana/encomendo/backend/internal/domain/schedule"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -38,12 +39,18 @@ type ChangeResult struct {
 //   - from assembling on (ready, in a workflow without assembling) it is
 //     ErrNotEditable, and after handover or cancel ErrOrderClosed.
 //
-// Items kept by id keep their status, check and arrival; new ones start at
-// their mode's initial status. Before the release, the promise follows the
+// Items kept by id keep their status, check, arrival and, while their
+// timing is the same, their expected date; new ones start at their mode's
+// initial status. The domain takes each item's snapshot and sourcing from
+// the spec, so the app layer must pass a kept item's existing ones (its
+// price, options and any backup switch), not the catalog's current ones. Before the release, the promise follows the
 // forecast unless it was changed by hand; after it, the promise moves only
 // to a later forecast. A total below what was paid shows as RefundDue. It
 // returns a *shared.ValidationError for lines or terms that break a rule.
 func (o *Order) Change(s ChangeSpec) (ChangeResult, error) {
+	if s.Today.IsZero() {
+		return ChangeResult{}, errMissingToday
+	}
 	if o.Closed() {
 		return ChangeResult{}, ErrOrderClosed
 	}
@@ -71,7 +78,7 @@ func (o *Order) Change(s ChangeSpec) (ChangeResult, error) {
 		return ChangeResult{}, err
 	}
 	o.lines, o.terms = next.lines, next.terms
-	o.redate(s.Today)
+	o.redateAfterChange(s.Today)
 	o.repromise(s.Today)
 	res := o.changeResult(before, paid)
 	o.addHistory(HistoryEntry{
@@ -79,6 +86,25 @@ func (o *Order) Change(s ChangeSpec) (ChangeResult, error) {
 		OldDate: before.promise, NewDate: o.promise, Amount: res.NewTotal,
 	})
 	return res, nil
+}
+
+// redateAfterChange dates the items after a change. Before the release
+// nothing was bought, so every item that has not arrived is forecast from
+// today. After it, items kept with the same timing keep their date, and new
+// or retimed items count from today: they can only be bought from now.
+func (o *Order) redateAfterChange(today shared.CivilDate) {
+	if o.releaseDate.IsZero() {
+		o.redate(today)
+		return
+	}
+	for li := range o.lines {
+		for ii := range o.lines[li].items {
+			it := &o.lines[li].items[ii]
+			if it.expected.IsZero() {
+				it.expected = schedule.ExpectedDate(timing(*it), shared.Latest(o.releaseDate, today))
+			}
+		}
+	}
 }
 
 // repromise applies the promise rule after a change.

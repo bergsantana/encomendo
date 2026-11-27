@@ -27,14 +27,15 @@ type Record struct {
 	Terms           Terms
 	Payments        []PaymentRecord
 
-	ReleaseDate          shared.CivilDate
-	ReleasedBy           shared.UserID
-	Promise              shared.CivilDate
-	PromiseChangedByHand bool
-	HandedOverAs         Handover
-	HandedOverAt         time.Time
-	CancelledAt          time.Time
-	CancelReason         string
+	ReleaseDate           shared.CivilDate
+	ReleasedBy            shared.UserID
+	DepositConfirmedCents *int64 // the deposit due when it was confirmed; nil before
+	Promise               shared.CivilDate
+	PromiseChangedByHand  bool
+	HandedOverAs          Handover
+	HandedOverAt          time.Time
+	CancelledAt           time.Time
+	CancelReason          string
 
 	Tracking  shared.SecretHash
 	CreatedAt time.Time
@@ -81,7 +82,7 @@ func (o *Order) Record() Record {
 		Tenant: o.tenant, ID: o.id, Number: o.number, Customer: o.customer,
 		WorkflowID: o.workflow.ID(), WorkflowVersion: o.workflow.Version(), StatusKey: o.status.Key,
 		Terms: cloneTerms(o.terms), ReleaseDate: o.releaseDate, ReleasedBy: o.releasedBy,
-		Promise: o.promise, PromiseChangedByHand: o.promiseByHand,
+		DepositConfirmedCents: clonePtr(o.depositFrozen), Promise: o.promise, PromiseChangedByHand: o.promiseByHand,
 		HandedOverAs: o.handedOverAs, HandedOverAt: o.handedOverAt,
 		CancelledAt: o.cancelledAt, CancelReason: o.cancelReason,
 		Tracking: o.tracking, CreatedAt: o.createdAt, CreatedBy: o.createdBy, Version: o.version,
@@ -132,7 +133,7 @@ func Restore(r Record, wf workflow.Workflow) (*Order, error) {
 	o := &Order{
 		tenant: r.Tenant, id: r.ID, number: r.Number, customer: r.Customer, workflow: wf, status: status,
 		terms: cloneTerms(r.Terms), releaseDate: r.ReleaseDate, releasedBy: r.ReleasedBy,
-		promise: r.Promise, promiseByHand: r.PromiseChangedByHand,
+		depositFrozen: clonePtr(r.DepositConfirmedCents), promise: r.Promise, promiseByHand: r.PromiseChangedByHand,
 		handedOverAs: r.HandedOverAs, handedOverAt: r.HandedOverAt,
 		tracking: r.Tracking, createdAt: r.CreatedAt, createdBy: r.CreatedBy, version: r.Version,
 	}

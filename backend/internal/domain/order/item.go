@@ -55,12 +55,18 @@ func (i Item) Arrived() bool { return arrived(i.status) }
 // NextMoves returns the statuses MoveItem accepts for the item now.
 func (i Item) NextMoves() []ItemStatus { return NextItemMoves(i.snapshot.SourcingMode, i.status) }
 
-// keepState returns i with the status, check and arrival of prev when prev
-// is the same item (same id and sourcing mode) before a change.
+// keepState returns i with the status, check, arrival and expected date of
+// prev when prev is the same item (same id and sourcing mode) before a
+// change. The expected date is kept only while the item's timing (lead days
+// and option days) is the same, so a redone item keeps its later date and
+// its alert (review of PR B).
 func (i Item) keepState(prev Item) Item {
 	if prev.id != i.id || prev.snapshot.SourcingMode != i.snapshot.SourcingMode {
 		return i
 	}
 	i.status, i.check, i.arrivedOn = prev.status, clonePtr(prev.check), prev.arrivedOn
+	if timing(prev) == timing(i) {
+		i.expected = prev.expected
+	}
 	return i
 }

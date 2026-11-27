@@ -24,8 +24,12 @@ type Order struct {
 	terms    Terms
 	payments []Payment
 
-	releaseDate   shared.CivilDate // the day the deposit was paid or the order released; zero before
-	releasedBy    shared.UserID    // set only for a release without the deposit
+	releaseDate shared.CivilDate // the day the deposit was paid or the order released; zero before
+	releasedBy  shared.UserID    // set only for a release without the deposit
+	// depositFrozen is the deposit due when it was first confirmed, in
+	// cents; nil before. A deposit once confirmed stays confirmed: a later
+	// change adds to the balance, not to the deposit (ADR 0030).
+	depositFrozen *int64
 	promise       shared.CivilDate // delivery_date, the promise to the client
 	promiseByHand bool             // changed with ChangeDeliveryDate: deposits no longer reset it
 
@@ -101,7 +105,10 @@ func (s NewSpec) checkIdentity() error {
 	case s.Tracking == shared.SecretHash{}:
 		return fmt.Errorf("order: tracking hash is required: %w", shared.ErrInvalid)
 	case s.Today.IsZero():
-		return fmt.Errorf("order: today is required: %w", shared.ErrInvalid)
+		return errMissingToday
+	}
+	if _, err := shared.ZeroMoney(s.Terms.Freight.Currency()); err != nil {
+		return fmt.Errorf("order: currency from the freight: %w", err)
 	}
 	return nil
 }

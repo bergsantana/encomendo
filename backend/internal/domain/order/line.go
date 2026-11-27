@@ -104,6 +104,9 @@ func buildLine(path string, s LineSpec, currency string, prev map[shared.OrderIt
 	if s.Price.Currency() != currency || s.Price.IsNegative() {
 		return Line{}, fieldError(path+".price", msgCurrency)
 	}
+	if s.Price.Cents() > maxAmountCents {
+		return Line{}, fieldError(path+".price", msgAmountTooHigh)
+	}
 	l := Line{id: s.ID, price: s.Price, assemblyDays: clonePtr(s.AssemblyDays), marginDays: clonePtr(s.SafetyMarginDays)}
 	if s.Kit != nil {
 		k := cloneKit(*s.Kit)
@@ -140,24 +143,47 @@ func buildItem(path string, line shared.OrderLineID, s ItemSpec, currency string
 	if snap.Quantity < 1 || snap.Quantity > maxQuantity {
 		errs = append(errs, fieldError(path+".quantity", msgQuantity))
 	}
-	if snap.UnitPrice.Currency() != currency || snap.UnitPrice.IsNegative() {
+	if !validAmount(snap.UnitPrice, currency) {
 		errs = append(errs, fieldError(path+".unitPrice", msgCurrency))
 	}
 	if snap.LeadDays < 0 || snap.LeadDays > maxLeadDays {
 		errs = append(errs, fieldError(path+".leadDays", msgLeadDays))
 	}
 	for k, o := range snap.Options {
-		if o.ExtraPrice.Currency() != currency || o.ExtraPrice.IsNegative() || o.ExtraDays < 0 || o.ExtraDays > maxLeadDays {
+		if !validAmount(o.ExtraPrice, currency) || o.ExtraDays < 0 || o.ExtraDays > maxLeadDays {
 			errs = append(errs, fieldError(fmt.Sprintf("%s.options[%d]", path, k), msgCurrency))
 		}
 	}
 	if err := shared.MergeValidation(errs...); err != nil {
 		return Item{}, err
 	}
+	if err := checkSourcing(s.Sourcing, currency); err != nil {
+		return Item{}, fmt.Errorf("%s: %w", path, err)
+	}
 	return Item{
 		id: s.ID, line: line, snapshot: cloneSnapshot(snap), sourcing: cloneSourcing(s.Sourcing),
 		status: InitialStatus(snap.SourcingMode),
 	}, nil
+}
+
+// validAmount reports whether m is in currency, not negative and within
+// the catalog's bound.
+func validAmount(m shared.Money, currency string) bool {
+	return m.Currency() == currency && !m.IsNegative() && m.Cents() <= maxAmountCents
+}
+
+// checkSourcing checks the staff-only snapshot the catalog built. It is not
+// a person's input, so a broken one is shared.ErrInvalid without fields.
+func checkSourcing(s Sourcing, currency string) error {
+	if s.Cost != nil && !validAmount(*s.Cost, currency) {
+		return fmt.Errorf("order: item cost out of range: %w", shared.ErrInvalid)
+	}
+	if b := s.Backup; b != nil {
+		if b.Supplier.IsZero() || b.LeadDays < 0 || b.LeadDays > maxLeadDays || (b.Cost != nil && !validAmount(*b.Cost, currency)) {
+			return fmt.Errorf("order: backup supplier out of range: %w", shared.ErrInvalid)
+		}
+	}
+	return nil
 }
 
 func cloneKit(k KitSnapshot) KitSnapshot {

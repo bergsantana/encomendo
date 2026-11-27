@@ -88,11 +88,13 @@ func (o *Order) ArrivalLimit() shared.CivilDate {
 // Alerts returns each item's alerts for today: at_risk ("Pode atrasar")
 // when it is expected after the arrival limit, late ("Atrasada") when its
 // expected date passed and it has not arrived. Items with none are left
-// out, and a closed order has none. Alerts are staff data: no client view
+// out; an order not yet released, or closed, has none. Alerts are staff data: no client view
 // carries them (docs/product/design-document.md, System rules).
 func (o *Order) Alerts(today shared.CivilDate) map[shared.OrderItemID][]schedule.Alert {
 	out := map[shared.OrderItemID][]schedule.Alert{}
-	if o.Closed() {
+	// Before the release nothing was bought, so nothing can be late; a
+	// closed order has nothing left to arrive.
+	if o.Closed() || o.releaseDate.IsZero() {
 		return out
 	}
 	limit := o.ArrivalLimit()
@@ -112,6 +114,9 @@ func (o *Order) Alerts(today shared.CivilDate) map[shared.OrderItemID][]schedule
 // cancel, ErrDateInPast for a date before today, and a ValidationError for
 // a reason over 500 characters.
 func (o *Order) ChangeDeliveryDate(date shared.CivilDate, reason string, by shared.Principal, today shared.CivilDate, now time.Time) (shared.CivilDate, error) {
+	if today.IsZero() {
+		return shared.CivilDate{}, errMissingToday
+	}
 	if o.Closed() {
 		return shared.CivilDate{}, ErrOrderClosed
 	}

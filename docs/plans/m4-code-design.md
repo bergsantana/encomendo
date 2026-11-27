@@ -644,7 +644,17 @@ What PR B changed from the sections above. Later steps build against this.
   - A new history kind, `backup_supplier`. History entries carry `Handover`, `PaymentKind` and `PaymentMethod`, and never a supplier name.
   - `TrackingMessage(f, link)` and `CreatedMessage(f, link)` take the link as an argument, and `MessageFacts` has no link field. So `DateChangedMessage` and `ChangedMessage` cannot carry a tracking link (ADR 0030, Amendments).
   - A voided deposit keeps the release date, but the guard counts only payments that are not void, so the order cannot leave awaiting_deposit on it.
+- **From the review of PR B:**
+  - **The confirmed deposit is frozen.** The deposit due when it was first confirmed is kept, `Record.DepositConfirmedCents`. `DepositDue` returns it, capped at the total. So a higher total or percent after a change adds to the balance, and `order.deposit_confirmed` fires once per confirmation.
+  - **A voided deposit can be replaced.** The owner may `Release` the order, which counts dates from that day. Or the deposit may be paid again, which releases from the day it is paid. `Release` refuses only an order the owner already released or whose deposit is paid, and refuses a zero user or a zero today.
+  - **Item dates on a change.** Kept items with the same timing keep their expected date. New or retimed items count from today once the order is released. Before the release, every item that has not arrived is forecast from today.
+  - **No alerts before the release.**
+  - **Bounds.** Prices, option prices, freight and costs are bounded by the catalog's R$ 1.000.000.000,00. The order's currency must be valid. The staff-only sourcing (cost, backup supplier, backup lead days) is checked.
+  - **Required arguments.** Every move refuses a zero today, and `Cancel` refuses a zero time.
+  - **testkit stays in tests.** `.golangci.yml` denies `internal/testkit` in every non-test file.
+  - **A backup switch is visible to the client.** `UseBackupSupplier` changes the item's `LeadDays` in the client-visible snapshot. That is intended: ready days are client data (ADR 0030), and no supplier name or cost reaches the snapshot.
 - **For 4.7, the orders table:**
+  - add `deposit_confirmed_cents bigint CHECK (deposit_confirmed_cents >= 0)`, null before the deposit is confirmed;
   - add `handed_over_as text CHECK (handed_over_as IN ('pickup','delivery'))`, set together with `handed_over_at`;
   - rename `promise_set_by_owner` to `promise_changed_by_hand`;
   - replace the `delivery_address_id` foreign key with a `delivery_address jsonb` snapshot plus a plain `delivery_address_id uuid`, with no foreign key, so removing a customer's address never fails;

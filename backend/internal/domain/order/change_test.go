@@ -108,8 +108,9 @@ func TestChange_LaterForecastMovesPromise(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Released on 12-01, so the new item counts from there: 20 + 3 + 2.
-	want := date(t, "2026-12-26")
+	// Added on 12-03 after the release, so the new item can only be bought
+	// from today: 12-03 + 20 + 3 + 2.
+	want := date(t, "2026-12-28")
 	if o.Promise() != want || res.OldPromise != promise || res.NewPromise != want {
 		t.Errorf("promise %s (result %s → %s), want %s → %s", o.Promise(), res.OldPromise, res.NewPromise, promise, want)
 	}

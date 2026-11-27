@@ -1,6 +1,7 @@
 package order
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
@@ -13,6 +14,10 @@ import (
 // returns ErrOrderClosed after handover or a cancel, and a ValidationError
 // for a reason that is empty or over 500 characters.
 func (o *Order) Cancel(reason string, by shared.Principal, now time.Time) error {
+	if now.IsZero() {
+		// A zero time would be stored as "not cancelled" (cancelled_at).
+		return fmt.Errorf("order: cancel needs the time: %w", shared.ErrInvalid)
+	}
 	if o.Closed() {
 		return ErrOrderClosed
 	}
