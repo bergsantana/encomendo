@@ -1,6 +1,6 @@
 # 0024 — Milestone 3 answers: internal tables, categories, options and photo upload
 
-- Status: accepted
+- Status: accepted; amended by ADR 0025 (costs live on each supplier item, and `item_costs` keeps only in-house costs)
 - Date: 2026-11-26
 
 ## Context
