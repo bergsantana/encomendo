@@ -110,6 +110,10 @@ abstract class CatalogPageDao {
      */
     @Query("DELETE FROM catalog_pages WHERE tenantId = :tenantId AND costs = 1")
     abstract suspend fun dropCosts(tenantId: String)
+
+    /** Drops every page of every store, when someone leaves the device (ADR 0016, ADR 0026). */
+    @Query("DELETE FROM catalog_pages")
+    abstract suspend fun deleteAll()
 }
 
 /** Reads and writes the cached catalog details of one store. */
@@ -149,4 +153,8 @@ abstract class CatalogDetailDao {
     /** Drops the details that carry costs; see [CatalogPageDao.dropCosts]. */
     @Query("DELETE FROM catalog_details WHERE tenantId = :tenantId AND costs = 1")
     abstract suspend fun dropCosts(tenantId: String)
+
+    /** Drops every detail of every store; see [CatalogPageDao.deleteAll]. */
+    @Query("DELETE FROM catalog_details")
+    abstract suspend fun deleteAll()
 }

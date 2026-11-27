@@ -113,7 +113,7 @@ class ModulesTest {
             koin.get<SettingsRepository>()
             // The photo thumbnails' loader: built over the storage client, which has no Auth plugin.
             koin.get<ImageLoader>()
-            koin.get<DeviceDataCleaner>().clear() // Sair empties the loader's caches; an empty cache is fine
+            koin.get<DeviceDataCleaner>() // Sair empties the catalog cache and the loader's caches
             koin.get<CatalogRepository>()
             koin.get<SupplierRepository>()
             koin.get<CategoryRepository>()

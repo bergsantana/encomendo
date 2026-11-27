@@ -2,6 +2,7 @@ package br.com.encomendo.core.di
 
 import br.com.encomendo.core.data.catalog.ApiCatalogRepository
 import br.com.encomendo.core.data.catalog.ApiSupplierRepository
+import br.com.encomendo.core.data.catalog.CatalogCacheCleaner
 import br.com.encomendo.core.data.catalog.CatalogCacheDaos
 import br.com.encomendo.core.data.failure.StoreCalls
 import br.com.encomendo.core.data.members.ApiInvitationsRepository
@@ -10,6 +11,7 @@ import br.com.encomendo.core.data.session.ApiAuthRepository
 import br.com.encomendo.core.data.session.ApiPasswordResetRepository
 import br.com.encomendo.core.data.session.ApiTenancyRepository
 import br.com.encomendo.core.data.session.DeviceDataCleaner
+import br.com.encomendo.core.data.session.DeviceDataCleaners
 import br.com.encomendo.core.data.session.InMemoryStoreSuspensionNotice
 import br.com.encomendo.core.data.session.LastStore
 import br.com.encomendo.core.data.session.SessionKeeper
@@ -133,8 +135,14 @@ val imageModule: Module =
                 .components { add(KtorNetworkFetcherFactory(createStorageClient(get<HttpClientEngine>()))) }
                 .build()
         }
-        // Sair empties both caches: a signed photo URL shows its picture to whoever holds the phone (ADR 0016).
-        single<DeviceDataCleaner> { CoilDeviceDataCleaner(get<ImageLoader>(), Dispatchers.IO) }
+        // Sair empties what the device cached for the person leaving: the catalog (the owner's costs) and the
+        // pictures (a signed photo URL shows its picture to whoever holds the phone). A store switch keeps both
+        // (ADR 0016, ADR 0026).
+        single<DeviceDataCleaner> {
+            DeviceDataCleaners(
+                listOf(CatalogCacheCleaner(get()), CoilDeviceDataCleaner(get<ImageLoader>(), Dispatchers.IO)),
+            )
+        }
     }
 
 /** Names the scope that lives as long as the app, for work that must outlive the screen that started it. */
