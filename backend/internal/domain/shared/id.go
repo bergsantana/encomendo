@@ -401,3 +401,75 @@ func (id AddressID) MarshalText() ([]byte, error) { return marshalTyped(id) }
 
 // UnmarshalText works as ID.UnmarshalText.
 func (id *AddressID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// OrderID identifies an order of a store.
+type OrderID ID
+
+// ParseOrderID parses an order id; see ParseID for the errors.
+func ParseOrderID(s string) (OrderID, error) { return parseTyped[OrderID](s) }
+
+// String returns the canonical form.
+func (id OrderID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id OrderID) IsZero() bool { return id == OrderID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id OrderID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *OrderID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// OrderLineID identifies one line of an order: a kit, or one loose item.
+type OrderLineID ID
+
+// ParseOrderLineID parses an order line id; see ParseID for the errors.
+func ParseOrderLineID(s string) (OrderLineID, error) { return parseTyped[OrderLineID](s) }
+
+// String returns the canonical form.
+func (id OrderLineID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id OrderLineID) IsZero() bool { return id == OrderLineID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id OrderLineID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *OrderLineID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// OrderItemID identifies one item of an order, with its own status and date. A kit line holds one per kit item.
+type OrderItemID ID
+
+// ParseOrderItemID parses an order item id; see ParseID for the errors.
+func ParseOrderItemID(s string) (OrderItemID, error) { return parseTyped[OrderItemID](s) }
+
+// String returns the canonical form.
+func (id OrderItemID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id OrderItemID) IsZero() bool { return id == OrderItemID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id OrderItemID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *OrderItemID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// PaymentID identifies a payment recorded on an order.
+type PaymentID ID
+
+// ParsePaymentID parses a payment id; see ParseID for the errors.
+func ParsePaymentID(s string) (PaymentID, error) { return parseTyped[PaymentID](s) }
+
+// String returns the canonical form.
+func (id PaymentID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id PaymentID) IsZero() bool { return id == PaymentID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id PaymentID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *PaymentID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }

@@ -2638,7 +2638,7 @@ export interface components {
             createdAt: string;
             /** @description Owner only; absent for every other role. Null when an item's cost is unknown. */
             cost?: components["schemas"]["Money"] | null;
-            /** @description Owner only, over the total; absent for every other role. Null without a full cost. */
+            /** @description Owner only; absent for every other role. Over what was sold (the total less the freight, which only passes through). Null without a full cost. */
             margin?: components["schemas"]["Margin"] | null;
             version: number;
         };
@@ -2666,7 +2666,7 @@ export interface components {
             nextCursor?: string;
         };
         /** @enum {string} */
-        HistoryKind: "created" | "status" | "item" | "payment" | "payment_voided" | "released" | "date" | "changed" | "tracking_link" | "cancelled";
+        HistoryKind: "created" | "status" | "item" | "backup_supplier" | "payment" | "payment_voided" | "released" | "date" | "changed" | "tracking_link" | "cancelled";
         /** @description One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them. */
         HistoryEntry: {
             kind: components["schemas"]["HistoryKind"];
@@ -2676,12 +2676,17 @@ export interface components {
             by?: components["schemas"]["Actor"] | null;
             from?: components["schemas"]["OrderStatus"];
             to?: components["schemas"]["OrderStatus"];
+            /** @description With a move into handed over, how it was handed over. */
+            handover?: components["schemas"]["Handover"];
             itemId?: components["schemas"]["Uuid"];
             itemName?: string;
             itemFrom?: components["schemas"]["ItemStatus"];
             itemTo?: components["schemas"]["ItemStatus"];
             check?: components["schemas"]["Check"];
             paymentId?: components["schemas"]["Uuid"];
+            paymentKind?: components["schemas"]["PaymentKind"];
+            paymentMethod?: components["schemas"]["PaymentMethod"];
+            /** @description A payment's or a void's amount, or the new total of a change. */
             amount?: components["schemas"]["Money"];
             oldDate?: components["schemas"]["CivilDate"];
             newDate?: components["schemas"]["CivilDate"];

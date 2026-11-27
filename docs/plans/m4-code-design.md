@@ -614,6 +614,42 @@ ErrOrderClosed
 - `TestMessages_NeverNameSupplierOrRisk` (fuzz the facts)
 - `TestEvents_CarryNoPersonalData` (JSON walk)
 
+### 1.8 As built in 4.2–4.6
+
+What PR B changed from the sections above. Later steps build against this.
+
+- **`workflow`** (4.2):
+  - `ErrInvalidTransition` matches `shared.ErrConflict` (it is a 409).
+  - `PhasesEntered` leaves out the phase the order is already in: a move inside one phase enters nothing, and a skip enters every phase it passes.
+  - `New` also checks the id, version, key and name.
+  - `Rank` is -1 for an unknown phase.
+- **`shared.CivilDate`** (4.3):
+  - `ErrInvalidDate` matches `ErrInvalid`.
+  - An unset date stays unset through `AddDays`, and `ExpectedDate` with no release gives an unset date. `order` always passes a base day: the release date, or today.
+  - Negative days clamp at 0.
+- **`customer`** (4.4):
+  - `Email()` returns `identity.Email`.
+  - A repeated address id in a spec is a field error.
+  - Notes allow line breaks.
+- **`internal/testkit`** holds the four presets (`testkit.Presets`, `testkit.Preset`, `testkit.PresetSpecs`) and `testkit.NewOrder()`, so the order tests and 4.8's integration test share one copy. `domain/workflow` keeps its own, because it cannot import testkit.
+  - `.golangci.yml` lets only domain `_test.go` files import testkit.
+  - testkit itself may import only the domain.
+- **`order`** (4.5, 4.6):
+  - `Advance(to, handover, by, today, now)` takes `today`: an order whose deposit due is zero is released on the day it leaves awaiting_deposit.
+  - `Terms.Address` is a `*DeliveryAddress` snapshot (id, label, CEP, street, number, complement, district, city, UF). The order keeps its copy, so a customer's address can be edited or removed.
+  - `Margin()` returns `catalog.Margin` (from `catalog.MarginOf`), over the total less the freight.
+  - `PromiseSetByOwner` is `PromiseChangedByHand`.
+  - New: `ErrAlreadyReleased` (a second release, or a release after a paid deposit) and `ErrInvalidRecord` (a broken stored row; never `ErrInvalid`).
+  - New accessors and methods: `Order.Record()`, `HandedOver()`, `CancelledAt()`, `Forecast(today)`, `AssemblyDaysCounted()`, `Editable()`, `Closed()`, `Item.NextMoves()`, `Item.ArrivedOn()`, `Line.KitDays()`.
+  - A new history kind, `backup_supplier`. History entries carry `Handover`, `PaymentKind` and `PaymentMethod`, and never a supplier name.
+  - `TrackingMessage(f, link)` and `CreatedMessage(f, link)` take the link as an argument, and `MessageFacts` has no link field. So `DateChangedMessage` and `ChangedMessage` cannot carry a tracking link (ADR 0030, Amendments).
+  - A voided deposit keeps the release date, but the guard counts only payments that are not void, so the order cannot leave awaiting_deposit on it.
+- **For 4.7, the orders table:**
+  - add `handed_over_as text CHECK (handed_over_as IN ('pickup','delivery'))`, set together with `handed_over_at`;
+  - rename `promise_set_by_owner` to `promise_changed_by_hand`;
+  - replace the `delivery_address_id` foreign key with a `delivery_address jsonb` snapshot plus a plain `delivery_address_id uuid`, with no foreign key, so removing a customer's address never fails;
+  - the history `detail` holds `handover`, `paymentKind` and `paymentMethod`.
+
 ---
 
 ## 2. Migrations (step 4.7)

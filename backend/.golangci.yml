@@ -61,6 +61,7 @@ linters:
           list-mode: strict
           files:
             - "**/internal/domain/**"
+            - "!$test"
           allow:
             - $gostd
             - github.com/bergsantana/encomendo/backend/internal/domain
@@ -71,6 +72,34 @@ linters:
               desc: HTTP belongs to adapter/http
             - pkg: database/sql
               desc: persistence belongs to adapter/postgres
+        # Domain tests follow the same rule, and may also use the shared test
+        # data in internal/testkit (the presets and the order builder of
+        # docs/architecture.md section 4.1), which imports only the domain.
+        domain-tests:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**/*_test.go"
+          allow:
+            - $gostd
+            - github.com/bergsantana/encomendo/backend/internal/domain
+            - github.com/bergsantana/encomendo/backend/internal/testkit
+          deny:
+            - pkg: log/slog
+              desc: the domain returns errors; adapters log
+            - pkg: net/http
+              desc: HTTP belongs to adapter/http
+            - pkg: database/sql
+              desc: persistence belongs to adapter/postgres
+        # testkit is test data for every layer, so it may only build domain
+        # values: importing an app or adapter package would make domain tests
+        # depend on them.
+        testkit:
+          list-mode: strict
+          files:
+            - "**/internal/testkit/**"
+          allow:
+            - $gostd
+            - github.com/bergsantana/encomendo/backend/internal/domain
         # Fakes are for tests. A fake wired into the API would issue
         # predictable secrets and keep no data, so only tests, the contract
         # suites and the fakes themselves may import them.
