@@ -111,7 +111,19 @@ Two new permissions join `order:read` and `order:write`, so the apps can hide th
 ## Consequences
 
 - New tables beyond architecture section 7: `order_item_sourcing` (staff-only), `order_counters`, `order_lines`; `orders` gains `number`, `release_date`, `released_by`, `freight`, `discount`, `deposit_percent`, `cancel_reason`; `payments` gains `voided_at`, `voided_by`, `void_reason`; `tenant_settings` gains `time_zone`.
-- Four new permissions in the role table test: `order:manage`, `order:override`, `customer:write`, and their rows for each role.
+- Three new permissions in the role table test: `order:manage`, `order:override`, `customer:write`, and their rows for each role.
 - `docs/architecture.md` 4.4 and 7 change at the milestone close: idempotency moves from the Redis adapter to Postgres.
 - Milestone 5 owes a decision on manual moves of bought items, and calls from `Cancel` into purchasing; milestone 6 owes the stock and capacity paths in `schedule`, the reservation calls, and the daily check.
 - Until milestone 6, a shop that sells from stock sees later dates than it will once Estoque exists. That is the conservative side.
+
+## Amendments
+
+### 2026-11-27, from the security review of step 4.1
+
+- **Changed terms keep their values.** On a change, a discount, deposit percent or per-order days left out keep the order's current value, and any difference from the current value needs `order:manage`. Before, a field left out fell back to the store default, so staff could undo an owner's or admin's terms without the check.
+- **No stored tracking token.** `order_messages` keeps the message text with the tracking link replaced by a placeholder; the plain token exists only in the answer to `POST /orders` and `POST /orders/{id}/tracking-link`. Only those two answers ever carry a tracking link, in `trackingUrl` or inside `whatsappUrl`. The date-change and change messages carry none.
+- **Owner-only costs on every order answer.** Every order view is built by one function that applies `identity.SeesCosts`, and the visibility test covers every operation that returns an order, replays included.
+- **A replay never skips authorization.** The permission is checked before the `Idempotency-Key` is recalled. A retry while the first call is still running answers `409 conflict`.
+- **The client sees the promise.** The tracking view's date is `deliveryDate`, the promise, never an item's expected date.
+- **Store page orders (M7).** An order matched to a customer only by phone answers no customer facts and uses no stored address.
+

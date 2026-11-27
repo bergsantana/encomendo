@@ -944,6 +944,492 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/status-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The status workflow presets a store can choose, with their statuses.
+         * @description Needs `settings:read`. The four launch presets (ADR 0004, ADR 0023),
+         *     each at its latest version, statuses in order. Presets are global and
+         *     read-only: no store can rename a status or build its own list.
+         */
+        get: operations["listStatusWorkflows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/status-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose the store's status workflow for new orders.
+         * @description Needs `settings:write` (owner). New orders take the chosen workflow
+         *     and keep that version for life; orders already made keep theirs
+         *     (ADR 0004). Send the settings `version` you read as
+         *     `expectedVersion`.
+         */
+        put: operations["chooseStatusWorkflow"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/customers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The store's customers, by name.
+         * @description Needs `order:read`. `q` matches the start of a name, ignoring case, or digits of the WhatsApp number.
+         */
+        get: operations["listCustomers"];
+        put?: never;
+        /**
+         * Add a customer.
+         * @description Needs `order:write`, so whoever takes an order can add its customer.
+         *     The WhatsApp number is unique in the store (`409 phone_taken`).
+         */
+        post: operations["createCustomer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/customers/{customerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One customer with their addresses.
+         * @description Needs `order:read`.
+         */
+        get: operations["getCustomer"];
+        /**
+         * Replace a customer's details and addresses.
+         * @description Needs `customer:write` (owner, admin). Send every field with the
+         *     `version` you read. An address sent with its `id` keeps it, so
+         *     orders that point at it still do; an address left out is removed
+         *     from the customer, and orders keep the copy they were made with.
+         */
+        put: operations["replaceCustomer"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price and date an order without saving it.
+         * @description Needs `order:write`; a discount, deposit percent or days other than
+         *     the store's need `order:manage`. Answers what `POST /orders` would
+         *     create: prices, deposit, each item's expected date and the delivery
+         *     date, all computed by the server. With `orderId`, it quotes a change
+         *     to that order, counting dates from its release date. Nothing is
+         *     written.
+         */
+        post: operations["quoteOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The store's orders, by delivery date.
+         * @description Needs `order:read`. Active orders (neither handed over nor
+         *     cancelled) by default; `scope` widens it. Alerts are computed for
+         *     today in the store's time zone.
+         */
+        get: operations["listOrders"];
+        put?: never;
+        /**
+         * Create an order ("Novo pedido").
+         * @description Needs `order:write`; a discount, deposit percent or days other than
+         *     the store's need `order:manage`. Requires `Idempotency-Key`. Give
+         *     `customerId`, or `newCustomer` (found by WhatsApp number first,
+         *     created when absent). The order takes the store's current status
+         *     workflow and keeps that version.
+         *
+         *     The answer carries `trackingUrl`, the order's tracking link, this
+         *     once: the server keeps only its hash, and the message it records
+         *     has the link left out. Only this answer and `POST …/tracking-link`
+         *     ever carry a tracking link, in `trackingUrl` or inside
+         *     `whatsappUrl`. With `sendToCustomer`, the
+         *     order moves to the status after the first and `whatsappUrl` opens
+         *     WhatsApp with the summary for the customer; nothing is sent by the
+         *     server.
+         *
+         *     A retry with the same key and body answers `201` with the order as
+         *     it is now, and no `trackingUrl`; the same key with another body is
+         *     `422 idempotency_key_reused`.
+         */
+        post: operations["createOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One order with its items, dates, alerts, payments and the moves it allows.
+         * @description Needs `order:read`. `cost` and `margin` follow the cost rule (see the top of this document).
+         */
+        get: operations["getOrder"];
+        /**
+         * Change an order's items and terms.
+         * @description Send every line and term with the `version` you read. Items sent
+         *     again (same catalog item in the same line) keep their status.
+         *
+         *     - Before any payment, in a draft or awaiting-deposit status, needs
+         *       `order:write`. Terms left out keep the order's current values; a
+         *       discount, deposit percent or days different from the order's
+         *       current ones need `order:manage` (see `TermsInput`).
+         *     - After a payment, or past awaiting deposit, needs `order:manage`
+         *       and `customerApproved: true`, the seller confirming that the
+         *       customer agreed (`400 approval_required` otherwise). The answer's
+         *       `whatsappUrl` opens WhatsApp with a summary for the customer. A
+         *       later forecast moves the delivery date; a total below what was
+         *       paid shows `refundDue` ("Valor a devolver").
+         *     - Once the order enters assembling (or ready, in a workflow without
+         *       assembling), `409 order_not_editable`; once handed over or
+         *       cancelled, `409 order_closed`.
+         */
+        put: operations["changeOrder"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/advance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move the order to another status of its workflow.
+         * @description Needs `order:write`. `to` is one of the order's `moves`: any later
+         *     status, or an earlier one of the same phase. Each phase the move
+         *     enters must have its guard hold, or `409 guard_failed` names it:
+         *
+         *     - leaving awaiting deposit: the deposit is paid, or the owner
+         *       released the order (`deposit_unpaid`);
+         *     - entering assembling, or ready in a workflow without assembling:
+         *       every item arrived and was checked (`items_not_ready`);
+         *     - entering handed over: nothing is left to pay
+         *       (`balance_unpaid`), and `handover` says delivery or pickup
+         *       (`400 invalid` without it).
+         *
+         *     Cancelling is `POST /cancel`, never a move.
+         */
+        post: operations["advanceOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release the order without the deposit.
+         * @description Needs `order:override` (owner). Only before the deposit is paid, in
+         *     a draft or awaiting-deposit status. The release date becomes today,
+         *     and the items' dates and the delivery date count from it, as a paid
+         *     deposit would.
+         */
+        post: operations["releaseOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/items/{itemId}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move one item along its sourcing mode's lifecycle.
+         * @description Needs `order:write`. `to` is one of the item's `nextMoves` (ADR
+         *     0030). `received` (bought items) and `ready` (in-house items) need
+         *     `check`; `defective` sends the item back to `to_buy` or
+         *     `in_production`. The delivery date never moves; alerts follow the
+         *     item's new state.
+         */
+        post: operations["moveOrderItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/items/{itemId}/use-backup-supplier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch an item to its backup supplier ("Usar o fornecedor reserva").
+         * @description Needs `order:manage` (owner, admin). Only a bought item still to be
+         *     bought, with a backup supplier in the order's snapshot
+         *     (`409 no_backup_supplier` otherwise). The item's supplier, lead
+         *     time and cost become the backup's and its expected date is
+         *     recomputed; the delivery date does not move.
+         */
+        post: operations["useBackupSupplier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a payment received by hand (Sinal or Saldo).
+         * @description Needs `order:write`. Requires `Idempotency-Key`. No payment provider
+         *     is involved (ADR 0023). An amount above what is still due is
+         *     `400 payment_exceeds_due`. The payment that makes the deposit paid
+         *     sets the release date to today, and the dates count from it.
+         *
+         *     A retry with the same key and body answers `201` with the order as
+         *     it is now; the same key with another body is
+         *     `422 idempotency_key_reused`.
+         */
+        post: operations["recordPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/payments/{paymentId}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Void a wrong payment.
+         * @description Needs `order:override` (owner). The payment stays in the history,
+         *     marked void with the reason, and no longer counts toward the deposit
+         *     or the balance. Voiding a deposit never undoes the release.
+         */
+        post: operations["voidPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/delivery-date": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the date promised to the client.
+         * @description Needs `order:manage` (owner, admin). Not before today in the store's
+         *     time zone (`400 invalid`). The change is recorded in the history
+         *     and `whatsappUrl` opens WhatsApp with a message for the client.
+         *     Nothing is sent automatically (docs/architecture.md section 4.2).
+         */
+        put: operations["changeDeliveryDate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/tracking-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a new tracking link and a WhatsApp message carrying it.
+         * @description Needs `order:write`. Every call issues a new link and the previous
+         *     one stops working, because the server keeps only a hash of it (ADR
+         *     0030). The link opens the order's tracking page on the store page
+         *     (milestone 7). The message is recorded in the order's history.
+         */
+        post: operations["sendTrackingLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel the order.
+         * @description Needs `order:manage` (owner, admin). Any time before it is handed
+         *     over (`409 order_closed` after). Payments stay as recorded; a refund
+         *     happens outside Encomendo.
+         */
+        post: operations["cancelOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What happened to the order, newest first.
+         * @description Needs `order:read`.
+         */
+        get: operations["orderHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hoje — counts, what needs the team and the next deliveries.
+         * @description Needs `order:read`. Built from active orders, for today in the
+         *     store's time zone. It carries no cost or margin.
+         */
+        get: operations["getToday"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/finance/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Financeiro — money received, to receive and to refund, and margins.
+         * @description Needs `finance:read` (owner). `from` and `to` are days in the
+         *     store's time zone, both included, at most 366 days apart.
+         */
+        get: operations["getFinanceSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -966,12 +1452,21 @@ export interface components {
              * @description Stable machine-readable code. New codes may be added; existing ones never change.
              * @enum {string}
              */
-            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended" | "name_taken" | "category_in_use" | "item_in_kit" | "item_archived" | "photo_limit" | "photo_invalid" | "photo_not_uploaded";
+            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended" | "name_taken" | "category_in_use" | "item_in_kit" | "item_archived" | "photo_limit" | "photo_invalid" | "photo_not_uploaded" | "invalid_transition" | "guard_failed" | "order_not_editable" | "order_closed" | "approval_required" | "payment_exceeds_due" | "invalid_item_move" | "no_backup_supplier" | "item_unavailable" | "phone_taken" | "workflow_not_found" | "idempotency_key_required" | "idempotency_key_reused";
             detail?: string;
             instance?: string;
             errors?: components["schemas"]["FieldIssue"][];
-            /** @description With `item_in_kit` and `item_archived`, the rows the refusal names (the kits, or the archived items). */
+            /**
+             * @description With `item_in_kit` and `item_archived`, the rows the refusal
+             *     names (the kits, or the archived items). With
+             *     `item_unavailable`, the archived items or kits of the order.
+             */
             references?: components["schemas"]["Reference"][];
+            /**
+             * @description With `guard_failed` only, the guard that did not hold.
+             * @enum {string}
+             */
+            guard?: "deposit_unpaid" | "items_not_ready" | "balance_unpaid";
         };
         FieldIssue: {
             /**
@@ -1021,7 +1516,7 @@ export interface components {
          * @description New permissions are added as features land; existing ones never change.
          * @enum {string}
          */
-        Permission: "catalog:read" | "catalog:write" | "finance:read" | "inventory:adjust" | "members:manage" | "order:read" | "order:write" | "portal:write" | "production:write" | "purchase:write" | "receiving:write" | "settings:read" | "settings:write";
+        Permission: "catalog:read" | "catalog:write" | "customer:write" | "finance:read" | "inventory:adjust" | "members:manage" | "order:manage" | "order:override" | "order:read" | "order:write" | "portal:write" | "production:write" | "purchase:write" | "receiving:write" | "settings:read" | "settings:write";
         /**
          * @description How the refresh token travels; see "Sessions" above. Android sends `body`.
          * @default cookie
@@ -1150,6 +1645,11 @@ export interface components {
              * @example Encomenda com montagem
              */
             name: string;
+            /**
+             * @description The workflow's statuses in order, for the settings screen's
+             *     preview. Served from step 4.8, which makes it required.
+             */
+            statuses?: components["schemas"]["OrderStatus"][];
         };
         /**
          * @description The store's WhatsApp number, digits only with country and area code
@@ -1174,6 +1674,7 @@ export interface components {
              */
             safetyMarginDays: number;
             whatsappPhone: components["schemas"]["WhatsappPhone"];
+            timeZone?: components["schemas"]["TimeZone"];
         };
         TenantSettings: components["schemas"]["EditableSettings"] & {
             /** @example BRL */
@@ -1625,6 +2126,677 @@ export interface components {
         ReplaceSupplierRequest: components["schemas"]["SupplierInput"] & {
             version: number;
         };
+        /**
+         * Format: date
+         * @description A calendar day, `YYYY-MM-DD`, with no time and no zone. Days count in the store's time zone (ADR 0030).
+         * @example 2026-12-21
+         */
+        CivilDate: string;
+        /**
+         * @description The store's time zone, one per Brazilian offset (ADR 0030). It
+         *     decides which day "today" is for dates and alerts. Absent until step
+         *     4.8 serves it, which makes it required. A store starts on
+         *     America/Sao_Paulo; a settings update that leaves it out keeps the
+         *     stored zone.
+         * @default America/Sao_Paulo
+         * @enum {string}
+         */
+        TimeZone: "America/Noronha" | "America/Sao_Paulo" | "America/Manaus" | "America/Rio_Branco";
+        /**
+         * @description The fixed phase a status belongs to (ADR 0004). Rules hang on it,
+         *     and a status badge takes its color from it, never from the label.
+         * @enum {string}
+         */
+        Phase: "draft" | "awaiting_deposit" | "confirmed" | "sourcing" | "assembling" | "ready" | "handed_over" | "cancelled";
+        /**
+         * @description A status of the order's own workflow. `cancelled` is the status every workflow ends in when an order is cancelled.
+         * @example em_montagem
+         */
+        StatusKey: string;
+        /** @description A status of a workflow, with its names for staff and for clients. */
+        OrderStatus: {
+            key: components["schemas"]["StatusKey"];
+            /**
+             * @description What staff see.
+             * @example Em montagem
+             */
+            label: string;
+            /**
+             * @description What the client sees on the tracking page.
+             * @example Montando seu pedido
+             */
+            clientLabel: string;
+            phase: components["schemas"]["Phase"];
+        };
+        /** @description A status workflow preset at one version. Published versions never change. */
+        StatusWorkflow: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+            /** @example encomenda_montagem */
+            key: string;
+            /** @example Encomenda com montagem */
+            name: string;
+            /** @description In order; `cancelled` is implicit and never listed. */
+            statuses: components["schemas"]["OrderStatus"][];
+        };
+        StatusWorkflowList: {
+            items: components["schemas"]["StatusWorkflow"][];
+        };
+        ChooseWorkflowRequest: {
+            workflowId: components["schemas"]["Uuid"];
+            /** @description The preset's version. */
+            version: number;
+            /** @description The settings `version` you read. */
+            expectedVersion: number;
+        };
+        /**
+         * @description The customer's WhatsApp number, digits only, 55 + DDD + number. Unique in the store.
+         * @example 5592991234567
+         */
+        CustomerPhone: string;
+        /** @enum {string} */
+        UF: "AC" | "AL" | "AP" | "AM" | "BA" | "CE" | "DF" | "ES" | "GO" | "MA" | "MT" | "MS" | "MG" | "PA" | "PB" | "PR" | "PE" | "PI" | "RJ" | "RN" | "RS" | "RO" | "RR" | "SC" | "SP" | "SE" | "TO";
+        Address: {
+            id: components["schemas"]["Uuid"];
+            /** @example Casa */
+            label: string;
+            /** @example 69057000 */
+            cep: string;
+            street: string;
+            number: string;
+            complement: string;
+            district: string;
+            city: string;
+            state: components["schemas"]["UF"];
+        };
+        AddressInput: {
+            /** @description Send it to keep an existing address; omit it for a new one. */
+            id?: components["schemas"]["Uuid"];
+            label: string;
+            cep: string;
+            street: string;
+            number?: string;
+            complement?: string;
+            district?: string;
+            city: string;
+            state: components["schemas"]["UF"];
+        };
+        /** @description A customer of this store. Never shared with another store, even for the same person. */
+        Customer: {
+            id: components["schemas"]["Uuid"];
+            /** @example João Pereira */
+            name: string;
+            phone: components["schemas"]["CustomerPhone"];
+            /** Format: email */
+            email: string | null;
+            notes: string;
+            addresses: components["schemas"]["Address"][];
+            version: number;
+        };
+        /** @description Unknown fields are refused (`400 invalid`). */
+        CustomerInput: {
+            name: string;
+            phone: components["schemas"]["CustomerPhone"];
+            email?: components["schemas"]["Email"] | null;
+            notes?: string;
+            addresses: components["schemas"]["AddressInput"][];
+        };
+        ReplaceCustomerRequest: components["schemas"]["CustomerInput"] & {
+            version: number;
+        };
+        CustomerSummary: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            phone: components["schemas"]["CustomerPhone"];
+            /** @description Orders of this customer in the store, cancelled ones included. */
+            orders: number;
+            /**
+             * Format: date-time
+             * @description Absent when the customer has no order.
+             */
+            lastOrderAt?: string;
+        };
+        CustomerPage: {
+            items: components["schemas"]["CustomerSummary"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        /** @description A customer made inside "Novo pedido". An existing customer with this number is used instead, unchanged. */
+        NewCustomer: {
+            name: string;
+            phone: components["schemas"]["CustomerPhone"];
+        };
+        /**
+         * @description Entrega / Retirada.
+         * @enum {string}
+         */
+        Handover: "delivery" | "pickup";
+        /**
+         * @description An order item's state, by sourcing mode (ADR 0030):
+         *     `to_order` and `stock` go `to_buy → sent_to_supplier → in_transit →
+         *     received → installed`; `in_house` goes `planned → in_production →
+         *     ready → installed`.
+         * @enum {string}
+         */
+        ItemStatus: "to_buy" | "sent_to_supplier" | "in_transit" | "received" | "planned" | "in_production" | "ready" | "installed";
+        /**
+         * @description Tudo certo / Com defeito, recorded when an item is received or made.
+         * @enum {string}
+         */
+        Check: "ok" | "defective";
+        /**
+         * @description `at_risk` ("Pode atrasar"): the item is expected after the date it
+         *     must arrive by. `late` ("Atrasada"): its expected date passed and it
+         *     has not arrived. Alerts sit on top of the status; staff only.
+         * @enum {string}
+         */
+        AlertKind: "at_risk" | "late";
+        Alert: {
+            kind: components["schemas"]["AlertKind"];
+            /** @description The order item the alert is about. */
+            itemId: components["schemas"]["Uuid"];
+        };
+        /**
+         * @description Sinal / Saldo.
+         * @enum {string}
+         */
+        PaymentKind: "deposit" | "balance";
+        /**
+         * @description How the store received the money. Recorded by hand; no payment provider (ADR 0023).
+         * @enum {string}
+         */
+        PaymentMethod: "pix" | "dinheiro" | "cartao_credito" | "cartao_debito" | "transferencia" | "outro";
+        /** @description The staff member who did something. */
+        Actor: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+        };
+        /** @description The client's choice for one of a catalog item's options. */
+        OptionChoice: {
+            /** @description The catalog item the option belongs to (the loose item, or an item of the kit). */
+            itemId: components["schemas"]["Uuid"];
+            optionId: components["schemas"]["Uuid"];
+            choiceId: components["schemas"]["Uuid"];
+        };
+        /** @description Replace a swappable kit item with one of its alternatives ("trocar item"). */
+        Swap: {
+            itemId: components["schemas"]["Uuid"];
+            withItemId: components["schemas"]["Uuid"];
+        };
+        /**
+         * @description One line of the order: a kit (`kitId`, with its swaps and the
+         *     options of its items) or a loose item (`itemId` and `quantity`).
+         *     Exactly one of `kitId` and `itemId`. A required option with no
+         *     choice, a choice of another option, an archived item or kit, and
+         *     every kit swap rule are refused.
+         */
+        LineRequest: {
+            kitId?: components["schemas"]["Uuid"];
+            itemId?: components["schemas"]["Uuid"];
+            /** @description Loose items only; a kit line is one kit. */
+            quantity?: number;
+            swaps?: components["schemas"]["Swap"][];
+            options?: components["schemas"]["OptionChoice"][];
+        };
+        /**
+         * @description How the order is handed over and paid.
+         *
+         *     - On a new order or a quote, a field left out takes the default: the
+         *       store's deposit percent, the kit's or the store's assembly and
+         *       safety margin days, no freight, no discount. A discount, deposit
+         *       percent or days other than the default need `order:manage`.
+         *     - On a change (`PUT /orders/{orderId}`, or a quote with `orderId`),
+         *       a field left out keeps the order's current value, and a discount,
+         *       deposit percent or days different from the order's current ones
+         *       need `order:manage`, whatever the store default is. Staff can
+         *       change lines without resending terms an owner or admin set, and
+         *       can never put them back to the default.
+         */
+        TermsInput: {
+            handover: components["schemas"]["Handover"];
+            /** @description One of the customer's addresses; required for delivery. */
+            addressId?: components["schemas"]["Uuid"];
+            /** @description Frete; delivery only. */
+            freightCents?: components["schemas"]["Cents"];
+            /** @description Desconto; never above the lines' total. */
+            discountCents?: components["schemas"]["Cents"];
+            /** @description Sinal for this order. */
+            depositPercent?: number;
+            assemblyDays?: number;
+            safetyMarginDays?: number;
+        };
+        QuoteRequest: {
+            lines: components["schemas"]["LineRequest"][];
+            terms: components["schemas"]["TermsInput"];
+            /** @description Quote a change to this order. */
+            orderId?: components["schemas"]["Uuid"];
+        };
+        /** @description An option choice as it was when the order was made. */
+        ChosenOption: {
+            optionId: components["schemas"]["Uuid"];
+            choiceId: components["schemas"]["Uuid"];
+            /** @example Cor da costura */
+            name: string;
+            /** @example Vermelha */
+            label: string;
+            extraPrice: components["schemas"]["Money"];
+            extraDays: components["schemas"]["Days"];
+        };
+        QuoteItem: {
+            catalogItemId: components["schemas"]["Uuid"];
+            name: string;
+            sourcingMode: components["schemas"]["SourcingMode"];
+            quantity: number;
+            unitPrice: components["schemas"]["Money"];
+            options: components["schemas"]["ChosenOption"][];
+            expectedDate: components["schemas"]["CivilDate"];
+        };
+        QuoteLine: {
+            kit: components["schemas"]["KitRef"] | null;
+            /** @description The line's price, options included. */
+            price: components["schemas"]["Money"];
+            items: components["schemas"]["QuoteItem"][];
+        };
+        /** @description Prices, deposit and dates, all computed by the server. */
+        Quote: {
+            lines: components["schemas"]["QuoteLine"][];
+            subtotal: components["schemas"]["Money"];
+            freight: components["schemas"]["Money"];
+            discount: components["schemas"]["Money"];
+            total: components["schemas"]["Money"];
+            depositPercent: number;
+            depositDue: components["schemas"]["Money"];
+            /** @description The days counted in the deadline; 0 when the workflow has no assembling. */
+            assemblyDays: number;
+            safetyMarginDays: number;
+            deliveryDate: components["schemas"]["CivilDate"];
+            /** @description Precisa chegar até. */
+            arrivalLimit: components["schemas"]["CivilDate"];
+        };
+        /** @description Exactly one of `customerId` and `newCustomer`. */
+        CreateOrderRequest: {
+            customerId?: components["schemas"]["Uuid"];
+            newCustomer?: components["schemas"]["NewCustomer"];
+            lines: components["schemas"]["LineRequest"][];
+            terms: components["schemas"]["TermsInput"];
+            /**
+             * @description "Salvar e enviar ao cliente": move to the status after the first and answer a `whatsappUrl`.
+             * @default false
+             */
+            sendToCustomer: boolean;
+        };
+        CreatedOrder: {
+            order: components["schemas"]["Order"];
+            /**
+             * Format: uri
+             * @description The tracking link, in this answer only. Absent on a replay.
+             */
+            trackingUrl?: string;
+            /**
+             * Format: uri
+             * @description With `sendToCustomer`, the wa.me link with the summary for the customer.
+             */
+            whatsappUrl?: string;
+        };
+        ChangeOrderRequest: {
+            lines: components["schemas"]["LineRequest"][];
+            terms: components["schemas"]["TermsInput"];
+            /** @description The seller confirms the customer agreed. Needed once the order was paid; recorded with who confirmed it. */
+            customerApproved: boolean;
+            version: number;
+        };
+        OrderChange: {
+            /** @description The order had a payment, was released or was past awaiting deposit. */
+            paid: boolean;
+            oldTotal: components["schemas"]["Money"];
+            newTotal: components["schemas"]["Money"];
+            oldDeliveryDate: components["schemas"]["CivilDate"];
+            newDeliveryDate: components["schemas"]["CivilDate"];
+            refundDue: components["schemas"]["Money"];
+        };
+        ChangedOrder: {
+            order: components["schemas"]["Order"];
+            change: components["schemas"]["OrderChange"];
+            /**
+             * Format: uri
+             * @description Present when the order was paid; the wa.me link with the change summary for the customer. It never carries a tracking link.
+             */
+            whatsappUrl?: string;
+        };
+        AdvanceRequest: {
+            to: components["schemas"]["StatusKey"];
+            /** @description Required to enter handed over. */
+            handover?: components["schemas"]["Handover"];
+            version: number;
+        };
+        MoveItemRequest: {
+            to: components["schemas"]["ItemStatus"];
+            /** @description Required for `received` and `ready`. */
+            check?: components["schemas"]["Check"];
+            version: number;
+        };
+        PaymentRequest: {
+            kind: components["schemas"]["PaymentKind"];
+            /** Format: int64 */
+            amountCents: number;
+            method: components["schemas"]["PaymentMethod"];
+            version: number;
+        };
+        VoidPaymentRequest: {
+            reason: string;
+            version: number;
+        };
+        DeliveryDateRequest: {
+            date: components["schemas"]["CivilDate"];
+            /** @description Optional; goes into the history and the message to the client. */
+            reason?: string;
+            version: number;
+        };
+        CancelRequest: {
+            reason: string;
+            version: number;
+        };
+        MessagedOrder: {
+            order: components["schemas"]["Order"];
+            /**
+             * Format: uri
+             * @description The wa.me link with the message for the client. Nothing was sent. It never carries a tracking link.
+             */
+            whatsappUrl: string;
+        };
+        TrackingLink: {
+            /**
+             * Format: uri
+             * @description The new tracking link; the previous one no longer works.
+             */
+            trackingUrl: string;
+            /** Format: uri */
+            whatsappUrl: string;
+        };
+        KitRef: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            swaps: {
+                removedItemId: components["schemas"]["Uuid"];
+                removedName: string;
+                addedItemId: components["schemas"]["Uuid"];
+                addedName: string;
+            }[];
+        };
+        OrderLine: {
+            id: components["schemas"]["Uuid"];
+            /** @description Null for a loose item. */
+            kit: components["schemas"]["KitRef"] | null;
+            price: components["schemas"]["Money"];
+            /** @description The order items of this line, in `Order.items`. */
+            itemIds: components["schemas"]["Uuid"][];
+        };
+        /** @description Staff data; never in a client view. */
+        ItemSupplier: {
+            name: string;
+            leadDays: components["schemas"]["Days"];
+        };
+        /** @description One item of the order, as snapshotted when it was added; later catalog edits never change it. */
+        OrderItem: {
+            id: components["schemas"]["Uuid"];
+            lineId: components["schemas"]["Uuid"];
+            catalogItemId: components["schemas"]["Uuid"];
+            name: string;
+            sourcingMode: components["schemas"]["SourcingMode"];
+            quantity: number;
+            unitPrice: components["schemas"]["Money"];
+            options: components["schemas"]["ChosenOption"][];
+            status: components["schemas"]["ItemStatus"];
+            check: components["schemas"]["Check"] | null;
+            expectedDate: components["schemas"]["CivilDate"];
+            arrivedOn: components["schemas"]["CivilDate"] | null;
+            /** @description Received and checked ok, made and checked ok, or installed. */
+            arrived: boolean;
+            alerts: components["schemas"]["AlertKind"][];
+            /** @description What `POST …/move` accepts now. */
+            nextMoves: components["schemas"]["ItemStatus"][];
+            /** @description Bought items only. */
+            supplier?: components["schemas"]["ItemSupplier"];
+            /** @description Present while "Usar o fornecedor reserva" is possible. */
+            backupSupplier?: components["schemas"]["ItemSupplier"];
+            /** @description Owner only; absent for every other role. Per unit, at order time; null when unknown. */
+            cost?: components["schemas"]["Money"] | null;
+        };
+        Payment: {
+            id: components["schemas"]["Uuid"];
+            kind: components["schemas"]["PaymentKind"];
+            amount: components["schemas"]["Money"];
+            method: components["schemas"]["PaymentMethod"];
+            recordedBy: components["schemas"]["Actor"];
+            /** Format: date-time */
+            recordedAt: string;
+            /** @description Present when the owner voided it. */
+            voided?: {
+                by: components["schemas"]["Actor"];
+                /** Format: date-time */
+                at: string;
+                reason: string;
+            };
+        };
+        /**
+         * @description `free`: a change needs `order:write`. `approval`: the order was paid,
+         *     so a change needs `order:manage` and the customer's approval.
+         *     `closed`: assembling or later; no change.
+         * @enum {string}
+         */
+        Editability: "free" | "approval" | "closed";
+        /** @description An order as staff see it. The client's view is `TrackingOrder`, a separate shape. */
+        Order: {
+            id: components["schemas"]["Uuid"];
+            /** @example P-0231 */
+            number: string;
+            customer: {
+                id: components["schemas"]["Uuid"];
+                name: string;
+                phone: components["schemas"]["CustomerPhone"];
+            };
+            status: components["schemas"]["OrderStatus"];
+            /** @description The workflow at the version the order was made with. */
+            workflow: components["schemas"]["StatusWorkflow"];
+            /** @description The statuses `POST …/advance` accepts now (guards not checked). */
+            moves: components["schemas"]["OrderStatus"][];
+            lines: components["schemas"]["OrderLine"][];
+            items: components["schemas"]["OrderItem"][];
+            handover: components["schemas"]["Handover"];
+            /** @description The delivery address as it was when chosen; null for pickup. */
+            address: components["schemas"]["Address"] | null;
+            subtotal: components["schemas"]["Money"];
+            freight: components["schemas"]["Money"];
+            discount: components["schemas"]["Money"];
+            /** @description subtotal + freight − discount. */
+            total: components["schemas"]["Money"];
+            depositPercent: number;
+            depositDue: components["schemas"]["Money"];
+            depositPaid: boolean;
+            /** @description Every payment not void. */
+            paid: components["schemas"]["Money"];
+            balanceDue: components["schemas"]["Money"];
+            /** @description Valor a devolver; zero unless a change brought the total below what was paid. */
+            refundDue: components["schemas"]["Money"];
+            /** @description The owner released the order without the deposit. */
+            released: boolean;
+            payments: components["schemas"]["Payment"][];
+            /** @description The day the deposit was paid or the order released; dates count from it. Null before. */
+            releaseDate: components["schemas"]["CivilDate"] | null;
+            /** @description The date promised to the client. */
+            deliveryDate: components["schemas"]["CivilDate"];
+            /** @description Someone with `order:manage` changed the date by hand, so the deposit no longer resets it. */
+            deliveryDateChanged: boolean;
+            /** @description Precisa chegar até = delivery date − assembly days. */
+            arrivalLimit: components["schemas"]["CivilDate"];
+            assemblyDays: number;
+            safetyMarginDays: number;
+            editable: components["schemas"]["Editability"];
+            /** @description Present when cancelled. */
+            cancelReason?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description Owner only; absent for every other role. Null when an item's cost is unknown. */
+            cost?: components["schemas"]["Money"] | null;
+            /** @description Owner only, over the total; absent for every other role. Null without a full cost. */
+            margin?: components["schemas"]["Margin"] | null;
+            version: number;
+        };
+        OrderSummary: {
+            id: components["schemas"]["Uuid"];
+            /** @example P-0231 */
+            number: string;
+            customer: {
+                id: components["schemas"]["Uuid"];
+                name: string;
+            };
+            status: components["schemas"]["OrderStatus"];
+            /** @description Items that arrived. */
+            itemsReady: number;
+            itemsTotal: number;
+            deliveryDate: components["schemas"]["CivilDate"];
+            total: components["schemas"]["Money"];
+            balanceDue: components["schemas"]["Money"];
+            /** @description Today's alerts; empty for orders handed over or cancelled. */
+            alerts: components["schemas"]["Alert"][];
+        };
+        OrderPage: {
+            items: components["schemas"]["OrderSummary"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        /** @enum {string} */
+        HistoryKind: "created" | "status" | "item" | "payment" | "payment_voided" | "released" | "date" | "changed" | "tracking_link" | "cancelled";
+        /** @description One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them. */
+        HistoryEntry: {
+            kind: components["schemas"]["HistoryKind"];
+            /** Format: date-time */
+            at: string;
+            /** @description Null for an order placed on the store page (milestone 7). */
+            by?: components["schemas"]["Actor"] | null;
+            from?: components["schemas"]["OrderStatus"];
+            to?: components["schemas"]["OrderStatus"];
+            itemId?: components["schemas"]["Uuid"];
+            itemName?: string;
+            itemFrom?: components["schemas"]["ItemStatus"];
+            itemTo?: components["schemas"]["ItemStatus"];
+            check?: components["schemas"]["Check"];
+            paymentId?: components["schemas"]["Uuid"];
+            amount?: components["schemas"]["Money"];
+            oldDate?: components["schemas"]["CivilDate"];
+            newDate?: components["schemas"]["CivilDate"];
+            reason?: string;
+            customerApproved?: boolean;
+        };
+        HistoryPage: {
+            items: components["schemas"]["HistoryEntry"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        /**
+         * @description Why an order is in "Precisa de você", in this order: an item late, an
+         *     item at risk, awaiting the deposit for more than 3 days, ready and
+         *     not handed over for more than 2 days, money to give back.
+         * @enum {string}
+         */
+        NeedKind: "late" | "at_risk" | "awaiting_deposit" | "ready_not_handed_over" | "refund_due";
+        Need: {
+            kind: components["schemas"]["NeedKind"];
+            order: components["schemas"]["OrderSummary"];
+            /** @description With `late` and `at_risk`, the item. */
+            itemName?: string;
+            /** @description Days late, days waiting, or days ready, by kind. */
+            days?: number;
+            /** @description With `refund_due`, the amount to give back. */
+            amount?: components["schemas"]["Money"];
+        };
+        Today: {
+            today: components["schemas"]["CivilDate"];
+            counts: {
+                active: number;
+                awaitingDeposit: number;
+                withAlert: number;
+                dueIn7Days: number;
+            };
+            needsYou: components["schemas"]["Need"][];
+            /** @description Active orders by delivery date. */
+            upcoming: components["schemas"]["OrderSummary"][];
+        };
+        MoneyByKey: {
+            /** @description A `PaymentKind` or a `PaymentMethod`. */
+            key: string;
+            total: components["schemas"]["Money"];
+        };
+        /** @description Owner only. */
+        FinanceSummary: {
+            from: components["schemas"]["CivilDate"];
+            to: components["schemas"]["CivilDate"];
+            /** @description Payments recorded in the period, voids excluded. */
+            received: {
+                total: components["schemas"]["Money"];
+                byKind: components["schemas"]["MoneyByKey"][];
+                byMethod: components["schemas"]["MoneyByKey"][];
+            };
+            /** @description Balances still due on active orders, whatever the period. */
+            toReceive: {
+                total: components["schemas"]["Money"];
+                orders: number;
+            };
+            /** @description Orders with "Valor a devolver". */
+            toRefund: {
+                order: components["schemas"]["OrderSummary"];
+                amount: components["schemas"]["Money"];
+            }[];
+            /** @description Orders handed over in the period, with their margin where every cost was known. */
+            margins: {
+                orderId: components["schemas"]["Uuid"];
+                number: string;
+                customerName: string;
+                handedOverOn: components["schemas"]["CivilDate"];
+                total: components["schemas"]["Money"];
+                /** @description Owner only, as every cost; null when an item's cost was unknown. */
+                cost?: components["schemas"]["Money"] | null;
+                /** @description Owner only, as every margin; null without a full cost. */
+                margin?: components["schemas"]["Margin"] | null;
+            }[];
+        };
+        /**
+         * @description What the client sees on the tracking page (milestone 7 serves it; it
+         *     is defined now so the client-visibility test checks the view type
+         *     against it). It never carries a supplier, a cost, a margin, an
+         *     alert, a staff name or the history (docs/architecture.md section
+         *     2, rule 8), and no property may be added that could.
+         */
+        TrackingOrder: {
+            /** @description The store's name. */
+            store: string;
+            /** @example P-0231 */
+            number: string;
+            /** @description The order's workflow statuses by their client labels, in order. A cancelled order shows one step. */
+            steps: {
+                label: string;
+                current: boolean;
+            }[];
+            cancelled: boolean;
+            /**
+             * @description The date promised to the client (`orders.delivery_date`), never
+             *     the items' expected dates: a forecast later than the promise is
+             *     "Pode atrasar", which the client never sees.
+             */
+            deliveryDate: components["schemas"]["CivilDate"];
+            items: {
+                name: string;
+                quantity: number;
+                /** @description The chosen options in words, such as `Cor da costura: Vermelha`. */
+                options: string[];
+                /** @description "Pronto" when true, "A caminho" otherwise. */
+                arrived: boolean;
+            }[];
+            total: components["schemas"]["Money"];
+            paid: components["schemas"]["Money"];
+            balanceDue: components["schemas"]["Money"];
+            handover: components["schemas"]["Handover"];
+        };
     };
     responses: {
         /** @description A new session. */
@@ -1768,6 +2940,76 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description `workflow_not_found`: no preset has this id and version. */
+        WorkflowNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `phone_taken`: another customer of the store has this WhatsApp
+         *     number. `version_conflict`: someone saved first.
+         */
+        CustomerConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `invalid`: the input breaks a rule; `errors` lists the fields.
+         *     `approval_required`: the order was paid, so the change needs
+         *     `customerApproved: true`. `payment_exceeds_due`: the amount is above
+         *     what is still due. `idempotency_key_required`: the
+         *     `Idempotency-Key` header is missing.
+         */
+        OrderInvalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description The order's state refuses the call:
+         *
+         *     - `version_conflict`: someone saved first; reload.
+         *     - `conflict`: the same `Idempotency-Key` is still being handled; try
+         *       again.
+         *     - `invalid_transition`: the status is not one of the order's `moves`.
+         *     - `guard_failed`: a phase the move enters is not ready; `guard` says
+         *       which (`deposit_unpaid`, `items_not_ready`, `balance_unpaid`).
+         *     - `order_not_editable`: the order is in assembling or later.
+         *     - `order_closed`: the order was handed over or cancelled.
+         *     - `invalid_item_move`: the item cannot go to that state.
+         *     - `no_backup_supplier`: the item has no backup supplier, or was
+         *       already bought.
+         *     - `item_unavailable`: an item or kit of the order is archived;
+         *       `references` names it.
+         */
+        OrderConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description `idempotency_key_reused`: this key was already used for a different request. Make a new key for a new action. */
+        IdempotencyKeyReused: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
     };
     parameters: {
         /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
@@ -1787,6 +3029,33 @@ export interface components {
         CategoryFilter: components["schemas"]["Uuid"];
         /** @description Also list archived rows ("Mostrar arquivados"). */
         IncludeArchived: boolean;
+        CustomerId: components["schemas"]["Uuid"];
+        OrderId: components["schemas"]["Uuid"];
+        /** @description An item of the order (`Order.items[].id`), not a catalog item. */
+        OrderItemId: components["schemas"]["Uuid"];
+        PaymentId: components["schemas"]["Uuid"];
+        /**
+         * @description One key per user action, kept for that action's retries (a UUID is
+         *     fine). Missing: `400 idempotency_key_required`. Kept 24 hours (ADR
+         *     0030).
+         */
+        IdempotencyKey: string;
+        /** @description Only orders in this status of their workflow. */
+        OrderStatusFilter: components["schemas"]["StatusKey"];
+        /** @description Only orders in this phase. */
+        PhaseFilter: components["schemas"]["Phase"];
+        /** @description `active`: neither handed over nor cancelled. */
+        OrderScope: "active" | "handed_over" | "cancelled" | "all";
+        /** @description Only this customer's orders. */
+        CustomerFilter: components["schemas"]["Uuid"];
+        /** @description An order number (`231` or `P-0231`) or the start of the customer's name, ignoring case. */
+        OrderSearch: string;
+        /** @description Only active orders with an alert today ("Pode atrasar" or "Atrasada"). */
+        AlertFilter: boolean;
+        /** @description First day of the period, in the store's time zone. */
+        PeriodFrom: components["schemas"]["CivilDate"];
+        /** @description Last day of the period, included. */
+        PeriodTo: components["schemas"]["CivilDate"];
     };
     requestBodies: never;
     headers: {
@@ -3508,6 +4777,721 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listStatusWorkflows: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every preset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusWorkflowList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    chooseStatusWorkflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChooseWorkflowRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved settings, with the new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettings"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["WorkflowNotFound"];
+            409: components["responses"]["VersionConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listCustomers: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Only rows whose name contains this text, ignoring case. */
+                q?: components["parameters"]["Search"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of customers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerInput"];
+            };
+        };
+        responses: {
+            /** @description The new customer. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["CustomerConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customerId: components["parameters"]["CustomerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The customer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    replaceCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customerId: components["parameters"]["CustomerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceCustomerRequest"];
+            };
+        };
+        responses: {
+            /** @description The customer as saved, with the new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CustomerConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    quoteOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description The quote. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+            400: components["responses"]["OrderInvalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listOrders: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Only orders in this status of their workflow. */
+                status?: components["parameters"]["OrderStatusFilter"];
+                /** @description Only orders in this phase. */
+                phase?: components["parameters"]["PhaseFilter"];
+                /** @description `active`: neither handed over nor cancelled. */
+                scope?: components["parameters"]["OrderScope"];
+                /** @description Only this customer's orders. */
+                customerId?: components["parameters"]["CustomerFilter"];
+                /** @description An order number (`231` or `P-0231`) or the start of the customer's name, ignoring case. */
+                q?: components["parameters"]["OrderSearch"];
+                /** @description Only active orders with an alert today ("Pode atrasar" or "Atrasada"). */
+                alert?: components["parameters"]["AlertFilter"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of orders. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    createOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description One key per user action, kept for that action's retries (a UUID is
+                 *     fine). Missing: `400 idempotency_key_required`. Kept 24 hours (ADR
+                 *     0030).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description The new order. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOrder"];
+                };
+            };
+            400: components["responses"]["OrderInvalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            422: components["responses"]["IdempotencyKeyReused"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    changeOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description The order as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangedOrder"];
+                };
+            };
+            400: components["responses"]["OrderInvalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    advanceOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvanceRequest"];
+            };
+        };
+        responses: {
+            /** @description The order in its new status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    releaseOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The released order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    moveOrderItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+                /** @description An item of the order (`Order.items[].id`), not a catalog item. */
+                itemId: components["parameters"]["OrderItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveItemRequest"];
+            };
+        };
+        responses: {
+            /** @description The order with the item moved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    useBackupSupplier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+                /** @description An item of the order (`Order.items[].id`), not a catalog item. */
+                itemId: components["parameters"]["OrderItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The order with the item switched. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    recordPayment: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description One key per user action, kept for that action's retries (a UUID is
+                 *     fine). Missing: `400 idempotency_key_required`. Kept 24 hours (ADR
+                 *     0030).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description The order with the payment. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["OrderInvalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            422: components["responses"]["IdempotencyKeyReused"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    voidPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+                paymentId: components["parameters"]["PaymentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidPaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description The order with the payment void. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    changeDeliveryDate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryDateRequest"];
+            };
+        };
+        responses: {
+            /** @description The order with its new date, and the message link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagedOrder"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    sendTrackingLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new link and the message link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackingLink"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelRequest"];
+            };
+        };
+        responses: {
+            /** @description The cancelled order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["OrderConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    orderHistory: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of history. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getToday: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Today"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getFinanceSummary: {
+        parameters: {
+            query: {
+                /** @description First day of the period, in the store's time zone. */
+                from: components["parameters"]["PeriodFrom"];
+                /** @description Last day of the period, included. */
+                to: components["parameters"]["PeriodTo"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The summary for the period. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinanceSummary"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             "5XX": components["responses"]["ServerFailure"];
         };
     };

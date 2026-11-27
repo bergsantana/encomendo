@@ -400,7 +400,7 @@ func (o *Order) Payments() []Payment
 func (o *Order) ReleaseDate() (shared.CivilDate, bool)
 func (o *Order) Released() (by shared.UserID, ok bool) // released without the deposit
 func (o *Order) Promise() shared.CivilDate             // delivery_date
-func (o *Order) PromiseSetByOwner() bool
+func (o *Order) PromiseChangedByHand() bool // API: deliveryDateChanged
 func (o *Order) ArrivalLimit() shared.CivilDate
 func (o *Order) Alerts(today shared.CivilDate) map[shared.OrderItemID][]schedule.Alert
 func (o *Order) CancelReason() (string, bool)
@@ -429,10 +429,10 @@ func (o *Order) assemblyForDeadline() int // Terms.AssemblyDays, or 0 when the w
 func (o *Order) redate(today shared.CivilDate) // recompute every item's expected date from the release date (or today before release)
 func (o *Order) forecast() shared.CivilDate    // schedule.Delivery over the items
 func (o *Order) ChangeDeliveryDate(date shared.CivilDate, reason string, by shared.Principal, today shared.CivilDate, now time.Time) (old shared.CivilDate, err error)
-// ErrDateInPast before today; ErrOrderClosed after handover or cancel. Sets PromiseSetByOwner.
+// ErrDateInPast before today; ErrOrderClosed after handover or cancel. Sets PromiseChangedByHand.
 ```
 
-The promise is `forecast()` at `New`, at every `Change` before the release, and at the deposit or release, unless `PromiseSetByOwner`. After the release, a `Change` whose forecast is later than the promise moves the promise to it (ADR 0030); `MoveItem` and `UseBackupSupplier` never move it.
+The promise is `forecast()` at `New`, at every `Change` before the release, and at the deposit or release, unless `PromiseChangedByHand`. After the release, a `Change` whose forecast is later than the promise moves the promise to it (ADR 0030); `MoveItem` and `UseBackupSupplier` never move it.
 
 **Payments** (`payment.go`):
 
@@ -768,8 +768,8 @@ Policies:
 - `tenant_isolation` on `order_counters`, `orders`, `order_lines`, `order_items`, `payments`, `order_status_history`, `order_messages`.
 - `staff_only` on `order_item_sourcing`, and no other policy.
 - `client_read` (`FOR SELECT`) on `orders`: `current_tenant_id() IS NULL AND client_account_id IS NOT NULL AND client_account_id = current_client_account_id()`; on `order_lines`, `order_items` and `payments`: the same through `EXISTS (SELECT 1 FROM orders o WHERE o.tenant_id = <t>.tenant_id AND o.id = <t>.order_id AND <the orders condition>)`. `order_messages` hold the client's phone and WhatsApp text, and history holds staff names, so neither gets a client policy.
-- `order_messages` text contains the tracking token: reads are staff-only too (`staff_only` instead of `tenant_isolation`), so a store page scope never reads a live link.
-- Audit triggers on `orders`, `order_lines`, `order_items` and `payments`. Not on `order_item_sourcing` (costs) and not on `order_messages` (the token is in the text).
+- `order_messages` never holds a tracking token (security review of 4.1, D1): the use case records the text with the tracking URL replaced by `[link de acompanhamento]` and `url` is the `wa.me` URL built from that redacted text, so the plain token exists only in the HTTP answer that made it. Reads are still staff-only (`staff_only` instead of `tenant_isolation`): the texts carry the client's phone. Tests: `TestSendTrackingLink_StoredMessageHasNoToken` (app), and `TestMessages_DateAndChangeCarryNoTrackingLink` (domain: `DateChangedMessage` and `ChangedMessage` never contain `/p/`; only `TrackingMessage` and `CreatedMessage` take a `TrackingURL`).
+- Audit triggers on `orders`, `order_lines`, `order_items` and `payments`. Not on `order_item_sourcing` (costs) and not on `order_messages` (the client's phone and texts).
 - The `tracking_token_hash` column is never in `audit_log` either: `0005`'s `audit_row()` takes no arguments, so this migration adds `audit_row_redacted()`, the same function with `to_jsonb(OLD) - 'tracking_token_hash'` and `to_jsonb(NEW) - 'tracking_token_hash'`, and the `orders` trigger uses it.
 - Grants follow the column-grant pattern of `0002`: `SELECT, INSERT` on every table, `UPDATE` only on the columns a use case changes (never `tenant_id`, `id`, `number`, `created_at`, `created_by`), `DELETE` only on `order_lines`, `order_items`, `order_item_sourcing` and `customer_addresses` (replaced as sets). `payments`, history and messages get no `DELETE`.
 
@@ -882,7 +882,7 @@ type ChooseWorkflowInput struct {
 func (s *Service) ChooseStatusWorkflow(ctx context.Context, in ChooseWorkflowInput) (SettingsView, error) // settings:write; workflow_not_found
 ```
 
-- `SettingsView` and `UpdateSettingsInput` gain `TimeZone`. `SettingsView.Workflow` gains the statuses (the screen previews them).
+- `SettingsView` and `UpdateSettingsInput` gain `TimeZone`. An empty `TimeZone` in `UpdateSettingsInput` (an older client that leaves it out) keeps the stored zone, as the contract says; it never falls back to São Paulo. Test: `TestUpdateSettings_OmittedTimeZoneKeepsTheStoredOne`. `SettingsView.Workflow` gains the statuses (the screen previews them).
 - The port `WorkflowPresets` (today `DefaultWorkflow`) gains `Exists(ctx, id, version) (tenancy.WorkflowRef, error)`; `inproc.TenancyWorkflows` implements it over `app/workflow.Source`, replacing the M2 adapter.
 - `StoreDefaultsView` gains `DepositPercent`, `TimeZone`, `Slug`, `StoreName`, `WhatsAppPhone`, `Workflow tenancy.WorkflowRef`.
 
@@ -1086,10 +1086,16 @@ type TermsInput struct {
 	Handover         order.Handover
 	Address          shared.AddressID
 	Freight          shared.Money
-	Discount         *shared.Money // nil = zero; non-zero needs order:manage
-	DepositPercent   *int          // nil = store default; another value needs order:manage
-	AssemblyDays     *int          // nil = kit or store default; needs order:manage
-	SafetyMarginDays *int
+	Discount         *shared.Money // Create: nil = zero. Change: nil = the order's current value
+	DepositPercent   *int          // Create: nil = store default. Change: nil = current
+	AssemblyDays     *int          // Create: nil = kit or store default. Change: nil = current
+	SafetyMarginDays *int          // as AssemblyDays
+	// order:manage is needed when the effective value differs from the
+	// baseline: the default on Create and Quote, the order's current value
+	// on Change and on a Quote with Order set. So staff can never put an
+	// admin's term back to the default by leaving it out (security review
+	// of 4.1, B1). Test: TestChange_StaffOmittingTermsKeepsThem,
+	// TestChange_StaffResettingDiscountIsForbidden.
 }
 
 type NewCustomer struct{ Name, Phone string }
@@ -1159,7 +1165,7 @@ type ListFilter struct {
 **Flow notes**
 
 - `today := shared.DateOf(clock.Now(), facts.Location)` in every write.
-- `Create`: idempotency `Recall` → replay `Get`; customer (find by phone, else create); `Workflows.Current`; `Catalog.OrderLines`; fill ids; effective days = input ?? max of kit overrides ?? store; `NextNumber`; `Secrets` → token, `RotateTracking`-equivalent hash in `NewSpec`; `order.New`; `Insert`; when `SendToCustomer`, `Advance` to the first status after draft (no guard applies) and build the created message; `Remember`; publish `Created` (+ `Advanced`); `AddMessage`. Returns `CreatedView{Order, TrackingURL, WhatsAppURL}`. The tracking URL is in this answer only.
+- `Create`: `authz.Require(order:write)` first, then idempotency `Recall` → replay `Get` (a replay never skips the permission: `TestCreate_ViewerReplayingAKeyIsForbidden`, and the same for `RecordPayment`; a second call with a key still in flight waits on the row lock and answers `409 conflict`, mapped from the primary-key violation); customer (find by phone, else create); `Workflows.Current`; `Catalog.OrderLines`; fill ids; effective days = input ?? max of kit overrides ?? store; `NextNumber`; `Secrets` → token, `RotateTracking`-equivalent hash in `NewSpec`; `order.New`; `Insert`; when `SendToCustomer`, `Advance` to the first status after draft (no guard applies) and build the created message; `Remember`; publish `Created` (+ `Advanced`); `AddMessage`. Returns `CreatedView{Order, TrackingURL, WhatsAppURL}`. The tracking URL is in this answer only.
 - `Change`: after payment, returns `ChangedView{Order, Summary ChangeResult, WhatsAppURL}` with `ChangedMessage`; before payment, `WhatsAppURL` is empty.
 - `RecordPayment`: idempotency like `Create`, resource = payment id; replay returns the order.
 - `ChangeDeliveryDate`: returns `MessagedView{Order, WhatsAppURL}` with `DateChangedMessage`; `AddMessage`. Nothing else leaves the server.
@@ -1219,7 +1225,7 @@ type TrackingView struct {
 	Store        string
 	Number       string
 	Steps        []TrackingStep // client labels in order, Current marks the order's status; cancelled shows one step
-	Forecast     shared.CivilDate
+	DeliveryDate shared.CivilDate // the promise (orders.delivery_date), never the forecast
 	Items        []TrackingItem // name, quantity, options as words, "pronto" or "a caminho" from Arrived
 	Total, Paid, BalanceDue shared.Money
 	Handover     order.Handover
@@ -1339,7 +1345,7 @@ All under `/api/v1/admin`, behind authn and the suspended-store check, as the M3
 | `GET /today` | `Today.Get` | `Today` | 200 |
 | `GET /finance/summary` | `Finance.Summary` | `Finance` | 200 |
 
-`GET /settings` and `PATCH /settings` keep their paths and gain `timeZone`; the settings response gains the workflow's statuses.
+`GET /settings` and `PUT /settings` keep their paths and gain `timeZone`; the settings response gains the workflow's statuses. (As built in 4.1: the settings route is `PUT`, as since M2.)
 
 `Idempotency-Key` is read by a helper in `handler/idempotency.go`: `idempotencyKey(r, body []byte) (appshared.IdempotencyKey, error)`, hashing `method + "\n" + path + "\n" + body`. Missing on `POST /orders` or `POST /orders/{id}/payments` → `idempotency_key_required`. The body limit stays as today.
 
@@ -1374,7 +1380,7 @@ All under `/api/v1/admin`, behind authn and the suspended-store check, as the M3
 
 - `order_routes_test.go`: every route, its method (405 otherwise), authn, suspended store.
 - `order_handler_test.go`: decode errors, `Idempotency-Key` missing and replayed, each problem code.
-- `order_visibility_test.go`: for owner, admin, staff and viewer, the JSON of `GET /orders/{id}`, `GET /orders`, `GET /today` has `cost` and `margin` only for the owner; `TestTrackingOrder_HasNoInternalField` walks `dto.NewTrackingOrder` against a refuse-list (`cost`, `margin`, `supplier`, `supplierName`, `leadDays`, `atRisk`, `alerts`, `recordedBy`, `history`).
+- `order_visibility_test.go`: for owner, admin, staff and viewer, the JSON of `GET /orders/{id}`, `GET /orders` and **every operation that returns an `Order`** (create and its replay, change, advance, release, move item, use backup supplier, record payment and its replay, void payment, delivery date, cancel) has `cost`, `margin` and `items[].cost` only for the owner, and `GET /today` has none for anyone. `app/order` builds every `OrderView` through one function, `toView(o, by shared.Principal, today)`, which applies `identity.SeesCosts`; no other constructor exists; `TestTrackingOrder_HasNoInternalField` walks `dto.NewTrackingOrder` against a refuse-list (`cost`, `margin`, `supplier`, `supplierName`, `leadDays`, `atRisk`, `alerts`, `recordedBy`, `history`).
 - Contract test: every response validated against `openapi.yaml`, as M3 does.
 - `test/e2e/orders_test.go`: owner signs up → chooses `encomenda_montagem` → item with a supplier (15 days) → customer → order (deposit 50%) → deposit → items moved to received ok → advance to Em montagem → Pronto → balance → Entregue (pickup); a second order: change the date → response has a `wa.me` URL and no message was sent (no SMTP, no outbound call: Mailpit is empty and the API has no HTTP client to call).
 
@@ -1383,6 +1389,15 @@ All under `/api/v1/admin`, behind authn and the suspended-store check, as the M3
 ## 6. OpenAPI (step 4.1)
 
 New tags: `workflows`, `customers`, `orders`, `today`, `finance`. New schemas: `CivilDate`, `Phase`, `OrderStatus`, `StatusWorkflow`, `ChooseWorkflowRequest`, `TimeZone`, `Customer`, `CustomerInput`, `CustomerSummary`, `Address`, `LineRequest`, `OptionChoice`, `Swap`, `TermsInput`, `QuoteRequest`, `Quote`, `CreateOrderRequest`, `CreatedOrder`, `ChangeOrderRequest`, `ChangedOrder`, `Order`, `OrderLine`, `OrderItem`, `ItemStatus`, `Alert`, `Payment`, `PaymentRequest`, `VoidPaymentRequest`, `AdvanceRequest`, `MoveItemRequest`, `DeliveryDateRequest`, `MessagedOrder`, `TrackingLink`, `CancelRequest`, `OrderSummary`, `HistoryEntry`, `Today`, `FinanceSummary`, `TrackingOrder` (marked `x-served-from: M7`). `EditableSettings` gains `timeZone`; `Settings.workflow` gains `statuses`. The `Idempotency-Key` header is a reusable parameter, required on the two POSTs. `ProblemCode` gains the codes of 5.3. `Permission` gains `order:manage`, `order:override`, `customer:write`.
+
+As built in 4.1:
+
+- **Optional until served.** `timeZone` in `EditableSettings` and `statuses` in `StatusWorkflowRef` are not required yet, so today's settings responses and requests still match the contract. Step 4.8 serves both and makes them required.
+- **Every new operation is marked `x-unserved: "4.14"`**, so the e2e suite expects `404` until 4.14 serves it and removes the mark.
+- **Extra schemas** the listed ones needed: `StatusKey`, `StatusWorkflowList`, `CustomerPhone`, `UF`, `AddressInput`, `ReplaceCustomerRequest`, `CustomerPage`, `NewCustomer`, `Handover`, `Check`, `AlertKind`, `PaymentKind`, `PaymentMethod`, `Actor`, `ChosenOption`, `QuoteLine`, `QuoteItem`, `OrderChange`, `KitRef`, `ItemSupplier`, `Editability`, `OrderPage`, `HistoryKind`, `HistoryPage`, `NeedKind`, `Need`, `MoneyByKey`; responses `WorkflowNotFound`, `CustomerConflict`, `OrderInvalid`, `OrderConflict`, `IdempotencyKeyReused`.
+- **Request money is `…Cents`** (`freightCents`, `discountCents`, `amountCents`), as the catalog requests are; responses carry `Money`.
+- **`Swap` is `{itemId, withItemId}`**, after `catalog.Swap{Item, With}`. `PaymentRequest` carries `version`, as `PaymentInput` does. `DeliveryDateRequest.reason` is optional.
+- **`TrackingOrder`** is closed (`additionalProperties: false`) at every level, with `cancelled` and, per item, `arrived` (the page says "Pronto" or "A caminho").
 
 ---
 
@@ -1454,3 +1469,4 @@ Rules that the reviewers will check:
 - `app/order.Cancel` has a comment `// M5: cancel unsent purchase lines and flag sent ones (ADR 0030).` and `// M6: release stock reservations.`, with the issue numbers once opened (`TODO(#n)` only with an issue, per `CLAUDE.md`). The session opens the two issues when it reaches 4.10.
 - M7 store-page orders run in a scope with no staff user, so `order_item_sourcing` can't be written there. M7 must decide (ADR) between filling the snapshot on the first staff touch and a narrow platform path; 4.10 states this in `app/order/doc.go`.
 - `schedule.Timing.Promised` is filled by M5; `InitialStatus(stock)` changes in M6.
+- M7's `PlaceOrder` reuses the find-by-phone path of `Create`. On the public store page a phone proves nothing, so for a customer matched only by phone it must answer no customer facts (name, addresses) and must not use the stored addresses; the delivery address comes from the checkout form (security review of 4.1, D5). 4.10 writes this in `app/order/doc.go`.
