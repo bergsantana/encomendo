@@ -261,6 +261,7 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
     - a cache failure reads Postgres;
     - nothing calls them over HTTP until M7.
   - `ArchiveItem` returns `catalog.ErrItemInKit` while an active kit holds the item.
+  - Photo calls (confirm, order, delete) never change the item's or kit's `version`, because photos are their own resource. Otherwise a form opened before a photo upload would hit a `version_conflict` on save. The web form (3.12) relies on this.
 - **Tests:**
   - every use case: a denied role, the happy path, owner versus admin versus viewer views, a cost refused for admin, a cost kept when it is left out, the cache invalidated after each write, the public query cached, a cache error falling back;
   - a JSON test of `StoreItem` and `StoreKit` that walks every key and refuses `cost`, `margin`, `supplier`, `supplierName`, `leadDays` and `atRisk`.
