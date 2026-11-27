@@ -1,6 +1,6 @@
 # 0024 — Milestone 3 answers: internal tables, categories, options and photo upload
 
-- Status: accepted; amended by ADR 0025 (costs live on each supplier item, and `item_costs` keeps only in-house costs)
+- Status: accepted; amended by ADR 0025 (costs live on each supplier item, and `item_costs` keeps only in-house costs), by ADR 0028 (uploads are staged under `uploads/`), and on 2026-11-27 (the server below is Silo)
 - Date: 2026-11-26
 
 ## Context
@@ -34,6 +34,7 @@ Before planning milestone 3, four questions were still open: how the database ke
 - Objects never confirmed are removed by a bucket lifecycle rule (one day).
 - The R2 bucket allows `PUT` from the admin web origin only (CORS); Android needs no CORS.
 - Development, CI and tests use MinIO, an S3-compatible server, in docker compose and through testcontainers, so the same adapter (`adapter/storage/s3.go`) runs everywhere. `adapter/storage/local.go` is no longer needed for uploads.
+  - Amended 2026-11-27, the user's decision: Silo, the maintained MinIO fork, since MinIO's images left Docker Hub in September 2026. The image is `pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329` (`RELEASE.2026-11-12T00-00-00Z`), pinned by digest; it bundles the client as `mcli`. It speaks the same S3 API and reads the same `MINIO_*` settings, so the adapter is unchanged.
 
 ## Consequences
 

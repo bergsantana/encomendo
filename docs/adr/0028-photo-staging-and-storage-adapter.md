@@ -31,7 +31,7 @@ Building the storage adapter (plan step 3.9) showed two gaps:
 ### CORS and endpoints
 
 - **Production (R2):** CORS on the bucket allows `PUT` and `GET` from the admin origin only, with the `Content-Type` header. It is set once in the Cloudflare dashboard (`deploy/prod.env.example`). Android needs no CORS. The API and the apps use the same R2 endpoint.
-- **Development and CI (MinIO):** a one-shot `mc` job creates the bucket and the lifecycle rule. MinIO's community server has no per-bucket CORS, so the server's `MINIO_API_CORS_ALLOW_ORIGIN` lists the admin origins of the stack and of the Vite dev server. The API reaches MinIO at `minio:9000`, and signs URLs for `localhost:9000` (`STORAGE_PUBLIC_ENDPOINT`), which the browser and, through `adb reverse`, the emulator reach (ADR 0025). Signing binds the host, so the two endpoints use two clients, and the signing one never connects.
+- **Development and CI (Silo, the MinIO fork; ADR 0024 as amended):** the compose service keeps the name `minio`, and a one-shot `minio-init` job on the same pinned image creates the bucket and the lifecycle rule with the bundled `mcli`. The server has no per-bucket CORS, so its `MINIO_API_CORS_ALLOW_ORIGIN` lists the admin origins of the stack and of the Vite dev server. testcontainers runs the same image. The API reaches it at `minio:9000`, and signs URLs for `localhost:9000` (`STORAGE_PUBLIC_ENDPOINT`), which the browser and, through `adb reverse`, the emulator reach (ADR 0025). Signing binds the host, so the two endpoints use two clients, and the signing one never connects.
 
 ### Configuration
 
