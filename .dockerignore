@@ -1,0 +1,6 @@
+# The images build from the repository root (deploy/*.Dockerfile, context ..).
+# None of them needs native build output or the host's installed packages:
+# the web images run their own pnpm install.
+web/apps/android/android
+**/build
+**/node_modules
