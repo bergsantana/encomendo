@@ -22,13 +22,13 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
-| 3 | Catalog and suppliers | 8 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier use cases (#61), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) |
+| 3 | Catalog and suppliers | 9 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier and catalog use cases (#61, step 3.6), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **56** | **122** | **about 46%** |
+|   | **All milestones** | **57** | **122** | **about 47%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -140,7 +140,7 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 
 - [x] `domain/catalog`: item, sourcing mode, category, attribute ("Serve em"), customization option, kit, kit swap (each kit keeps or loses its discount on a swap, both modes tested; ADR 0023) (step 3.3)
 - [x] `domain/supplier`: supplier, supplier item (lead time, cost, backup supplier) (#54; `schedule.Days` too)
-- [ ] `app/catalog` and `app/supplier` services, cached queries, fakes
+- [x] `app/catalog` and `app/supplier` services, cached queries, fakes (#61, step 3.6)
 - [x] Before the first internal table (suppliers, costs): decide, in an ADR, an RLS tier that keeps internal tables out of scopes with no staff user, such as store page requests. Today a store page scope reads all of its store's rows, and only the queries keep internal data out (security review of `m2-db`) (decided in ADR 0024: staff-only policies and item costs in their own table; built in `0008_catalog` and `0009_suppliers`, step 3.4)
 - [x] Migrations for catalog and suppliers, with RLS policies and tests (`0008_catalog`, `0009_suppliers`; the RLS suite's sixth, staff-only case; step 3.4)
 - [ ] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
