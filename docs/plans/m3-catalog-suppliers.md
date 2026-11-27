@@ -227,6 +227,7 @@ This session is the only milestone 3 session. It owns `backend/cmd/api/main.go`,
   - Optimistic locking.
   - Supplier names and phones are visible to every role. There are no costs at this level.
   - No cache: supplier data is staff-only, never on the store page.
+  - No outbox events in M3; purchasing (M5) adds them if it needs them.
 - **Tests:** use cases covering a denied role, the happy path, a version conflict and not found; the repository contract suite against the fake.
 - **Reviewers:** `go-reviewer`.
 - **Depends on:** 3.2.
