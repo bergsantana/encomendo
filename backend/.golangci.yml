@@ -88,6 +88,10 @@ linters:
               desc: fakes are for tests only
             - pkg: github.com/bergsantana/encomendo/backend/internal/app/tenancy/fake
               desc: fakes are for tests only
+            - pkg: github.com/bergsantana/encomendo/backend/internal/app/supplier/fake
+              desc: fakes are for tests only
+            - pkg: github.com/bergsantana/encomendo/backend/internal/app/catalog/fake
+              desc: fakes are for tests only
         # The app layer owns the ports and never reaches into adapters or drivers.
         app:
           list-mode: lax

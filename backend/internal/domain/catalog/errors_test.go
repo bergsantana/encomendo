@@ -26,7 +26,7 @@ func TestErrorsMatchSharedSentinels(t *testing.T) {
 		{"ErrCategoryInUse", ErrCategoryInUse, shared.ErrConflict},
 		{"ErrItemArchived", ErrItemArchived, shared.ErrConflict},
 		{"ErrPhotoLimit", ErrPhotoLimit, shared.ErrConflict},
-		{"ErrPublishArchived", ErrPublishArchived, shared.ErrConflict},
+		{"ErrPublishArchived", ErrPublishArchived, shared.ErrInvalid},
 		{"ErrPhotoInvalid", ErrPhotoInvalid, shared.ErrInvalid},
 		{"ErrSwapNotInKit", ErrSwapNotInKit, shared.ErrInvalid},
 		{"ErrSwapNotAllowed", ErrSwapNotAllowed, shared.ErrInvalid},

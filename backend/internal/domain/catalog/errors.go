@@ -41,9 +41,6 @@ var (
 	// remaining items. The swap is impossible; the store page decides how to
 	// show that (milestone 7).
 	ErrSwapPriceNotPositive = fmt.Errorf("catalog: swapped kit price is not above zero: %w", shared.ErrConflict)
-	// ErrPublishArchived means an archived item or kit cannot be published:
-	// restore it first.
-	ErrPublishArchived = fmt.Errorf("catalog: archived rows cannot be published: %w", shared.ErrConflict)
 )
 
 // Refusals of bad input that carry their own API code or have no field.
@@ -60,6 +57,10 @@ var (
 	// ErrSwapNotListed means a swap's new item is not one of the item's
 	// listed alternatives.
 	ErrSwapNotListed = fmt.Errorf("catalog: item is not a listed alternative: %w", shared.ErrInvalid)
+	// ErrPublishArchived means an archived item or kit cannot be published:
+	// restore it first. The contract answers 400 invalid
+	// (setItemPublished, setKitPublished).
+	ErrPublishArchived = fmt.Errorf("catalog: archived rows cannot be published: %w", shared.ErrInvalid)
 	// ErrSwapRepeated means two swaps name the same kit item.
 	ErrSwapRepeated = fmt.Errorf("catalog: kit item swapped twice: %w", shared.ErrInvalid)
 )
