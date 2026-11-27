@@ -37,6 +37,19 @@ describe('createHttpClient', () => {
     ])
   })
 
+  it('sends PATCH with a JSON body', async () => {
+    let seen: { method: string; type: string | null; body: unknown } | undefined
+    server.use(
+      http.patch(`${base}/categories/1`, async ({ request }) => {
+        seen = { method: request.method, type: request.headers.get('Content-Type'), body: await request.json() }
+        return HttpResponse.json({ name: 'Capacetes' })
+      }),
+    )
+
+    await expect(client.patch('/categories/1', { name: 'Capacetes' })).resolves.toEqual({ name: 'Capacetes' })
+    expect(seen).toEqual({ method: 'PATCH', type: 'application/json', body: { name: 'Capacetes' } })
+  })
+
   it('sends JSON bodies with the right headers', async () => {
     let seen: { type: string | null; body: unknown } | undefined
     server.use(
