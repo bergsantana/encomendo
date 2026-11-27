@@ -23,6 +23,11 @@ import (
 // writes in the wrong scope is a bug and a 500.
 var ErrRowSecurity = errors.New("fake: new row violates row-level security policy")
 
+// errArchivedInsert is what Items.Insert and Kits.Insert return for an
+// archived aggregate: the constructors never produce one, and archiving is an
+// Update. It matches no sentinel.
+var errArchivedInsert = errors.New("fake: an archived row cannot be inserted")
+
 // errForeignKey is what the fake returns for a row that points at a row its
 // store does not have, as Postgres does with 23503 (mapped to ErrInvalid).
 var errForeignKey = fmt.Errorf("fake: foreign key violation: %w", shared.ErrInvalid)

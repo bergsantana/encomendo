@@ -23,3 +23,16 @@ func conn(ctx context.Context) (*gorm.DB, error) {
 	}
 	return c.db.WithContext(ctx), nil
 }
+
+// txScope returns the scope the transaction in ctx was opened with, which
+// is the scope its RLS settings hold. A repository decides what the scope
+// may do from this, never from ScopeFrom(ctx): a context can carry another
+// scope than the transaction runs in, and the Go check and RLS must agree.
+// Outside a transaction it returns the zero scope.
+func txScope(ctx context.Context) appshared.Scope {
+	c, ok := ctx.Value(txKey{}).(*txConn)
+	if !ok {
+		return appshared.Scope{}
+	}
+	return c.scope
+}

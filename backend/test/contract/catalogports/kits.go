@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
@@ -47,6 +48,7 @@ func needsTx(t *testing.T, h Harness) {
 		"Items.Update":           func() error { return h.Items.Update(ctx, it) },
 		"Items.ByID":             func() error { return ignore(h.Items.ByID(ctx, tn.id, it.ID())) },
 		"Items.ByIDs":            func() error { return ignore(h.Items.ByIDs(ctx, tn.id, []shared.ItemID{it.ID()})) },
+		"Items.PublicFacts":      func() error { return ignore(h.Items.PublicFacts(ctx, tn.id, []shared.ItemID{it.ID()})) },
 		"Items.List":             func() error { return ignore(h.Items.List(ctx, tn.id, appcatalog.ItemFilter{}, p)) },
 		"Items.ActiveKitsHolding": func() error {
 			return ignore(h.Items.ActiveKitsHolding(ctx, tn.id, it.ID()))
@@ -76,6 +78,57 @@ func RunKitsContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 	t.Run("the kit list orders, pages and filters", func(t *testing.T) { kitList(t, newHarness(t)) })
 	t.Run("the published kits", func(t *testing.T) { kitPublished(t, newHarness(t)) })
 	t.Run("another store's kits are invisible", func(t *testing.T) { kitIsolation(t, newHarness(t)) })
+	t.Run("an archived kit cannot be inserted", func(t *testing.T) { kitArchivedInsert(t, newHarness(t)) })
+	t.Run("kit values are in field order and alternatives are a set", func(t *testing.T) { kitOrder(t, newHarness(t)) })
+}
+
+func kitArchivedInsert(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	it := h.addItem(t, tn, itemSpec{name: "Banco", inHouse: true})
+	k := h.buildKit(t, tn, kitSpec{name: "Kit", items: []catalog.KitItem{member(it.ID())}})
+	k.Archive()
+	err := h.try(tn.scope(), func(ctx context.Context) error { return h.Kits.Insert(ctx, k) })
+	if err == nil || errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("inserting an archived kit: %v, want a refusal that matches no sentinel", err)
+	}
+}
+
+// kitOrder checks the order the Kits port promises: values in the store's
+// field order whatever order they were sent in, and the alternatives of a
+// kit item as a set, compared sorted.
+func kitOrder(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	first := h.addAttribute(t, tn, "Serve em", 0, "CB 500X", "XRE 300")
+	second := h.addAttribute(t, tn, "Material", 1, "Couro", "Tecido")
+	want := append(valueIDs(first), valueIDs(second)...)
+	sent := slices.Clone(want)
+	slices.Reverse(sent)
+	seat := h.addItem(t, tn, itemSpec{name: "Banco", inHouse: true})
+	var alts []shared.ItemID
+	for _, name := range []string{"Banco alto", "Banco baixo", "Banco gel"} {
+		alts = append(alts, h.addItem(t, tn, itemSpec{name: name, inHouse: true}).ID())
+	}
+	k := h.addKit(t, tn, kitSpec{name: "Kit", values: sent, items: []catalog.KitItem{
+		{Item: seat.ID(), Quantity: 1, Swappable: true, Alternatives: []shared.ItemID{alts[2], alts[0], alts[1]}},
+	}})
+	h.in(t, tn.storePage(), func(ctx context.Context) error {
+		got, err := h.Kits.ByID(ctx, tn.id, k.ID())
+		if err != nil {
+			t.Fatalf("ByID: %v", err)
+		}
+		if !slices.Equal(got.AttributeValueIDs(), want) {
+			t.Errorf("values = %v, want the store's field order %v", got.AttributeValueIDs(), want)
+		}
+		gotAlts := slices.Clone(got.Items()[0].Alternatives)
+		wantAlts := slices.Clone(alts)
+		less := func(a, b shared.ItemID) int { return strings.Compare(a.String(), b.String()) }
+		slices.SortFunc(gotAlts, less)
+		slices.SortFunc(wantAlts, less)
+		if !slices.Equal(gotAlts, wantAlts) {
+			t.Errorf("alternatives = %v, want the set %v", gotAlts, wantAlts)
+		}
+		return nil
+	})
 }
 
 // sameKit reports how got differs from want, or "".
@@ -172,6 +225,13 @@ func kitForeignItem(t *testing.T, h Harness) {
 	k := h.buildKit(t, a, kitSpec{name: "Kit", items: []catalog.KitItem{member(theirs.ID())}})
 	if err := h.try(a.scope(), func(ctx context.Context) error { return h.Kits.Insert(ctx, k) }); !errors.Is(err, shared.ErrInvalid) {
 		t.Errorf("a kit holding another store's item: %v, want ErrInvalid", err)
+	}
+	// A field value of another store is the same refusal.
+	theirAttr := h.addAttribute(t, b, "Serve em", 0, "CB 500X")
+	own := h.addItem(t, a, itemSpec{name: "Banco", inHouse: true})
+	k = h.buildKit(t, a, kitSpec{name: "Kit", items: []catalog.KitItem{member(own.ID())}, values: valueIDs(theirAttr)})
+	if err := h.try(a.scope(), func(ctx context.Context) error { return h.Kits.Insert(ctx, k) }); !errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("a kit with another store's field value: %v, want ErrInvalid", err)
 	}
 }
 

@@ -310,7 +310,7 @@ func TestPublicKit_OnlyPublishedKitsOfTheStore(t *testing.T) {
 
 func TestPublicCatalog_FailuresPassThrough(t *testing.T) {
 	t.Parallel()
-	for _, fault := range []string{"CategoriesList", "AttributesList", "ItemsPublished", "KitsPublished", "ItemsByIDs", "defaults"} {
+	for _, fault := range []string{"CategoriesList", "AttributesList", "ItemsPublished", "KitsPublished", "ItemsPublicFacts", "defaults"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t)
@@ -324,6 +324,22 @@ func TestPublicCatalog_FailuresPassThrough(t *testing.T) {
 				t.Errorf("%v, want it passed through", err)
 			}
 		})
+	}
+}
+
+// The store page reads kit facts through Items.PublicFacts, which never
+// touches a staff-only table, in every scope: a failing ByIDs (the read that
+// carries costs) is never reached, for the store page and for an owner's
+// preview alike (ADR 0024).
+func TestPublicCatalog_NeverReadsFactsWithCosts(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.storeFixture(t)
+	h.store.Fail("ItemsByIDs", errBoom)
+	for name, ctx := range map[string]context.Context{"store page": h.storePage(h.store1), "owner preview": h.owner(t)} {
+		if _, err := h.svc.PublicCatalog(ctx); err != nil {
+			t.Errorf("%s: PublicCatalog = %v, want it to read no costs", name, err)
+		}
 	}
 }
 

@@ -295,8 +295,25 @@ func (s *Service) kitChecks(ctx context.Context, tenant shared.TenantID, in KitI
 	return valuesErr, facts, nil
 }
 
-// kitFacts reads the facts of every member and alternative of items.
+// kitFacts reads the facts of every member and alternative of items, costs
+// included for a staff scope: the admin kit views use it.
 func (s *Service) kitFacts(ctx context.Context, tenant shared.TenantID, items []catalog.KitItem) (map[shared.ItemID]ItemFacts, error) {
+	return readFacts(ctx, tenant, items, s.items.ByIDs)
+}
+
+// publicKitFacts is kitFacts for the store page: it reads Items.PublicFacts,
+// which never touches a staff-only table, so no scope can pull a cost into
+// the store page's data (ADR 0024).
+func (s *Service) publicKitFacts(ctx context.Context, tenant shared.TenantID, items []catalog.KitItem) (map[shared.ItemID]ItemFacts, error) {
+	return readFacts(ctx, tenant, items, s.items.PublicFacts)
+}
+
+// readFacts asks read for the facts of every member and alternative of
+// items, each item once.
+func readFacts(
+	ctx context.Context, tenant shared.TenantID, items []catalog.KitItem,
+	read func(context.Context, shared.TenantID, []shared.ItemID) ([]ItemFacts, error),
+) (map[shared.ItemID]ItemFacts, error) {
 	seen := map[shared.ItemID]bool{}
 	var ids []shared.ItemID
 	for _, ki := range items {
@@ -311,7 +328,7 @@ func (s *Service) kitFacts(ctx context.Context, tenant shared.TenantID, items []
 	if len(ids) == 0 {
 		return out, nil
 	}
-	list, err := s.items.ByIDs(ctx, tenant, ids)
+	list, err := read(ctx, tenant, ids)
 	if err != nil {
 		return nil, fmt.Errorf("read kit items: %w", err)
 	}

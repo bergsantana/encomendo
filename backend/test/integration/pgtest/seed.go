@@ -82,6 +82,15 @@ func (s *Seeder) Event(tenant shared.TenantID) {
 	s.exec(`INSERT INTO outbox_events (tenant_id, name, payload) VALUES ($1, 'test.seeded', '{}')`, tenant.String())
 }
 
+// Supplier inserts a supplier of tenant and returns its id.
+func (s *Seeder) Supplier(tenant shared.TenantID) shared.SupplierID {
+	s.t.Helper()
+	id := NewID()
+	s.exec(`INSERT INTO suppliers (tenant_id, id, name, whatsapp_phone) VALUES ($1, $2, 'Fornecedor de teste', '5511987654321')`,
+		tenant.String(), id.String())
+	return shared.SupplierID(id)
+}
+
 // ClientAccount inserts a client account and returns its id.
 func (s *Seeder) ClientAccount() shared.ClientAccountID {
 	s.t.Helper()

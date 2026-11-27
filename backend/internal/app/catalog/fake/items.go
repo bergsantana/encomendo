@@ -47,6 +47,7 @@ func split(it *catalog.Item) (itemRow, links, *shared.Money) {
 // staff scope.
 func (s *Store) restore(row itemRow) (*catalog.Item, error) {
 	rec := row.rec
+	rec.Attributes = s.inFieldOrder(rec.Tenant, rec.Attributes)
 	l := s.links[rec.ID]
 	rec.Sourcing.Main, rec.Sourcing.Backup = l.main, l.backup
 	if c, ok := s.costs[rec.ID]; ok {
@@ -99,6 +100,9 @@ func (s *Items) Insert(ctx context.Context, it *catalog.Item) error {
 		return err
 	}
 	defer s.mu.Unlock()
+	if it.Archived() {
+		return errArchivedInsert
+	}
 	row, l, cost := split(it)
 	if err := s.checkItemWrite(scope, row, l); err != nil {
 		return err
@@ -157,6 +161,12 @@ func (s *Items) ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.
 		return nil, err
 	}
 	defer s.mu.Unlock()
+	return s.facts(scope, tenant, ids, true), nil
+}
+
+// facts is the body of ByIDs and PublicFacts; withCost reads the staff-only
+// rows, and only a staff scope gets them. Call it with s.mu held.
+func (s *Store) facts(scope appshared.Scope, tenant shared.TenantID, ids []shared.ItemID, withCost bool) []appcatalog.ItemFacts {
 	out := []appcatalog.ItemFacts{}
 	seen := map[shared.ItemID]bool{}
 	for _, id := range ids {
@@ -166,12 +176,23 @@ func (s *Items) ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.
 		}
 		seen[id] = true
 		f := catalog.ItemFacts{Price: row.rec.Price, ReadyDays: row.readyDays, Archived: row.rec.Archived}
-		if seesStaff(scope, tenant) {
+		if withCost && seesStaff(scope, tenant) {
 			f.Cost = s.costOf(row)
 		}
 		out = append(out, appcatalog.ItemFacts{ID: id, Name: row.rec.Name, Published: row.rec.Published, Facts: f})
 	}
-	return out, nil
+	return out
+}
+
+// PublicFacts implements appcatalog.Items ("ItemsPublicFacts"). It reads
+// only the items rows, so no scope gets a cost.
+func (s *Items) PublicFacts(ctx context.Context, tenant shared.TenantID, ids []shared.ItemID) ([]appcatalog.ItemFacts, error) {
+	scope, err := s.enter(ctx, "ItemsPublicFacts")
+	if err != nil {
+		return nil, err
+	}
+	defer s.mu.Unlock()
+	return s.facts(scope, tenant, ids, false), nil
 }
 
 // costOf is the item's cost from its staff-only rows: the main supplier's,
@@ -281,7 +302,7 @@ func (s *Items) Published(ctx context.Context, tenant shared.TenantID) ([]appcat
 		}
 		out = append(out, appcatalog.PublishedItem{
 			ID: row.rec.ID, Name: row.rec.Name, Description: row.rec.Description, Category: row.rec.Category,
-			Price: row.rec.Price, ReadyDays: row.readyDays, AttributeValues: slices.Clone(row.rec.Attributes), Options: options,
+			Price: row.rec.Price, ReadyDays: row.readyDays, AttributeValues: s.inFieldOrder(row.rec.Tenant, row.rec.Attributes), Options: options,
 		})
 	}
 	return out, nil

@@ -216,6 +216,28 @@ func (s *Attributes) UsageCounts(ctx context.Context, tenant shared.TenantID) (m
 	return out, nil
 }
 
+// inFieldOrder returns ids in the store's field order, as the Postgres
+// repositories read them: the field's position, then the value's position.
+// The input is not changed. Call it with s.mu held.
+func (s *Store) inFieldOrder(tenant shared.TenantID, ids []shared.AttributeValueID) []shared.AttributeValueID {
+	type place struct{ field, value int }
+	places := map[shared.AttributeValueID]place{}
+	for _, r := range s.attributes {
+		if r.rec.Tenant != tenant {
+			continue
+		}
+		for i, v := range r.rec.Values {
+			places[v.ID] = place{field: r.position, value: i}
+		}
+	}
+	out := slices.Clone(ids)
+	slices.SortStableFunc(out, func(a, b shared.AttributeValueID) int {
+		pa, pb := places[a], places[b]
+		return cmp.Or(cmp.Compare(pa.field, pb.field), cmp.Compare(pa.value, pb.value), strings.Compare(a.String(), b.String()))
+	})
+	return out
+}
+
 // knownValues reports whether every id is a value of tenant's fields. Call
 // it with s.mu held.
 func (s *Store) knownValues(tenant shared.TenantID, ids []shared.AttributeValueID) bool {
