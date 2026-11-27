@@ -9,14 +9,21 @@ import type { Photo } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
 import { useId } from 'vue'
 
-defineProps<{
-  photos: readonly Photo[]
-  /** saved is false for a new item. */
-  saved: boolean
-  canWrite: boolean
-  busy: boolean
-  error: string | null
-}>()
+import { photoOwnerWord } from '../photoMessage'
+
+withDefaults(
+  defineProps<{
+    photos: readonly Photo[]
+    /** saved is false for a new item or kit. */
+    saved: boolean
+    /** subject is what the photos belong to, for the hint that asks a new one to be saved first */
+    subject?: 'item' | 'kit'
+    canWrite: boolean
+    busy: boolean
+    error: string | null
+  }>(),
+  { subject: 'item' },
+)
 
 const emit = defineEmits<{
   add: [files: File[]]
@@ -43,7 +50,7 @@ function chosen(event: Event): void {
       v-if="!saved"
       class="hint"
     >
-      Salve o item para adicionar fotos.
+      Salve o {{ photoOwnerWord[subject] }} para adicionar fotos.
     </p>
     <template v-else>
       <p

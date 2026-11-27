@@ -6,11 +6,11 @@
  * shown as the API computed them.
  */
 import type { Category, ItemSummary } from '@encomendo/api'
-import { IconArchive } from '@encomendo/ui'
 import { computed } from 'vue'
 
 import { formatDays, formatMargin, formatMoney } from '../../../format'
 import { sourcingLabel } from '../labels'
+import ArchivedMark from './ArchivedMark.vue'
 import PublishedSwitch from './PublishedSwitch.vue'
 
 const props = defineProps<{
@@ -103,16 +103,7 @@ function margin(item: ItemSummary): string {
           >
             {{ item.name }}
           </button>
-          <span
-            v-if="item.archived"
-            class="archived"
-          >
-            <IconArchive
-              :size="14"
-              aria-hidden="true"
-            />
-            Arquivado
-          </span>
+          <ArchivedMark v-if="item.archived" />
         </th>
         <td>{{ categoryName(item) }}</td>
         <td>{{ sourcingLabel(item.sourcingMode) }}</td>
@@ -178,15 +169,5 @@ tbody th {
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
-}
-.archived {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  padding: 0 6px;
-  border-radius: var(--enc-radius-badge);
-  background: var(--enc-status-neutral-fill);
-  color: var(--enc-status-neutral-text);
 }
 </style>

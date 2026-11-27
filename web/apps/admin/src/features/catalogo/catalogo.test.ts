@@ -1,12 +1,35 @@
-import type { Attribute, Category, Item, ItemSummary, Permission, Photo, Supplier, TenantSettings } from '@encomendo/api'
+import type { Attribute, Category, ItemSummary, Permission, Photo, Supplier, TenantSettings } from '@encomendo/api'
 import { enableAutoUnmount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { loadPage } from '../../pageLoad'
-import { closeApps, field as fieldByLabel, link, openApp } from '../../testing/app'
+import { closeApps, link, openApp } from '../../testing/app'
 import { authSession, gate } from '../../testing/fixtures'
+import {
+  bancoId,
+  bancos,
+  brl,
+  button,
+  columnHeaders,
+  couros,
+  field,
+  group,
+  guidoes,
+  item,
+  metais,
+  ownerCosts,
+  ownerItem,
+  plain,
+  problem,
+  readOnly,
+  serveEm,
+  settings,
+  type Scope,
+  summary,
+  writer,
+} from './testkit'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
 
@@ -19,90 +42,6 @@ afterEach(() => {
 afterAll(() => server.close())
 enableAutoUnmount(afterEach)
 afterEach(closeApps)
-
-const readOnly: Permission[] = ['catalog:read', 'settings:read']
-const writer: Permission[] = ['catalog:read', 'catalog:write', 'settings:read']
-
-const bancos: Category = { id: '0190f3c4-5e1a-7b2c-8d3e-0000000000c1', name: 'Bancos', position: 0 }
-const guidoes: Category = { id: '0190f3c4-5e1a-7b2c-8d3e-0000000000c2', name: 'Guidões', position: 1 }
-const couros: Supplier = { id: '0190f3c4-5e1a-7b2c-8d3e-0000000000f1', name: 'Couros Paulista', whatsappPhone: '5511999990000', version: 1 }
-const metais: Supplier = { id: '0190f3c4-5e1a-7b2c-8d3e-0000000000f2', name: 'Metais Sul', whatsappPhone: '5551999990000', version: 1 }
-const serveEm: Attribute = {
-  id: '0190f3c4-5e1a-7b2c-8d3e-0000000000a1',
-  name: 'Serve em',
-  position: 0,
-  values: [
-    { id: '0190f3c4-5e1a-7b2c-8d3e-0000000000b1', label: 'CB 500X', usageCount: 3 },
-    { id: '0190f3c4-5e1a-7b2c-8d3e-0000000000b2', label: 'XRE 300', usageCount: 0 },
-  ],
-}
-
-const brl = (cents: number) => ({ cents, currency: 'BRL' })
-const bancoId = '0190f3c4-5e1a-7b2c-8d3e-000000000101'
-
-function summary(overrides: Partial<ItemSummary> = {}): ItemSummary {
-  return {
-    id: bancoId,
-    name: 'Banco de couro Scrambler',
-    categoryId: bancos.id,
-    sourcingMode: 'to_order',
-    price: brl(45000),
-    readyDays: 15,
-    mainSupplierName: couros.name,
-    published: true,
-    archived: false,
-    cover: null,
-    version: 3,
-    ...overrides,
-  }
-}
-
-/** costs are what only the owner's responses carry (ADR 0025). */
-const ownerCosts = { cost: brl(31500), margin: { cents: 13500, basisPoints: 3000 } }
-
-function item(overrides: Partial<Item> = {}): Item {
-  return {
-    id: bancoId,
-    name: 'Banco de couro Scrambler',
-    description: 'Couro sintético',
-    categoryId: bancos.id,
-    sourcingMode: 'to_order',
-    price: brl(45000),
-    productionDays: null,
-    readyDays: 15,
-    mainSupplier: { supplierId: couros.id, supplierName: couros.name, leadDays: 15 },
-    backupSupplier: null,
-    attributeValueIds: [],
-    options: [],
-    photos: [],
-    published: true,
-    archived: false,
-    version: 3,
-    ...overrides,
-  }
-}
-
-const ownerItem = () =>
-  item({
-    mainSupplier: { supplierId: couros.id, supplierName: couros.name, leadDays: 15, cost: brl(31500) },
-    ...ownerCosts,
-  })
-
-function settings(overrides: Partial<TenantSettings> = {}): TenantSettings {
-  return {
-    stockEnabled: false,
-    productionEnabled: false,
-    purchaseBeforeDeposit: false,
-    depositPercent: 50,
-    assemblyDays: 3,
-    safetyMarginDays: 2,
-    whatsappPhone: null,
-    currency: 'BRL',
-    statusWorkflow: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01', version: 1, name: 'Encomenda com montagem' },
-    version: 1,
-    ...overrides,
-  }
-}
 
 interface Backend {
   items?: ItemSummary[]
@@ -127,35 +66,6 @@ function serve(backend: Backend = {}) {
 const signedInAs = (role: 'owner' | 'admin' | 'staff' | 'viewer', permissions: Permission[]) =>
   server.use(http.post('*/auth/refresh', () => HttpResponse.json(authSession({ role, permissions }))))
 
-function problem(status: number, code: string, title: string, extra: Record<string, unknown> = {}) {
-  return HttpResponse.json({ type: 'about:blank', title, status, code, ...extra }, { status, headers: { 'Content-Type': 'application/problem+json' } })
-}
-
-type Scope = Pick<VueWrapper, 'findAll' | 'find'>
-
-/** button finds a button by its visible text, or by the name a screen reader reads when that is longer. */
-function button(wrapper: Scope, name: string) {
-  const found = wrapper.findAll('button').find((b) => b.text() === name || b.attributes('aria-label') === name)
-  if (found === undefined) throw new Error(`no button ${name}`)
-  return found
-}
-
-/** columnHeaders reads the table's column titles. */
-function columnHeaders(wrapper: Scope): string[] {
-  return wrapper.findAll('thead th').map((th) => th.text())
-}
-
-/** field finds a control by its label, its aria-label, or the label that wraps it (a checkbox). */
-function field(wrapper: Scope, label: string) {
-  const named = wrapper.find(`[aria-label="${label}"]`)
-  if (named.exists()) return named
-  const wrapping = wrapper.findAll('label').find((l) => l.text() === label && l.attributes('for') === undefined)
-  if (wrapping !== undefined) return wrapping.get('input')
-  return fieldByLabel(wrapper as VueWrapper, label)
-}
-
-const plain = (text: string) => text.replace(/\u00a0/g, ' ')
-
 async function openCatalog(name = 'Banco de couro Scrambler') {
   const app = await openApp('/catalogo')
   await vi.waitFor(() => expect(app.wrapper.text()).toContain(name))
@@ -170,12 +80,6 @@ async function openItem(wrapper: VueWrapper, name = 'Banco de couro Scrambler') 
   return wrapper.get('[role=dialog]')
 }
 
-/** group finds a fieldset by its legend, such as "Fornecedor reserva". */
-function group(wrapper: { findAll: VueWrapper['findAll'] }, legend: string) {
-  const found = wrapper.findAll('fieldset').find((fieldset) => fieldset.find('legend')?.text() === legend)
-  if (found === undefined) throw new Error(`no group ${legend}`)
-  return found
-}
 
 beforeEach(() => serve())
 
@@ -1276,5 +1180,92 @@ describe('the Campos dialog keeps what is typed', () => {
 
     expect(document.activeElement?.textContent?.trim()).toBe('Cancelar')
     expect(dialog.get('[role=group]').element.contains(document.activeElement)).toBe(true)
+  })
+})
+
+describe('when the first read fails', () => {
+  it('offers "Tentar de novo" and lists the items when it works', async () => {
+    signedInAs('admin', writer)
+    let reads = 0
+    server.use(http.get('*/api/v1/admin/catalog/items', () => (++reads === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json({ items: [summary()] }))))
+    const app = await openApp('/catalogo')
+    await flushPromises()
+
+    expect(app.wrapper.get('[role=alert]').text()).toBe('O servidor não respondeu. Tente de novo em instantes.')
+    expect(app.wrapper.text()).not.toContain('Carregando o catálogo…')
+    expect(app.wrapper.text()).not.toContain('Nenhum item no catálogo ainda.')
+
+    await button(app.wrapper, 'Tentar de novo').trigger('click')
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Banco de couro Scrambler'))
+
+    expect(app.wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(app.wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+
+  it('still offers it when only the categories failed', async () => {
+    signedInAs('admin', writer)
+    let reads = 0
+    server.use(http.get('*/api/v1/admin/catalog/categories', () => (++reads === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json({ items: [bancos] }))))
+    const app = await openApp('/catalogo')
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Banco de couro Scrambler'))
+
+    await button(app.wrapper, 'Tentar de novo').trigger('click')
+    await flushPromises()
+
+    expect(app.wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+})
+
+describe('archiving and restoring with edits not saved', () => {
+  it('asks "Descartar as alterações?" before archiving, and archives only on "Descartar"', async () => {
+    signedInAs('admin', writer)
+    const archived: unknown[] = []
+    server.use(
+      http.get(`*/api/v1/admin/catalog/items/${bancoId}`, () => HttpResponse.json(item())),
+      http.post(`*/api/v1/admin/catalog/items/${bancoId}/archive`, async ({ request }) => {
+        archived.push(await request.json())
+        return HttpResponse.json(item({ archived: true, published: false, version: 4 }))
+      }),
+    )
+    const { wrapper } = await openCatalog()
+    const drawer = await openItem(wrapper)
+    await field(drawer, 'Nome').setValue('Outro nome')
+
+    await button(drawer, 'Arquivar').trigger('click')
+    await flushPromises()
+    expect(drawer.text()).toContain('Descartar as alterações?')
+    expect(archived).toEqual([])
+
+    await button(drawer, 'Continuar editando').trigger('click')
+    expect(drawer.text()).not.toContain('Descartar as alterações?')
+    await button(drawer, 'Arquivar').trigger('click')
+    await button(drawer, 'Descartar').trigger('click')
+    await flushPromises()
+
+    expect(archived).toEqual([{ version: 3 }])
+  })
+
+  it('asks before restoring too', async () => {
+    signedInAs('admin', writer)
+    const restored: unknown[] = []
+    server.use(
+      http.get(`*/api/v1/admin/catalog/items/${bancoId}`, () => HttpResponse.json(item({ archived: true, published: false }))),
+      http.post(`*/api/v1/admin/catalog/items/${bancoId}/restore`, async ({ request }) => {
+        restored.push(await request.json())
+        return HttpResponse.json(item({ version: 4 }))
+      }),
+    )
+    const { wrapper } = await openCatalog()
+    const drawer = await openItem(wrapper)
+    await field(drawer, 'Nome').setValue('Outro nome')
+
+    await button(drawer, 'Restaurar').trigger('click')
+    await flushPromises()
+    expect(drawer.text()).toContain('Descartar as alterações?')
+    expect(restored).toEqual([])
+    await button(drawer, 'Descartar').trigger('click')
+    await flushPromises()
+
+    expect(restored).toEqual([{ version: 3 }])
   })
 })

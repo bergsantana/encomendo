@@ -142,7 +142,8 @@ function costField(text: string, stored: string): { costCents?: number | null } 
   return cents === null ? {} : { costCents: cents }
 }
 
-function wholeNumber(text: string): number {
+/** wholeNumber reads a typed count of days or units, or NaN when it is not digits only. */
+export function wholeNumber(text: string): number {
   const typed = text.trim()
   return /^\d+$/.test(typed) ? Number(typed) : Number.NaN
 }
