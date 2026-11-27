@@ -3,6 +3,7 @@
 package redis_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -78,6 +79,7 @@ type view struct {
 
 func TestCache_Contract(t *testing.T) {
 	env := newCacheOn(t, strings.TrimSuffix(redisURL, "/0")+fmt.Sprintf("/%d", contractDB))
+	down := newCacheOn(t, closedPortURL(t)).cache
 	sharedports.RunCacheContract(t, func(t *testing.T) sharedports.CacheHarness {
 		if err := env.raw.FlushDB(t.Context()).Err(); err != nil {
 			t.Fatal(err)
@@ -86,6 +88,7 @@ func TestCache_Contract(t *testing.T) {
 			Cache: env.cache,
 			// Real time passes by itself; the TTL case polls with a deadline.
 			Elapse: func(*testing.T, time.Duration) {},
+			Down:   down,
 		}
 	})
 }
@@ -310,5 +313,35 @@ func TestCache_MisuseIsNotUnavailable(t *testing.T) {
 	err = c.Delete(t.Context(), appshared.Key{})
 	if !errors.Is(err, appshared.ErrInvalidCacheKey) || errors.Is(err, shared.ErrUnavailable) {
 		t.Errorf("Delete of the zero key error = %v, want only ErrInvalidCacheKey", err)
+	}
+}
+
+func TestCache_RedisDownIsLoggedOnceWithoutKeyOrValue(t *testing.T) {
+	t.Parallel()
+	c, err := redis.Open(config.Redis{URL: closedPortURL(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	var logs bytes.Buffer
+	cache := redis.NewCache(c, slog.New(slog.NewTextHandler(&logs, nil)))
+	tenant := newTenant()
+	k := tenantKey(t, tenant, "catalog", "item", "1")
+
+	if err := cache.Set(t.Context(), k, view{Name: "segredo-do-valor"}, time.Minute); !errors.Is(err, shared.ErrUnavailable) {
+		t.Fatalf("Set error = %v, want shared.ErrUnavailable", err)
+	}
+
+	out := logs.String()
+	if n := strings.Count(out, "\n"); n != 1 {
+		t.Errorf("%d log lines for one failed call, want 1:\n%s", n, out)
+	}
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "op=set") {
+		t.Errorf("log = %q, want a warn line naming the operation", out)
+	}
+	for _, secret := range []string{tenant.String(), "catalog", "segredo-do-valor"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("log carries %q: %s", secret, out)
+		}
 	}
 }

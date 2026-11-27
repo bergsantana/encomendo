@@ -64,7 +64,7 @@ func (c *Cache) Get(ctx context.Context, key appshared.Key, dst any) (bool, erro
 		return false, nil
 	}
 	if err != nil {
-		return false, unavailable("get", err)
+		return false, c.unavailable(ctx, "get", err)
 	}
 	// Decode into a fresh value so a stale entry that half fits never
 	// writes part of dst.
@@ -106,7 +106,7 @@ func (c *Cache) Set(ctx context.Context, key appshared.Key, value any, ttl time.
 	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
 	defer cancel()
 	if err := c.rdb.Set(ctx, key.String(), data, ttl).Err(); err != nil {
-		return unavailable("set", err)
+		return c.unavailable(ctx, "set", err)
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ func (c *Cache) Delete(ctx context.Context, key appshared.Key) error {
 	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
 	defer cancel()
 	if err := c.rdb.Unlink(ctx, key.String()).Err(); err != nil {
-		return unavailable("delete", err)
+		return c.unavailable(ctx, "delete", err)
 	}
 	return nil
 }
@@ -140,18 +140,18 @@ func (c *Cache) DeleteByPrefix(ctx context.Context, prefix appshared.Key) error 
 	defer cancel()
 	p := prefix.String()
 	if err := c.unlink(ctx, p); err != nil {
-		return unavailable("delete by prefix", err)
+		return c.unavailable(ctx, "delete by prefix", err)
 	}
 	match := escapeGlob(p) + ":*"
 	var cursor uint64
 	for {
 		keys, next, err := c.scanPage(ctx, cursor, match)
 		if err != nil {
-			return unavailable("delete by prefix", err)
+			return c.unavailable(ctx, "delete by prefix", err)
 		}
 		if len(keys) > 0 {
 			if err := c.unlink(ctx, keys...); err != nil {
-				return unavailable("delete by prefix", err)
+				return c.unavailable(ctx, "delete by prefix", err)
 			}
 		}
 		if next == 0 {
@@ -173,10 +173,14 @@ func (c *Cache) scanPage(ctx context.Context, cursor uint64, match string) ([]st
 	return c.rdb.Scan(ctx, cursor, match, scanBatch).Result()
 }
 
-// unavailable wraps a Redis failure so the use case can tell "the cache is
-// down, read from Postgres" from misuse. The cause stays in the chain, so a
+// unavailable logs a Redis failure once, at warn, and wraps it so the use
+// case can tell "the cache is down, read from Postgres" from misuse. The
+// use case does not log (backend/CLAUDE.md, Logging), so this is the only
+// record of an outage. The log line carries the operation and the Redis
+// error, never the key or the value. The cause stays in the chain, so a
 // cancelled request is still context.Canceled.
-func unavailable(op string, err error) error {
+func (c *Cache) unavailable(ctx context.Context, op string, err error) error {
+	c.log.WarnContext(ctx, "cache unavailable; the caller falls back to Postgres", "op", op, "err", err)
 	return fmt.Errorf("cache %s: %w (%w)", op, shared.ErrUnavailable, err)
 }
 

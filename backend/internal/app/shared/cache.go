@@ -89,12 +89,12 @@ func (k Key) IsZero() bool { return k.s == "" }
 // A cache problem never fails a request. When the cache cannot be reached,
 // every method returns an error that matches shared.ErrUnavailable; the use
 // case treats it as a miss (Get) or a skipped write (Set and the deletes),
-// logs it, and reads from Postgres. A stored value that no longer decodes
-// into dst (its type changed in a deploy, or it is corrupt) is a miss
-// without an error, and the entry is dropped; the adapter logs that. Misuse
-// has its own errors: the zero Key (ErrInvalidCacheKey), a non-positive TTL
-// (ErrInvalidTTL), and values or destinations JSON cannot handle
-// (ErrInvalidCacheValue).
+// reads from Postgres, and does not log it: the adapter already logged the
+// failure. A stored value that no longer decodes into dst (its type changed
+// in a deploy, or it is corrupt) is a miss without an error, and the entry
+// is dropped. Misuse has its own errors: the zero Key (ErrInvalidCacheKey),
+// a non-positive TTL (ErrInvalidTTL), and values or destinations JSON cannot
+// handle (ErrInvalidCacheValue).
 type Cache interface {
 	// Get decodes the value at key into dst, which must be a non-nil
 	// pointer, and reports whether it was found, not expired, and decoded.

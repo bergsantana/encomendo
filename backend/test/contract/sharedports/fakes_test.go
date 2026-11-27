@@ -14,9 +14,12 @@ var start = time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
 func TestFakeCache_Contract(t *testing.T) {
 	RunCacheContract(t, func(*testing.T) CacheHarness {
 		clock := sharedfake.NewClock(start)
+		down := sharedfake.NewCache(clock)
+		down.SetDown(true)
 		return CacheHarness{
 			Cache:  sharedfake.NewCache(clock),
 			Elapse: func(_ *testing.T, d time.Duration) { clock.Advance(d) },
+			Down:   down,
 		}
 	})
 }
