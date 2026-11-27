@@ -22,13 +22,13 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
-| 3 | Catalog and suppliers | 5 | 14 | In progress: contract (#53), domain (#54, step 3.3), web API calls (#55), Android data layer (#57) |
+| 3 | Catalog and suppliers | 7 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (step 3.4), web API calls (#55), Android data layer (#57) |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **53** | **122** | **about 43%** |
+|   | **All milestones** | **55** | **122** | **about 45%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
