@@ -19,8 +19,11 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
 
-// adminPaths are the nine store and team operations of the contract.
-var adminPaths = []struct{ method, path string }{
+// adminPaths are every admin operation of the contract: the nine store and
+// team ones, then the catalog and supplier ones.
+var adminPaths = append(append(tenancyAdminPaths, catalogAdminPaths...), supplierAdminPaths...)
+
+var tenancyAdminPaths = []struct{ method, path string }{
 	{"POST", "/api/v1/admin/tenants"},
 	{"GET", "/api/v1/admin/settings"},
 	{"PUT", "/api/v1/admin/settings"},
@@ -103,7 +106,7 @@ func (u *tenancyReached) RevokeInvitation(context.Context, shared.InvitationID) 
 	return shared.ErrForbidden
 }
 
-func adminRouter(t *testing.T, uc apptenancy.UseCases) http.Handler {
+func adminRouter(t *testing.T, uc *tenancyReached) http.Handler {
 	t.Helper()
 	return adminRouterWith(t, uc, activeStores{})
 }
@@ -113,7 +116,7 @@ type activeStores struct{}
 
 func (activeStores) CheckStore(context.Context) error { return nil }
 
-func adminRouterWith(t *testing.T, uc apptenancy.UseCases, stores middleware.StoreChecker) http.Handler {
+func adminRouterWith(t *testing.T, uc *tenancyReached, stores middleware.StoreChecker) http.Handler {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
 	p, err := ratelimit.NewPseudonyms([]byte(strings.Repeat("k", ratelimit.MinKeyLength)))
@@ -124,7 +127,15 @@ func adminRouterWith(t *testing.T, uc apptenancy.UseCases, stores middleware.Sto
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten},
+	cat, err := handler.NewCatalog(handler.CatalogDeps{UseCases: catalogReached{n: &uc.calls}, Limiter: &countingLimiter{}, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sup, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliersReached{n: &uc.calls}, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten, Catalog: cat, Suppliers: sup},
 		RouterOptions{Authn: middleware.NewAuthn(tokens{}, openDenylist{}, log), Stores: stores})
 	if err != nil {
 		t.Fatal(err)
@@ -142,8 +153,10 @@ func adminRequest(method, path, token string) *http.Request {
 			`"assemblyDays":3,"safetyMarginDays":2,"whatsappPhone":null,"version":1}`
 	case method == "POST" && path == "/api/v1/admin/invitations":
 		body = `{"email":"a@b.co","role":"staff"}`
-	case method == "PUT":
+	case method == "PUT" && strings.HasSuffix(path, "/role"):
 		body = `{"role":"staff"}`
+	default:
+		body, _ = newCatalogBody(method, path)
 	}
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
@@ -180,7 +193,8 @@ func TestRouter_AdminRoutesNeedAStaffToken(t *testing.T) {
 func TestRouter_AdminPathsListEveryRoute(t *testing.T) {
 	t.Parallel()
 
-	if n := len(adminRoutes(Handlers{Tenancy: &handler.Tenancy{}})); len(adminPaths) != n {
+	all := Handlers{Tenancy: &handler.Tenancy{}, Catalog: &handler.Catalog{}, Suppliers: &handler.Suppliers{}}
+	if n := len(adminRoutes(all)); len(adminPaths) != n || n != 9+29+4 {
 		t.Fatalf("adminPaths lists %d routes, the router mounts %d", len(adminPaths), n)
 	}
 }
