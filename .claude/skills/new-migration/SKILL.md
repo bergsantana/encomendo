@@ -61,6 +61,16 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON purchase_lines TO encomendo_app;
 
 (The table above only illustrates the conventions. The real `purchase_lines` in the purchasing migration follows `docs/architecture.md` section 7: supplier, expected and promised dates, status.)
 
+**Internal tables are staff-only (ADR 0024).** A table holding supplier, cost or purchasing data uses `staff_only` instead of `tenant_isolation`. A store page scope sets a tenant but no user, so it reads zero rows whatever its query:
+
+```sql
+CREATE POLICY staff_only ON supplier_items
+  USING (tenant_id = current_tenant_id() AND current_user_id() IS NOT NULL)
+  WITH CHECK (tenant_id = current_tenant_id() AND current_user_id() IS NOT NULL);
+```
+
+A staff-only table has no other policy: no `tenant_isolation`, and never a client policy. It has no audit trigger while store page scopes can read `audit_log`, because the audit keeps whole rows (`0008_catalog`).
+
 Checklist:
 
 - [ ] `tenant_id uuid NOT NULL` and every index starts with `tenant_id`
@@ -72,6 +82,7 @@ Checklist:
 - [ ] `created_at`, `updated_at`
 - [ ] `ENABLE` **and** `FORCE ROW LEVEL SECURITY`, policy with `USING` **and** `WITH CHECK`
 - [ ] Grants for `encomendo_app` only. Never grant to `PUBLIC`.
+- [ ] Supplier, cost or purchasing data? `staff_only`, not `tenant_isolation`, and `staffOnly: true` in the RLS suite
 - [ ] If clients read the table through the client area, add the second `SELECT`-only policy on `app.client_account_id` (architecture section 5.5). Supplier, cost and purchasing tables never get one.
 - [ ] Append-only tables (movements, history, audit) get no `UPDATE`/`DELETE` grant.
 - [ ] A global table (like `templates` or `status_workflows`) has a comment saying why it is not tenant-scoped. Published workflow versions are immutable: a change is a new version row, never an `UPDATE`.
@@ -83,7 +94,7 @@ Checklist:
 
 ## 5. Tests
 
-- `test/integration/rls/`: add the table to `tenantTables` in `tenant_tables_test.go` (`TestEveryTenantTableIsListed` fails until you do), which runs all five cases: select, insert with the other tenant's id, update, delete, and no tenant set (expects zero rows). With a client policy, also: another client's rows (zero rows) and any write as a client (rejected).
+- `test/integration/rls/`: add the table to `tenantTables` in `tenant_tables_test.go` (`TestEveryTenantTableIsListed` fails until you do), which runs all five cases: select, insert with the other tenant's id, update, delete, and no tenant set (expects zero rows). A staff-only table sets `staffOnly: true` and also runs the sixth case: a store page scope (tenant, no user) reads zero rows and writes none. A child row's `insert` is one statement with CTEs for its parents, so it is refused or allowed as a whole (see `catalog_tables_test.go`). With a client policy, also: another client's rows (zero rows) and any write as a client (rejected).
 - `test/integration/postgres/`: repository tests for the new queries, including the constraint errors mapped to domain errors.
 - Run:
 

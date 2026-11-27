@@ -58,7 +58,7 @@ func TestEveryTenantTable_ForcesRLSThroughTheHelpers(t *testing.T) {
 	}
 }
 
-// extraPolicies is every policy besides tenant_isolation. Each must be
+// extraPolicies is every policy besides tenant_isolation and staff_only. Each must be
 // SELECT only and apply only with no tenant set (ADR 0010), so it can never
 // widen what a store's own transactions see or let anyone write. A client
 // read policy (architecture 5.5, item 7) joins this list in its own review.
@@ -76,13 +76,14 @@ func TestPolicies_OnlyTheListedExtrasWidenReads(t *testing.T) {
 	if len(asymmetric) != 0 {
 		t.Errorf("tenant_isolation policies that are not FOR ALL with USING = WITH CHECK: %v", asymmetric)
 	}
+	// staff_only narrows reads; TestStaffOnlyPolicies pins its expression.
 	got := tableNames(t, db, `SELECT tablename || '.' || policyname FROM pg_policies
-		WHERE schemaname = 'public' AND policyname <> 'tenant_isolation'`)
+		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')`)
 	if !slices.Equal(got, extraPolicies) {
 		t.Errorf("extra policies = %v, want exactly the reviewed %v", got, extraPolicies)
 	}
 	loose := tableNames(t, db, `SELECT tablename || '.' || policyname || ' ' || cmd || ': ' || qual FROM pg_policies
-		WHERE schemaname = 'public' AND policyname <> 'tenant_isolation'
+		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')
 		  AND (cmd <> 'SELECT' OR qual NOT LIKE '((current_tenant_id() IS NULL) AND %')`)
 	if len(loose) != 0 {
 		t.Errorf("extra policies that are not SELECT only behind current_tenant_id() IS NULL: %v", loose)
@@ -187,9 +188,9 @@ func TestWorkflowPresets_ReadOnlyToTheApp(t *testing.T) {
 	}
 }
 
-func tableNames(t *testing.T, db *sql.DB, query string) []string {
+func tableNames(t *testing.T, db *sql.DB, query string, args ...any) []string {
 	t.Helper()
-	rows, err := db.QueryContext(t.Context(), query)
+	rows, err := db.QueryContext(t.Context(), query, args...)
 	if err != nil {
 		t.Fatal(err)
 	}
