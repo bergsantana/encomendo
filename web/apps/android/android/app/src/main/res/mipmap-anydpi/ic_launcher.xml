@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The logo mark as an adaptive icon: the safety-yellow square is the
+    background (the launcher rounds it), the package-and-check glyph in ink is
+    the foreground (docs/product/design-document.md, Visual identity).
+    minSdk is 26, so every device reads this file and no PNGs are needed.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

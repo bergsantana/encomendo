@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Release (and every build without its own copy): HTTPS only, trusting only
+    the system's certificate authorities, never ones a user installed. The
+    WebView and the HttpURLConnection Capacitor uses for the first page both
+    obey this file. Debug builds replace it (src/debug/res/xml) to reach the
+    local stack; android.test.ts checks that the two differ only as intended.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

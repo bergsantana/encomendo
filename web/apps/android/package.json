@@ -1,0 +1,24 @@
+{
+  "name": "@encomendo/android",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:debug": "ENCOMENDO_SHELL_BUILD=debug cap sync android",
+    "sync:release": "ENCOMENDO_SHELL_BUILD=release cap sync android",
+    "build:debug": "pnpm run sync:debug && ../../../scripts/android-shell-docker.sh assembleDebug",
+    "build:release": "pnpm run sync:release && ../../../scripts/android-shell-docker.sh assembleRelease",
+    "test:android": "../../../scripts/android-shell-docker.sh testDebugUnitTest",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The only files the shell ever shares: photos the camera app writes for the
+    admin's photo input (PhotoChooser). Nothing else on the device, and no
+    external storage, is exposed through the FileProvider.
+-->
+<paths>
+    <cache-path name="photos" path="photos/" />
+</paths>

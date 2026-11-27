@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Safety yellow: the logo mark only (docs/product/design-document.md). -->
+    <color name="ic_launcher_background">#FFC800</color>
+    <!-- The design system's ground, behind the splash icon. -->
+    <color name="enc_ground">#F5F4F0</color>
+</resources>

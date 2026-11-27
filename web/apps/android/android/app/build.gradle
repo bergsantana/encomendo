@@ -1,0 +1,130 @@
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+
+// The frozen native app (mobile/) shipped with versionCode 1 and the same application id, so the
+// shell starts at 100 and installs as an update of it (ADR 0029). CI or the person building passes
+// VERSION_CODE for each release; it can never go below 100.
+def shellVersionCode = (System.getenv('VERSION_CODE') ?: '100').toInteger()
+if (shellVersionCode < 100) {
+    throw new GradleException("VERSION_CODE must be 100 or more, so the shell updates the frozen native app (got ${shellVersionCode}).")
+}
+
+// Release signing comes from outside the repository: the ENCOMENDO_* environment variables, or a
+// git-ignored keystore.properties next to settings.gradle. Nothing here holds a key or a password.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def signingValue = { String env, String property ->
+    def value = System.getenv(env) ?: keystoreProperties.getProperty(property)
+    return value?.trim() ? value : null
+}
+def releaseSigning = [
+    storeFile    : signingValue('ENCOMENDO_KEYSTORE', 'storeFile'),
+    storePassword: signingValue('ENCOMENDO_KEYSTORE_PASSWORD', 'storePassword'),
+    keyAlias     : signingValue('ENCOMENDO_KEY_ALIAS', 'keyAlias'),
+    keyPassword  : signingValue('ENCOMENDO_KEY_PASSWORD', 'keyPassword'),
+]
+def missingSigning = releaseSigning.findAll { it.value == null }.keySet()
+def releaseStoreFile = releaseSigning.storeFile ? rootProject.file(releaseSigning.storeFile) : null
+
+android {
+    namespace = "br.com.encomendo.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "br.com.encomendo.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode shellVersionCode
+        versionName System.getenv('VERSION_NAME') ?: '0.2.0'
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (missingSigning.isEmpty()) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (missingSigning.isEmpty()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+// A release build refuses to start without its signing values, naming the missing ones, instead of
+// producing an unsigned APK.
+def checkReleaseSigning = tasks.register('checkReleaseSigning') {
+    doLast {
+        if (!missingSigning.isEmpty()) {
+            def names = [storeFile: 'ENCOMENDO_KEYSTORE', storePassword: 'ENCOMENDO_KEYSTORE_PASSWORD',
+                         keyAlias: 'ENCOMENDO_KEY_ALIAS', keyPassword: 'ENCOMENDO_KEY_PASSWORD']
+            def missing = missingSigning.collect { "${names[it]} (or ${it} in keystore.properties)" }.join(', ')
+            throw new GradleException("Release signing is not configured. Missing: ${missing}. See web/apps/android/README.md, Release build.")
+        }
+        if (!releaseStoreFile.isFile()) {
+            throw new GradleException("The release keystore does not exist: ${releaseStoreFile}. See web/apps/android/README.md, Release build.")
+        }
+    }
+}
+
+// The URL and WebView flags come from the last `cap sync` (capacitor.config.ts), which is not part of
+// the Gradle build. A release must never ship a debug sync: plain HTTP, a local host or debugging on.
+def syncedConfig = file('src/main/assets/capacitor.config.json')
+def checkReleaseShellConfig = tasks.register('checkReleaseShellConfig') {
+    inputs.file(syncedConfig).optional()
+    doLast {
+        def fix = 'Run `pnpm --filter @encomendo/android build:release` (or sync:release), not a debug sync.'
+        if (!syncedConfig.isFile()) {
+            throw new GradleException("No synced Capacitor config at ${syncedConfig}. ${fix}")
+        }
+        def config = new JsonSlurper().parse(syncedConfig)
+        def url = config.server?.url
+        def host = url instanceof String ? new URI(url).host : null
+        if (!(url instanceof String) || !url.startsWith('https://') || host == null || host == 'localhost' || host.endsWith('.localhost')) {
+            throw new GradleException("A release build must open the hosted admin over HTTPS, not ${url}. ${fix}")
+        }
+        if (config.android?.webContentsDebuggingEnabled != false) {
+            throw new GradleException("A release build must turn WebView debugging off. ${fix}")
+        }
+        if (config.android?.allowMixedContent || config.server?.cleartext) {
+            throw new GradleException("A release build must refuse mixed content and cleartext. ${fix}")
+        }
+    }
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    dependsOn checkReleaseSigning, checkReleaseShellConfig
+}
