@@ -18,6 +18,16 @@ class MenuEntryTest {
     }
 
     @Test
+    fun catalogoIsForRolesThatReadTheCatalogAndSitsBetweenHojeAndEquipe() {
+        // Every role has catalog:read (ADR 0025); the web menu puts Catálogo before Equipe (ADR 0020).
+        val viewer = GrantedPermissions(listOf(Permission.CatalogRead))
+        val admin = GrantedPermissions(listOf(Permission.CatalogRead, Permission.MembersManage))
+
+        assertEquals(listOf(MenuEntry.Hoje, MenuEntry.Catalogo), MenuEntry.allowedBy(viewer))
+        assertEquals(listOf(MenuEntry.Hoje, MenuEntry.Catalogo, MenuEntry.Equipe), MenuEntry.allowedBy(admin))
+    }
+
+    @Test
     fun hojeIsOpenToEveryRole() {
         assertEquals(listOf(MenuEntry.Hoje), MenuEntry.allowedBy(GrantedPermissions.None))
     }
@@ -25,6 +35,7 @@ class MenuEntryTest {
     @Test
     fun eachEntryLeadsToItsScreen() {
         assertEquals(HojeDestination, MenuEntry.Hoje.destination)
+        assertEquals(CatalogoDestination, MenuEntry.Catalogo.destination)
         assertEquals(MembersDestination, MenuEntry.Equipe.destination)
     }
 }

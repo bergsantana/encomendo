@@ -160,6 +160,8 @@ class InMemoryCatalogCache {
         override suspend fun dropCosts(tenantId: String) {
             pages.entries.removeAll { it.key[0] == tenantId && it.value.costs }
         }
+
+        override suspend fun deleteAll() = pages.clear()
     }
 
     private inner class DetailDao : CatalogDetailDao() {
@@ -190,5 +192,7 @@ class InMemoryCatalogCache {
         override suspend fun dropCosts(tenantId: String) {
             details.entries.removeAll { it.key[0] == tenantId && it.value.costs }
         }
+
+        override suspend fun deleteAll() = details.clear()
     }
 }

@@ -9,4 +9,13 @@ class CatalogCacheDaos(
     val pages: CatalogPageDao,
     /** The cached details. */
     val details: CatalogDetailDao,
-)
+) {
+    /**
+     * Empties the cache of every store, costs included: Sair leaves nothing of the catalog on the phone, which
+     * workshops hand from one person to the next (ADR 0016, ADR 0026).
+     */
+    suspend fun clear() {
+        pages.deleteAll()
+        details.deleteAll()
+    }
+}

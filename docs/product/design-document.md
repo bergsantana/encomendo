@@ -249,10 +249,13 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - "No portal" is a switch, read aloud as "Mostrar {item} na página da loja".
 - Above the table: the search field "Buscar item", the filter "Todas as categorias", the box "Mostrar arquivados", and the buttons "Novo item", "Categorias" and "Campos".
 - While loading: "Carregando o catálogo…". At the end of a page: "Carregar mais".
+- On the phone each row is a card with the same columns, one labelled line each (Categoria, Origem, Fornecedor, Prazo, Preço, and for the Dono Custo and Margem), then the "No portal" switch. Tapping a card opens the item.
+- On Android a role that only reads opens the item as its details in labelled lines (name, category, origin, price, suppliers, fields, options) with the title "Item" and one "Fechar" button, not as disabled fields.
+- Android keeps the last lists it read. When the server cannot be reached it shows them under "Sem conexão com o servidor. Confira a internet e tente de novo." and "Mostrando o catálogo salvo neste aparelho em {data}." (dd/mm/aaaa hh:mm). Anything that changes the catalog still needs the connection.
 - Empty catalog: "Nenhum item no catálogo ainda." with "Novo item". A search with no results: "Nenhum item encontrado."
 - An archived row shows "Arquivado" beside the name.
 
-**Item form** (drawer): title "Novo item" or "Editar item".
+**Item form** (drawer on the web, a full screen on the phone): title "Novo item" or "Editar item". While the item is read: "Carregando o item…".
 
 - **Fields:**
   - "Nome";
@@ -273,7 +276,8 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - empty fields: "Informe o nome do fornecedor.", "Informe o WhatsApp do fornecedor.";
   - an invalid number: "Confira o número: use DDD e 8 ou 9 dígitos.";
   - a name over 120 characters: "Use um nome de até 120 caracteres.";
-  - a name with line breaks or other control characters: "Use um nome sem quebras de linha ou caracteres de controle."
+  - a name with line breaks or other control characters: "Use um nome sem quebras de linha ou caracteres de controle.";
+  - a name already in the store: "Já existe um fornecedor com este nome."
 - **Campos:** one choice per store field, labelled with the field's name (such as "Serve em"). Several values may be picked.
 - **"Opções do cliente":**
   - each option has "Nome da opção", the box "Obrigatória" and its choices;
@@ -282,7 +286,9 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
   - hint: "O cliente escolhe uma destas opções ao pedir. Dias a mais entram no prazo."
 - **"Fotos":**
   - button "Adicionar fotos", hint "JPEG, PNG ou WebP, até 10 MB. A primeira é a capa.";
-  - each photo has "Usar como capa" and "Remover foto".
+  - on the phone, "Adicionar fotos" asks "Da galeria" or "Tirar foto";
+  - each photo has "Usar como capa" and "Remover foto"; the first shows "Capa" in place of "Usar como capa";
+  - photos change at once, not with "Salvar", and belong to a saved item.
 - **"Mostrar na página da loja"** (the "No portal" switch).
 - **Buttons:** "Salvar" and "Cancelar". When editing, also "Arquivar", or "Restaurar" for an archived item.
 - **Empty or wrong fields**, with "Confira os campos destacados." above the form:
@@ -304,14 +310,14 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 
 **Categorias** (dialog)
 
-- Title "Categorias". A list in the store's order, with "Mover para cima", "Mover para baixo", "Renomear" and "Excluir". Button "Nova categoria", field "Nome da categoria".
+- Title "Categorias" (while loading: "Carregando as categorias…"). A list in the store's order, with "Mover para cima", "Mover para baixo", "Renomear" and "Excluir". Button "Nova categoria", field "Nome da categoria".
 - "Informe o nome da categoria.", "Já existe uma categoria com este nome."
 - Also: "Use um nome de até 120 caracteres.", "Use um nome sem quebras de linha ou caracteres de controle.", "Use uma posição de zero ou mais."
 - A category in use: "Esta categoria tem itens. Mude os itens de categoria antes de excluir."
 
 **Campos** (dialog)
 
-- Title "Campos dos itens", hint "Campos como \"Serve em\" ajudam o cliente a achar o que serve para ele."
+- Title "Campos dos itens" (while loading: "Carregando os campos…"), hint "Campos como \"Serve em\" ajudam o cliente a achar o que serve para ele."
 - Each field has "Nome do campo" and its "Valores", with "Adicionar valor", "Remover valor" and "Excluir campo". Button "Novo campo".
 - "Informe o nome do campo.", "Informe o valor.", "Este valor já existe neste campo."
 - Also: "Use um nome de até 120 caracteres.", "Use um valor de até 80 caracteres.", "Use um valor sem quebras de linha ou caracteres de controle.", "Use até 200 valores por campo."

@@ -1,7 +1,6 @@
-package br.com.encomendo.feature.members
+package br.com.encomendo.core.domain.paging
 
 import br.com.encomendo.core.domain.failure.Failure
-import br.com.encomendo.core.domain.paging.Page
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher

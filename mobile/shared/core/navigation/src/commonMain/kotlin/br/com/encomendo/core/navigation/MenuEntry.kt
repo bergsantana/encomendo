@@ -5,6 +5,7 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.navigation.resources.Res
+import br.com.encomendo.core.navigation.resources.menu_catalogo
 import br.com.encomendo.core.navigation.resources.menu_equipe
 import br.com.encomendo.core.navigation.resources.menu_hoje
 import org.jetbrains.compose.resources.StringResource
@@ -21,6 +22,7 @@ internal enum class MenuEntry(
     val permission: Permission?,
 ) {
     Hoje(Res.string.menu_hoje, permission = null),
+    Catalogo(Res.string.menu_catalogo, Permission.CatalogRead),
     Equipe(Res.string.menu_equipe, Permission.MembersManage),
     ;
 
@@ -29,6 +31,7 @@ internal enum class MenuEntry(
         get() =
             when (this) {
                 Hoje -> HojeDestination
+                Catalogo -> CatalogoDestination
                 Equipe -> MembersDestination
             }
 
@@ -36,6 +39,7 @@ internal enum class MenuEntry(
     fun isAt(current: NavDestination?): Boolean =
         when (this) {
             Hoje -> current?.hasRoute<HojeDestination>()
+            Catalogo -> current?.hasRoute<CatalogoDestination>()
             Equipe -> current?.hasRoute<MembersDestination>()
         } == true
 

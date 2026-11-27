@@ -2,6 +2,7 @@ package br.com.encomendo.core.di
 
 import androidx.room3.Room
 import androidx.room3.RoomDatabase
+import br.com.encomendo.core.data.session.DeviceDataCleaner
 import br.com.encomendo.core.database.EncomendoDatabase
 import br.com.encomendo.core.domain.catalog.AttributeRepository
 import br.com.encomendo.core.domain.catalog.CatalogRepository
@@ -13,22 +14,31 @@ import br.com.encomendo.core.domain.session.AuthRepository
 import br.com.encomendo.core.domain.session.SessionRepository
 import br.com.encomendo.core.domain.session.TenancyRepository
 import br.com.encomendo.core.domain.session.scope
+import br.com.encomendo.core.domain.settings.SettingsRepository
 import br.com.encomendo.core.domain.supplier.SupplierRepository
 import br.com.encomendo.core.navigation.RootViewModel
 import br.com.encomendo.core.navigation.ScreenHandover
 import br.com.encomendo.core.network.ApiClientConfig
 import br.com.encomendo.core.network.SessionTurns
+import br.com.encomendo.core.platform.PhotoPicker
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.SessionTokens
 import br.com.encomendo.core.security.StoredSession
 import br.com.encomendo.core.security.TokenStore
+import br.com.encomendo.core.testing.FakePhotoPicker
 import br.com.encomendo.core.testing.FakeSecretCipher
 import br.com.encomendo.core.testing.temporaryPreferencesDataStore
 import br.com.encomendo.core.testing.testSession
 import br.com.encomendo.feature.auth.AccountViewModel
 import br.com.encomendo.feature.auth.LoginViewModel
 import br.com.encomendo.feature.auth.StorePickerViewModel
+import br.com.encomendo.feature.catalogo.AttributesViewModel
+import br.com.encomendo.feature.catalogo.CategoriesViewModel
+import br.com.encomendo.feature.catalogo.ItemFormViewModel
+import br.com.encomendo.feature.catalogo.ItemsViewModel
 import br.com.encomendo.feature.members.MembersViewModel
+import coil3.ImageLoader
+import coil3.PlatformContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.mock.MockEngine
@@ -44,6 +54,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import org.koin.core.parameter.parametersOf
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 import kotlin.test.AfterTest
@@ -75,6 +86,8 @@ class ModulesTest {
             val fakePlatform =
                 module {
                     single<SecretCipher> { FakeSecretCipher() }
+                    single<PhotoPicker> { FakePhotoPicker() }
+                    single<PlatformContext> { testPlatformContext() }
                     single(SessionDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single(DeviceDataStore) { temporaryPreferencesDataStore(backgroundScope) }
                     single<HttpClientEngine> { MockEngine { respondOk() } }
@@ -93,6 +106,14 @@ class ModulesTest {
             koin.get<AccountViewModel>()
             koin.get<StorePickerViewModel>()
             koin.get<MembersViewModel>()
+            koin.get<ItemsViewModel>()
+            koin.get<CategoriesViewModel>()
+            koin.get<AttributesViewModel>()
+            koin.get<ItemFormViewModel> { parametersOf(null) }
+            koin.get<SettingsRepository>()
+            // The photo thumbnails' loader: built over the storage client, which has no Auth plugin.
+            koin.get<ImageLoader>()
+            koin.get<DeviceDataCleaner>() // Sair empties the catalog cache and the loader's caches
             koin.get<CatalogRepository>()
             koin.get<SupplierRepository>()
             koin.get<CategoryRepository>()

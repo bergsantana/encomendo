@@ -29,6 +29,7 @@ include(
     ":shared:core:navigation",
     ":shared:core:di",
     ":shared:feature:auth",
+    ":shared:feature:catalogo",
     ":shared:feature:hoje",
     ":shared:feature:members",
 )

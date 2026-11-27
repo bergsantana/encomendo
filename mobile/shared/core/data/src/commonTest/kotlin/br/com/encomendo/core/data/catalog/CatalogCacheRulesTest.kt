@@ -1,5 +1,6 @@
 package br.com.encomendo.core.data.catalog
 
+import br.com.encomendo.core.database.CatalogPageEntity
 import br.com.encomendo.core.domain.catalog.ItemFilter
 import br.com.encomendo.core.domain.catalog.PhotoOwner
 import br.com.encomendo.core.domain.catalog.PhotoOwnerKind
@@ -35,6 +36,30 @@ class CatalogCacheRulesTest {
 
             assertFailsWith<Failure.Offline> { wired.catalog.item(ITEM_ID) }
             assertTrue(wired.cache.details.isEmpty(), "a role that does not see costs deletes the costs rows")
+        }
+
+    @Test
+    fun sairEmptiesTheCacheOfEveryStoreCostsIncluded() =
+        runTest {
+            val wired = catalogWiring(Role.Owner)
+            wired.api = { respondJson(itemJson(""","cost": {"cents": 5, "currency": "BRL"}""")) }
+            wired.catalog.item(ITEM_ID)
+            wired.cache.pages[listOf("another-store", "items", "", "")] =
+                CatalogPageEntity(
+                    "another-store",
+                    "items",
+                    "",
+                    "",
+                    costs = true,
+                    payload = "{}",
+                    cachedAtEpochMillis = 1,
+                )
+            assertFalse(wired.cache.details.isEmpty())
+
+            CatalogCacheCleaner(wired.cache.daos).clear()
+
+            assertTrue(wired.cache.details.isEmpty())
+            assertTrue(wired.cache.pages.isEmpty(), "every store's pages, not only the one signed in")
         }
 
     @Test

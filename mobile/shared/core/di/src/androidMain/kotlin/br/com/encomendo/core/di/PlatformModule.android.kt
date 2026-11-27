@@ -8,6 +8,7 @@ import br.com.encomendo.core.platform.PhotoPicker
 import br.com.encomendo.core.security.KeystoreCipher
 import br.com.encomendo.core.security.SecretCipher
 import br.com.encomendo.core.security.sessionDataStore
+import coil3.PlatformContext
 import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ actual val platformModule: Module =
             deviceDataStore(androidContext(), scope = CoroutineScope(Dispatchers.IO + SupervisorJob()))
         }
         single<HttpClientEngine> { okHttpEngine() }
+        single<PlatformContext> { androidContext() }
         // One picker for the process: MainActivity attaches itself to it, and screens take the interface.
         single { AndroidPhotoPicker(context = androidContext(), ioDispatcher = Dispatchers.IO) }
         single<PhotoPicker> { get<AndroidPhotoPicker>() }

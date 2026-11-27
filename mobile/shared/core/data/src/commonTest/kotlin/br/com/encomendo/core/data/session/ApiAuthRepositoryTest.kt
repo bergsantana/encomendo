@@ -324,6 +324,36 @@ class ApiAuthRepositoryTest {
         }
 
     @Test
+    fun aLogoutEmptiesWhatTheDeviceCachedForThePersonLeaving() =
+        runTest {
+            // Signed photo URLs show their pictures to whoever holds the phone next (ADR 0016, ADR 0026).
+            val store = tokenStore().apply { write(signedIn) }
+            var cleared = 0
+            val auth = repository(store, deviceData = { cleared++ }) { respond("", HttpStatusCode.NoContent) }
+
+            auth.logOut()
+
+            assertNull(store.read())
+            assertEquals(1, cleared)
+        }
+
+    @Test
+    fun aLogoutTheDeviceCannotSaveKeepsWhatItCached() =
+        runTest {
+            val disk = WriteFailing(temporaryPreferencesDataStore(backgroundScope))
+            val store =
+                TokenStore(disk, FakeSecretCipher(), StandardTestDispatcher(testScheduler))
+            store.write(signedIn)
+            disk.failing = true
+            var cleared = 0
+            val auth = repository(store, deviceData = { cleared++ }) { respond("", HttpStatusCode.NoContent) }
+
+            assertFailsWith<Failure.Unexpected> { auth.logOut() }
+
+            assertEquals(0, cleared, "the session on screen still works, so its pictures stay")
+        }
+
+    @Test
     fun aLogoutFinishesWhenTheScreenThatAskedIsGone() =
         runTest {
             // The root clears the signed-in screens, and so cancels the account bar that asked, as soon
@@ -421,6 +451,7 @@ class ApiAuthRepositoryTest {
     private fun TestScope.repository(
         store: TokenStore,
         lastStore: LastStore = LastStore(temporaryPreferencesDataStore(backgroundScope)),
+        deviceData: DeviceDataCleaner = DeviceDataCleaner {},
         handler: MockRequestHandler,
     ): ApiAuthRepository =
         ApiAuthRepository(
@@ -436,6 +467,7 @@ class ApiAuthRepositoryTest {
             store = store,
             appScope = backgroundScope,
             lastStore = lastStore,
+            deviceData = deviceData,
         )
 
     private fun MockRequestHandleScope.respondJson(

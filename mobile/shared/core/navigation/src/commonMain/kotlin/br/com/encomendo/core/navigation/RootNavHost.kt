@@ -22,9 +22,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import br.com.encomendo.core.domain.session.GrantedPermissions
 import br.com.encomendo.core.domain.session.Permission
 import br.com.encomendo.core.ui.LocalGrantedPermissions
+import br.com.encomendo.core.ui.LocalPhotoLoader
 import br.com.encomendo.core.ui.PermissionGate
 import br.com.encomendo.feature.auth.AccountBarRoute
 import br.com.encomendo.feature.auth.ForgotPasswordRoute
@@ -32,9 +34,16 @@ import br.com.encomendo.feature.auth.LoginNavigation
 import br.com.encomendo.feature.auth.LoginRoute
 import br.com.encomendo.feature.auth.SignUpRoute
 import br.com.encomendo.feature.auth.StorePickerRoute
+import br.com.encomendo.feature.catalogo.AttributesRoute
+import br.com.encomendo.feature.catalogo.CategoriesRoute
+import br.com.encomendo.feature.catalogo.ItemFormRoute
+import br.com.encomendo.feature.catalogo.ItemsNavigation
+import br.com.encomendo.feature.catalogo.ItemsRoute
 import br.com.encomendo.feature.hoje.HojeScreen
 import br.com.encomendo.feature.members.MembersRoute
+import coil3.ImageLoader
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 /** RootRoute connects [RootViewModel] to [RootNavHost]; the activity shows only this. */
@@ -44,7 +53,10 @@ fun RootRoute(
     viewModel: RootViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    RootNavHost(state = state, modifier = modifier)
+    // Photo thumbnails load through the loader with no bearer token (ADR 0026); screens only ask for an image.
+    CompositionLocalProvider(LocalPhotoLoader provides koinInject<ImageLoader>()) {
+        RootNavHost(state = state, modifier = modifier)
+    }
 }
 
 /**
@@ -190,6 +202,7 @@ fun NavGraphBuilder.authNavGraph(navController: NavController) {
 fun NavGraphBuilder.backofficeNavGraph(navController: NavController) {
     navigation<BackofficeGraph>(startDestination = HojeDestination) {
         composable<HojeDestination> { HojeScreen() }
+        catalogoNavGraph(navController)
         composable<MembersDestination> {
             PermissionGate(Permission.MembersManage, otherwise = { LeaveForHoje(navController) }) { MembersRoute() }
         }
@@ -198,6 +211,41 @@ fun NavGraphBuilder.backofficeNavGraph(navController: NavController) {
             // Pops the picker itself, so a second tap on the open store, still in flight, pops nothing more.
             StorePickerRoute(onClose = { navController.popBackStack(StorePickerDestination, inclusive = true) })
         }
+    }
+}
+
+/**
+ * Catálogo: the Itens list and the screens opened from it. Every role with `catalog:read` may read them; the
+ * screens show editing controls only to `catalog:write`, and the API checks every call.
+ */
+private fun NavGraphBuilder.catalogoNavGraph(navController: NavController) {
+    composable<CatalogoDestination> {
+        PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) {
+            ItemsRoute(
+                ItemsNavigation(
+                    onOpenItem = { itemId ->
+                        navController.navigate(ItemFormDestination(itemId)) {
+                            launchSingleTop =
+                                true
+                        }
+                    },
+                    onOpenCategories = { navController.navigate(CategoriesDestination) { launchSingleTop = true } },
+                    onOpenAttributes = { navController.navigate(AttributesDestination) { launchSingleTop = true } },
+                ),
+            )
+        }
+    }
+    composable<ItemFormDestination> { entry ->
+        val itemId = entry.toRoute<ItemFormDestination>().itemId
+        PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) {
+            ItemFormRoute(itemId = itemId, onClose = { navController.popBackStack() })
+        }
+    }
+    composable<CategoriesDestination> {
+        PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) { CategoriesRoute() }
+    }
+    composable<AttributesDestination> {
+        PermissionGate(Permission.CatalogRead, otherwise = { LeaveForHoje(navController) }) { AttributesRoute() }
     }
 }
 
