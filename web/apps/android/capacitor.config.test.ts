@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import config, { DEBUG_ADMIN_URL, ERROR_PAGE, RELEASE_ADMIN_URL, shellBuild, shellConfig } from './capacitor.config'
+import config, {
+  DEBUG_ADMIN_URL,
+  ERROR_PAGE,
+  MIN_WEBVIEW_VERSION,
+  RELEASE_ADMIN_URL,
+  shellBuild,
+  shellConfig,
+} from './capacitor.config'
 
 describe('the Capacitor config', () => {
   it('opens the hosted admin in release, with the app id the frozen native app used', () => {
@@ -27,6 +34,15 @@ describe('the Capacitor config', () => {
     expect(built.android?.allowMixedContent).toBe(false)
     // server.cleartext would add usesCleartextTraffic to the merged manifest.
     expect(built.server?.cleartext).toBeUndefined()
+  })
+
+  it.each(['debug', 'release'] as const)('requires a recent WebView and never the legacy bridge in %s', (build) => {
+    const android = shellConfig(build).android
+
+    // app/build.gradle's checkReleaseShellConfig expects the same number.
+    expect(MIN_WEBVIEW_VERSION).toBe(120)
+    expect(android?.minWebViewVersion).toBe(120)
+    expect(android).not.toHaveProperty('useLegacyBridge')
   })
 
   it('turns WebView debugging on only in debug', () => {

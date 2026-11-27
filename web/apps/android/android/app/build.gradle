@@ -77,6 +77,8 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    // WebViewFeature: MainActivity refuses WebViews that cannot bind the bridge to the admin origin.
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     implementation project(':capacitor-cordova-android-plugins')
@@ -111,16 +113,27 @@ def checkReleaseShellConfig = tasks.register('checkReleaseShellConfig') {
             throw new GradleException("No synced Capacitor config at ${syncedConfig}. ${fix}")
         }
         def config = new JsonSlurper().parse(syncedConfig)
-        def url = config.server?.url
-        def host = url instanceof String ? new URI(url).host : null
-        if (!(url instanceof String) || !url.startsWith('https://') || host == null || host == 'localhost' || host.endsWith('.localhost')) {
-            throw new GradleException("A release build must open the hosted admin over HTTPS, not ${url}. ${fix}")
+        // Kept in step with RELEASE_ADMIN_URL and MIN_WEBVIEW_VERSION in capacitor.config.ts, which
+        // capacitor.config.test.ts pins to the same values.
+        def releaseUrl = 'https://admin.encomendo.com.br'
+        def minWebViewVersion = 120
+        if (config.server?.url != releaseUrl) {
+            throw new GradleException("A release build must open ${releaseUrl}, not ${config.server?.url}. ${fix}")
+        }
+        if (config.server?.allowNavigation != []) {
+            throw new GradleException("A release build must let no other host navigate in the app (server.allowNavigation: []). ${fix}")
         }
         if (config.android?.webContentsDebuggingEnabled != false) {
             throw new GradleException("A release build must turn WebView debugging off. ${fix}")
         }
         if (config.android?.allowMixedContent || config.server?.cleartext) {
             throw new GradleException("A release build must refuse mixed content and cleartext. ${fix}")
+        }
+        if (config.android?.containsKey('useLegacyBridge')) {
+            throw new GradleException("A release build must not set android.useLegacyBridge: it opens the bridge to every frame. ${fix}")
+        }
+        if (config.android?.minWebViewVersion != minWebViewVersion) {
+            throw new GradleException("A release build must require WebView ${minWebViewVersion} (android.minWebViewVersion). ${fix}")
         }
     }
 }

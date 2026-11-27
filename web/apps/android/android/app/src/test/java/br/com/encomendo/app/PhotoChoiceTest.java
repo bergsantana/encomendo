@@ -2,6 +2,8 @@ package br.com.encomendo.app;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -30,6 +32,17 @@ public class PhotoChoiceTest {
     public void imagesWithoutJpegOfferOnlyTheGallery() {
         assertEquals(PhotoChoice.Kind.GALLERY, PhotoChoice.forInput(new String[] { "image/png" }, false).kind());
         assertEquals(PhotoChoice.Kind.GALLERY, PhotoChoice.forInput(new String[] { "image/png" }, true).kind());
+    }
+
+    @Test
+    public void onlyAnotherAppsContentGoesToThePage() {
+        String own = "br.com.encomendo.app.fileprovider";
+        assertTrue(PhotoChoice.acceptsPicked("content", "com.android.providers.media.documents", own));
+        assertFalse(PhotoChoice.acceptsPicked("content", own, own));
+        assertFalse(PhotoChoice.acceptsPicked("file", "", own));
+        assertFalse(PhotoChoice.acceptsPicked("content", null, own));
+        assertFalse(PhotoChoice.acceptsPicked("content", "", own));
+        assertFalse(PhotoChoice.acceptsPicked(null, "com.android.providers.media.documents", own));
     }
 
     @Test

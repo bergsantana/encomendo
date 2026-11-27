@@ -26,6 +26,13 @@ export const DEBUG_ADMIN_URL = 'http://admin.localhost:8080'
 export const ERROR_PAGE = 'index.html'
 
 /**
+ * MIN_WEBVIEW_VERSION is the oldest Android System WebView (Chromium major version) the shell runs
+ * on. Below it Capacitor shows the error page; MainActivity also refuses any WebView without the
+ * features that bind the bridge to the admin origin. app/build.gradle checks the synced value.
+ */
+export const MIN_WEBVIEW_VERSION = 120
+
+/**
  * shellBuild reads ENCOMENDO_SHELL_BUILD. Unset means release, so a plain
  * `cap sync` can never leave a release build pointing at the local stack.
  * Any other value fails, rather than guessing.
@@ -44,7 +51,9 @@ export function shellBuild(env: Record<string, string | undefined>): ShellBuild 
  *   browser (ADR 0010);
  * - no other host is allowed to navigate inside the app (`allowNavigation`
  *   is empty, and MainActivity's NavigationPolicy enforces the same lock);
- * - mixed content is refused, and WebView debugging is on only in debug.
+ * - mixed content is refused, and WebView debugging is on only in debug;
+ * - the WebView is recent enough, and the legacy bridge (a JavaScript
+ *   interface open to every frame) is never set.
  *
  * Cleartext is not set here on purpose: `server.cleartext` would add
  * `usesCleartextTraffic="true"` to the merged manifest. The debug build's
@@ -63,10 +72,13 @@ export function shellConfig(build: ShellBuild): CapacitorConfig {
     android: {
       allowMixedContent: false,
       webContentsDebuggingEnabled: build === 'debug',
+      minWebViewVersion: MIN_WEBVIEW_VERSION,
     },
     plugins: {
       // The admin talks to the API with the WebView's own fetch and cookies,
-      // exactly as in a browser; native HTTP would bypass the same-origin rules.
+      // exactly as in a browser. `enabled: false` only stops the JavaScript
+      // patching of fetch and document.cookie: Capacitor still registers both
+      // native plugins, so MainActivity replaces them (NativeBridgeLockdown).
       CapacitorHttp: { enabled: false },
       CapacitorCookies: { enabled: false },
     },

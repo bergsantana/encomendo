@@ -8,6 +8,7 @@
     "build:debug": "pnpm run sync:debug && ../../../scripts/android-shell-docker.sh assembleDebug",
     "build:release": "pnpm run sync:release && ../../../scripts/android-shell-docker.sh assembleRelease",
     "test:android": "../../../scripts/android-shell-docker.sh testDebugUnitTest",
+    "test:guards": "../../../scripts/android-shell-guard-test.sh",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

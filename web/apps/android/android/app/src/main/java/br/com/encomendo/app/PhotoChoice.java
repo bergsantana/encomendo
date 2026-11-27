@@ -44,4 +44,13 @@ record PhotoChoice(Kind kind, String[] galleryTypes) {
         Kind kind = !takesJpeg ? Kind.GALLERY : capture ? Kind.CAMERA : Kind.ASK;
         return new PhotoChoice(kind, types.toArray(new String[0]));
     }
+
+    /**
+     * acceptsPicked says whether a URI the gallery returned may go to the page. Only another app's
+     * {@code content:} URIs do: a {@code file:} URI, or one of this app's own FileProvider (whose
+     * files the picker app could name to make the page upload them), is dropped.
+     */
+    static boolean acceptsPicked(String scheme, String authority, String ownFileProvider) {
+        return "content".equals(scheme) && authority != null && !authority.isEmpty() && !authority.equals(ownFileProvider);
+    }
 }

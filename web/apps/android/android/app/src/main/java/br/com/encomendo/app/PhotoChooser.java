@@ -19,6 +19,8 @@ import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.Logger;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * PhotoChooser answers the admin's photo inputs ({@code <input type="file" accept="image/…">}) with
@@ -160,20 +162,30 @@ final class PhotoChooser extends BridgeWebChromeClient {
         }
     }
 
-    private static Uri[] chosenUris(ActivityResult result) {
+    private Uri[] chosenUris(ActivityResult result) {
         Intent data = result.getData();
         if (result.getResultCode() != Activity.RESULT_OK || data == null) {
             return null;
         }
+        List<Uri> picked = new ArrayList<>();
         ClipData clip = data.getClipData();
         if (clip != null && clip.getItemCount() > 0) {
-            Uri[] uris = new Uri[clip.getItemCount()];
-            for (int i = 0; i < uris.length; i++) {
-                uris[i] = clip.getItemAt(i).getUri();
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                picked.add(clip.getItemAt(i).getUri());
             }
-            return uris;
+        } else if (data.getData() != null) {
+            picked.add(data.getData());
         }
-        return data.getData() == null ? null : new Uri[] { data.getData() };
+        String ownFileProvider = bridge.getContext().getPackageName() + ".fileprovider";
+        List<Uri> accepted = new ArrayList<>();
+        for (Uri uri : picked) {
+            if (uri != null && PhotoChoice.acceptsPicked(uri.getScheme(), uri.getAuthority(), ownFileProvider)) {
+                accepted.add(uri);
+            } else {
+                Logger.warn("Dropped a picked file that is not another app's content");
+            }
+        }
+        return accepted.isEmpty() ? null : accepted.toArray(new Uri[0]);
     }
 
     @SuppressWarnings("QueryPermissionsNeeded") // AndroidManifest.xml declares the IMAGE_CAPTURE query.

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Shown instead of the admin when the phone's WebView cannot bind Capacitor's
+    bridge to the admin origin (WebViewSupport). Wording: docs/product/design-document.md,
+    The Android app.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/enc_ground"
+    android:fitsSystemWindows="true"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/webview_update_message"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:maxWidth="360dp"
+        android:textColor="@color/enc_ink"
+        android:textSize="16sp" />
+
+    <Button
+        android:id="@+id/webview_update_action"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:text="@string/webview_update_action" />
+</LinearLayout>
