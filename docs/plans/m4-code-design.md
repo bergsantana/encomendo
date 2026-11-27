@@ -1299,6 +1299,19 @@ func NewTrackingView(o *order.Order, store string) TrackingView
   The thresholds are constants in `today.go` (`awaitingDepositDays = 3`, `readyDays = 2`).
 - `Finance(from, to)`: `Received{Total, ByKind, ByMethod}` from non-void payments in the period (in the store zone); `ToReceive{Total, Orders}` from active orders with a balance; `ToRefund []…`; `Margins []MarginRow` from orders handed over in the period, `Margin` nil without a full cost. `from` after `to` or a period over 366 days → `ErrInvalid`.
 
+### 3.6a As built in 4.10
+
+- **`OrderView` is `View`.** revive refuses the stutter `order.OrderView`; `app/customer` and `app/supplier` name theirs `View` too. Write answers carry the version the repository stored, which is the read version + 1.
+- **`Customers.FindOrCreate(ctx, name, phone)`** replaces `Create(ctx, name, phone)`: the method finds the store's customer by phone first, unchanged, and creates one only when there is none. `inproc.OrderCustomers` builds it over `appcustomer.UseCases.ByPhone` and `Create`.
+- **`Repository` holds the write methods** (`NextNumber`, `Insert`, `Update`, `ByID`, `AddMessage`). 4.11 adds the query methods (`List`, `Active`, `History`, `Payments`, `HandedOver`) and the `UseCases` queries.
+- **`Message`** is `{ID, Order, Kind, ToPhone, Text, URL, By, At}`. Its text and its `wa.me` URL have the tracking link replaced by `[link de acompanhamento]`. The URL the user opens, from the answer, carries the link.
+- **Lines on a change** (`lines.go`):
+  - A line sent back unchanged keeps its old price, snapshots, sourcing and ids. Unchanged means the same kit and swaps, or the same item and quantity, and the same choices. So later catalog edits never reprice it.
+  - Any other line is priced by the catalog now. When it is the same kit or loose item as an old line, the items it still holds keep their ids, sourcing and lead days. So their status and a backup-supplier switch survive.
+- **`write`** is one helper for the writes that load an order at a version, change it, save it with its events, and answer the view. `anyVersion` skips the version check, for the tracking link.
+- **`Quote` with `Order` set** runs the change on the loaded order in memory and never saves it. A quote with no customer names a delivery address but does not look it up.
+- **`app/catalog.OrderLines`** returns its own types (`OrderLine`, `OrderItem`, `SupplierFact`, `OrderKit`, `ChosenOption`). `inproc.OrderCatalog` maps them to `order.LineSpec`. An archived kit is an error matching `catalog.ErrItemArchived`.
+
 ### 3.7 `app/schedule` (step 4.11)
 
 ```go
