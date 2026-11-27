@@ -61,6 +61,8 @@ Brazilian mobile carriers put many customers behind one address (CGNAT), so per-
 | `invite` | store | 20 | 24 hours |
 | `invite` | inviting user | 50 | 24 hours |
 | `invite` | store and email | 3 | 24 hours |
+| `photo-upload` | user | 30 | 1 minute |
+| `photo-upload` | store | 60 | 1 minute |
 
 - Sign-up is limited per email as well as per IP, as ADR 0010 says; `openapi.yaml` gets that line in step 2.3.
 - A per-email login limit lets someone keep a known address out of login for as long as they keep sending about one attempt a minute, because the window slides. Only new logins are blocked: a signed-in user stays signed in, since refresh is not limited per email. That is accepted. The alternative, per-IP limits alone, lets a CGNAT pool try passwords freely.
@@ -68,6 +70,7 @@ Brazilian mobile carriers put many customers behind one address (CGNAT), so per-
   - `create-tenant` counts attempts, a taken address included. The handler cannot know an address is taken before trying, and the sliding log cannot give a count back. So the cap is 10 attempts a day, not 5 stores, and a few collisions do not lock a new owner out.
   - The invitation caps count only calls that could send mail: from a caller whose token may manage the team (`members:manage`), with an email and a role the use case accepts. Otherwise a viewer's refused calls, or a typo, would spend the store's budget.
   - Accepted: a member removed or demoted from admin keeps a token that says `admin` for up to 15 minutes (ADR 0011), and in that time could spend the store's 20 invitations. The use case refuses each call, so nothing is sent. Retries of "Reenviar" during an email outage count too.
+- *Amended in step 3.10:* `POST /api/v1/admin/catalog/photo-uploads` is limited per user and per store. Each call hands out a signed upload URL that works for 5 minutes and takes up to 5 GB, and the bucket is billed, so unlimited requests from one staff member would inflate the bill. The numbers allow a normal session (an item has at most 8 photos, a bulk import a few dozen) and stop a loop. Like the invitation caps, the handler counts only calls from a caller who may write the catalog (`catalog:write`), so a viewer's refused calls never spend the store's budget; the user's count runs first, so a refused user does not touch the store's. Redis down lets the call through, as for every rule above.
 - `switchTenant` and logout have no limit. Switching rotates a refresh token the caller already holds, and logout must always work.
 
 ### Where limits run

@@ -61,6 +61,8 @@ var (
 	InviteByStore               = Rule{Name: "invite", Kind: KindStore, Limit: 20, Window: 24 * time.Hour}
 	InviteByUser                = Rule{Name: "invite", Kind: KindUser, Limit: 50, Window: 24 * time.Hour}
 	InviteByStoreEmail          = Rule{Name: "invite", Kind: KindStoreEmail, Limit: 3, Window: 24 * time.Hour}
+	PhotoUploadByUser           = Rule{Name: "photo-upload", Kind: KindUser, Limit: 30, Window: time.Minute}
+	PhotoUploadByStore          = Rule{Name: "photo-upload", Kind: KindStore, Limit: 60, Window: time.Minute}
 )
 
 // Rules returns every rule of ADR 0021, for checks that cover them all.
@@ -70,6 +72,7 @@ func Rules() []Rule {
 		PasswordResetByIP, PasswordResetByEmail, PasswordResetConfirmByIP, PasswordResetConfirmByEmail,
 		InvitationPreviewByIP, InvitationAcceptByIP, CreateTenantByUser,
 		InviteByStore, InviteByUser, InviteByStoreEmail,
+		PhotoUploadByUser, PhotoUploadByStore,
 	}
 }
 
