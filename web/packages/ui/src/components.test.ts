@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 
 import BaseButton from './components/BaseButton.vue'
+import BaseDialog from './components/BaseDialog.vue'
 import BaseInput from './components/BaseInput.vue'
 import BaseSelect from './components/BaseSelect.vue'
 import StatusBadge from './components/StatusBadge.vue'
@@ -204,5 +205,66 @@ describe('SuspendedBadge', () => {
     expect(wrapper.text()).toBe('Suspensa')
     expect(wrapper.attributes('id')).toBe('suspended-1')
     expect(wrapper.get('svg').attributes('aria-hidden')).toBe('true')
+  })
+})
+
+describe('BaseDialog', () => {
+  const dialog = (variant?: 'dialog' | 'drawer') =>
+    mount(BaseDialog, {
+      props: { title: 'Editar item', variant },
+      slots: { default: '<label for="x">Nome</label><input id="x"><button type="button">Salvar</button>' },
+      attachTo: document.body,
+    })
+
+  it('is named by its title and takes focus when it opens', async () => {
+    const wrapper = dialog()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const surface = wrapper.get('[role=dialog]')
+    expect(surface.attributes('aria-modal')).toBe('true')
+    expect(document.getElementById(surface.attributes('aria-labelledby') ?? '')?.textContent).toBe('Editar item')
+    expect(document.activeElement).toBe(surface.element)
+    wrapper.unmount()
+  })
+
+  it('asks to close on Escape and on the backdrop', async () => {
+    const wrapper = dialog('drawer')
+
+    await wrapper.get('[role=dialog]').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('.enc-dialog__backdrop').trigger('click')
+
+    expect(wrapper.emitted('close')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('keeps Tab inside, in both directions', async () => {
+    const wrapper = dialog()
+    const surface = wrapper.get('[role=dialog]')
+    const input = wrapper.get('input').element
+    const button = wrapper.get('button').element
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    button.focus()
+    await surface.trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(input)
+
+    await surface.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(button)
+    wrapper.unmount()
+  })
+
+  it('hands focus back to what opened it', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const wrapper = dialog()
+    await wrapper.vm.$nextTick()
+
+    wrapper.unmount()
+
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 })

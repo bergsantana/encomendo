@@ -48,6 +48,12 @@ export const routes: RouteRecordRaw[] = [
       { path: '', redirect: { name: 'hoje' } },
       { path: 'hoje', name: 'hoje', component: () => import('../features/hoje/views/HojeView.vue') },
       {
+        path: 'catalogo',
+        name: 'catalog',
+        component: () => import('../features/catalogo/views/CatalogoView.vue'),
+        meta: { permission: 'catalog:read' },
+      },
+      {
         path: 'equipe',
         name: 'members',
         component: () => import('../features/members/views/MembersView.vue'),
