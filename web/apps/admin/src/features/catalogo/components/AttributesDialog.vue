@@ -78,7 +78,7 @@ defineExpose({
         @save="(draft) => emit('save', null, draft)"
         @discard="discard"
       />
-      <div class="buttons">
+      <div class="buttons enc-sheet-actions">
         <BaseButton
           v-if="canWrite && !adding"
           @click="add"

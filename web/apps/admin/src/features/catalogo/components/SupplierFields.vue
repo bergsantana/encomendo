@@ -175,4 +175,14 @@ p {
   margin: 0;
   font-weight: 600;
 }
+
+/* Phone: the new supplier's two buttons share a row. */
+@media (max-width: 640px) {
+  .row {
+    flex-wrap: wrap;
+  }
+  .row > .enc-button {
+    flex: 1 1 auto;
+  }
+}
 </style>

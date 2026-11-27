@@ -33,7 +33,7 @@ function margin(kit: KitSummary): string {
 </script>
 
 <template>
-  <table>
+  <table class="enc-cards">
     <caption class="enc-visually-hidden">
       Kits do catálogo
     </caption>
@@ -90,23 +90,35 @@ function margin(kit: KitSummary): string {
           </button>
           <ArchivedMark v-if="kit.archived" />
         </th>
-        <td class="number enc-number">
+        <td
+          class="number enc-number"
+          data-label="Itens"
+        >
           {{ kit.itemCount }}
         </td>
-        <td class="number enc-number">
+        <td
+          class="number enc-number"
+          data-label="Preço do kit"
+        >
           {{ formatMoney(kit.price.cents, kit.price.currency) }}
         </td>
-        <td class="number enc-number">
+        <td
+          class="number enc-number"
+          data-label="Soma avulsa"
+        >
           {{ formatMoney(kit.singleItemsTotal.cents, kit.singleItemsTotal.currency) }}
         </td>
         <td
           v-if="showMargin"
           class="number enc-number"
+          data-label="Margem"
         >
           {{ margin(kit) }}
         </td>
-        <td>{{ formatDays(kit.totalDays) }}</td>
-        <td>
+        <td data-label="Prazo">
+          {{ formatDays(kit.totalDays) }}
+        </td>
+        <td data-label="No portal">
           <PublishedSwitch
             :checked="kit.published"
             :label="`Mostrar ${kit.name} na página da loja`"
@@ -151,5 +163,24 @@ tbody th {
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Phone: the cards of enc-cards (tokens.css), two columns of fields under the name. */
+@media (max-width: 640px) {
+  table.enc-cards tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+  tbody th {
+    grid-column: 1 / -1;
+  }
+  .number {
+    text-align: left;
+  }
+  .name {
+    min-height: var(--enc-control-height);
+    text-align: left;
+  }
 }
 </style>

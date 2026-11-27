@@ -8,7 +8,7 @@
 import type { Photo } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
-import { nextTick, onMounted, useId, useTemplateRef } from 'vue'
+import { nextTick, onMounted, useTemplateRef } from 'vue'
 
 import { usePermission } from '../../../composables/usePermission'
 import KitDrawer from '../components/KitDrawer.vue'
@@ -43,7 +43,6 @@ const {
   kitFieldErrors: fieldErrors,
 } = storeToRefs(store)
 const canWrite = usePermission('catalog:write')
-const archivedId = useId()
 const status = useTemplateRef<HTMLElement>('status')
 
 onMounted(() => store.openKits())
@@ -107,15 +106,14 @@ function coverPhoto(photo: Photo): void {
     </BaseButton>
 
     <div class="toolbar">
-      <span class="archived">
+      <label class="archived enc-check">
         <input
-          :id="archivedId"
           type="checkbox"
           :checked="includeArchived"
           @change="toggleArchived"
         >
-        <label :for="archivedId">Mostrar arquivados</label>
-      </span>
+        Mostrar arquivados
+      </label>
       <BaseButton
         v-if="canWrite"
         variant="primary"
@@ -213,12 +211,20 @@ p {
   width: 100%;
 }
 .archived {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--enc-control-height, 32px);
+  min-height: var(--enc-control-height, 32px);
 }
 .new {
   margin-left: auto;
+}
+
+/* Phone: the checkbox and "Novo kit" each take a full row. */
+@media (max-width: 640px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .new {
+    margin-left: 0;
+  }
 }
 </style>

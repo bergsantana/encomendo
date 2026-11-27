@@ -189,7 +189,7 @@ function run(action: 'cancel' | 'archive' | 'restore'): void {
             :key="mode.value"
             class="mode"
           >
-            <label class="check">
+            <label class="enc-check">
               <input
                 v-model="draft.swapDiscount"
                 type="radio"
@@ -246,7 +246,7 @@ function run(action: 'cancel' | 'archive' | 'restore'): void {
         @remove="(photo) => emit('removePhoto', photo)"
       />
 
-      <div class="check">
+      <div class="enc-check">
         <PublishedSwitch
           :id="publishedId"
           :checked="draft.published && !archived"
@@ -262,7 +262,7 @@ function run(action: 'cancel' | 'archive' | 'restore'): void {
         @discard="run(pending)"
       />
 
-      <div class="buttons">
+      <div class="buttons enc-sheet-actions">
         <template v-if="canWrite">
           <BaseButton
             variant="primary"
@@ -363,14 +363,15 @@ legend {
   margin: 0 0 0 24px;
   color: var(--enc-ink-secondary);
 }
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .alert {
+    flex-wrap: wrap;
+  }
 }
 </style>

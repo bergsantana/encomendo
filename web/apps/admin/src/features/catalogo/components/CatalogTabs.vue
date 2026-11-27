@@ -82,4 +82,12 @@ async function onKeydown(event: KeyboardEvent, index: number): Promise<void> {
   box-shadow: inset 0 -3px 0 var(--enc-accent);
   font-weight: 600;
 }
+
+/* Phone: tall tabs that share the row, so a thumb never misses. */
+@media (max-width: 640px) {
+  .tabs [role='tab'] {
+    flex: 1;
+    min-height: var(--enc-control-height);
+  }
+}
 </style>

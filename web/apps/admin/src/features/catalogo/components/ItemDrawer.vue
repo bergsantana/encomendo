@@ -286,7 +286,7 @@ defineExpose({
         @remove="(photo) => emit('removePhoto', photo)"
       />
 
-      <div class="check">
+      <div class="enc-check">
         <PublishedSwitch
           :id="publishedId"
           :checked="draft.published && !archived"
@@ -302,7 +302,7 @@ defineExpose({
         @discard="run(pending)"
       />
 
-      <div class="buttons">
+      <div class="buttons enc-sheet-actions">
         <template v-if="canWrite">
           <BaseButton
             variant="primary"
@@ -377,14 +377,15 @@ textarea {
 .alert p {
   margin: 0;
 }
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .alert {
+    flex-wrap: wrap;
+  }
 }
 </style>

@@ -47,4 +47,46 @@ function onChange(event: Event): void {
   height: 18px;
   accent-color: var(--enc-primary);
 }
+
+/* Phone: the box is drawn smaller inside a 48 px square, so the touch target is thumb-sized. */
+@media (max-width: 640px) {
+  .switch {
+    appearance: none;
+    position: relative;
+    display: block;
+    flex: none;
+    width: var(--enc-control-height);
+    height: var(--enc-control-height);
+    margin: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .switch::before {
+    content: '';
+    position: absolute;
+    inset: 10px;
+    border: 2px solid var(--enc-secondary-border);
+    border-radius: 4px;
+    background: var(--enc-surface);
+  }
+  .switch:checked::before {
+    border-color: var(--enc-primary);
+    background: var(--enc-primary);
+  }
+  .switch:checked::after {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: 20px;
+    width: 8px;
+    height: 14px;
+    border: solid var(--enc-primary-text);
+    border-width: 0 3px 3px 0;
+    transform: rotate(45deg);
+  }
+  .switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
 </style>

@@ -44,7 +44,7 @@ function margin(item: ItemSummary): string {
 </script>
 
 <template>
-  <table>
+  <table class="enc-cards">
     <caption class="enc-visually-hidden">
       Itens do catálogo
     </caption>
@@ -105,26 +105,39 @@ function margin(item: ItemSummary): string {
           </button>
           <ArchivedMark v-if="item.archived" />
         </th>
-        <td>{{ categoryName(item) }}</td>
-        <td>{{ sourcingLabel(item.sourcingMode) }}</td>
-        <td>{{ item.mainSupplierName ?? '—' }}</td>
-        <td>{{ formatDays(item.readyDays) }}</td>
+        <td data-label="Categoria">
+          {{ categoryName(item) }}
+        </td>
+        <td data-label="Origem">
+          {{ sourcingLabel(item.sourcingMode) }}
+        </td>
+        <td data-label="Fornecedor">
+          {{ item.mainSupplierName ?? '—' }}
+        </td>
+        <td data-label="Prazo">
+          {{ formatDays(item.readyDays) }}
+        </td>
         <td
           v-if="showCosts"
           class="number enc-number"
+          data-label="Custo"
         >
           {{ cost(item) }}
         </td>
-        <td class="number enc-number">
+        <td
+          class="number enc-number"
+          data-label="Preço"
+        >
           {{ formatMoney(item.price.cents, item.price.currency) }}
         </td>
         <td
           v-if="showCosts"
           class="number enc-number"
+          data-label="Margem"
         >
           {{ margin(item) }}
         </td>
-        <td>
+        <td data-label="No portal">
           <PublishedSwitch
             :checked="item.published"
             :label="`Mostrar ${item.name} na página da loja`"
@@ -169,5 +182,24 @@ tbody th {
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Phone: the cards of enc-cards (tokens.css), two columns of fields under the name. */
+@media (max-width: 640px) {
+  table.enc-cards tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+  tbody th {
+    grid-column: 1 / -1;
+  }
+  .number {
+    text-align: left;
+  }
+  .name {
+    min-height: var(--enc-control-height);
+    text-align: left;
+  }
 }
 </style>
