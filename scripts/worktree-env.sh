@@ -32,5 +32,8 @@ set_var ADMIN_ORIGIN "http://localhost:${adm}"
 set_var DATABASE_URL "postgres://encomendo_app:encomendo_app_dev@localhost:${pg}/encomendo?sslmode=disable"
 set_var MIGRATE_DATABASE_URL "postgres://encomendo_owner:encomendo_owner_dev@localhost:${pg}/encomendo?sslmode=disable"
 set_var REDIS_URL "redis://localhost:${rd}/0"
+set_var MINIO_PORT "$((9000 + slot * 10))"
+set_var STORAGE_ENDPOINT "localhost:$((9000 + slot * 10))"
+set_var STORAGE_PUBLIC_ENDPOINT "localhost:$((9000 + slot * 10))"
 
 echo "worktree $name: postgres=$pg redis=$rd api=$api web=$web admin=$adm store=$sto"

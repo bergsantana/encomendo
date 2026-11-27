@@ -66,11 +66,12 @@ type Store struct {
 	// suppliers are the suppliers rows supplier_items points at, per store.
 	suppliers map[shared.TenantID]map[shared.SupplierID]bool
 
-	// The four repositories over these maps.
+	// The repositories over these maps.
 	Categories *Categories
 	Attributes *Attributes
 	Items      *Items
 	Kits       *Kits
+	Photos     *Photos
 }
 
 // Categories is the appcatalog.Categories of a Store.
@@ -104,7 +105,7 @@ func NewStore() *Store {
 		faults:     map[string]error{},
 		suppliers:  map[shared.TenantID]map[shared.SupplierID]bool{},
 	}
-	s.Categories, s.Attributes, s.Items, s.Kits = &Categories{s}, &Attributes{s}, &Items{s}, &Kits{s}
+	s.Categories, s.Attributes, s.Items, s.Kits, s.Photos = &Categories{s}, &Attributes{s}, &Items{s}, &Kits{s}, &Photos{s}
 	return s
 }
 

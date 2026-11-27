@@ -75,6 +75,13 @@ services:
       SMTP_FROM: ${SMTP_FROM:?}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # Photos on Cloudflare R2 (ADRs 0023, 0024 and 0028). The API and the
+      # apps use the same R2 endpoint, so the public endpoint is left unset.
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:?}
+      STORAGE_REGION: auto
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?}
       # Exactly Caddy and nginx: no other address may set X-Forwarded-For
       # (ADR 0021).
       TRUSTED_PROXIES: 172.30.0.10,172.30.0.11,fd00:30::10,fd00:30::11

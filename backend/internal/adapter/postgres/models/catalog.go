@@ -227,7 +227,7 @@ type ItemRows struct {
 	Cost    *ItemCost
 	Values  []string
 	Options []Option
-	Photos  []PhotoRead
+	Photos  []Photo
 }
 
 // ItemFromDomain returns the rows of it that Insert and Update write: the
@@ -460,7 +460,7 @@ type KitRows struct {
 	Items        []KitItem
 	Alternatives []KitAlternative
 	Values       []string
-	Photos       []PhotoRead
+	Photos       []Photo
 }
 
 // KitFromDomain returns the rows of k that Insert and Update write. Photos
@@ -557,33 +557,16 @@ func (r KitRows) kitItems(lookup catalog.ItemLookup) ([]catalog.KitItem, error) 
 	return items, nil
 }
 
-// PhotoRead maps photos for reading only: Items.ByID and Kits.ByID load the
-// photos so views can sign them. The photo repository (step 3.9) writes
-// them.
-type PhotoRead struct {
-	ID          string  `gorm:"column:id"`
-	ItemID      *string `gorm:"column:item_id"`
-	KitID       *string `gorm:"column:kit_id"`
-	ObjectKey   string  `gorm:"column:object_key"`
-	ContentType string  `gorm:"column:content_type"`
-	SizeBytes   int64   `gorm:"column:size_bytes"`
-}
-
-// TableName returns photos.
-func (PhotoRead) TableName() string { return "photos" }
-
-func photosOf(rows []PhotoRead) ([]catalog.Photo, error) {
+// photosOf rebuilds an owner's photos, read in order (models/photo.go maps
+// the table; the photo repository writes it).
+func photosOf(rows []Photo) ([]catalog.Photo, error) {
 	out := make([]catalog.Photo, 0, len(rows))
-	for _, p := range rows {
-		id, err := parseID[shared.PhotoID](p.ID)
+	for _, r := range rows {
+		p, _, err := r.ToDomain()
 		if err != nil {
 			return nil, err
 		}
-		photo, err := catalog.NewPhoto(id, p.ObjectKey, p.ContentType, p.SizeBytes)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, photo)
+		out = append(out, p)
 	}
 	return out, nil
 }

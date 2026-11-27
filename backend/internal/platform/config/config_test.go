@@ -19,6 +19,10 @@ func minimalEnv() map[string]string {
 		"ADMIN_ORIGIN":        "http://admin.localhost:8080",
 		"SMTP_ADDR":           "mailpit:1025",
 		"SMTP_FROM":           "nao-responda@encomendo.com.br",
+		"STORAGE_ENDPOINT":    "minio:9000",
+		"STORAGE_BUCKET":      "encomendo-photos",
+		"STORAGE_ACCESS_KEY":  "encomendo",
+		"STORAGE_SECRET_KEY":  "a-local-secret",
 	}
 }
 
@@ -31,6 +35,8 @@ func productionEnv() map[string]string {
 	e["ADMIN_ORIGIN"] = "https://admin.encomendo.com.br"
 	e["API_HOST"] = "api.encomendo.com.br"
 	e["TRUSTED_PROXIES"] = "172.30.0.10,172.30.0.11"
+	e["STORAGE_ENDPOINT"] = "0123abcd.r2.cloudflarestorage.com"
+	e["STORAGE_REGION"] = "auto"
 	return e
 }
 
@@ -69,12 +75,13 @@ func TestLoad_ProductionRefusesLocalSettings(t *testing.T) {
 		"a proxy that is no addr": {"TRUSTED_PROXIES", "caddy", "not an address"},
 		// base64 ignores unused trailing bits: the same bytes, spelled
 		// otherwise, must not pass.
-		"the dev key respelled":  {"AUTH_RESET_CODE_KEY", strings.TrimSuffix(DevResetCodeKey, "k=") + "l=", "AUTH_RESET_CODE_KEY"},
-		"the dev key split":      {"AUTH_RESET_CODE_KEY", DevResetCodeKey[:20] + "\n" + DevResetCodeKey[20:], "AUTH_RESET_CODE_KEY"},
-		"an ftp admin origin":    {"ADMIN_ORIGIN", "ftp://admin.encomendo.com.br", "ADMIN_ORIGIN"},
-		"a proxy range":          {"TRUSTED_PROXIES", "172.30.0.0/24", "is a range"},
-		"every address":          {"TRUSTED_PROXIES", "0.0.0.0/0", "is a range"},
-		"a proxy with host bits": {"TRUSTED_PROXIES", "172.30.0.10/24", "host bits"},
+		"the dev key respelled":   {"AUTH_RESET_CODE_KEY", strings.TrimSuffix(DevResetCodeKey, "k=") + "l=", "AUTH_RESET_CODE_KEY"},
+		"the dev key split":       {"AUTH_RESET_CODE_KEY", DevResetCodeKey[:20] + "\n" + DevResetCodeKey[20:], "AUTH_RESET_CODE_KEY"},
+		"an ftp admin origin":     {"ADMIN_ORIGIN", "ftp://admin.encomendo.com.br", "ADMIN_ORIGIN"},
+		"a proxy range":           {"TRUSTED_PROXIES", "172.30.0.0/24", "is a range"},
+		"every address":           {"TRUSTED_PROXIES", "0.0.0.0/0", "is a range"},
+		"a proxy with host bits":  {"TRUSTED_PROXIES", "172.30.0.10/24", "host bits"},
+		"storage over plain HTTP": {"STORAGE_USE_SSL", "false", "STORAGE_USE_SSL"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

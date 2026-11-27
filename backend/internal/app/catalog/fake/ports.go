@@ -3,7 +3,6 @@ package fake
 import (
 	"context"
 	"sync"
-	"time"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
@@ -122,34 +121,4 @@ func (d *Defaults) StoreDefaults(ctx context.Context) (appcatalog.Defaults, erro
 		return appcatalog.Defaults{}, shared.ErrNotFound
 	}
 	return v, nil
-}
-
-// Photos is an appcatalog.PhotoURLs that signs "https://photos.test/{key}"
-// until the clock's now plus the TTL.
-type Photos struct {
-	mu    sync.Mutex
-	clock appshared.Clock
-	err   error
-}
-
-var _ appcatalog.PhotoURLs = (*Photos)(nil)
-
-// NewPhotos returns a signer on clock.
-func NewPhotos(clock appshared.Clock) *Photos { return &Photos{clock: clock} }
-
-// Fail makes every later call return err; nil heals it.
-func (p *Photos) Fail(err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.err = err
-}
-
-// SignGet implements appcatalog.PhotoURLs.
-func (p *Photos) SignGet(_ context.Context, key string, ttl time.Duration) (string, time.Time, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.err != nil {
-		return "", time.Time{}, p.err
-	}
-	return "https://photos.test/" + key, p.clock.Now().Add(ttl), nil
 }

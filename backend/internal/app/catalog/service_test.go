@@ -30,7 +30,7 @@ type harness struct {
 	store     *fake.Store
 	suppliers *fake.Suppliers
 	defaults  *fake.Defaults
-	photos    *fake.Photos
+	storage   *fake.Storage
 	cache     *sharedfake.Cache
 	tx        *sharedfake.TxManager
 	clock     *sharedfake.Clock
@@ -58,7 +58,7 @@ func newHarness(t *testing.T) *harness {
 	clock := sharedfake.NewClock(start)
 	ids := sharedfake.NewIDs(clock)
 	h := &harness{
-		store: fake.NewStore(), suppliers: fake.NewSuppliers(), defaults: fake.NewDefaults(), photos: fake.NewPhotos(clock),
+		store: fake.NewStore(), suppliers: fake.NewSuppliers(), defaults: fake.NewDefaults(), storage: fake.NewStorage(clock),
 		cache: sharedfake.NewCache(clock), tx: sharedfake.NewTxManager(), clock: clock, ids: ids,
 		store1: shared.TenantID(ids.NewID()), store2: shared.TenantID(ids.NewID()),
 	}
@@ -69,7 +69,7 @@ func newHarness(t *testing.T) *harness {
 	h.defaults.Set(h.store2, all)
 	h.svc = appcatalog.NewService(appcatalog.Deps{
 		Categories: h.store.Categories, Attributes: h.store.Attributes, Items: h.store.Items, Kits: h.store.Kits,
-		Suppliers: h.suppliers, Defaults: h.defaults, Photos: h.photos,
+		Suppliers: h.suppliers, Defaults: h.defaults, Photos: h.store.Photos, Storage: h.storage,
 		Cache: h.cache, Tx: h.tx, IDs: ids,
 	})
 	return h

@@ -31,6 +31,7 @@ type Config struct {
 	Auth     Auth
 	Origins  Origins
 	SMTP     SMTP
+	Storage  Storage
 	// TrustedProxies are the proxies whose X-Forwarded-For the API reads
 	// (ADR 0021): exact addresses in production, the private ranges by
 	// default in development and test.
@@ -178,6 +179,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Auth:           r.auth(env),
 		Origins:        r.origins(env),
 		SMTP:           r.smtp(env),
+		Storage:        r.storage(env),
 		TrustedProxies: r.proxies(env),
 	}
 	r.check(env == EnvDevelopment || env == EnvTest || env == EnvProduction,

@@ -11,6 +11,7 @@
 # Store page:  http://<slug>.localhost:${WEB_PORT:-8080}  (e.g. altarpm.localhost)
 # API:         http://localhost:${API_PORT:-8081}
 # Mail:        http://localhost:${MAILPIT_PORT:-8025}  (Mailpit catches every email)
+# Photos:      http://localhost:${MINIO_PORT:-9000}  (Silo, the MinIO fork; Android: adb reverse tcp:9000 tcp:9000)
 
 name: ${COMPOSE_PROJECT_NAME:-encomendo}
 
@@ -83,6 +84,15 @@ services:
       SMTP_ADDR: mailpit:1025
       SMTP_FROM: nao-responda@encomendo.localhost
       SMTP_REQUIRE_TLS: "false" # Mailpit only
+      # Photos (ADRs 0024, 0025 and 0028): the minio service (Silo). The API reads
+      # and copies at minio:9000; signed URLs name localhost, which browsers
+      # and the Android emulator (adb reverse tcp:9000 tcp:9000) reach.
+      STORAGE_ENDPOINT: minio:9000
+      STORAGE_PUBLIC_ENDPOINT: localhost:${MINIO_PORT:-9000}
+      STORAGE_BUCKET: encomendo-photos
+      STORAGE_ACCESS_KEY: encomendo
+      STORAGE_SECRET_KEY: encomendo_minio_dev # local only
+      STORAGE_USE_SSL: "false" # local MinIO only
     ports:
       - "${API_PORT:-8081}:8080"
     depends_on:
@@ -92,12 +102,57 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
 
   mailpit:
     image: axllent/mailpit:v1.34
     ports:
       - "${MAILPIT_PORT:-8025}:8025" # web UI and API (the e2e tests read links here)
       - "${MAILPIT_SMTP_PORT:-1025}:1025" # SMTP, for an API run on the host
+
+  # Photos (ADRs 0024 and 0028): the same S3 API as R2 in production.
+  # Silo, the maintained MinIO fork (MinIO's images left Docker Hub in
+  # September 2026), RELEASE.2026-11-12T00-00-00Z, pinned by digest. The
+  # service keeps the name minio: the API and the apps only see an S3 host.
+  minio:
+    image: pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329
+    command: ["silo", "server", "/data"]
+    environment:
+      MINIO_ROOT_USER: encomendo
+      MINIO_ROOT_PASSWORD: encomendo_minio_dev # local only
+      # Community MinIO has no per-bucket CORS, so the server allows PUT and
+      # GET from the admin app of the nginx stack and of the Vite dev server
+      # only (ADR 0028). Android needs no CORS.
+      MINIO_API_CORS_ALLOW_ORIGIN: http://admin.localhost:${WEB_PORT:-8080},http://localhost:${ADMIN_PORT:-5173}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mcli", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # One shot: the bucket, private, with the lifecycle rule that removes
+  # uploads never confirmed after a day. Confirmed photos live under t/ and
+  # never expire (ADR 0028). ilm import replaces the rules, so a rerun is
+  # harmless. The Silo image bundles the client as mcli.
+  minio-init:
+    image: pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329 # Silo RELEASE.2026-11-12T00-00-00Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mcli alias set encomendo http://minio:9000 encomendo encomendo_minio_dev
+        mcli mb --ignore-existing encomendo/encomendo-photos
+        mcli anonymous set none encomendo/encomendo-photos
+        echo '{"Rules":[{"ID":"expire-unconfirmed-uploads","Status":"Enabled","Filter":{"Prefix":"uploads/"},"Expiration":{"Days":1}}]}' \
+          | mcli ilm import encomendo/encomendo-photos
+    depends_on:
+      minio:
+        condition: service_healthy
 
   web:
     build:
@@ -110,3 +165,4 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:

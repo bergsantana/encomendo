@@ -457,7 +457,7 @@ func TestItemPhotos_SignedAndNeverMoveTheVersion(t *testing.T) {
 	if len(v.Photos) != 2 || v.Photos[1].URL != "https://photos.test/t/a/items/b/2" || v.Photos[1].Position != 1 || v.Photos[0].ID != photos[0].ID() {
 		t.Errorf("photos = %+v; want both, signed, in order", v.Photos)
 	}
-	h.photos.Fail(errBoom)
+	h.storage.Fail("SignGet", errBoom)
 	if _, err := h.svc.GetItem(h.viewer(t), it.ID); !errors.Is(err, errBoom) {
 		t.Errorf("a failed signature: %v", err)
 	}
