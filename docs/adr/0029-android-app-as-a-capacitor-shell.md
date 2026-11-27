@@ -69,6 +69,17 @@ The parts below are the decision as proposed and accepted.
   - it stays in `mobile/`, builds in CI and gets no new features;
   - it is removed once the shell reaches the Play Store, in its own PR.
   - ADR 0026 and the Android-specific ADRs then become historical.
+- **As built in step 3.5.2** (2026-11-27; details in `web/apps/android/README.md`):
+  - Back with no WebView history moves the app to the background, as Android's own Back does.
+  - Debug builds are signed with the SDK debug key, kept in the Gradle volume, because Android cannot install an unsigned app. "Unsigned" above means no release key.
+  - compileSdk and targetSdk are 36, Capacitor 8's template; minSdk is 26, as the frozen app.
+  - There is no `CAMERA` permission. The admin's file input gets the choice "Da galeria" or "Tirar foto", and the camera app takes the photo into a `FileProvider` file limited to `cache/photos`. Declaring `CAMERA` would make that need a runtime grant.
+  - **Security hardening**, because the hosted page carries the session and Capacitor's bridge:
+    - Capacitor 8 registers its `CapacitorHttp`, `CapacitorCookies` and `WebView` plugins whatever the config says, and `CapacitorCookies` shares the WebView cookie jar with native HTTP. Page script could then read the HttpOnly refresh cookie. The shell replaces the three with stubs that have no methods, removes their JavaScript interfaces before the first page loads, and leaves native HTTP with no cookie handler. Only `App` and `SystemBars` stay callable.
+    - Capacitor's `/_capacitor_file_/` and `/_capacitor_content_/` routes are refused, since they would read the app's files, the cookie database included.
+    - Navigation and frames stay on the admin origin, and links open outside only on a tap. The admin's nginx sends `Content-Security-Policy: frame-src 'self'; frame-ancestors 'none'`.
+    - The admin opens only on a WebView 120 or later with `WEB_MESSAGE_LISTENER` and `DOCUMENT_START_SCRIPT`, so the bridge answers the admin origin alone. On an older WebView an update page shows instead.
+    - Cleartext is allowed only in debug, for the local stack hosts. Backups are off. A release build checks its synced config and signing values and refuses anything else.
 
 ## What it would take
 

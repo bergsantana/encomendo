@@ -123,6 +123,19 @@ Steps marked opus need `/model opus` (or `claude --model opus`).
   - the debug and release Gradle builds pass in the container (release with a throwaway keystore created at test time, never committed).
 - **Reviewers:** `tenancy-security-reviewer` (WebView, cookies, external links, signing) and `web-reviewer`.
 - **Depends on:** 3.5.1.
+- **Built (2026-11-27).** As planned, with these departures, also recorded in ADR 0029:
+  - **Back** with no history moves the app to the background, as Android's own Back does, since `@capacitor/app` does nothing there.
+  - **Debug builds** are signed with the SDK debug key kept in the Gradle volume: Android installs nothing unsigned.
+  - **SDK levels:** compileSdk and targetSdk 36 (Capacitor 8's template), minSdk 26 as the frozen app.
+  - **No `CAMERA` permission:** the photo input asks "Da galeria" or "Tirar foto", and the camera app takes the photo through `ACTION_IMAGE_CAPTURE` and a `FileProvider` limited to `cache/photos`.
+  - **Security hardening from the review:**
+    - Capacitor's `CapacitorHttp`, `CapacitorCookies` and `WebView` plugins are replaced by stubs, their JavaScript interfaces removed, and native HTTP gets no cookie handler. Otherwise page script could read the HttpOnly refresh cookie.
+    - Capacitor's file and content routes are refused.
+    - Frames of other origins are refused, and the admin's nginx sends `frame-src 'self'; frame-ancestors 'none'`.
+    - Links leave the app only on a tap.
+    - The admin opens only on a WebView 120+ with `WEB_MESSAGE_LISTENER` and `DOCUMENT_START_SCRIPT`; otherwise an update page shows, with wording drafted in the design document.
+    - The release guards (exact URL, empty allowlist, no legacy bridge, minimum WebView, signing, `versionCode`) are proved by `scripts/android-shell-guard-test.sh`.
+  - The device checks are listed in `web/apps/android/README.md` for 3.5.5.
 
 ### 3.5.3 Phone layouts I: auth, store picker, menu, Hoje, Equipe
 

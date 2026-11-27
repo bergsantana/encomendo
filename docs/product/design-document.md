@@ -207,6 +207,13 @@ The exact wording of the screens that start, move and end a staff session. Web a
 - On a phone (640 px wide or less) the menu is a drawer: a top bar shows the button "Menu" and the store's name, and the drawer holds everything above, plus a button "Fechar menu". Choosing an entry closes it. *Drafted by Claude on 2026-11-27 for milestone 3.5, for the user to review: the words "Menu" and "Fechar menu".*
 - When the server cannot be reached: "Não foi possível sair. {the connection or server message}"
 
+### The Android app
+
+The Android app opens the web admin, so every screen and word above is the web's (ADR 0029). The app shows only two pages of its own:
+
+- **Offline:** when the admin cannot be loaded, "Sem conexão com o servidor. Confira a internet e tente de novo." and the button "Tentar de novo", which opens the admin again.
+- **Old WebView:** when the phone's Android System WebView is too old to open the admin safely, "Para abrir o Encomendo, atualize o {WebView} deste aparelho na Play Store e abra o app de novo." and the button "Atualizar na Play Store", which opens that app's Play Store page. `{WebView}` is the name the phone gives it, usually "Android System WebView". *Drafted by Claude on 2026-11-27 in step 3.5.2, for the user to review.*
+
 ### Equipe (the team)
 
 Only for roles with `members:manage` (Dono, Admin): the menu entry "Equipe" is hidden from the others. Role names are in "Roles" above.
@@ -252,7 +259,7 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - While loading: "Carregando o catálogo…". At the end of a page: "Carregar mais".
 - On the phone each row is a card with the same columns, one labelled line each (Categoria, Origem, Fornecedor, Prazo, Preço, and for the Dono Custo and Margem), then the "No portal" switch. Tapping a card opens the item.
 - On Android a role that only reads opens the item as its details in labelled lines (name, category, origin, price, suppliers, fields, options) with the title "Item" and one "Fechar" button, not as disabled fields.
-- Android keeps the last lists it read. When the server cannot be reached it shows them under "Sem conexão com o servidor. Confira a internet e tente de novo." and "Mostrando o catálogo salvo neste aparelho em {data}." (dd/mm/aaaa hh:mm). Anything that changes the catalog still needs the connection.
+- Nothing is kept on the phone (ADR 0029): without a connection the catalog shows "Sem conexão com o servidor. Confira a internet e tente de novo.", as on the web.
 - Empty catalog: "Nenhum item no catálogo ainda." with "Novo item". A search with no results: "Nenhum item encontrado."
 - An archived row shows "Arquivado" beside the name.
 
@@ -410,7 +417,7 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - "Catálogo" is one screen with the tabs "Itens" and "Kits" under its title; the open tab is kept when a form is closed.
 - Each kit row is a card with one labelled line each: "Itens", "Preço do kit", "Soma avulsa", "Margem" (only when the API sent it, "{valor} ({n}%)" or "—"), "Prazo", then the "No portal" switch, read aloud as "Mostrar {kit} na página da loja". Tapping the card opens the kit. There is no search field. An archived card shows "Arquivado" beside the name.
 - On an empty list "Novo kit" is the toolbar's primary button, and the one beside "Nenhum kit ainda." is a plain button. After a failed read: "Tentar de novo".
-- Android keeps the last kits it read: with no connection it shows them under the same two lines as for items, "Sem conexão com o servidor. Confira a internet e tente de novo." and "Mostrando o catálogo salvo neste aparelho em {data}.". A kit opened from that copy is read-only, since "Salvar" would need the connection too.
+- Nothing is kept on the phone (ADR 0029): without a connection the kits show "Sem conexão com o servidor. Confira a internet e tente de novo.", as for items.
 - A role that only reads opens the kit as its details in labelled lines (name, description, price, each item with its quantity and what it can be swapped for, "Ao trocar um item", the days, the totals, fields, "Mostrar na página da loja") with the title "Kit" and one "Fechar" button.
 - The editor shows "Carregando o kit…" while it reads, and "Tentar de novo" if it cannot.
 - The totals block has the visible heading "Totais do kit".
