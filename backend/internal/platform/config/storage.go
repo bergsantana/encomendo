@@ -60,9 +60,12 @@ func (r *reader) storage(env Environment) Storage {
 		UseSSL:    r.boolean("STORAGE_USE_SSL", true),
 	}
 	s.PublicEndpoint = r.str("STORAGE_PUBLIC_ENDPOINT", s.Endpoint)
-	for key, host := range map[string]string{"STORAGE_ENDPOINT": s.Endpoint, "STORAGE_PUBLIC_ENDPOINT": s.PublicEndpoint} {
-		r.check(host == "" || !strings.ContainsAny(host, "/?#@ "),
-			"%s must be host[:port], without a scheme or a path, got %q", key, host)
+	// A slice, not a map, so the errors come in the same order every time.
+	for _, e := range []struct{ key, host string }{
+		{"STORAGE_ENDPOINT", s.Endpoint}, {"STORAGE_PUBLIC_ENDPOINT", s.PublicEndpoint},
+	} {
+		r.check(e.host == "" || !strings.ContainsAny(e.host, "/?#@ "),
+			"%s must be host[:port], without a scheme or a path, got %q", e.key, e.host)
 	}
 	r.check(env.IsLocal() || s.UseSSL, "STORAGE_USE_SSL=false is for a local MinIO only (ADR 0024)")
 	return s

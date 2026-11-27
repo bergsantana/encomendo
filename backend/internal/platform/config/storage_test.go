@@ -38,6 +38,23 @@ func TestLoad_StorageDefaults(t *testing.T) {
 	}
 }
 
+// Both bad endpoints are reported, the endpoint first, every time.
+func TestLoad_StorageEndpointErrorsInOrder(t *testing.T) {
+	t.Parallel()
+
+	e := minimalEnv()
+	e["STORAGE_ENDPOINT"] = "http://minio:9000"
+	e["STORAGE_PUBLIC_ENDPOINT"] = "http://localhost:9000"
+	for range 20 {
+		_, err := Load(env(e))
+		msg := err.Error()
+		first, second := strings.Index(msg, "STORAGE_ENDPOINT must"), strings.Index(msg, "STORAGE_PUBLIC_ENDPOINT must")
+		if first < 0 || second < first {
+			t.Fatalf("error = %q, want STORAGE_ENDPOINT then STORAGE_PUBLIC_ENDPOINT", msg)
+		}
+	}
+}
+
 func TestLoad_StorageRefusals(t *testing.T) {
 	t.Parallel()
 
