@@ -147,6 +147,11 @@ function onKeydown(event: KeyboardEvent): void {
   .enc-dialog__body {
     flex: 1;
     padding: 16px;
+    /*
+     * Keeps a focused field clear of the sticky `enc-sheet-actions` footer
+     * (tokens.css), even when its buttons wrap to two rows (about 130 px).
+     */
+    scroll-padding-bottom: 144px;
   }
 }
 </style>

@@ -26,7 +26,6 @@ const emit = defineEmits<{
 }>()
 
 const searchId = useId()
-const archivedId = useId()
 const text = ref(props.filters.q)
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -77,15 +76,14 @@ onBeforeUnmount(() => clearTimeout(timer))
       :options="categoryOptions"
       @update:model-value="(categoryId) => emit('change', { categoryId })"
     />
-    <span class="archived">
+    <label class="archived enc-check">
       <input
-        :id="archivedId"
         type="checkbox"
         :checked="filters.includeArchived"
         @change="toggleArchived"
       >
-      <label :for="archivedId">Mostrar arquivados</label>
-    </span>
+      Mostrar arquivados
+    </label>
     <span class="actions">
       <BaseButton @click="emit('categories')">Categorias</BaseButton>
       <BaseButton @click="emit('attributes')">Campos</BaseButton>
@@ -123,14 +121,27 @@ onBeforeUnmount(() => clearTimeout(timer))
   font: inherit;
 }
 .archived {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--enc-control-height, 32px);
+  min-height: var(--enc-control-height, 32px);
 }
 .actions {
   display: flex;
   gap: 8px;
   margin-left: auto;
+}
+
+/* Phone: one column; the buttons share the last row. */
+@media (max-width: 640px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .actions {
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+  .actions > * {
+    flex: 1 1 auto;
+  }
 }
 </style>

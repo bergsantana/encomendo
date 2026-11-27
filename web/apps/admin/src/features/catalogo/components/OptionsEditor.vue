@@ -69,7 +69,7 @@ function removeChoice(index: number, choiceIndex: number): void {
         :error="errors[`options.${index}.name`] ?? null"
         @update:model-value="(name) => patchOption(index, { name })"
       />
-      <label class="check">
+      <label class="enc-check">
         <input
           type="checkbox"
           :checked="option.required"
@@ -168,13 +168,18 @@ legend {
   color: var(--enc-status-alert-text);
   font-weight: 600;
 }
-.check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .row {
   display: flex;
   gap: 8px;
+}
+
+/* Phone: the buttons of an option share rows instead of overflowing. */
+@media (max-width: 640px) {
+  .row {
+    flex-wrap: wrap;
+  }
+  .row > .enc-button {
+    flex: 1 1 auto;
+  }
 }
 </style>

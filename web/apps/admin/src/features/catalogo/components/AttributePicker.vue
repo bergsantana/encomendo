@@ -33,7 +33,7 @@ function pick(valueId: string, event: Event): void {
     <label
       v-for="value in attribute.values"
       :key="value.id"
-      class="check"
+      class="enc-check"
     >
       <input
         type="checkbox"
@@ -58,10 +58,5 @@ function pick(valueId: string, event: Event): void {
 legend {
   padding: 0 4px;
   font-weight: 600;
-}
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 </style>

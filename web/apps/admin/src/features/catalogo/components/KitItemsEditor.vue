@@ -116,7 +116,7 @@ function alternativeLabel(item: ItemSummary): string {
         :error="errors[`items.${index}.quantity`] ?? null"
         @update:model-value="(quantity) => patchRow(index, { quantity })"
       />
-      <label class="check">
+      <label class="enc-check">
         <input
           type="checkbox"
           :checked="row.swappable"
@@ -148,7 +148,7 @@ function alternativeLabel(item: ItemSummary): string {
           <label
             v-for="item in group.items"
             :key="item.id"
-            class="check"
+            class="enc-check"
           >
             <input
               type="checkbox"
@@ -220,11 +220,6 @@ legend {
   padding: 0 4px;
   font-weight: 600;
 }
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .picker {
   display: flex;
   align-items: flex-end;
@@ -238,5 +233,16 @@ legend {
   margin: 0;
   color: var(--enc-status-alert-text);
   font-weight: 600;
+}
+
+/* Phone: the item picker and its button stack, and the alternatives list grows with its checkboxes. */
+@media (max-width: 640px) {
+  .picker {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .choices {
+    max-height: 60dvh;
+  }
 }
 </style>

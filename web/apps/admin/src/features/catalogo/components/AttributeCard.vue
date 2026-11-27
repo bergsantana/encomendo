@@ -246,4 +246,23 @@ legend {
   color: var(--enc-status-alert-text);
   font-weight: 600;
 }
+
+/* Phone: a value's field and its "Remover valor" stack, and the question's answers share a row. */
+@media (max-width: 640px) {
+  .value {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ask,
+  .buttons {
+    flex-wrap: wrap;
+  }
+  .ask p {
+    flex-basis: 100%;
+  }
+  .ask > .enc-button,
+  .buttons > .enc-button {
+    flex: 1 1 auto;
+  }
+}
 </style>

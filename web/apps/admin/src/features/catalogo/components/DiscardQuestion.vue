@@ -50,4 +50,17 @@ onMounted(() => question.value?.querySelector('button')?.focus())
   margin: 0;
   font-weight: 600;
 }
+
+/* Phone: the question takes a row and the two answers share the next. */
+@media (max-width: 640px) {
+  .discard {
+    flex-wrap: wrap;
+  }
+  .discard p {
+    flex-basis: 100%;
+  }
+  .discard > .enc-button {
+    flex: 1 1 auto;
+  }
+}
 </style>

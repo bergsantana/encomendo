@@ -155,7 +155,7 @@ defineExpose({
           Nova categoria
         </BaseButton>
       </form>
-      <div>
+      <div class="enc-sheet-actions">
         <BaseButton @click="emit('close')">
           Fechar
         </BaseButton>
@@ -206,5 +206,29 @@ li {
   margin: 0;
   color: var(--enc-status-alert-text);
   font-weight: 600;
+}
+
+/* Phone: a category's name and its four buttons stack, and a form's field and button do too. */
+@media (max-width: 640px) {
+  li {
+    flex-wrap: wrap;
+  }
+  .name {
+    overflow-wrap: anywhere;
+  }
+  .actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .actions > .enc-button {
+    flex: 1 1 auto;
+    min-width: var(--enc-control-height);
+  }
+  .rename,
+  .add {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
 }
 </style>

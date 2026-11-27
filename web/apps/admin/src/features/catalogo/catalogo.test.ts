@@ -122,6 +122,19 @@ describe('the Itens table', () => {
     expect(rows[1]).toContain('1 dia')
   })
 
+  it('labels every cell for the phone cards, with Custo and Margem only where the API sent them', async () => {
+    signedInAs('owner', writer)
+    serve({ items: [summary(ownerCosts)] })
+    const owner = await openCatalog()
+    expect(owner.wrapper.get('table').classes()).toContain('enc-cards')
+    expect(owner.wrapper.findAll('tbody td').map((cell) => cell.attributes('data-label'))).toEqual(['Categoria', 'Origem', 'Fornecedor', 'Prazo', 'Custo', 'Preço', 'Margem', 'No portal'])
+
+    signedInAs('admin', writer)
+    serve({ items: [summary()] })
+    const admin = await openCatalog()
+    expect(admin.wrapper.findAll('tbody td').map((cell) => cell.attributes('data-label'))).toEqual(['Categoria', 'Origem', 'Fornecedor', 'Prazo', 'Preço', 'No portal'])
+  })
+
   it('shows Custo and Margem to the owner, because the API sent them', async () => {
     signedInAs('owner', writer)
     serve({ items: [summary(ownerCosts), summary({ id: 'x2', name: 'Sem custo', cost: null, margin: null })] })
@@ -754,6 +767,17 @@ describe('photos', () => {
       http.post(`*/api/v1/admin/catalog/items/${bancoId}/photos`, confirm),
     )
   }
+
+  it('offers the types the server accepts and no `capture`, so a phone offers both the camera and the gallery', async () => {
+    signedInAs('admin', writer)
+    serveUpload(() => HttpResponse.json(photo('p2', 1), { status: 201 }))
+    const { wrapper } = await openCatalog()
+    await button(wrapper, 'Banco de couro Scrambler').trigger('click')
+    await flushPromises()
+    const input = field(wrapper.get('[role=dialog]'), 'Adicionar fotos')
+    expect(input.attributes('accept')).toBe('image/jpeg,image/png,image/webp')
+    expect(input.attributes('capture')).toBeUndefined()
+  })
 
   it('uploads a photo and shows it after the first, which is the cover', async () => {
     signedInAs('admin', writer)

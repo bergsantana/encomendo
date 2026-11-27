@@ -181,4 +181,25 @@ img {
   color: var(--enc-status-alert-text);
   font-weight: 600;
 }
+
+/* Phone: two thumbnails to a row, and buttons the thumb can hit. */
+@media (max-width: 640px) {
+  li {
+    width: calc(50% - 6px);
+  }
+  img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .cover {
+    display: flex;
+    align-items: center;
+    min-height: var(--enc-control-height);
+  }
+  .add {
+    align-self: stretch;
+    justify-content: center;
+  }
+}
 </style>
