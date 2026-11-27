@@ -6,6 +6,7 @@ import (
 
 	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
 	"github.com/bergsantana/encomendo/backend/internal/app/supplier/fake"
+	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
 func TestFakeRepository_Contract(t *testing.T) {
@@ -15,6 +16,7 @@ func TestFakeRepository_Contract(t *testing.T) {
 			Suppliers: fake.NewStore(),
 			Tx:        sharedfake.NewTxManager(),
 			NewID:     ids.NewID,
+			NewTenant: func(*testing.T) shared.TenantID { return shared.TenantID(ids.NewID()) },
 		}
 	})
 }

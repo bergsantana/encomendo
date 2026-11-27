@@ -34,14 +34,14 @@ func NewService(d Deps) *Service {
 // Create adds a supplier to the caller's store at version 1 (catalog:write).
 // It returns a ValidationError listing every invalid field ("name",
 // "whatsappPhone").
-func (s *Service) Create(ctx context.Context, in CreateInput) (SupplierView, error) {
+func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 	by, err := authz.Require(ctx, identity.PermCatalogWrite)
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
 	sup, err := supplier.New(by.TenantID(), shared.SupplierID(s.ids.NewID()), in.Name, in.WhatsAppPhone)
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := s.suppliers.Insert(ctx, sup); err != nil {
@@ -50,9 +50,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (SupplierView, err
 		return nil
 	})
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
-	return supplierView(sup, sup.Version()), nil
+	return viewOf(sup, sup.Version()), nil
 }
 
 // Replace gives a supplier a new name and number (catalog:write). It returns
@@ -60,17 +60,18 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (SupplierView, err
 // when in.Version is not the stored version, and a ValidationError listing
 // every invalid field. A stale version wins over invalid values: the client
 // has to reload first.
-func (s *Service) Replace(ctx context.Context, in ReplaceInput) (SupplierView, error) {
+func (s *Service) Replace(ctx context.Context, in ReplaceInput) (View, error) {
 	by, err := authz.Require(ctx, identity.PermCatalogWrite)
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
 	var sup *supplier.Supplier
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		sup, err = s.suppliers.ByID(ctx, by.TenantID(), in.ID)
+		loaded, err := s.suppliers.ByID(ctx, by.TenantID(), in.ID)
 		if err != nil {
 			return fmt.Errorf("load supplier %s: %w", in.ID, err)
 		}
+		sup = loaded
 		if err := sup.CheckVersion(in.Version); err != nil {
 			return err
 		}
@@ -83,55 +84,57 @@ func (s *Service) Replace(ctx context.Context, in ReplaceInput) (SupplierView, e
 		return nil
 	})
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
-	return supplierView(sup, sup.Version()+1), nil // the repository stored the next version
+	return viewOf(sup, sup.Version()+1), nil // the repository stored the next version
 }
 
 // Get returns one supplier (catalog:read, every role). It returns
 // supplier.ErrNotFound for an unknown supplier, and for another store's.
-func (s *Service) Get(ctx context.Context, id shared.SupplierID) (SupplierView, error) {
+func (s *Service) Get(ctx context.Context, id shared.SupplierID) (View, error) {
 	by, err := authz.Require(ctx, identity.PermCatalogRead)
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
 	var sup *supplier.Supplier
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		sup, err = s.suppliers.ByID(ctx, by.TenantID(), id)
+		loaded, err := s.suppliers.ByID(ctx, by.TenantID(), id)
 		if err != nil {
 			return fmt.Errorf("load supplier %s: %w", id, err)
 		}
+		sup = loaded
 		return nil
 	})
 	if err != nil {
-		return SupplierView{}, err
+		return View{}, err
 	}
-	return supplierView(sup, sup.Version()), nil
+	return viewOf(sup, sup.Version()), nil
 }
 
 // List returns one page of the store's suppliers, ordered by name and then
 // id, narrowed by filter (catalog:read, every role). A cursor the repository
 // did not issue is a ValidationError.
-func (s *Service) List(ctx context.Context, filter ListFilter, page shared.PageRequest) (shared.Page[SupplierView], error) {
+func (s *Service) List(ctx context.Context, filter ListFilter, page shared.PageRequest) (shared.Page[View], error) {
 	by, err := authz.Require(ctx, identity.PermCatalogRead)
 	if err != nil {
-		return shared.Page[SupplierView]{}, err
+		return shared.Page[View]{}, err
 	}
 	filter.Query = strings.TrimSpace(filter.Query)
 	var got shared.Page[*supplier.Supplier]
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		got, err = s.suppliers.List(ctx, by.TenantID(), filter, page)
+		listed, err := s.suppliers.List(ctx, by.TenantID(), filter, page)
 		if err != nil {
 			return fmt.Errorf("list suppliers: %w", err)
 		}
+		got = listed
 		return nil
 	})
 	if err != nil {
-		return shared.Page[SupplierView]{}, err
+		return shared.Page[View]{}, err
 	}
-	out := shared.Page[SupplierView]{Items: make([]SupplierView, 0, len(got.Items)), NextCursor: got.NextCursor}
+	out := shared.Page[View]{Items: make([]View, 0, len(got.Items)), NextCursor: got.NextCursor}
 	for _, sup := range got.Items {
-		out.Items = append(out.Items, supplierView(sup, sup.Version()))
+		out.Items = append(out.Items, viewOf(sup, sup.Version()))
 	}
 	return out, nil
 }
@@ -151,10 +154,11 @@ func (s *Service) Names(ctx context.Context, ids []shared.SupplierID) (map[share
 	}
 	var found []*supplier.Supplier
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		found, err = s.suppliers.ByIDs(ctx, by.TenantID(), ids)
+		loaded, err := s.suppliers.ByIDs(ctx, by.TenantID(), ids)
 		if err != nil {
 			return fmt.Errorf("load supplier names: %w", err)
 		}
+		found = loaded
 		return nil
 	})
 	if err != nil {

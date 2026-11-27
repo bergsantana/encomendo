@@ -18,6 +18,9 @@ type Harness struct {
 	Suppliers appsupplier.Repository
 	Tx        appshared.TxManager
 	NewID     func() shared.ID
+	// NewTenant returns a store that suppliers may belong to. The Postgres
+	// harness seeds a tenants row; the fake needs none.
+	NewTenant func(t *testing.T) shared.TenantID
 }
 
 // tenant is one store of the suite with the staff user that acts in it.
@@ -26,8 +29,9 @@ type tenant struct {
 	user shared.UserID
 }
 
-func (h Harness) newTenant() tenant {
-	return tenant{id: shared.TenantID(h.NewID()), user: shared.UserID(h.NewID())}
+func (h Harness) newTenant(t *testing.T) tenant {
+	t.Helper()
+	return tenant{id: h.NewTenant(t), user: shared.UserID(h.NewID())}
 }
 
 func (tn tenant) scope() appshared.Scope {
@@ -82,9 +86,14 @@ func RunRepositoryContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 	t.Run("a supplier reads back as inserted", func(t *testing.T) { insertAndGet(t, newHarness(t)) })
 	t.Run("an unknown supplier is not found", func(t *testing.T) { getUnknown(t, newHarness(t)) })
 	t.Run("updates are optimistic", func(t *testing.T) { updateOptimistic(t, newHarness(t)) })
+	t.Run("a duplicate id is a conflict", func(t *testing.T) { insertDuplicate(t, newHarness(t)) })
+	t.Run("a failed transaction undoes an insert", func(t *testing.T) { rollbackInsert(t, newHarness(t)) })
+	t.Run("a failed transaction undoes an update", func(t *testing.T) { rollbackUpdate(t, newHarness(t)) })
 	t.Run("an unknown supplier cannot be updated", func(t *testing.T) { updateUnknown(t, newHarness(t)) })
 	t.Run("the list orders by name, then id, and pages", func(t *testing.T) { listPages(t, newHarness(t)) })
+	t.Run("the last page ends at an exact boundary", func(t *testing.T) { listExactBoundary(t, newHarness(t)) })
 	t.Run("the list filters by name, ignoring case", func(t *testing.T) { listFilter(t, newHarness(t)) })
+	t.Run("the filter is literal text", func(t *testing.T) { listFilterLiteral(t, newHarness(t)) })
 	t.Run("a cursor the repository did not issue is invalid", func(t *testing.T) { listBadCursor(t, newHarness(t)) })
 	t.Run("ByIDs leaves out a missing id", func(t *testing.T) { byIDsMissing(t, newHarness(t)) })
 	t.Run("another store's suppliers are invisible", func(t *testing.T) { otherTenant(t, newHarness(t)) })
@@ -94,7 +103,7 @@ func RunRepositoryContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 }
 
 func insertAndGet(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	s := h.add(t, tn, "Couros Paulista")
 	h.in(t, tn.scope(), func(ctx context.Context) error {
 		got, err := h.Suppliers.ByID(ctx, tn.id, s.ID())
@@ -110,7 +119,7 @@ func insertAndGet(t *testing.T, h Harness) {
 }
 
 func getUnknown(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	h.in(t, tn.scope(), func(ctx context.Context) error {
 		_, err := h.Suppliers.ByID(ctx, tn.id, shared.SupplierID(h.NewID()))
 		if !errors.Is(err, supplier.ErrNotFound) || !errors.Is(err, shared.ErrNotFound) {
@@ -121,7 +130,7 @@ func getUnknown(t *testing.T, h Harness) {
 }
 
 func updateOptimistic(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	s := h.add(t, tn, "Couros Paulista")
 	h.in(t, tn.scope(), func(ctx context.Context) error {
 		cur, err := h.Suppliers.ByID(ctx, tn.id, s.ID())
@@ -160,7 +169,7 @@ func updateOptimistic(t *testing.T, h Harness) {
 }
 
 func updateUnknown(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	ghost, err := supplier.New(tn.id, shared.SupplierID(h.NewID()), "Fantasma", "5511987654321")
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +181,7 @@ func updateUnknown(t *testing.T, h Harness) {
 }
 
 func listPages(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	for _, name := range []string{"Delta", "Alfa", "Charlie", "Bravo", "Echo"} {
 		h.add(t, tn, name)
 	}
@@ -227,8 +236,141 @@ func (h Harness) walk(ctx context.Context, t *testing.T, tn tenant, limit int) [
 
 func compareIDs(a, b shared.SupplierID) int { return strings.Compare(a.String(), b.String()) }
 
+var errRollback = errors.New("supplierports: the transaction fails on purpose")
+
+func insertDuplicate(t *testing.T, h Harness) {
+	a, b := h.newTenant(t), h.newTenant(t)
+	s := h.add(t, a, "Alfa")
+	again, err := supplier.New(a.id, s.ID(), "Outra", "5511987654321")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.try(a.scope(), func(ctx context.Context) error { return h.Suppliers.Insert(ctx, again) }); !errors.Is(err, shared.ErrConflict) {
+		t.Errorf("the same id again: %v, want ErrConflict", err)
+	}
+	// The key sees every store's rows: another store reusing the id is the
+	// same conflict, never a leak of whose it is.
+	foreign, err := supplier.New(b.id, s.ID(), "Alheia", "5511987654321")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.try(b.scope(), func(ctx context.Context) error { return h.Suppliers.Insert(ctx, foreign) }); !errors.Is(err, shared.ErrConflict) {
+		t.Errorf("another store with the same id: %v, want ErrConflict", err)
+	}
+	h.in(t, a.scope(), func(ctx context.Context) error {
+		got, err := h.Suppliers.ByID(ctx, a.id, s.ID())
+		if err != nil || got.Name() != "Alfa" {
+			t.Errorf("the original after the refusals: %+v, %v; want it untouched", got, err)
+		}
+		return nil
+	})
+}
+
+func rollbackInsert(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	s, err := supplier.New(tn.id, shared.SupplierID(h.NewID()), "Alfa", "5511987654321")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = h.try(tn.scope(), func(ctx context.Context) error {
+		if err := h.Suppliers.Insert(ctx, s); err != nil {
+			return err
+		}
+		return errRollback
+	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("the transaction = %v, want the error it returned", err)
+	}
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		if _, err := h.Suppliers.ByID(ctx, tn.id, s.ID()); !errors.Is(err, supplier.ErrNotFound) {
+			t.Errorf("after the rollback: %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+}
+
+func rollbackUpdate(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	s := h.add(t, tn, "Alfa")
+	err := h.try(tn.scope(), func(ctx context.Context) error {
+		cur, err := h.Suppliers.ByID(ctx, tn.id, s.ID())
+		if err != nil {
+			return err
+		}
+		if err := cur.Rename("Renomeado"); err != nil {
+			return err
+		}
+		if err := cur.ChangePhone("5592991234567"); err != nil {
+			return err
+		}
+		if err := h.Suppliers.Update(ctx, cur); err != nil {
+			return err
+		}
+		return errRollback
+	})
+	if !errors.Is(err, errRollback) {
+		t.Fatalf("the transaction = %v, want the error it returned", err)
+	}
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		got, err := h.Suppliers.ByID(ctx, tn.id, s.ID())
+		if err != nil || got.Name() != "Alfa" || got.WhatsAppPhone() != "5511987654321" || got.Version() != 1 {
+			t.Errorf("after the rollback: %+v, %v; want the old values at version 1", got, err)
+		}
+		return nil
+	})
+}
+
+func listExactBoundary(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	for _, name := range []string{"Alfa", "Bravo", "Charlie", "Delta"} {
+		h.add(t, tn, name)
+	}
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		first, err := h.Suppliers.List(ctx, tn.id, appsupplier.ListFilter{}, page(t, "", 2))
+		if err != nil || !first.HasMore() {
+			t.Fatalf("first page = %v, %v; want it to have more", names(first), err)
+		}
+		last, err := h.Suppliers.List(ctx, tn.id, appsupplier.ListFilter{}, page(t, first.NextCursor, 2))
+		if err != nil || !slices.Equal(names(last), []string{"Charlie", "Delta"}) || last.NextCursor != "" {
+			t.Errorf("second page = %v, cursor %q, %v; want Charlie and Delta and no cursor", names(last), last.NextCursor, err)
+		}
+		whole, err := h.Suppliers.List(ctx, tn.id, appsupplier.ListFilter{}, page(t, "", 4))
+		if err != nil || len(whole.Items) != 4 || whole.NextCursor != "" {
+			t.Errorf("a page of exactly all rows = %v, cursor %q, %v; want no cursor", names(whole), whole.NextCursor, err)
+		}
+		return nil
+	})
+}
+
+func listFilterLiteral(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	for _, name := range []string{"Alfa", "AxB", "A_B", "100% Couro"} {
+		h.add(t, tn, name)
+	}
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{"%", []string{"100% Couro"}},
+		{"_", []string{"A_B"}},
+		{"A_B", []string{"A_B"}},
+		{"%%", []string{}},
+		{"__", []string{}},
+		{"a%b", []string{}},
+	}
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		for _, c := range cases {
+			p, err := h.Suppliers.List(ctx, tn.id, appsupplier.ListFilter{Query: c.query}, page(t, "", 10))
+			if err != nil || !slices.Equal(names(p), c.want) {
+				t.Errorf("filter %q = %v, %v; want %v", c.query, names(p), err, c.want)
+			}
+		}
+		return nil
+	})
+}
+
 func listFilter(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	for _, name := range []string{"Couros Paulista", "Ferragens Norte", "Tecidos Couro Fino"} {
 		h.add(t, tn, name)
 	}
@@ -245,20 +387,51 @@ func listFilter(t *testing.T, h Harness) {
 	})
 }
 
-func listBadCursor(t *testing.T, h Harness) {
-	tn := h.newTenant()
-	h.add(t, tn, "Alfa")
+// firstCursor returns the NextCursor of tn's first page of one supplier.
+func (h Harness) firstCursor(t *testing.T, tn tenant) string {
+	t.Helper()
+	var cursor string
 	h.in(t, tn.scope(), func(ctx context.Context) error {
-		_, err := h.Suppliers.List(ctx, tn.id, appsupplier.ListFilter{}, page(t, "not-a-cursor", 10))
-		if !errors.Is(err, shared.ErrInvalid) {
-			t.Errorf("a cursor it did not issue: %v, want ErrInvalid", err)
+		p, err := h.Suppliers.List(ctx, tn.id, appsupplier.ListFilter{}, page(t, "", 1))
+		if err != nil || !p.HasMore() {
+			t.Fatalf("first page = %v, %v; want it to have more", names(p), err)
+		}
+		cursor = p.NextCursor
+		return nil
+	})
+	return cursor
+}
+
+func listBadCursor(t *testing.T, h Harness) {
+	a, b := h.newTenant(t), h.newTenant(t)
+	for _, name := range []string{"Alfa", "Bravo", "Charlie"} {
+		h.add(t, a, name)
+	}
+	h.add(t, b, "Delta")
+	h.add(t, b, "Eco")
+	real := h.firstCursor(t, a)
+	first := "A" // a real cursor changed in its first character names another id
+	if real[:1] == first {
+		first = "B"
+	}
+	cursors := map[string]string{
+		"gibberish":              "not-a-cursor",
+		"a truncated cursor":     real[:len(real)-4],
+		"a tampered cursor":      first + real[1:],
+		"another store's cursor": h.firstCursor(t, b),
+	}
+	h.in(t, a.scope(), func(ctx context.Context) error {
+		for name, c := range cursors {
+			if _, err := h.Suppliers.List(ctx, a.id, appsupplier.ListFilter{}, page(t, c, 10)); !errors.Is(err, shared.ErrInvalid) {
+				t.Errorf("%s: %v, want ErrInvalid", name, err)
+			}
 		}
 		return nil
 	})
 }
 
 func byIDsMissing(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	a := h.add(t, tn, "Alfa")
 	b := h.add(t, tn, "Bravo")
 	missing := shared.SupplierID(h.NewID())
@@ -283,7 +456,7 @@ func byIDsMissing(t *testing.T, h Harness) {
 }
 
 func otherTenant(t *testing.T, h Harness) {
-	a, b := h.newTenant(), h.newTenant()
+	a, b := h.newTenant(t), h.newTenant(t)
 	mine := h.add(t, a, "Alfa")
 	theirs := h.add(t, b, "Bravo")
 	h.in(t, a.scope(), func(ctx context.Context) error {
@@ -311,8 +484,8 @@ func otherTenant(t *testing.T, h Harness) {
 		if err != nil {
 			return err
 		}
-		if err := h.Suppliers.Update(ctx, other); err == nil {
-			t.Error("A updated B's supplier")
+		if err := h.Suppliers.Update(ctx, other); !errors.Is(err, supplier.ErrNotFound) {
+			t.Errorf("A updating B's supplier: %v, want ErrNotFound", err)
 		}
 		return nil
 	})
@@ -326,7 +499,7 @@ func otherTenant(t *testing.T, h Harness) {
 }
 
 func writesStayInScope(t *testing.T, h Harness) {
-	a, b := h.newTenant(), h.newTenant()
+	a, b := h.newTenant(t), h.newTenant(t)
 	intruder, err := supplier.New(b.id, shared.SupplierID(h.NewID()), "Intruso", "5511987654321")
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +517,7 @@ func writesStayInScope(t *testing.T, h Harness) {
 }
 
 func staffOnly(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	s := h.add(t, tn, "Alfa")
 	noUser := appshared.Scope{TenantID: tn.id}
 	h.in(t, noUser, func(ctx context.Context) error {
@@ -359,6 +532,20 @@ func staffOnly(t *testing.T, h Harness) {
 		if err != nil || len(got) != 0 {
 			t.Errorf("ByIDs with no user = %v, %v; want none", got, err)
 		}
+		cur, err := supplier.Restore(supplier.Record{Tenant: tn.id, ID: s.ID(), Name: "Mudado", Phone: "5592991234567", Version: 1})
+		if err != nil {
+			return err
+		}
+		if err := h.Suppliers.Update(ctx, cur); !errors.Is(err, supplier.ErrNotFound) {
+			t.Errorf("Update with no user: %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		got, err := h.Suppliers.ByID(ctx, tn.id, s.ID())
+		if err != nil || got.Name() != "Alfa" || got.Version() != 1 {
+			t.Errorf("the supplier after the refused update: %+v, %v; want it unchanged", got, err)
+		}
 		return nil
 	})
 	fresh, err := supplier.New(tn.id, shared.SupplierID(h.NewID()), "Novo", "5511987654321")
@@ -371,7 +558,7 @@ func staffOnly(t *testing.T, h Harness) {
 }
 
 func needsTx(t *testing.T, h Harness) {
-	tn := h.newTenant()
+	tn := h.newTenant(t)
 	if _, err := h.Suppliers.ByID(context.Background(), tn.id, shared.SupplierID(h.NewID())); !errors.Is(err, appshared.ErrNoTransaction) {
 		t.Errorf("outside a transaction: %v, want ErrNoTransaction", err)
 	}

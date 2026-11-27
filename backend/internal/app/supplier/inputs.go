@@ -27,16 +27,14 @@ type ListFilter struct {
 	Query string
 }
 
-// SupplierView is a supplier (the Supplier schema). It carries no cost.
-//
-//nolint:revive // the milestone 3 plan and docs name this type SupplierView; a rename would break every reference
-type SupplierView struct {
+// View is a supplier (the Supplier schema). It carries no cost.
+type View struct {
 	ID            shared.SupplierID
 	Name          string
 	WhatsAppPhone string
 	Version       int
 }
 
-func supplierView(s *supplier.Supplier, version int) SupplierView {
-	return SupplierView{ID: s.ID(), Name: s.Name(), WhatsAppPhone: s.WhatsAppPhone(), Version: version}
+func viewOf(s *supplier.Supplier, version int) View {
+	return View{ID: s.ID(), Name: s.Name(), WhatsAppPhone: s.WhatsAppPhone(), Version: version}
 }

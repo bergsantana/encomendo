@@ -135,21 +135,21 @@ func (s *Store) List(ctx context.Context, tenant shared.TenantID, filter appsupp
 		return shared.Page[*supplier.Supplier]{}, err
 	}
 	defer s.mu.Unlock()
-	after, err := decodeCursor(page.Cursor())
-	if err != nil {
-		return shared.Page[*supplier.Supplier]{}, err
-	}
-	query := strings.ToLower(filter.Query)
-	var rows []supplier.Record
+	var rows []supplier.Record // every row the scope sees
 	for _, r := range s.rows {
-		if r.Tenant == tenant && sees(scope, tenant) && strings.Contains(strings.ToLower(r.Name), query) {
+		if r.Tenant == tenant && sees(scope, tenant) {
 			rows = append(rows, r)
 		}
 	}
 	slices.SortFunc(rows, compare)
-	if page.Cursor() != "" { // keyset: only the rows after the last one of the previous page
-		rows = slices.DeleteFunc(rows, func(r supplier.Record) bool { return !after.before(r) })
+	if page.Cursor() != "" {
+		rows, err = afterCursor(rows, page.Cursor())
+		if err != nil {
+			return shared.Page[*supplier.Supplier]{}, err
+		}
 	}
+	query := strings.ToLower(filter.Query) // literal: Contains has no wildcards
+	rows = slices.DeleteFunc(rows, func(r supplier.Record) bool { return !strings.Contains(strings.ToLower(r.Name), query) })
 	return pageOf(rows, page.Limit())
 }
 
@@ -200,28 +200,30 @@ func pageOf(rows []supplier.Record, limit int) (shared.Page[*supplier.Supplier],
 	return out, nil
 }
 
-// position is what a cursor holds: the last row of the page before.
-type position struct{ name, id string }
-
-// before reports whether the cursor's row sorts before r.
-func (p position) before(r supplier.Record) bool {
-	return cmp.Or(strings.Compare(p.name, r.Name), strings.Compare(p.id, r.ID.String())) < 0
-}
-
 func encodeCursor(r supplier.Record) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(r.Name + "\x00" + r.ID.String()))
+	return base64.RawURLEncoding.EncodeToString([]byte(r.ID.String()))
 }
 
-// decodeCursor reads a cursor this fake issued. A cursor it did not issue is
-// a ValidationError, as a real repository answers one.
-func decodeCursor(c string) (position, error) {
-	if c == "" {
-		return position{}, nil
+func invalidCursor() error {
+	return shared.NewValidationError(shared.FieldError{Field: "cursor", Message: "Cursor inválido."})
+}
+
+// afterCursor returns the rows after the one the cursor names, found by id
+// among rows, which are sorted by compare and are all the scope sees. A
+// cursor this fake did not issue, or one naming a row the scope does not
+// see, is a ValidationError, as a real repository answers one.
+func afterCursor(rows []supplier.Record, cursor string) ([]supplier.Record, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return nil, invalidCursor()
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(c)
-	name, id, found := strings.Cut(string(raw), "\x00")
-	if err != nil || !found || id == "" {
-		return position{}, shared.NewValidationError(shared.FieldError{Field: "cursor", Message: "Cursor inválido."})
+	id, err := shared.ParseSupplierID(string(raw))
+	if err != nil {
+		return nil, invalidCursor()
 	}
-	return position{name: name, id: id}, nil
+	i := slices.IndexFunc(rows, func(r supplier.Record) bool { return r.ID == id })
+	if i < 0 {
+		return nil, invalidCursor()
+	}
+	return rows[i+1:], nil
 }

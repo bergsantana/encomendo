@@ -3,10 +3,12 @@ package supplier_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 	"time"
 
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
 	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
@@ -58,7 +60,7 @@ func (h *harness) as(t *testing.T, tenant shared.TenantID, role shared.Role) con
 func (h *harness) owner(t *testing.T) context.Context { return h.as(t, h.store1, shared.RoleOwner) }
 
 // create adds a supplier through the use case as the owner.
-func (h *harness) create(t *testing.T, name string) appsupplier.SupplierView {
+func (h *harness) create(t *testing.T, name string) appsupplier.View {
 	t.Helper()
 	v, err := h.svc.Create(h.owner(t), appsupplier.CreateInput{Name: name, WhatsAppPhone: phone})
 	if err != nil {
@@ -127,21 +129,6 @@ func TestCreate_PassesValidationThroughWithFieldNames(t *testing.T) {
 	}
 }
 
-func TestCreate_UndoesTheInsertWhenTheTransactionFails(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t)
-	h.store.Fail("Insert", errBoom)
-
-	if _, err := h.svc.Create(h.owner(t), appsupplier.CreateInput{Name: "Alfa", WhatsAppPhone: phone}); !errors.Is(err, errBoom) {
-		t.Fatalf("Create = %v, want the repository error", err)
-	}
-	h.store.Fail("Insert", nil)
-	page, err := h.svc.List(h.owner(t), appsupplier.ListFilter{}, shared.PageRequest{})
-	if err != nil || len(page.Items) != 0 {
-		t.Errorf("list = %+v, %v; want nothing stored", page, err)
-	}
-}
-
 func TestReplace(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -152,7 +139,7 @@ func TestReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Replace: %v", err)
 	}
-	want := appsupplier.SupplierView{ID: v.ID, Name: "Couros do Norte", WhatsAppPhone: "5592991234567", Version: 2}
+	want := appsupplier.View{ID: v.ID, Name: "Couros do Norte", WhatsAppPhone: "5592991234567", Version: 2}
 	if got != want {
 		t.Errorf("view = %+v, want %+v", got, want)
 	}
@@ -319,35 +306,39 @@ func TestAuthorization(t *testing.T) {
 	v := h.create(t, "Alfa")
 	id := []shared.SupplierID{v.ID}
 
-	writes := map[string]func(ctx context.Context) error{
-		"Create": func(ctx context.Context) error {
+	writes := map[string]func(t *testing.T, ctx context.Context) error{
+		"Create": func(_ *testing.T, ctx context.Context) error {
 			_, err := h.svc.Create(ctx, appsupplier.CreateInput{Name: "Novo", WhatsAppPhone: phone})
 			return err
 		},
-		"Replace": func(ctx context.Context) error {
-			_, err := h.svc.Replace(ctx, appsupplier.ReplaceInput{ID: v.ID, Name: "Novo", WhatsAppPhone: phone, Version: 1})
+		"Replace": func(t *testing.T, ctx context.Context) error {
+			fresh := h.create(t, "Fresca") // at version 1, so an allowed role succeeds
+			_, err := h.svc.Replace(ctx, appsupplier.ReplaceInput{ID: fresh.ID, Name: "Novo", WhatsAppPhone: phone, Version: 1})
 			return err
 		},
 	}
-	reads := map[string]func(ctx context.Context) error{
-		"Get": func(ctx context.Context) error { _, err := h.svc.Get(ctx, v.ID); return err },
-		"List": func(ctx context.Context) error {
+	reads := map[string]func(t *testing.T, ctx context.Context) error{
+		"Get": func(_ *testing.T, ctx context.Context) error { _, err := h.svc.Get(ctx, v.ID); return err },
+		"List": func(_ *testing.T, ctx context.Context) error {
 			_, err := h.svc.List(ctx, appsupplier.ListFilter{}, shared.PageRequest{})
 			return err
 		},
-		"Names": func(ctx context.Context) error { _, err := h.svc.Names(ctx, id); return err },
+		"Names": func(_ *testing.T, ctx context.Context) error { _, err := h.svc.Names(ctx, id); return err },
 	}
+	all := map[string]func(t *testing.T, ctx context.Context) error{}
+	maps.Copy(all, writes)
+	maps.Copy(all, reads)
 	for name, call := range writes {
 		for _, role := range []shared.Role{shared.RoleStaff, shared.RoleViewer} {
 			t.Run(name+" is refused to "+string(role), func(t *testing.T) {
-				if err := call(h.as(t, h.store1, role)); !errors.Is(err, shared.ErrForbidden) {
+				if err := call(t, h.as(t, h.store1, role)); !errors.Is(err, shared.ErrForbidden) {
 					t.Errorf("error = %v, want ErrForbidden", err)
 				}
 			})
 		}
 		for _, role := range []shared.Role{shared.RoleOwner, shared.RoleAdmin} {
 			t.Run(name+" is allowed to "+string(role), func(t *testing.T) {
-				if err := call(h.as(t, h.store1, role)); errors.Is(err, shared.ErrForbidden) {
+				if err := call(t, h.as(t, h.store1, role)); err != nil {
 					t.Errorf("error = %v, want it allowed", err)
 				}
 			})
@@ -356,7 +347,7 @@ func TestAuthorization(t *testing.T) {
 	for name, call := range reads {
 		for _, role := range []shared.Role{shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer} {
 			t.Run(name+" is allowed to "+string(role), func(t *testing.T) {
-				if err := call(h.as(t, h.store1, role)); err != nil {
+				if err := call(t, h.as(t, h.store1, role)); err != nil {
 					t.Errorf("error = %v, want nil", err)
 				}
 			})
@@ -364,8 +355,29 @@ func TestAuthorization(t *testing.T) {
 	}
 	t.Run("no caller", func(t *testing.T) {
 		for name, call := range reads {
-			if err := call(context.Background()); !errors.Is(err, shared.ErrUnauthenticated) {
+			if err := call(t, context.Background()); !errors.Is(err, shared.ErrUnauthenticated) {
 				t.Errorf("%s with no caller: %v, want ErrUnauthenticated", name, err)
+			}
+		}
+	})
+	t.Run("no store selected", func(t *testing.T) {
+		p, err := shared.NewBackofficePrincipal(shared.UserID(h.ids.NewID()), shared.TenantID{}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := authz.WithPrincipal(context.Background(), p)
+		for name, call := range all {
+			if err := call(t, ctx); !errors.Is(err, authz.ErrTenantRequired) {
+				t.Errorf("%s with no store: %v, want ErrTenantRequired", name, err)
+			}
+		}
+	})
+	t.Run("a scope that is not the caller's", func(t *testing.T) {
+		other := appshared.Scope{TenantID: h.store2, UserID: shared.UserID(h.ids.NewID())}
+		ctx := appshared.WithScope(h.as(t, h.store1, shared.RoleOwner), other)
+		for name, call := range all {
+			if err := call(t, ctx); !errors.Is(err, authz.ErrScopeMismatch) {
+				t.Errorf("%s in another scope: %v, want ErrScopeMismatch", name, err)
 			}
 		}
 	})
@@ -376,7 +388,7 @@ func TestAuthorization(t *testing.T) {
 		}
 		ctx := authz.WithPrincipal(context.Background(), p)
 		for name, call := range reads {
-			if err := call(ctx); !errors.Is(err, shared.ErrForbidden) {
+			if err := call(t, ctx); !errors.Is(err, shared.ErrForbidden) {
 				t.Errorf("%s as a client: %v, want ErrForbidden", name, err)
 			}
 		}
