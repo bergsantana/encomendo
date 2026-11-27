@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Encomendo API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     The contract between the Go backend and the web and Android clients.
     Written by hand; backend HTTP tests validate responses against it, and the
@@ -87,20 +87,49 @@ info:
     An operation marked `x-unserved` is written ahead of the server so the
     apps can build against it; the server answers it `404` until the plan
     step named there serves it and removes the mark. The end-to-end suite
-    checks both halves. No operation is marked now: step 3.10 served the
-    catalog and supplier operations.
+    checks both halves. The milestone 4 operations (status workflows,
+    customers, orders, Hoje and Financeiro) are marked `4.14`. Until then,
+    `timeZone` in the settings and `statuses` in the settings' workflow are
+    absent too.
 
     ## Costs and margins (ADR 0025)
 
-    Costs and margins are the owner's only. In every catalog response, a
-    `cost`, `productionCost` or `margin` field is **present only for the
-    owner** (`null` when nothing is recorded) and **absent** for every other
-    role. Show the cost and margin columns only when the field is present.
-    A write that sends a cost field from any other role, even `null`, is
-    `403 forbidden`; a cost field left out keeps the stored cost.
+    Costs and margins are the owner's only. In every catalog and order
+    response, a `cost`, `productionCost` or `margin` field is **present only
+    for the owner** (`null` when nothing is recorded) and **absent** for
+    every other role. Show the cost and margin columns only when the field
+    is present. A write that sends a cost field from any other role, even
+    `null`, is `403 forbidden`; a cost field left out keeps the stored cost.
 
     Suppliers, costs and lead times by supplier are staff data: the store
-    page never receives them.
+    page and the client's tracking page never receive them.
+
+    ## Orders (ADR 0030)
+
+    - Prices, deposits and dates are computed by the server; clients show
+      them. A quote (`POST /orders/quote`) answers what an order would be
+      without saving it.
+    - Dates are calendar days (`CivilDate`) in the store's time zone.
+      `deliveryDate` is the date promised to the client; each item's
+      `expectedDate` is the forecast. Alerts compare the forecast with
+      `arrivalLimit` ("Precisa chegar até") and with today.
+    - An order's statuses come from its own workflow, at the version it was
+      made with: every order response carries its `status`, its
+      `workflow` and the `moves` it allows, so clients never keep their own
+      copy. Color a status by its `phase`, never by its label or key.
+    - Every order write takes the `version` you read and answers
+      `409 version_conflict` when someone saved first.
+    - Endpoints that make a WhatsApp message answer a `wa.me` URL in
+      `whatsappUrl`; the app opens it and the user sends it. The server
+      sends nothing.
+
+    ## Idempotency-Key (ADR 0030)
+
+    `POST /orders` and `POST /orders/{orderId}/payments` require an
+    `Idempotency-Key` header. Make one key per user action and send the same
+    key on every retry of it. A retry with the same key and body answers
+    what the first call created, as it is now; the same key with another
+    body is `422 idempotency_key_reused`. Keys are kept 24 hours.
 servers:
   - url: http://localhost:8081
     description: Local stack (make dev-up)
@@ -118,6 +147,16 @@ tags:
     description: Catálogo — items, categories, item fields, kits and their photos.
   - name: suppliers
     description: The store's suppliers ("Fornecedores"), created from the item form in milestone 3.
+  - name: workflows
+    description: Status workflow presets ("Lista de status") and the store's choice.
+  - name: customers
+    description: The store's customers ("Clientes").
+  - name: orders
+    description: Pedidos — orders, their items, payments, dates and links.
+  - name: today
+    description: Hoje — what needs the team today.
+  - name: finance
+    description: Financeiro — money received, to receive and to refund, and margins (owner).
 
 paths:
   /healthz:
@@ -1890,6 +1929,872 @@ paths:
         "5XX":
           $ref: "#/components/responses/ServerFailure"
 
+  /api/v1/admin/status-workflows:
+    get:
+      tags: [workflows]
+      operationId: listStatusWorkflows
+      x-unserved: "4.14"
+      summary: The status workflow presets a store can choose, with their statuses.
+      description: |
+        Needs `settings:read`. The four launch presets (ADR 0004, ADR 0023),
+        each at its latest version, statuses in order. Presets are global and
+        read-only: no store can rename a status or build its own list.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Every preset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusWorkflowList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/settings/status-workflow:
+    put:
+      tags: [workflows]
+      operationId: chooseStatusWorkflow
+      x-unserved: "4.14"
+      summary: Choose the store's status workflow for new orders.
+      description: |
+        Needs `settings:write` (owner). New orders take the chosen workflow
+        and keep that version for life; orders already made keep theirs
+        (ADR 0004). Send the settings `version` you read as
+        `expectedVersion`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChooseWorkflowRequest"
+      responses:
+        "200":
+          description: The saved settings, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSettings"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/WorkflowNotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/customers:
+    get:
+      tags: [customers]
+      operationId: listCustomers
+      x-unserved: "4.14"
+      summary: The store's customers, by name.
+      description: Needs `order:read`. `q` matches the start of a name, ignoring case, or digits of the WhatsApp number.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Search"
+      responses:
+        "200":
+          description: One page of customers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [customers]
+      operationId: createCustomer
+      x-unserved: "4.14"
+      summary: Add a customer.
+      description: |
+        Needs `order:write`, so whoever takes an order can add its customer.
+        The WhatsApp number is unique in the store (`409 phone_taken`).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerInput"
+      responses:
+        "201":
+          description: The new customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/CustomerConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/customers/{customerId}:
+    get:
+      tags: [customers]
+      operationId: getCustomer
+      x-unserved: "4.14"
+      summary: One customer with their addresses.
+      description: Needs `order:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      responses:
+        "200":
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    put:
+      tags: [customers]
+      operationId: replaceCustomer
+      x-unserved: "4.14"
+      summary: Replace a customer's details and addresses.
+      description: |
+        Needs `customer:write` (owner, admin). Send every field with the
+        `version` you read. An address sent with its `id` keeps it, so
+        orders that point at it still do; an address left out is removed
+        from the customer, and orders keep the copy they were made with.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceCustomerRequest"
+      responses:
+        "200":
+          description: The customer as saved, with the new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CustomerConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/quote:
+    post:
+      tags: [orders]
+      operationId: quoteOrder
+      x-unserved: "4.14"
+      summary: Price and date an order without saving it.
+      description: |
+        Needs `order:write`; a discount, deposit percent or days other than
+        the store's need `order:manage`. Answers what `POST /orders` would
+        create: prices, deposit, each item's expected date and the delivery
+        date, all computed by the server. With `orderId`, it quotes a change
+        to that order, counting dates from its release date. Nothing is
+        written.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteRequest"
+      responses:
+        "200":
+          description: The quote.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "400":
+          $ref: "#/components/responses/OrderInvalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders:
+    get:
+      tags: [orders]
+      operationId: listOrders
+      x-unserved: "4.14"
+      summary: The store's orders, by delivery date.
+      description: |
+        Needs `order:read`. Active orders (neither handed over nor
+        cancelled) by default; `scope` widens it. Alerts are computed for
+        today in the store's time zone.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/OrderStatusFilter"
+        - $ref: "#/components/parameters/PhaseFilter"
+        - $ref: "#/components/parameters/OrderScope"
+        - $ref: "#/components/parameters/CustomerFilter"
+        - $ref: "#/components/parameters/OrderSearch"
+        - $ref: "#/components/parameters/AlertFilter"
+      responses:
+        "200":
+          description: One page of orders.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [orders]
+      operationId: createOrder
+      x-unserved: "4.14"
+      summary: Create an order ("Novo pedido").
+      description: |
+        Needs `order:write`; a discount, deposit percent or days other than
+        the store's need `order:manage`. Requires `Idempotency-Key`. Give
+        `customerId`, or `newCustomer` (found by WhatsApp number first,
+        created when absent). The order takes the store's current status
+        workflow and keeps that version.
+
+        The answer carries `trackingUrl`, the order's tracking link, this
+        once: the server keeps only its hash. With `sendToCustomer`, the
+        order moves to the status after the first and `whatsappUrl` opens
+        WhatsApp with the summary for the customer; nothing is sent by the
+        server.
+
+        A retry with the same key and body answers `201` with the order as
+        it is now, and no `trackingUrl`; the same key with another body is
+        `422 idempotency_key_reused`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "201":
+          description: The new order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedOrder"
+        "400":
+          $ref: "#/components/responses/OrderInvalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      x-unserved: "4.14"
+      summary: One order with its items, dates, alerts, payments and the moves it allows.
+      description: Needs `order:read`. `cost` and `margin` follow the cost rule (see the top of this document).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    put:
+      tags: [orders]
+      operationId: changeOrder
+      x-unserved: "4.14"
+      summary: Change an order's items and terms.
+      description: |
+        Send every line and term with the `version` you read. Items sent
+        again (same catalog item in the same line) keep their status.
+
+        - Before any payment, in a draft or awaiting-deposit status, needs
+          `order:write`; a discount, deposit percent or days other than the
+          store's need `order:manage`.
+        - After a payment, or past awaiting deposit, needs `order:manage`
+          and `customerApproved: true`, the seller confirming that the
+          customer agreed (`400 approval_required` otherwise). The answer's
+          `whatsappUrl` opens WhatsApp with a summary for the customer. A
+          later forecast moves the delivery date; a total below what was
+          paid shows `refundDue` ("Valor a devolver").
+        - Once the order enters assembling (or ready, in a workflow without
+          assembling), `409 order_not_editable`; once handed over or
+          cancelled, `409 order_closed`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeOrderRequest"
+      responses:
+        "200":
+          description: The order as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangedOrder"
+        "400":
+          $ref: "#/components/responses/OrderInvalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/advance:
+    post:
+      tags: [orders]
+      operationId: advanceOrder
+      x-unserved: "4.14"
+      summary: Move the order to another status of its workflow.
+      description: |
+        Needs `order:write`. `to` is one of the order's `moves`: any later
+        status, or an earlier one of the same phase. Each phase the move
+        enters must have its guard hold, or `409 guard_failed` names it:
+
+        - leaving awaiting deposit: the deposit is paid, or the owner
+          released the order (`deposit_unpaid`);
+        - entering assembling, or ready in a workflow without assembling:
+          every item arrived and was checked (`items_not_ready`);
+        - entering handed over: nothing is left to pay
+          (`balance_unpaid`), and `handover` says delivery or pickup
+          (`400 invalid` without it).
+
+        Cancelling is `POST /cancel`, never a move.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdvanceRequest"
+      responses:
+        "200":
+          description: The order in its new status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/release:
+    post:
+      tags: [orders]
+      operationId: releaseOrder
+      x-unserved: "4.14"
+      summary: Release the order without the deposit.
+      description: |
+        Needs `order:override` (owner). Only before the deposit is paid, in
+        a draft or awaiting-deposit status. The release date becomes today,
+        and the items' dates and the delivery date count from it, as a paid
+        deposit would.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The released order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/items/{itemId}/move:
+    post:
+      tags: [orders]
+      operationId: moveOrderItem
+      x-unserved: "4.14"
+      summary: Move one item along its sourcing mode's lifecycle.
+      description: |
+        Needs `order:write`. `to` is one of the item's `nextMoves` (ADR
+        0030). `received` (bought items) and `ready` (in-house items) need
+        `check`; `defective` sends the item back to `to_buy` or
+        `in_production`. The delivery date never moves; alerts follow the
+        item's new state.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveItemRequest"
+      responses:
+        "200":
+          description: The order with the item moved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/items/{itemId}/use-backup-supplier:
+    post:
+      tags: [orders]
+      operationId: useBackupSupplier
+      x-unserved: "4.14"
+      summary: Switch an item to its backup supplier ("Usar o fornecedor reserva").
+      description: |
+        Needs `order:manage` (owner, admin). Only a bought item still to be
+        bought, with a backup supplier in the order's snapshot
+        (`409 no_backup_supplier` otherwise). The item's supplier, lead
+        time and cost become the backup's and its expected date is
+        recomputed; the delivery date does not move.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The order with the item switched.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/payments:
+    post:
+      tags: [orders]
+      operationId: recordPayment
+      x-unserved: "4.14"
+      summary: Record a payment received by hand (Sinal or Saldo).
+      description: |
+        Needs `order:write`. Requires `Idempotency-Key`. No payment provider
+        is involved (ADR 0023). An amount above what is still due is
+        `400 payment_exceeds_due`. The payment that makes the deposit paid
+        sets the release date to today, and the dates count from it.
+
+        A retry with the same key and body answers `201` with the order as
+        it is now; the same key with another body is
+        `422 idempotency_key_reused`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentRequest"
+      responses:
+        "201":
+          description: The order with the payment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/OrderInvalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/payments/{paymentId}/void:
+    post:
+      tags: [orders]
+      operationId: voidPayment
+      x-unserved: "4.14"
+      summary: Void a wrong payment.
+      description: |
+        Needs `order:override` (owner). The payment stays in the history,
+        marked void with the reason, and no longer counts toward the deposit
+        or the balance. Voiding a deposit never undoes the release.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/PaymentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoidPaymentRequest"
+      responses:
+        "200":
+          description: The order with the payment void.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/delivery-date:
+    put:
+      tags: [orders]
+      operationId: changeDeliveryDate
+      x-unserved: "4.14"
+      summary: Change the date promised to the client.
+      description: |
+        Needs `order:manage` (owner, admin). Not before today in the store's
+        time zone (`400 invalid`). The change is recorded in the history
+        and `whatsappUrl` opens WhatsApp with a message for the client.
+        Nothing is sent automatically (docs/architecture.md section 4.2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeliveryDateRequest"
+      responses:
+        "200":
+          description: The order with its new date, and the message link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagedOrder"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/tracking-link:
+    post:
+      tags: [orders]
+      operationId: sendTrackingLink
+      x-unserved: "4.14"
+      summary: Issue a new tracking link and a WhatsApp message carrying it.
+      description: |
+        Needs `order:write`. Every call issues a new link and the previous
+        one stops working, because the server keeps only a hash of it (ADR
+        0030). The link opens the order's tracking page on the store page
+        (milestone 7). The message is recorded in the order's history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The new link and the message link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingLink"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelOrder
+      x-unserved: "4.14"
+      summary: Cancel the order.
+      description: |
+        Needs `order:manage` (owner, admin). Any time before it is handed
+        over (`409 order_closed` after). Payments stay as recorded; a refund
+        happens outside Encomendo.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelRequest"
+      responses:
+        "200":
+          description: The cancelled order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OrderConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/orders/{orderId}/history:
+    get:
+      tags: [orders]
+      operationId: orderHistory
+      x-unserved: "4.14"
+      summary: What happened to the order, newest first.
+      description: Needs `order:read`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/today:
+    get:
+      tags: [today]
+      operationId: getToday
+      x-unserved: "4.14"
+      summary: Hoje — counts, what needs the team and the next deliveries.
+      description: |
+        Needs `order:read`. Built from active orders, for today in the
+        store's time zone. `cost` and `margin` follow the cost rule.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Today's view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Today"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/finance/summary:
+    get:
+      tags: [finance]
+      operationId: getFinanceSummary
+      x-unserved: "4.14"
+      summary: Financeiro — money received, to receive and to refund, and margins.
+      description: |
+        Needs `finance:read` (owner). `from` and `to` are days in the
+        store's time zone, both included, at most 366 days apart.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PeriodFrom"
+        - $ref: "#/components/parameters/PeriodTo"
+      responses:
+        "200":
+          description: The summary for the period.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinanceSummary"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2009,6 +2914,99 @@ components:
       schema:
         type: boolean
         default: false
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    OrderItemId:
+      name: itemId
+      in: path
+      required: true
+      description: An item of the order (`Order.items[].id`), not a catalog item.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        One key per user action, kept for that action's retries (a UUID is
+        fine). Missing: `400 idempotency_key_required`. Kept 24 hours (ADR
+        0030).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[!-~]+$"
+    OrderStatusFilter:
+      name: status
+      in: query
+      description: Only orders in this status of their workflow.
+      schema:
+        $ref: "#/components/schemas/StatusKey"
+    PhaseFilter:
+      name: phase
+      in: query
+      description: Only orders in this phase.
+      schema:
+        $ref: "#/components/schemas/Phase"
+    OrderScope:
+      name: scope
+      in: query
+      description: "`active`: neither handed over nor cancelled."
+      schema:
+        type: string
+        enum: [active, handed_over, cancelled, all]
+        default: active
+    CustomerFilter:
+      name: customerId
+      in: query
+      description: Only this customer's orders.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    OrderSearch:
+      name: q
+      in: query
+      description: An order number (`231` or `P-0231`) or the start of the customer's name, ignoring case.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+    AlertFilter:
+      name: alert
+      in: query
+      description: Only active orders with an alert today ("Pode atrasar" or "Atrasada").
+      schema:
+        type: boolean
+        default: false
+    PeriodFrom:
+      name: from
+      in: query
+      required: true
+      description: First day of the period, in the store's time zone.
+      schema:
+        $ref: "#/components/schemas/CivilDate"
+    PeriodTo:
+      name: to
+      in: query
+      required: true
+      description: Last day of the period, included.
+      schema:
+        $ref: "#/components/schemas/CivilDate"
 
   responses:
     AuthSession:
@@ -2121,6 +3119,57 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
 
+    WorkflowNotFound:
+      description: "`workflow_not_found`: no preset has this id and version."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    CustomerConflict:
+      description: |
+        `phone_taken`: another customer of the store has this WhatsApp
+        number. `version_conflict`: someone saved first.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    OrderInvalid:
+      description: |
+        `invalid`: the input breaks a rule; `errors` lists the fields.
+        `approval_required`: the order was paid, so the change needs
+        `customerApproved: true`. `payment_exceeds_due`: the amount is above
+        what is still due. `idempotency_key_required`: the
+        `Idempotency-Key` header is missing.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    OrderConflict:
+      description: |
+        The order's state refuses the call:
+
+        - `version_conflict`: someone saved first; reload.
+        - `invalid_transition`: the status is not one of the order's `moves`.
+        - `guard_failed`: a phase the move enters is not ready; `guard` says
+          which (`deposit_unpaid`, `items_not_ready`, `balance_unpaid`).
+        - `order_not_editable`: the order is in assembling or later.
+        - `order_closed`: the order was handed over or cancelled.
+        - `invalid_item_move`: the item cannot go to that state.
+        - `no_backup_supplier`: the item has no backup supplier, or was
+          already bought.
+        - `item_unavailable`: an item or kit of the order is archived;
+          `references` names it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    IdempotencyKeyReused:
+      description: "`idempotency_key_reused`: this key was already used for a different request. Make a new key for a new action."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
   schemas:
     Status:
       type: object
@@ -2176,6 +3225,19 @@ components:
             - photo_limit
             - photo_invalid
             - photo_not_uploaded
+            - invalid_transition
+            - guard_failed
+            - order_not_editable
+            - order_closed
+            - approval_required
+            - payment_exceeds_due
+            - invalid_item_move
+            - no_backup_supplier
+            - item_unavailable
+            - phone_taken
+            - workflow_not_found
+            - idempotency_key_required
+            - idempotency_key_reused
         detail:
           type: string
         instance:
@@ -2186,9 +3248,16 @@ components:
             $ref: "#/components/schemas/FieldIssue"
         references:
           type: array
-          description: With `item_in_kit` and `item_archived`, the rows the refusal names (the kits, or the archived items).
+          description: |
+            With `item_in_kit` and `item_archived`, the rows the refusal
+            names (the kits, or the archived items). With
+            `item_unavailable`, the archived items or kits of the order.
           items:
             $ref: "#/components/schemas/Reference"
+        guard:
+          type: string
+          enum: [deposit_unpaid, items_not_ready, balance_unpaid]
+          description: With `guard_failed` only, the guard that did not hold.
     FieldIssue:
       type: object
       required: [field, message]
@@ -2249,9 +3318,12 @@ components:
       enum:
         - catalog:read
         - catalog:write
+        - customer:write
         - finance:read
         - inventory:adjust
         - members:manage
+        - order:manage
+        - order:override
         - order:read
         - order:write
         - portal:write
@@ -2498,6 +3570,13 @@ components:
           type: string
           description: pt-BR name of the preset.
           example: Encomenda com montagem
+        statuses:
+          type: array
+          description: |
+            The workflow's statuses in order, for the settings screen's
+            preview. Served from step 4.8, which makes it required.
+          items:
+            $ref: "#/components/schemas/OrderStatus"
     WhatsappPhone:
       type: [string, "null"]
       pattern: "^55[1-9]{2}[0-9]{8,9}$"
@@ -2543,6 +3622,8 @@ components:
           example: 2
         whatsappPhone:
           $ref: "#/components/schemas/WhatsappPhone"
+        timeZone:
+          $ref: "#/components/schemas/TimeZone"
     TenantSettings:
       allOf:
         - $ref: "#/components/schemas/EditableSettings"
@@ -3524,3 +4605,1280 @@ components:
             version:
               type: integer
               minimum: 1
+
+    CivilDate:
+      type: string
+      format: date
+      description: A calendar day, `YYYY-MM-DD`, with no time and no zone. Days count in the store's time zone (ADR 0030).
+      example: "2026-12-21"
+    TimeZone:
+      type: string
+      enum: [America/Noronha, America/Sao_Paulo, America/Manaus, America/Rio_Branco]
+      default: America/Sao_Paulo
+      description: |
+        The store's time zone, one per Brazilian offset (ADR 0030). It
+        decides which day "today" is for dates and alerts. Absent until step
+        4.8 serves it, which makes it required; absent means
+        America/Sao_Paulo.
+    Phase:
+      type: string
+      enum: [draft, awaiting_deposit, confirmed, sourcing, assembling, ready, handed_over, cancelled]
+      description: |
+        The fixed phase a status belongs to (ADR 0004). Rules hang on it,
+        and a status badge takes its color from it, never from the label.
+    StatusKey:
+      type: string
+      pattern: "^[a-z][a-z0-9_]{1,62}$"
+      description: A status of the order's own workflow. `cancelled` is the status every workflow ends in when an order is cancelled.
+      example: em_montagem
+    OrderStatus:
+      type: object
+      required: [key, label, clientLabel, phase]
+      description: A status of a workflow, with its names for staff and for clients.
+      properties:
+        key:
+          $ref: "#/components/schemas/StatusKey"
+        label:
+          type: string
+          description: What staff see.
+          example: Em montagem
+        clientLabel:
+          type: string
+          description: What the client sees on the tracking page.
+          example: Montando seu pedido
+        phase:
+          $ref: "#/components/schemas/Phase"
+    StatusWorkflow:
+      type: object
+      required: [id, version, key, name, statuses]
+      description: A status workflow preset at one version. Published versions never change.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        version:
+          type: integer
+          minimum: 1
+        key:
+          type: string
+          example: encomenda_montagem
+        name:
+          type: string
+          example: Encomenda com montagem
+        statuses:
+          type: array
+          minItems: 4
+          description: In order; `cancelled` is implicit and never listed.
+          items:
+            $ref: "#/components/schemas/OrderStatus"
+    StatusWorkflowList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusWorkflow"
+    ChooseWorkflowRequest:
+      type: object
+      additionalProperties: false
+      required: [workflowId, version, expectedVersion]
+      properties:
+        workflowId:
+          $ref: "#/components/schemas/Uuid"
+        version:
+          type: integer
+          minimum: 1
+          description: The preset's version.
+        expectedVersion:
+          type: integer
+          minimum: 1
+          description: The settings `version` you read.
+
+    CustomerPhone:
+      type: string
+      pattern: "^55[1-9]{2}[0-9]{8,9}$"
+      description: The customer's WhatsApp number, digits only, 55 + DDD + number. Unique in the store.
+      example: "5592991234567"
+    UF:
+      type: string
+      enum: [AC, AL, AP, AM, BA, CE, DF, ES, GO, MA, MT, MS, MG, PA, PB, PR, PE, PI, RJ, RN, RS, RO, RR, SC, SP, SE, TO]
+    Address:
+      type: object
+      required: [id, label, cep, street, number, complement, district, city, state]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        label:
+          type: string
+          example: Casa
+        cep:
+          type: string
+          pattern: "^[0-9]{8}$"
+          example: "69057000"
+        street:
+          type: string
+        number:
+          type: string
+        complement:
+          type: string
+        district:
+          type: string
+        city:
+          type: string
+        state:
+          $ref: "#/components/schemas/UF"
+    AddressInput:
+      type: object
+      additionalProperties: false
+      required: [label, cep, street, city, state]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+          description: Send it to keep an existing address; omit it for a new one.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 40
+        cep:
+          type: string
+          pattern: "^[0-9]{8}$"
+        street:
+          type: string
+          minLength: 1
+          maxLength: 200
+        number:
+          type: string
+          maxLength: 20
+        complement:
+          type: string
+          maxLength: 100
+        district:
+          type: string
+          maxLength: 100
+        city:
+          type: string
+          minLength: 1
+          maxLength: 100
+        state:
+          $ref: "#/components/schemas/UF"
+    Customer:
+      type: object
+      required: [id, name, phone, email, notes, addresses, version]
+      description: A customer of this store. Never shared with another store, even for the same person.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: João Pereira
+        phone:
+          $ref: "#/components/schemas/CustomerPhone"
+        email:
+          type: [string, "null"]
+          format: email
+        notes:
+          type: string
+        addresses:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
+        version:
+          type: integer
+          minimum: 1
+    CustomerInput:
+      type: object
+      description: Unknown fields are refused (`400 invalid`).
+      required: [name, phone, addresses]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          $ref: "#/components/schemas/CustomerPhone"
+        email:
+          oneOf:
+            - $ref: "#/components/schemas/Email"
+            - type: "null"
+        notes:
+          type: string
+          maxLength: 2000
+        addresses:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/AddressInput"
+    ReplaceCustomerRequest:
+      allOf:
+        - $ref: "#/components/schemas/CustomerInput"
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+              minimum: 1
+    CustomerSummary:
+      type: object
+      required: [id, name, phone, orders]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        phone:
+          $ref: "#/components/schemas/CustomerPhone"
+        orders:
+          type: integer
+          minimum: 0
+          description: Orders of this customer in the store, cancelled ones included.
+        lastOrderAt:
+          type: string
+          format: date-time
+          description: Absent when the customer has no order.
+    CustomerPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerSummary"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    NewCustomer:
+      type: object
+      additionalProperties: false
+      required: [name, phone]
+      description: A customer made inside "Novo pedido". An existing customer with this number is used instead, unchanged.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        phone:
+          $ref: "#/components/schemas/CustomerPhone"
+
+    Handover:
+      type: string
+      enum: [delivery, pickup]
+      description: Entrega / Retirada.
+    ItemStatus:
+      type: string
+      enum: [to_buy, sent_to_supplier, in_transit, received, planned, in_production, ready, installed]
+      description: |
+        An order item's state, by sourcing mode (ADR 0030):
+        `to_order` and `stock` go `to_buy → sent_to_supplier → in_transit →
+        received → installed`; `in_house` goes `planned → in_production →
+        ready → installed`.
+    Check:
+      type: string
+      enum: [ok, defective]
+      description: Tudo certo / Com defeito, recorded when an item is received or made.
+    AlertKind:
+      type: string
+      enum: [at_risk, late]
+      description: |
+        `at_risk` ("Pode atrasar"): the item is expected after the date it
+        must arrive by. `late` ("Atrasada"): its expected date passed and it
+        has not arrived. Alerts sit on top of the status; staff only.
+    Alert:
+      type: object
+      required: [kind, itemId]
+      properties:
+        kind:
+          $ref: "#/components/schemas/AlertKind"
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+          description: The order item the alert is about.
+    PaymentKind:
+      type: string
+      enum: [deposit, balance]
+      description: Sinal / Saldo.
+    PaymentMethod:
+      type: string
+      enum: [pix, dinheiro, cartao_credito, cartao_debito, transferencia, outro]
+      description: How the store received the money. Recorded by hand; no payment provider (ADR 0023).
+    Actor:
+      type: object
+      required: [id, name]
+      description: The staff member who did something.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+
+    OptionChoice:
+      type: object
+      additionalProperties: false
+      required: [itemId, optionId, choiceId]
+      description: The client's choice for one of a catalog item's options.
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+          description: The catalog item the option belongs to (the loose item, or an item of the kit).
+        optionId:
+          $ref: "#/components/schemas/Uuid"
+        choiceId:
+          $ref: "#/components/schemas/Uuid"
+    Swap:
+      type: object
+      additionalProperties: false
+      required: [itemId, withItemId]
+      description: Replace a swappable kit item with one of its alternatives ("trocar item").
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        withItemId:
+          $ref: "#/components/schemas/Uuid"
+    LineRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        One line of the order: a kit (`kitId`, with its swaps and the
+        options of its items) or a loose item (`itemId` and `quantity`).
+        Exactly one of `kitId` and `itemId`. A required option with no
+        choice, a choice of another option, an archived item or kit, and
+        every kit swap rule are refused.
+      properties:
+        kitId:
+          $ref: "#/components/schemas/Uuid"
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 99
+          description: Loose items only; a kit line is one kit.
+        swaps:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/Swap"
+        options:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/OptionChoice"
+    TermsInput:
+      type: object
+      additionalProperties: false
+      required: [handover]
+      description: |
+        How the order is handed over and paid. A field left out takes the
+        default: the store's deposit percent, the kit's or the store's
+        assembly and safety margin days, no freight, no discount. A
+        discount, deposit percent or days other than the default need
+        `order:manage`.
+      properties:
+        handover:
+          $ref: "#/components/schemas/Handover"
+        addressId:
+          $ref: "#/components/schemas/Uuid"
+          description: One of the customer's addresses; required for delivery.
+        freightCents:
+          $ref: "#/components/schemas/Cents"
+          description: Frete; delivery only.
+        discountCents:
+          $ref: "#/components/schemas/Cents"
+          description: Desconto; never above the lines' total.
+        depositPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Sinal for this order.
+        assemblyDays:
+          type: integer
+          minimum: 0
+          maximum: 60
+        safetyMarginDays:
+          type: integer
+          minimum: 0
+          maximum: 60
+    QuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [lines, terms]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/LineRequest"
+        terms:
+          $ref: "#/components/schemas/TermsInput"
+        orderId:
+          $ref: "#/components/schemas/Uuid"
+          description: Quote a change to this order.
+    ChosenOption:
+      type: object
+      required: [optionId, choiceId, name, label, extraPrice, extraDays]
+      description: An option choice as it was when the order was made.
+      properties:
+        optionId:
+          $ref: "#/components/schemas/Uuid"
+        choiceId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+          example: Cor da costura
+        label:
+          type: string
+          example: Vermelha
+        extraPrice:
+          $ref: "#/components/schemas/Money"
+        extraDays:
+          $ref: "#/components/schemas/Days"
+    QuoteItem:
+      type: object
+      required: [catalogItemId, name, sourcingMode, quantity, unitPrice, options, expectedDate]
+      properties:
+        catalogItemId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        sourcingMode:
+          $ref: "#/components/schemas/SourcingMode"
+        quantity:
+          type: integer
+          minimum: 1
+        unitPrice:
+          $ref: "#/components/schemas/Money"
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChosenOption"
+        expectedDate:
+          $ref: "#/components/schemas/CivilDate"
+    QuoteLine:
+      type: object
+      required: [kit, price, items]
+      properties:
+        kit:
+          oneOf:
+            - $ref: "#/components/schemas/KitRef"
+            - type: "null"
+        price:
+          $ref: "#/components/schemas/Money"
+          description: The line's price, options included.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuoteItem"
+    Quote:
+      type: object
+      required: [lines, subtotal, freight, discount, total, depositPercent, depositDue, assemblyDays, safetyMarginDays, deliveryDate, arrivalLimit]
+      description: Prices, deposit and dates, all computed by the server.
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuoteLine"
+        subtotal:
+          $ref: "#/components/schemas/Money"
+        freight:
+          $ref: "#/components/schemas/Money"
+        discount:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        depositPercent:
+          type: integer
+        depositDue:
+          $ref: "#/components/schemas/Money"
+        assemblyDays:
+          type: integer
+          description: The days counted in the deadline; 0 when the workflow has no assembling.
+        safetyMarginDays:
+          type: integer
+        deliveryDate:
+          $ref: "#/components/schemas/CivilDate"
+        arrivalLimit:
+          $ref: "#/components/schemas/CivilDate"
+          description: Precisa chegar até.
+    CreateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [lines, terms]
+      description: Exactly one of `customerId` and `newCustomer`.
+      properties:
+        customerId:
+          $ref: "#/components/schemas/Uuid"
+        newCustomer:
+          $ref: "#/components/schemas/NewCustomer"
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/LineRequest"
+        terms:
+          $ref: "#/components/schemas/TermsInput"
+        sendToCustomer:
+          type: boolean
+          default: false
+          description: '"Salvar e enviar ao cliente": move to the status after the first and answer a `whatsappUrl`.'
+    CreatedOrder:
+      type: object
+      required: [order]
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        trackingUrl:
+          type: string
+          format: uri
+          description: The tracking link, in this answer only. Absent on a replay.
+        whatsappUrl:
+          type: string
+          format: uri
+          description: With `sendToCustomer`, the wa.me link with the summary for the customer.
+    ChangeOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [lines, terms, customerApproved, version]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/LineRequest"
+        terms:
+          $ref: "#/components/schemas/TermsInput"
+        customerApproved:
+          type: boolean
+          description: The seller confirms the customer agreed. Needed once the order was paid; recorded with who confirmed it.
+        version:
+          type: integer
+          minimum: 1
+    OrderChange:
+      type: object
+      required: [paid, oldTotal, newTotal, oldDeliveryDate, newDeliveryDate, refundDue]
+      properties:
+        paid:
+          type: boolean
+          description: The order had a payment, was released or was past awaiting deposit.
+        oldTotal:
+          $ref: "#/components/schemas/Money"
+        newTotal:
+          $ref: "#/components/schemas/Money"
+        oldDeliveryDate:
+          $ref: "#/components/schemas/CivilDate"
+        newDeliveryDate:
+          $ref: "#/components/schemas/CivilDate"
+        refundDue:
+          $ref: "#/components/schemas/Money"
+    ChangedOrder:
+      type: object
+      required: [order, change]
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        change:
+          $ref: "#/components/schemas/OrderChange"
+        whatsappUrl:
+          type: string
+          format: uri
+          description: Present when the order was paid; the wa.me link with the change summary for the customer.
+    AdvanceRequest:
+      type: object
+      additionalProperties: false
+      required: [to, version]
+      properties:
+        to:
+          $ref: "#/components/schemas/StatusKey"
+        handover:
+          $ref: "#/components/schemas/Handover"
+          description: Required to enter handed over.
+        version:
+          type: integer
+          minimum: 1
+    MoveItemRequest:
+      type: object
+      additionalProperties: false
+      required: [to, version]
+      properties:
+        to:
+          $ref: "#/components/schemas/ItemStatus"
+        check:
+          $ref: "#/components/schemas/Check"
+          description: Required for `received` and `ready`.
+        version:
+          type: integer
+          minimum: 1
+    PaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, amountCents, method, version]
+      properties:
+        kind:
+          $ref: "#/components/schemas/PaymentKind"
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100000000000
+        method:
+          $ref: "#/components/schemas/PaymentMethod"
+        version:
+          type: integer
+          minimum: 1
+    VoidPaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, version]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        version:
+          type: integer
+          minimum: 1
+    DeliveryDateRequest:
+      type: object
+      additionalProperties: false
+      required: [date, version]
+      properties:
+        date:
+          $ref: "#/components/schemas/CivilDate"
+        reason:
+          type: string
+          maxLength: 500
+          description: Optional; goes into the history and the message to the client.
+        version:
+          type: integer
+          minimum: 1
+    CancelRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, version]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        version:
+          type: integer
+          minimum: 1
+    MessagedOrder:
+      type: object
+      required: [order, whatsappUrl]
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        whatsappUrl:
+          type: string
+          format: uri
+          description: The wa.me link with the message for the client. Nothing was sent.
+    TrackingLink:
+      type: object
+      required: [trackingUrl, whatsappUrl]
+      properties:
+        trackingUrl:
+          type: string
+          format: uri
+          description: The new tracking link; the previous one no longer works.
+        whatsappUrl:
+          type: string
+          format: uri
+
+    KitRef:
+      type: object
+      required: [id, name, swaps]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        swaps:
+          type: array
+          items:
+            type: object
+            required: [removedItemId, removedName, addedItemId, addedName]
+            properties:
+              removedItemId:
+                $ref: "#/components/schemas/Uuid"
+              removedName:
+                type: string
+              addedItemId:
+                $ref: "#/components/schemas/Uuid"
+              addedName:
+                type: string
+    OrderLine:
+      type: object
+      required: [id, kit, price, itemIds]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        kit:
+          description: Null for a loose item.
+          oneOf:
+            - $ref: "#/components/schemas/KitRef"
+            - type: "null"
+        price:
+          $ref: "#/components/schemas/Money"
+        itemIds:
+          type: array
+          description: The order items of this line, in `Order.items`.
+          items:
+            $ref: "#/components/schemas/Uuid"
+    ItemSupplier:
+      type: object
+      required: [name, leadDays]
+      description: Staff data; never in a client view.
+      properties:
+        name:
+          type: string
+        leadDays:
+          $ref: "#/components/schemas/Days"
+    OrderItem:
+      type: object
+      required: [id, lineId, catalogItemId, name, sourcingMode, quantity, unitPrice, options, status, check, expectedDate, arrivedOn, arrived, alerts, nextMoves]
+      description: One item of the order, as snapshotted when it was added; later catalog edits never change it.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+        catalogItemId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        sourcingMode:
+          $ref: "#/components/schemas/SourcingMode"
+        quantity:
+          type: integer
+          minimum: 1
+        unitPrice:
+          $ref: "#/components/schemas/Money"
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChosenOption"
+        status:
+          $ref: "#/components/schemas/ItemStatus"
+        check:
+          oneOf:
+            - $ref: "#/components/schemas/Check"
+            - type: "null"
+        expectedDate:
+          $ref: "#/components/schemas/CivilDate"
+        arrivedOn:
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+        arrived:
+          type: boolean
+          description: Received and checked ok, made and checked ok, or installed.
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertKind"
+        nextMoves:
+          type: array
+          description: What `POST …/move` accepts now.
+          items:
+            $ref: "#/components/schemas/ItemStatus"
+        supplier:
+          $ref: "#/components/schemas/ItemSupplier"
+          description: Bought items only.
+        backupSupplier:
+          $ref: "#/components/schemas/ItemSupplier"
+          description: Present while "Usar o fornecedor reserva" is possible.
+        cost:
+          description: Owner only; absent for every other role. Per unit, at order time; null when unknown.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+    Payment:
+      type: object
+      required: [id, kind, amount, method, recordedBy, recordedAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        kind:
+          $ref: "#/components/schemas/PaymentKind"
+        amount:
+          $ref: "#/components/schemas/Money"
+        method:
+          $ref: "#/components/schemas/PaymentMethod"
+        recordedBy:
+          $ref: "#/components/schemas/Actor"
+        recordedAt:
+          type: string
+          format: date-time
+        voided:
+          type: object
+          required: [by, at, reason]
+          description: Present when the owner voided it.
+          properties:
+            by:
+              $ref: "#/components/schemas/Actor"
+            at:
+              type: string
+              format: date-time
+            reason:
+              type: string
+    Editability:
+      type: string
+      enum: [free, approval, closed]
+      description: |
+        `free`: a change needs `order:write`. `approval`: the order was paid,
+        so a change needs `order:manage` and the customer's approval.
+        `closed`: assembling or later; no change.
+    Order:
+      type: object
+      required:
+        - id
+        - number
+        - customer
+        - status
+        - workflow
+        - moves
+        - lines
+        - items
+        - handover
+        - address
+        - subtotal
+        - freight
+        - discount
+        - total
+        - depositPercent
+        - depositDue
+        - depositPaid
+        - paid
+        - balanceDue
+        - refundDue
+        - released
+        - payments
+        - releaseDate
+        - deliveryDate
+        - deliveryDateSetByOwner
+        - arrivalLimit
+        - assemblyDays
+        - safetyMarginDays
+        - editable
+        - createdAt
+        - version
+      description: An order as staff see it. The client's view is `TrackingOrder`, a separate shape.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          type: string
+          pattern: "^P-[0-9]{4,}$"
+          example: P-0231
+        customer:
+          type: object
+          required: [id, name, phone]
+          properties:
+            id:
+              $ref: "#/components/schemas/Uuid"
+            name:
+              type: string
+            phone:
+              $ref: "#/components/schemas/CustomerPhone"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        workflow:
+          $ref: "#/components/schemas/StatusWorkflow"
+          description: The workflow at the version the order was made with.
+        moves:
+          type: array
+          description: The statuses `POST …/advance` accepts now (guards not checked).
+          items:
+            $ref: "#/components/schemas/OrderStatus"
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLine"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        handover:
+          $ref: "#/components/schemas/Handover"
+        address:
+          description: The delivery address as it was when chosen; null for pickup.
+          oneOf:
+            - $ref: "#/components/schemas/Address"
+            - type: "null"
+        subtotal:
+          $ref: "#/components/schemas/Money"
+        freight:
+          $ref: "#/components/schemas/Money"
+        discount:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+          description: subtotal + freight − discount.
+        depositPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        depositDue:
+          $ref: "#/components/schemas/Money"
+        depositPaid:
+          type: boolean
+        paid:
+          $ref: "#/components/schemas/Money"
+          description: Every payment not void.
+        balanceDue:
+          $ref: "#/components/schemas/Money"
+        refundDue:
+          $ref: "#/components/schemas/Money"
+          description: Valor a devolver; zero unless a change brought the total below what was paid.
+        released:
+          type: boolean
+          description: The owner released the order without the deposit.
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payment"
+        releaseDate:
+          description: The day the deposit was paid or the order released; dates count from it. Null before.
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+        deliveryDate:
+          $ref: "#/components/schemas/CivilDate"
+          description: The date promised to the client.
+        deliveryDateSetByOwner:
+          type: boolean
+          description: The date was changed by hand, so the deposit no longer resets it.
+        arrivalLimit:
+          $ref: "#/components/schemas/CivilDate"
+          description: Precisa chegar até = delivery date − assembly days.
+        assemblyDays:
+          type: integer
+          minimum: 0
+        safetyMarginDays:
+          type: integer
+          minimum: 0
+        editable:
+          $ref: "#/components/schemas/Editability"
+        cancelReason:
+          type: string
+          description: Present when cancelled.
+        createdAt:
+          type: string
+          format: date-time
+        cost:
+          description: Owner only; absent for every other role. Null when an item's cost is unknown.
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        margin:
+          description: Owner only, over the total; absent for every other role. Null without a full cost.
+          oneOf:
+            - $ref: "#/components/schemas/Margin"
+            - type: "null"
+        version:
+          type: integer
+          minimum: 1
+    OrderSummary:
+      type: object
+      required: [id, number, customer, status, itemsReady, itemsTotal, deliveryDate, total, balanceDue, alerts]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          type: string
+          example: P-0231
+        customer:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              $ref: "#/components/schemas/Uuid"
+            name:
+              type: string
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        itemsReady:
+          type: integer
+          minimum: 0
+          description: Items that arrived.
+        itemsTotal:
+          type: integer
+          minimum: 1
+        deliveryDate:
+          $ref: "#/components/schemas/CivilDate"
+        total:
+          $ref: "#/components/schemas/Money"
+        balanceDue:
+          $ref: "#/components/schemas/Money"
+        alerts:
+          type: array
+          description: Today's alerts; empty for orders handed over or cancelled.
+          items:
+            $ref: "#/components/schemas/Alert"
+    OrderPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderSummary"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    HistoryKind:
+      type: string
+      enum: [created, status, item, payment, payment_voided, released, date, changed, tracking_link, cancelled]
+    HistoryEntry:
+      type: object
+      required: [kind, at]
+      description: One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them.
+      properties:
+        kind:
+          $ref: "#/components/schemas/HistoryKind"
+        at:
+          type: string
+          format: date-time
+        by:
+          oneOf:
+            - $ref: "#/components/schemas/Actor"
+            - type: "null"
+          description: Null for an order placed on the store page (milestone 7).
+        from:
+          $ref: "#/components/schemas/OrderStatus"
+        to:
+          $ref: "#/components/schemas/OrderStatus"
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        itemName:
+          type: string
+        itemFrom:
+          $ref: "#/components/schemas/ItemStatus"
+        itemTo:
+          $ref: "#/components/schemas/ItemStatus"
+        check:
+          $ref: "#/components/schemas/Check"
+        paymentId:
+          $ref: "#/components/schemas/Uuid"
+        amount:
+          $ref: "#/components/schemas/Money"
+        oldDate:
+          $ref: "#/components/schemas/CivilDate"
+        newDate:
+          $ref: "#/components/schemas/CivilDate"
+        reason:
+          type: string
+        customerApproved:
+          type: boolean
+    HistoryPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryEntry"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+
+    NeedKind:
+      type: string
+      enum: [late, at_risk, awaiting_deposit, ready_not_handed_over, refund_due]
+      description: |
+        Why an order is in "Precisa de você", in this order: an item late, an
+        item at risk, awaiting the deposit for more than 3 days, ready and
+        not handed over for more than 2 days, money to give back.
+    Need:
+      type: object
+      required: [kind, order]
+      properties:
+        kind:
+          $ref: "#/components/schemas/NeedKind"
+        order:
+          $ref: "#/components/schemas/OrderSummary"
+        itemName:
+          type: string
+          description: With `late` and `at_risk`, the item.
+        days:
+          type: integer
+          description: Days late, days waiting, or days ready, by kind.
+        amount:
+          $ref: "#/components/schemas/Money"
+          description: With `refund_due`, the amount to give back.
+    Today:
+      type: object
+      required: [today, counts, needsYou, upcoming]
+      properties:
+        today:
+          $ref: "#/components/schemas/CivilDate"
+        counts:
+          type: object
+          required: [active, awaitingDeposit, withAlert, dueIn7Days]
+          properties:
+            active:
+              type: integer
+              minimum: 0
+            awaitingDeposit:
+              type: integer
+              minimum: 0
+            withAlert:
+              type: integer
+              minimum: 0
+            dueIn7Days:
+              type: integer
+              minimum: 0
+        needsYou:
+          type: array
+          items:
+            $ref: "#/components/schemas/Need"
+        upcoming:
+          type: array
+          maxItems: 20
+          description: Active orders by delivery date.
+          items:
+            $ref: "#/components/schemas/OrderSummary"
+    MoneyByKey:
+      type: object
+      required: [key, total]
+      properties:
+        key:
+          type: string
+          description: A `PaymentKind` or a `PaymentMethod`.
+        total:
+          $ref: "#/components/schemas/Money"
+    FinanceSummary:
+      type: object
+      required: [from, to, received, toReceive, toRefund, margins]
+      description: Owner only.
+      properties:
+        from:
+          $ref: "#/components/schemas/CivilDate"
+        to:
+          $ref: "#/components/schemas/CivilDate"
+        received:
+          type: object
+          required: [total, byKind, byMethod]
+          description: Payments recorded in the period, voids excluded.
+          properties:
+            total:
+              $ref: "#/components/schemas/Money"
+            byKind:
+              type: array
+              items:
+                $ref: "#/components/schemas/MoneyByKey"
+            byMethod:
+              type: array
+              items:
+                $ref: "#/components/schemas/MoneyByKey"
+        toReceive:
+          type: object
+          required: [total, orders]
+          description: Balances still due on active orders, whatever the period.
+          properties:
+            total:
+              $ref: "#/components/schemas/Money"
+            orders:
+              type: integer
+              minimum: 0
+        toRefund:
+          type: array
+          description: Orders with "Valor a devolver".
+          items:
+            type: object
+            required: [order, amount]
+            properties:
+              order:
+                $ref: "#/components/schemas/OrderSummary"
+              amount:
+                $ref: "#/components/schemas/Money"
+        margins:
+          type: array
+          description: Orders handed over in the period, with their margin where every cost was known.
+          items:
+            type: object
+            required: [orderId, number, customerName, handedOverOn, total, cost, margin]
+            properties:
+              orderId:
+                $ref: "#/components/schemas/Uuid"
+              number:
+                type: string
+              customerName:
+                type: string
+              handedOverOn:
+                $ref: "#/components/schemas/CivilDate"
+              total:
+                $ref: "#/components/schemas/Money"
+              cost:
+                oneOf:
+                  - $ref: "#/components/schemas/Money"
+                  - type: "null"
+              margin:
+                oneOf:
+                  - $ref: "#/components/schemas/Margin"
+                  - type: "null"
+
+    TrackingOrder:
+      type: object
+      x-served-from: M7
+      additionalProperties: false
+      required: [store, number, steps, cancelled, forecast, items, total, paid, balanceDue, handover]
+      description: |
+        What the client sees on the tracking page (milestone 7 serves it; it
+        is defined now so the client-visibility test checks the view type
+        against it). It never carries a supplier, a cost, a margin, an
+        alert, a staff name or the history (docs/architecture.md section
+        2, rule 8), and no property may be added that could.
+      properties:
+        store:
+          type: string
+          description: The store's name.
+        number:
+          type: string
+          example: P-0231
+        steps:
+          type: array
+          description: The order's workflow statuses by their client labels, in order. A cancelled order shows one step.
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, current]
+            properties:
+              label:
+                type: string
+              current:
+                type: boolean
+        cancelled:
+          type: boolean
+        forecast:
+          $ref: "#/components/schemas/CivilDate"
+          description: The date promised to the client.
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, quantity, options, arrived]
+            properties:
+              name:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+              options:
+                type: array
+                description: "The chosen options in words, such as `Cor da costura: Vermelha`."
+                items:
+                  type: string
+              arrived:
+                type: boolean
+                description: '"Pronto" when true, "A caminho" otherwise.'
+        total:
+          $ref: "#/components/schemas/Money"
+        paid:
+          $ref: "#/components/schemas/Money"
+        balanceDue:
+          $ref: "#/components/schemas/Money"
+        handover:
+          $ref: "#/components/schemas/Handover"

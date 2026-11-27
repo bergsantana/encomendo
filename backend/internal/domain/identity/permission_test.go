@@ -12,6 +12,9 @@ import (
 var wantGrants = map[Permission][]shared.Role{
 	PermOrderRead:       {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer},
 	PermOrderWrite:      {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff},
+	PermOrderManage:     {shared.RoleOwner, shared.RoleAdmin},
+	PermOrderOverride:   {shared.RoleOwner},
+	PermCustomerWrite:   {shared.RoleOwner, shared.RoleAdmin},
 	PermPurchaseWrite:   {shared.RoleOwner, shared.RoleAdmin},
 	PermReceivingWrite:  {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff},
 	PermCatalogRead:     {shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer},

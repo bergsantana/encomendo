@@ -15,8 +15,21 @@ type Permission string
 // Permissions. Each bounded context adds its own when it lands, with a row in
 // the role table test.
 const (
-	PermOrderRead      Permission = "order:read"
-	PermOrderWrite     Permission = "order:write"
+	PermOrderRead Permission = "order:read"
+	// PermOrderWrite runs an order day to day: create it, change it before
+	// any payment, advance it, move its items, record payments and send the
+	// tracking link (ADR 0030).
+	PermOrderWrite Permission = "order:write"
+	// PermOrderManage covers what changes the deal with the client: cancel,
+	// change the promised date, change an order after a payment, and set a
+	// discount, a deposit percent or days other than the store's (ADR 0030).
+	PermOrderManage Permission = "order:manage"
+	// PermOrderOverride is the owner's: release an order without the deposit
+	// and void a wrong payment (ADR 0030; docs/architecture.md section 4.2).
+	PermOrderOverride Permission = "order:override"
+	// PermCustomerWrite edits customers on the customer screen. Creating
+	// one inside a new order needs only PermOrderWrite (ADR 0030).
+	PermCustomerWrite  Permission = "customer:write"
 	PermPurchaseWrite  Permission = "purchase:write"
 	PermReceivingWrite Permission = "receiving:write"
 	// PermCatalogRead lets every role read the catalog and the store's
@@ -48,14 +61,15 @@ func grantsOf(role shared.Role) []Permission {
 	switch role {
 	case shared.RoleOwner:
 		return []Permission{
-			PermCatalogRead, PermCatalogWrite, PermFinanceRead, PermInventoryAdjust, PermMembersManage,
-			PermOrderRead, PermOrderWrite, PermPortalWrite, PermProductionWrite,
-			PermPurchaseWrite, PermReceivingWrite, PermSettingsRead, PermSettingsWrite,
+			PermCatalogRead, PermCatalogWrite, PermCustomerWrite, PermFinanceRead, PermInventoryAdjust,
+			PermMembersManage, PermOrderManage, PermOrderOverride, PermOrderRead, PermOrderWrite,
+			PermPortalWrite, PermProductionWrite, PermPurchaseWrite, PermReceivingWrite,
+			PermSettingsRead, PermSettingsWrite,
 		}
 	case shared.RoleAdmin:
 		return []Permission{
-			PermCatalogRead, PermCatalogWrite, PermInventoryAdjust, PermMembersManage,
-			PermOrderRead, PermOrderWrite, PermPortalWrite, PermProductionWrite,
+			PermCatalogRead, PermCatalogWrite, PermCustomerWrite, PermInventoryAdjust, PermMembersManage,
+			PermOrderManage, PermOrderRead, PermOrderWrite, PermPortalWrite, PermProductionWrite,
 			PermPurchaseWrite, PermReceivingWrite, PermSettingsRead,
 		}
 	case shared.RoleStaff:
