@@ -424,6 +424,126 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - "Quantidade" and "Cliente pode trocar" sit on each item's card; "Pode trocar por" is a list of boxes, with the headings "Sugestões da categoria {categoria}" and "Outros itens" as on the web. The two ways to swap are a choice of two ("Manter o desconto do kit", "Cobrar a soma dos itens avulsos"), each with its hint.
 - "Salvar" shows "Kit salvo." at the top and stays on the kit; system Back is "Cancelar".
 
+## Milestone 4 screens
+
+Drafted by Claude on 2026-11-27 for milestone 4, for the user to review in the plan's PR (ADR 0030). Web and the Android shell use the same text. The messages in "Account and store screens" (no connection, server failure, rate limit, another refusal) apply here too. `{Montagem}` is the template's niche word, "Montagem" until templates exist. Status names come from the order's workflow and are never written here. Dates are "dd/mm/aaaa"; a weekday is added where it helps ("sex., 12/12/2026").
+
+### Menu
+
+Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configurações. "Clientes" needs `order:read`, "Financeiro" `finance:read` (Dono only), "Configurações" `settings:write` (Dono only).
+
+### Configurações
+
+- Title "Configurações". Sections "Lista de status", "Prazos e sinal", "Compras", "Estoque e Produção", "WhatsApp da loja", "Fuso horário".
+- **Lista de status:** hint "Os status que você e seus clientes veem em cada pedido. Vale para os pedidos novos; os pedidos que já existem continuam com a lista em que foram criados."
+  - One choice per preset, with its name (such as "Encomenda com montagem") and its steps in order. Each step shows the staff name with its status badge and, under it, "O cliente vê: {client label}".
+  - The current one is marked "Em uso". Button "Usar esta lista". After it: "Lista de status alterada. Os próximos pedidos usam {nome}."
+- **Prazos e sinal:** "Sinal (%)", hint "Quanto o cliente paga para confirmar o pedido."; "Dias de {Montagem}"; "Margem de segurança (dias)", hint "Folga somada ao prazo para não prometer em cima da hora."
+- **Compras:** box "Liberar compras antes do sinal", hint "Desligado: nada é comprado antes de o cliente pagar o sinal."
+- **Estoque e Produção:** boxes "Usar Estoque" and "Usar Produção própria", hint "Desligados, os menus e as origens ficam escondidos."
+- **WhatsApp da loja:** field with the hint "Com DDD, como (92) 99123-4567."
+- **Fuso horário:** a choice of "Horário de Brasília", "Horário do Amazonas (Manaus)", "Horário do Acre (Rio Branco)", "Horário de Fernando de Noronha"; hint "Decide quando um dia começa para os prazos e alertas."
+- Button "Salvar". After it: "Configurações salvas." Errors: "Use um sinal de 0 a 100%.", "Use de 0 a 365 dias.", "Confira o número: use DDD e 8 ou 9 dígitos.", and, when someone saved first, "Outra pessoa alterou as configurações. Recarregue para ver a versão atual."
+
+### Clientes
+
+- Table "Nome", "WhatsApp", "Pedidos", "Último pedido". Search "Buscar por nome ou WhatsApp". Button "Novo cliente" (only with `customer:write`). While loading: "Carregando os clientes…". Empty: "Nenhum cliente ainda." A search with no results: "Nenhum cliente encontrado." "Carregar mais".
+- On the phone each row is a card with the same lines; tapping opens the customer.
+- **Customer form** (drawer; full screen on the phone), title "Novo cliente" or "Cliente":
+  - "Nome", "WhatsApp" (hint "Com DDD, como (92) 99123-4567."), "E-mail" (optional), "Observações".
+  - "Endereços": "Adicionar endereço"; each has "Nome do endereço" (such as "Casa"), "CEP", "Rua", "Número", "Complemento", "Bairro", "Cidade", "UF", and "Remover endereço".
+  - "Pedidos deste cliente": the orders, newest first, with number, status and "Entrega prevista".
+  - Buttons "Salvar", "Cancelar". Read-only roles: title "Cliente", the details in labelled lines, and "Fechar".
+- Errors: "Informe o nome do cliente.", "Informe o WhatsApp do cliente.", "Confira o número: use DDD e 8 ou 9 dígitos.", "Já existe um cliente com este WhatsApp.", "Confira o e-mail.", "Confira o CEP: use 8 dígitos.", "Escolha a UF.", "Use até 10 endereços.", "Use um nome de até 120 caracteres.", "Use observações de até 2000 caracteres.", "Outra pessoa alterou este cliente. Recarregue para ver a versão atual."
+- After saving: "Cliente salvo."
+
+### Pedidos
+
+- Title "Pedidos". Tabs: "Ativos", then one per status of the store's current list, then "Entregues" and "Cancelados". Search "Buscar por número ou cliente". Filter "Só com alerta". Button "Novo pedido".
+- Table "Pedido", "Cliente", "Status", "Itens prontos", "Entrega prevista", "Total". "Pedido" shows the number in mono (P-0231). "Itens prontos" is "{a} de {b}". An alert sits on top of the status: "Pode atrasar" or "Atrasada", with its icon.
+- While loading: "Carregando os pedidos…". Empty: "Nenhum pedido ainda." with "Novo pedido". No results: "Nenhum pedido encontrado." "Carregar mais".
+- On the phone each order is a card: number and status, then "Cliente", "Itens prontos", "Entrega prevista", "Total".
+
+### Novo pedido and Alterar pedido
+
+- Title "Novo pedido" or "Alterar pedido P-0231".
+- **Cliente:** "Buscar cliente" (name or WhatsApp), or "Novo cliente" with "Nome" and "WhatsApp". "Informe o cliente do pedido."
+- **Itens:** "Adicionar kit" and "Adicionar item".
+  - A kit shows its items; a swappable one has "Trocar" with the kit's alternatives. A swap shows "{item} no lugar de {item}".
+  - Each item or kit has "Quantidade", its client options ("Escolha uma opção" for a required one: "Escolha {opção}."), and "Remover".
+  - "Adicione ao menos um item ou kit." "{item} está arquivado e não pode entrar no pedido."
+- **Entrega:** a choice of "Retirada na loja" and "Entrega". "Entrega" shows "Endereço" (the customer's, or "Novo endereço") and "Frete". "Escolha o endereço de entrega."
+- **Valores** (Dono and Admin only change these): "Desconto", "Sinal (%)" with the hint "Padrão da loja: {n}%", "Dias de {Montagem}" and "Margem de segurança (dias)", each "Padrão da loja: {n} dias".
+  - "O desconto não pode passar do valor dos itens."
+- **Resumo**, always from the API ("Calculando…" while it waits): "Itens: {valor}", "Frete: {valor}", "Desconto: −{valor}", "Total: {valor}", "Sinal ({n}%): {valor}", "Entrega prevista: {data}" ("{n} dias depois do sinal"), and for the Dono "Custo: {valor}" and "Margem: {valor} ({n}%)".
+- Buttons: "Salvar rascunho", "Salvar e enviar ao cliente" (moves the order to the next status and opens WhatsApp with the tracking link), "Cancelar". When changing: "Salvar alterações".
+- **Changing a paid order** (Dono and Admin, before {Montagem}):
+  - a notice "Este pedido já tem pagamento. Combine a mudança com o cliente antes de salvar.";
+  - box "O cliente aprovou a mudança", required: "Confirme que o cliente aprovou a mudança.";
+  - before saving, what changes: "Total: {antes} → {depois}", "Entrega prevista: {antes} → {depois}", and "Valor a devolver: {valor}" when it applies;
+  - after saving: "Pedido alterado." and the button "Avisar o cliente pelo WhatsApp".
+  - Past {Montagem}: "Este pedido já está em {Montagem} e não pode mais ser alterado."
+- After creating: "Pedido P-0231 criado." with "Link de acompanhamento: {link}" and "Enviar pelo WhatsApp". Leaving with edits: "Descartar as alterações?" as in Catálogo.
+
+### Pedido (the order screen)
+
+- **Header:** "Pedido P-0231", the status badge, the customer's name with "Abrir conversa no WhatsApp", "Criado em {data}".
+- **Entrega:** "Entrega prevista: {data}", "Precisa chegar até: {data}", "{Retirada na loja | Entrega em {endereço}}". Button "Alterar data" (Dono, Admin).
+- **Delay banner,** when an item has an alert: "{n} item pode atrasar a entrega" / "{n} itens podem atrasar a entrega" or "{n} item atrasado" / "{n} itens atrasados", then per item "{item}: previsto para {data}, precisa chegar até {data}." Ways to fix, as buttons: "Usar o fornecedor reserva ({fornecedor}, {n} dias)" (Dono and Admin, while the item is still "A comprar" and has a backup supplier), and "Alterar a data de entrega". After the switch: "{item} agora vem de {fornecedor}. Previsto: {data}." "Falar com o fornecedor" comes with Compras (M5).
+- **Linha do tempo:** one row per item, on a band from today to the delivery date, marked "Hoje", "Precisa chegar até", "{Montagem}" and "Entrega". Each item shows its expected date ("Previsto: {data}") or "Recebido em {data}".
+- **Itens:** table "Item", "Origem", "Situação", "Previsto", "Ações". "Situação" names:
+  - Sob encomenda (and Estoque until M6): "A comprar", "Enviada ao fornecedor", "Em trânsito", "Recebida", "Instalada";
+  - Produção própria: "Planejado", "Em produção", "Pronto", "Instalado".
+  - Actions, one step at a time: "Marcar como enviada ao fornecedor", "Marcar como em trânsito", "Marcar como recebida", "Marcar como instalada"; "Iniciar produção", "Marcar como pronto"; on receiving, "Tudo certo" or "Com defeito". A defective item goes back: "{item} voltou para A comprar." / "{item} voltou para Em produção."
+- **Pagamentos:** "Total {valor}", "Sinal {valor} ({n}%)", "Pago {valor}", "Saldo {valor}", and "Valor a devolver {valor}" when it applies. List "Data", "Tipo" ("Sinal", "Saldo"), "Forma", "Valor", "Registrado por", with "Anulado" on a voided one.
+  - "Registrar pagamento": "Tipo", "Valor" (filled with what is due), "Forma" ("Pix", "Dinheiro", "Cartão de crédito", "Cartão de débito", "Transferência", "Outro"), "Registrar". "O valor passa do que falta pagar ({valor})." "Informe um valor maior que zero."
+  - "Anular" (Dono): "Anular o pagamento de {valor}?" with "Motivo" and "Anular pagamento". "Informe o motivo."
+  - "Liberar sem sinal" (Dono, while waiting for the deposit): "Liberar o pedido sem o sinal? As compras e a produção podem começar antes do pagamento.", "Liberar pedido".
+- **Next status:** one button per status the order can move to, as "Mover para {status}". Refusals:
+  - "O sinal ainda não foi pago. Registre o sinal ou libere o pedido sem ele.";
+  - "Nem todos os itens chegaram e foram conferidos.";
+  - "Falta receber o saldo de {valor}.";
+  - "Este pedido não pode ir para {status}."
+  - Moving to the handover status asks "Como o pedido foi entregue?" with "Entrega" and "Retirada na loja".
+- **Alterar data** (Dono, Admin): "Nova data de entrega", "Motivo" (optional), "Salvar e avisar o cliente", which opens WhatsApp. "Escolha uma data a partir de hoje." After it: "Data alterada. Envie a mensagem para avisar o cliente."
+- **Link de acompanhamento:** "Enviar link de acompanhamento", which opens WhatsApp; the hint "Cada envio cria um link novo. O link anterior deixa de funcionar."
+- **Cancelar pedido** (Dono, Admin, before handover): "Cancelar o pedido P-0231?" with "Motivo" and "Cancelar pedido". "Informe o motivo." If paid: "Os pagamentos registrados continuam no pedido. A devolução é feita fora do Encomendo." After it: "Pedido cancelado."
+- **Histórico:** "{quem} {o quê}" with date and time, such as "Ana moveu para Em montagem", "Ana registrou o sinal de R$ 300,00 (Pix)", "Ana alterou a entrega de {data} para {data}", "Ana alterou o pedido (cliente aprovou)", "Ana enviou o link de acompanhamento", "Ana cancelou: {motivo}".
+- "Outra pessoa alterou este pedido. Recarregue para ver a versão atual.", with "Recarregar".
+
+### Hoje
+
+- Title "Hoje", with the date ("sexta-feira, 27 de novembro").
+- **Summary cards:** "Pedidos ativos", "Aguardando sinal", "Com alerta", "Entregas nos próximos 7 dias". Each opens Pedidos with that filter.
+- **"Precisa de você"**, most urgent first. Each entry names the order and the customer and opens the order:
+  - "{item} está atrasado." (Atrasada)
+  - "{item} pode atrasar a entrega." (Pode atrasar)
+  - "Aguardando o sinal há {n} dias." (after 3 days)
+  - "Pronto há {n} dias e ainda não entregue." (after 2 days)
+  - "Valor a devolver: {valor}."
+  - Nothing: "Nada precisa de você agora."
+- **"Próximas entregas":** the active orders by delivery date: number, customer, status, "Itens prontos {a} de {b}", "Entrega {data}". "Ver todos os pedidos".
+
+### Financeiro
+
+- Title "Financeiro", Dono only. Period: "Este mês", "Mês passado", "Últimos 30 dias", "Escolher período" (from, to).
+- **Recebido no período:** total, then by type ("Sinal", "Saldo") and by form (Pix, Dinheiro …). Voided payments don't count.
+- **A receber:** the sum of the balances of active orders, then the list "Pedido", "Cliente", "Saldo", "Entrega prevista".
+- **A devolver:** orders with "Valor a devolver", when there are any.
+- **Margem dos pedidos entregues:** "Pedido", "Entregue em", "Total", "Custo", "Margem" ("{valor} ({n}%)", or "—" without a cost), and the period's total.
+- Empty period: "Nenhum pagamento neste período."
+
+### WhatsApp messages
+
+Prefilled texts the API puts in `wa.me` links. `{loja}` is the store's name, `{nome}` the customer's first name.
+
+- **Tracking link:** "Olá, {nome}! Aqui é da {loja}. Acompanhe seu pedido {número} por este link: {link}"
+- **Date changed:** "Olá, {nome}! Aqui é da {loja}. A entrega do seu pedido {número} mudou de {data antiga} para {data nova}.{ Motivo: {motivo}.} Qualquer dúvida, é só responder esta mensagem."
+- **Order changed after payment:** "Olá, {nome}! Aqui é da {loja}. Como combinamos, seu pedido {número} foi alterado. Novo total: {valor}. Entrega prevista: {data}.{ Valor a devolver: {valor}.} Qualquer dúvida, é só responder esta mensagem."
+- **Sent with the order:** "Olá, {nome}! Aqui é da {loja}. Recebemos seu pedido {número}, total {valor}. O sinal é {valor}. Acompanhe por este link: {link}"
+
+The texts never name a supplier, a cost or "Pode atrasar" (System rules).
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.

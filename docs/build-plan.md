@@ -191,6 +191,8 @@ Goal: the Android management app is a Capacitor shell that opens the hosted web 
 
 Goal: the core of the product. An order moves through its store's status list, and the delivery date and delay alerts are always right.
 
+Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decisions: ADR 0030.
+
 ### Backend
 
 - [ ] `domain/workflow`: phases, status workflow, `validate.go`, four launch presets, each with its own test
@@ -401,3 +403,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12. All
 | 2026-11-27 | The user's decision: Silo, the maintained MinIO fork, replaces MinIO in compose, CI and tests since MinIO's images left Docker Hub; pinned by digest, the service keeps the name `minio`, the apps see only an S3 host; R2 stays the production store | ADR 0024 (amended), ADR 0028 |
 | 2026-11-27 | `audit_log` reads are staff-only (a scope with a tenant and no user reads nothing); inserts keep the tenant check; internal tables stay out of the audit until audit views hide costs (milestone 8) | migration `0010_audit_log_staff_reads` (security review of step 3.4) |
 | 2026-11-27 | The user's decision: the Android management app becomes a Capacitor shell that opens the hosted web admin (`web/apps/android`, app id `br.com.encomendo.app`, private signed APKs first, then the Play Store); the native `mobile/` app is frozen; rule 6 now means every admin screen works at desktop and phone sizes; offline use is dropped for v1; milestone 3.5 builds it | ADR 0029 |
+| 2026-11-27 | Milestone 4 order model: staff create orders in the admin; kit lines; staff-only `order_item_sourcing`; promise vs forecast dates in a per-store time zone (the user's choice); items moved by hand until M5 and stock items at lead time until M6 (the user's choice); payments by hand with voids; a new tracking link on every send (the user's choice); `Idempotency-Key` in Postgres in the write's transaction; the user's choices on roles (`order:manage`, `order:override`, `customer:write`), extras (Frete, Desconto, Sinal per order) and changes to paid orders (seller-confirmed approval, before Montagem, "Valor a devolver") | ADR 0030 |
