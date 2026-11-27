@@ -22,13 +22,13 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | --- | --- | --- | --- | --- |
 | 1 | Skeleton | 22 | 24 | Almost done: a verified green CI run and the worker shell remain |
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
-| 3 | Catalog and suppliers | 12 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier and catalog use cases (#61, #65), Postgres repositories and Redis cache (#63, step 3.7), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) and screens (#64, step 3.16) |
+| 3 | Catalog and suppliers | 13 | 14 | In progress: contract (#53), domain (#54, #58), migrations with staff-only RLS (#60), supplier and catalog use cases (#61, #65), Postgres repositories and Redis cache (#63, step 3.7), web API calls (#55) and screens (#59, step 3.13), Android data layer (#57) and screens (#64, step 3.16) |
 | 4 | Customers, orders and deadlines | 0 | 18 | Not started |
 | 5 | Purchasing and receiving | 0 | 10 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 12 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **60** | **122** | **about 49%** |
+|   | **All milestones** | **61** | **122** | **about 50%** |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -145,7 +145,7 @@ Plan: `docs/plans/m3-catalog-suppliers.md` (steps 3.1–3.17). Decisions: ADR 00
 - [x] Migrations for catalog and suppliers, with RLS policies and tests (`0008_catalog`, `0009_suppliers`; the RLS suite's sixth, staff-only case; step 3.4)
 - [x] `adapter/postgres` repositories; `adapter/redis` cache (tenant-prefixed keys, `g:` for globals, Redis-down fallback) with integration tests
 - [x] `adapter/storage`: S3-compatible photo storage (Cloudflare R2 in production, ADR 0023; signed `PUT` URLs and a confirm step, MinIO in dev and tests, so no local storage, ADR 0024) (step 3.9; Silo, the MinIO fork, replaces MinIO since its images left Docker Hub; ADR 0028)
-- [ ] HTTP handlers, OpenAPI entries, and the "clients never see costs or suppliers" visibility test (in M3: RLS sixth case, public view types, no cost or margin for non-owners; the store-route part lands with the first store route in M7, ADR 0025)
+- [x] HTTP handlers, OpenAPI entries, and the "clients never see costs or suppliers" visibility test (in M3: RLS sixth case, public view types, no cost or margin for non-owners; the store-route part lands with the first store route in M7, ADR 0025)
 
 ### Web
 
