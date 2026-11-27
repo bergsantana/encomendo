@@ -24,12 +24,12 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
-| 4 | Customers, orders and deadlines | 0 | 17 | Not started |
+| 4 | Customers, orders and deadlines | 4 | 17 | In progress: the contract (#78) and the domain (workflow, schedule, customer, order) are built |
 | 5 | Purchasing and receiving | 0 | 9 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **65** | **127** | **about 51%** (51.2%) |
+|   | **All milestones** | **69** | **127** | **about 54%** (54.3%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -195,11 +195,11 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 
 ### Backend
 
-- [ ] `domain/workflow`: phases, status workflow, `validate.go`, four launch presets, each with its own test
+- [x] `domain/workflow`: phases, status workflow, `validate.go`, four launch presets, each with its own test (step 4.2)
 - [ ] Migration `0003_workflows` with the preset seed
-- [ ] `domain/customer`; customers migration
-- [ ] `domain/order`: aggregate, items, item status per sourcing mode, customization snapshot, payments (deposit and balance), `Advance` with phase guards, tracking token, events
-- [ ] `domain/schedule`: delivery date, arrival limit, `at_risk` and `late` alerts (pure functions, fuzz or table tests)
+- [ ] `domain/customer`; customers migration (partial: `domain/customer` is built in step 4.4; the migration is step 4.7)
+- [x] `domain/order`: aggregate, items, item status per sourcing mode, customization snapshot, payments (deposit and balance), `Advance` with phase guards, tracking token, events (steps 4.5 and 4.6)
+- [x] `domain/schedule`: delivery date, arrival limit, `at_risk` and `late` alerts (pure functions, fuzz or table tests) (step 4.3)
 - [ ] Orders migration, with RLS and the client read policy (a client account reads only its own linked orders)
 - [ ] `app/workflow`, `app/customer`, `app/order` (create, confirm deposit, release without deposit, advance, record balance, hand over, change delivery date → `wa.me` link, cancel), `app/schedule`
 - [ ] Outbox (`outbox_repo`) in the same transaction as order writes
@@ -219,7 +219,7 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 
 ### Done when
 
-- [ ] Every preset workflow has tests for each allowed and forbidden move and each phase guard
+- [x] Every preset workflow has tests for each allowed and forbidden move and each phase guard (`domain/workflow` `TestPresets_Moves`, `domain/order` `TestAdvance_<Preset>_EveryMove_WithGuardHeldAndBroken`)
 - [ ] Changing a delivery date returns a `wa.me` link and nothing is sent automatically
 
 **Answered (ADR 0023):** the owner records payments by hand, with no PIX in v1. Stores pick one of the four presets and cannot rename statuses. The deposit is 50% by default, assembly 3 days and safety margin 2 days.

@@ -614,6 +614,52 @@ ErrOrderClosed
 - `TestMessages_NeverNameSupplierOrRisk` (fuzz the facts)
 - `TestEvents_CarryNoPersonalData` (JSON walk)
 
+### 1.8 As built in 4.2–4.6
+
+What PR B changed from the sections above. Later steps build against this.
+
+- **`workflow`** (4.2):
+  - `ErrInvalidTransition` matches `shared.ErrConflict` (it is a 409).
+  - `PhasesEntered` leaves out the phase the order is already in: a move inside one phase enters nothing, and a skip enters every phase it passes.
+  - `New` also checks the id, version, key and name.
+  - `Rank` is -1 for an unknown phase.
+- **`shared.CivilDate`** (4.3):
+  - `ErrInvalidDate` matches `ErrInvalid`.
+  - An unset date stays unset through `AddDays`, and `ExpectedDate` with no release gives an unset date. `order` always passes a base day: the release date, or today.
+  - Negative days clamp at 0.
+- **`customer`** (4.4):
+  - `Email()` returns `identity.Email`.
+  - A repeated address id in a spec is a field error.
+  - Notes allow line breaks.
+- **`internal/testkit`** holds the four presets (`testkit.Presets`, `testkit.Preset`, `testkit.PresetSpecs`) and `testkit.NewOrder()`, so the order tests and 4.8's integration test share one copy. `domain/workflow` keeps its own, because it cannot import testkit.
+  - `.golangci.yml` lets only domain `_test.go` files import testkit.
+  - testkit itself may import only the domain.
+- **`order`** (4.5, 4.6):
+  - `Advance(to, handover, by, today, now)` takes `today`: an order whose deposit due is zero is released on the day it leaves awaiting_deposit.
+  - `Terms.Address` is a `*DeliveryAddress` snapshot (id, label, CEP, street, number, complement, district, city, UF). The order keeps its copy, so a customer's address can be edited or removed.
+  - `Margin()` returns `catalog.Margin` (from `catalog.MarginOf`), over the total less the freight.
+  - `PromiseSetByOwner` is `PromiseChangedByHand`.
+  - New: `ErrAlreadyReleased` (a second release, or a release after a paid deposit) and `ErrInvalidRecord` (a broken stored row; never `ErrInvalid`).
+  - New accessors and methods: `Order.Record()`, `HandedOver()`, `CancelledAt()`, `Forecast(today)`, `AssemblyDaysCounted()`, `Editable()`, `Closed()`, `Item.NextMoves()`, `Item.ArrivedOn()`, `Line.KitDays()`.
+  - A new history kind, `backup_supplier`. History entries carry `Handover`, `PaymentKind` and `PaymentMethod`, and never a supplier name.
+  - `TrackingMessage(f, link)` and `CreatedMessage(f, link)` take the link as an argument, and `MessageFacts` has no link field. So `DateChangedMessage` and `ChangedMessage` cannot carry a tracking link (ADR 0030, Amendments).
+  - A voided deposit keeps the release date, but the guard counts only payments that are not void, so the order cannot leave awaiting_deposit on it.
+- **From the review of PR B:**
+  - **The confirmed deposit is frozen.** The deposit due when it was first confirmed is kept, `Record.DepositConfirmedCents`. `DepositDue` returns it, capped at the total. So a higher total or percent after a change adds to the balance, and `order.deposit_confirmed` fires once per confirmation (again only after a void and a new payment).
+  - **A voided deposit can be replaced.** The owner may `Release` the order, which counts dates from that day. Or the deposit may be paid again, which releases from the day it is paid. `Release` refuses only an order the owner already released or whose deposit is paid, and refuses a zero user or a zero today.
+  - **Item dates on a change.** Kept items with the same timing keep their expected date. New or retimed items count from today once the order is released. Before the release, every item that has not arrived is forecast from today.
+  - **No alerts before the release.**
+  - **Bounds.** Prices, option prices, freight and costs are bounded by the catalog's R$ 1.000.000.000,00. The order's currency must be valid. The staff-only sourcing (cost, backup supplier, backup lead days) is checked.
+  - **Required arguments.** Every move refuses a zero today, and `Cancel` refuses a zero time.
+  - **testkit stays in tests.** `.golangci.yml` denies `internal/testkit` in every non-test file.
+  - **A backup switch is visible to the client.** `UseBackupSupplier` changes the item's `LeadDays` in the client-visible snapshot. That is intended: ready days are client data (ADR 0030), and no supplier name or cost reaches the snapshot.
+- **For 4.7, the orders table:**
+  - add `deposit_confirmed_cents bigint CHECK (deposit_confirmed_cents >= 0)`, null before the deposit is confirmed;
+  - add `handed_over_as text CHECK (handed_over_as IN ('pickup','delivery'))`, set together with `handed_over_at`;
+  - rename `promise_set_by_owner` to `promise_changed_by_hand`;
+  - replace the `delivery_address_id` foreign key with a `delivery_address jsonb` snapshot plus a plain `delivery_address_id uuid`, with no foreign key, so removing a customer's address never fails;
+  - the history `detail` holds `handover`, `paymentKind` and `paymentMethod`.
+
 ---
 
 ## 2. Migrations (step 4.7)
@@ -1469,4 +1515,5 @@ Rules that the reviewers will check:
 - `app/order.Cancel` has a comment `// M5: cancel unsent purchase lines and flag sent ones (ADR 0030).` and `// M6: release stock reservations.`, with the issue numbers once opened (`TODO(#n)` only with an issue, per `CLAUDE.md`). The session opens the two issues when it reaches 4.10.
 - M7 store-page orders run in a scope with no staff user, so `order_item_sourcing` can't be written there. M7 must decide (ADR) between filling the snapshot on the first staff touch and a narrow platform path; 4.10 states this in `app/order/doc.go`.
 - `schedule.Timing.Promised` is filled by M5; `InitialStatus(stock)` changes in M6.
+- `order.deposit_confirmed` fires again when a voided deposit is paid again, so M5's `GeneratePurchases` must be idempotent per order item: a line that already exists for an item is never made twice.
 - M7's `PlaceOrder` reuses the find-by-phone path of `Create`. On the public store page a phone proves nothing, so for a customer matched only by phone it must answer no customer facts (name, addresses) and must not use the stored addresses; the delivery address comes from the checkout form (security review of 4.1, D5). 4.10 writes this in `app/order/doc.go`.

@@ -5590,7 +5590,7 @@ components:
             - $ref: "#/components/schemas/Money"
             - type: "null"
         margin:
-          description: Owner only, over the total; absent for every other role. Null without a full cost.
+          description: Owner only; absent for every other role. Over what was sold (the total less the freight, which only passes through). Null without a full cost.
           oneOf:
             - $ref: "#/components/schemas/Margin"
             - type: "null"
@@ -5647,7 +5647,7 @@ components:
           description: Absent on the last page.
     HistoryKind:
       type: string
-      enum: [created, status, item, payment, payment_voided, released, date, changed, tracking_link, cancelled]
+      enum: [created, status, item, backup_supplier, payment, payment_voided, released, date, changed, tracking_link, cancelled]
     HistoryEntry:
       type: object
       required: [kind, at]
@@ -5667,6 +5667,9 @@ components:
           $ref: "#/components/schemas/OrderStatus"
         to:
           $ref: "#/components/schemas/OrderStatus"
+        handover:
+          $ref: "#/components/schemas/Handover"
+          description: With a move into handed over, how it was handed over.
         itemId:
           $ref: "#/components/schemas/Uuid"
         itemName:
@@ -5679,8 +5682,13 @@ components:
           $ref: "#/components/schemas/Check"
         paymentId:
           $ref: "#/components/schemas/Uuid"
+        paymentKind:
+          $ref: "#/components/schemas/PaymentKind"
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
         amount:
           $ref: "#/components/schemas/Money"
+          description: A payment's or a void's amount, or the new total of a change.
         oldDate:
           $ref: "#/components/schemas/CivilDate"
         newDate:
