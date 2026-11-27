@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
@@ -30,7 +31,18 @@ func kitRecord(k *catalog.Kit) catalog.KitRecord {
 // restoreKit rebuilds a stored kit. RestoreKit checks only that every item
 // it names is in the lookup, which the foreign keys of kit_items guarantee,
 // so the lookup holds the ids with no facts.
-func restoreKit(r catalog.KitRecord) (*catalog.Kit, error) {
+//
+// Like the Postgres repository it returns the field values in the store's
+// field order and each item's alternatives sorted by id (a set to callers).
+// Call it with s.mu held.
+func (s *Store) restoreKit(r catalog.KitRecord) (*catalog.Kit, error) {
+	r.Attributes = s.inFieldOrder(r.Tenant, r.Attributes)
+	r.Items = slices.Clone(r.Items)
+	for i, ki := range r.Items {
+		alts := slices.Clone(ki.Alternatives)
+		slices.SortFunc(alts, func(a, b shared.ItemID) int { return strings.Compare(a.String(), b.String()) })
+		r.Items[i].Alternatives = alts
+	}
 	lookup := catalog.ItemLookup{}
 	for _, ki := range r.Items {
 		lookup[ki.Item] = catalog.ItemFacts{}
@@ -67,6 +79,9 @@ func (s *Kits) Insert(ctx context.Context, k *catalog.Kit) error {
 		return err
 	}
 	defer s.mu.Unlock()
+	if k.Archived() {
+		return errArchivedInsert
+	}
 	r := kitRecord(k)
 	if err := s.checkKitWrite(scope, r); err != nil {
 		return err
@@ -115,7 +130,7 @@ func (s *Kits) ByID(ctx context.Context, tenant shared.TenantID, id shared.KitID
 	if !ok || r.Tenant != tenant || !sees(scope, tenant) {
 		return nil, catalog.ErrKitNotFound
 	}
-	return restoreKit(r)
+	return s.restoreKit(r)
 }
 
 // List implements appcatalog.Kits ("KitsList").
@@ -141,7 +156,7 @@ func (s *Kits) List(ctx context.Context, tenant shared.TenantID, filter appcatal
 	}
 	out := shared.Page[*catalog.Kit]{Items: make([]*catalog.Kit, 0, len(ids)), NextCursor: next}
 	for _, id := range ids {
-		k, err := restoreKit(s.kits[shared.KitID(id)])
+		k, err := s.restoreKit(s.kits[shared.KitID(id)])
 		if err != nil {
 			return shared.Page[*catalog.Kit]{}, err
 		}
@@ -166,7 +181,7 @@ func (s *Kits) Published(ctx context.Context, tenant shared.TenantID) ([]*catalo
 	slices.SortFunc(rows, compareNamed)
 	out := make([]*catalog.Kit, 0, len(rows))
 	for _, r := range rows {
-		k, err := restoreKit(s.kits[shared.KitID(r.id)])
+		k, err := s.restoreKit(s.kits[shared.KitID(r.id)])
 		if err != nil {
 			return nil, err
 		}

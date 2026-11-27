@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
@@ -29,6 +30,9 @@ func RunItemsContract(t *testing.T, newHarness func(t *testing.T) Harness) {
 	t.Run("a scope with no user reads no supplier or cost", func(t *testing.T) { itemStorePage(t, newHarness(t)) })
 	t.Run("another store's items are invisible", func(t *testing.T) { itemIsolation(t, newHarness(t)) })
 	t.Run("a sourcing change replaces the staff-only rows", func(t *testing.T) { itemSourcingChanges(t, newHarness(t)) })
+	t.Run("PublicFacts never gives a cost, in any scope", func(t *testing.T) { itemPublicFacts(t, newHarness(t)) })
+	t.Run("an archived item cannot be inserted", func(t *testing.T) { itemArchivedInsert(t, newHarness(t)) })
+	t.Run("field values come back in the store's field order", func(t *testing.T) { itemFieldOrder(t, newHarness(t)) })
 }
 
 func sameMoney(a, b *shared.Money) bool {
@@ -473,3 +477,82 @@ func (h Harness) replaceSourcing(t *testing.T, tn tenant, id shared.ItemID, vers
 }
 
 func ptrMoney(m shared.Money) *shared.Money { return &m }
+
+func itemPublicFacts(t *testing.T, h Harness) {
+	a, b := h.newTenant(t), h.newTenant(t)
+	supplied := h.addItem(t, a, itemSpec{name: "Banco", published: true})
+	own := h.addItem(t, a, itemSpec{name: "Capa", inHouse: true, archived: true})
+	theirs := h.addItem(t, b, itemSpec{name: "Alheio", inHouse: true})
+	missing := shared.ItemID(h.NewID())
+	ids := []shared.ItemID{supplied.ID(), own.ID(), missing, theirs.ID(), own.ID()}
+	// The staff scope is the one that could pull a cost in: it still gets none.
+	for name, scope := range map[string]appshared.Scope{"a staff scope": a.scope(), "the store page": a.storePage()} {
+		h.in(t, scope, func(ctx context.Context) error {
+			list, err := h.Items.PublicFacts(ctx, a.id, ids)
+			if err != nil || len(list) != 2 {
+				t.Fatalf("%s: PublicFacts = %+v, %v; want the two items of the store, once each", name, list, err)
+			}
+			checkPublicFacts(t, name, factsByID(list), supplied, own)
+			if none, err := h.Items.PublicFacts(ctx, a.id, nil); err != nil || len(none) != 0 {
+				t.Errorf("%s: no ids = %v, %v", name, none, err)
+			}
+			return nil
+		})
+	}
+}
+
+// checkPublicFacts checks the facts of the supplied item and of the archived
+// in-house one, and that neither has a cost.
+func checkPublicFacts(t *testing.T, scope string, got map[shared.ItemID]appcatalog.ItemFacts, supplied, own *catalog.Item) {
+	t.Helper()
+	s, o := got[supplied.ID()], got[own.ID()]
+	if s.Name != "Banco" || !s.Published || s.Facts.Price != supplied.Price() || s.Facts.ReadyDays != 7 || s.Facts.Archived {
+		t.Errorf("%s: the supplied item's facts = %+v", scope, s)
+	}
+	if o.Name != "Capa" || o.Published || o.Facts.ReadyDays != 5 || !o.Facts.Archived {
+		t.Errorf("%s: the in-house item's facts = %+v", scope, o)
+	}
+	if s.Facts.Cost != nil || o.Facts.Cost != nil {
+		t.Errorf("%s: costs %v and %v, want none: the store page never reads a cost", scope, s.Facts.Cost, o.Facts.Cost)
+	}
+}
+
+func itemArchivedInsert(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	it := h.buildItem(t, tn, itemSpec{name: "Banco", inHouse: true})
+	it.Archive()
+	err := h.try(tn.scope(), func(ctx context.Context) error { return h.Items.Insert(ctx, it) })
+	if err == nil || errors.Is(err, shared.ErrNotFound) || errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("inserting an archived item: %v, want a refusal that matches no sentinel", err)
+	}
+}
+
+// itemFieldOrder checks that the values an item picked come back in the
+// store's field order, whatever order they were sent in.
+func itemFieldOrder(t *testing.T, h Harness) {
+	tn := h.newTenant(t)
+	first := h.addAttribute(t, tn, "Serve em", 0, "CB 500X", "XRE 300")
+	second := h.addAttribute(t, tn, "Material", 1, "Couro", "Tecido")
+	want := append(valueIDs(first), valueIDs(second)...)
+	sent := slices.Clone(want)
+	slices.Reverse(sent)
+	it := h.addItem(t, tn, itemSpec{name: "Banco", values: sent, published: true})
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		got, err := h.Items.ByID(ctx, tn.id, it.ID())
+		if err != nil || !slices.Equal(got.AttributeValueIDs(), want) {
+			t.Errorf("ByID values = %v, %v; want the store's field order %v", got.AttributeValueIDs(), err, want)
+		}
+		listed, err := h.Items.List(ctx, tn.id, appcatalog.ItemFilter{}, page(t, "", 10))
+		if err != nil || len(listed.Items) != 1 || !slices.Equal(listed.Items[0].AttributeValueIDs(), want) {
+			t.Errorf("List values = %v, %v; want %v", listed.Items, err, want)
+		}
+		return nil
+	})
+	h.in(t, tn.storePage(), func(ctx context.Context) error {
+		list, err := h.Items.Published(ctx, tn.id)
+		if err != nil || len(list) != 1 || !slices.Equal(list[0].AttributeValues, want) {
+			t.Errorf("Published values = %+v, %v; want %v", list, err, want)
+		}
+		return nil
+	})
+}

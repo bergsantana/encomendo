@@ -122,17 +122,23 @@ func (h Harness) buildItem(t *testing.T, tn tenant, spec itemSpec) *catalog.Item
 			t.Fatal(err)
 		}
 	}
-	if spec.archived {
-		it.Archive()
-	}
 	return it
 }
 
-// addItem builds and stores an item of tn.
+// addItem builds and stores an item of tn. An archived item is stored as a
+// new item and then archived by an update, as the use cases do: an archived
+// item is never inserted. The returned item is the archived one, still at
+// the version it was built with.
 func (h Harness) addItem(t *testing.T, tn tenant, spec itemSpec) *catalog.Item {
 	t.Helper()
 	it := h.buildItem(t, tn, spec)
-	h.in(t, tn.scope(), func(ctx context.Context) error { return h.Items.Insert(ctx, it) })
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		if err := h.Items.Insert(ctx, it); err != nil || !spec.archived {
+			return err
+		}
+		it.Archive()
+		return h.Items.Update(ctx, it)
+	})
 	return it
 }
 
@@ -166,16 +172,21 @@ func (h Harness) buildKit(t *testing.T, tn tenant, spec kitSpec) *catalog.Kit {
 			t.Fatal(err)
 		}
 	}
-	if spec.archived {
-		k.Archive()
-	}
 	return k
 }
 
+// addKit builds and stores a kit of tn, archiving it by an update as addItem
+// does.
 func (h Harness) addKit(t *testing.T, tn tenant, spec kitSpec) *catalog.Kit {
 	t.Helper()
 	k := h.buildKit(t, tn, spec)
-	h.in(t, tn.scope(), func(ctx context.Context) error { return h.Kits.Insert(ctx, k) })
+	h.in(t, tn.scope(), func(ctx context.Context) error {
+		if err := h.Kits.Insert(ctx, k); err != nil || !spec.archived {
+			return err
+		}
+		k.Archive()
+		return h.Kits.Update(ctx, k)
+	})
 	return k
 }
 

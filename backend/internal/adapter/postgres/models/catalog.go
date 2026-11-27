@@ -232,9 +232,10 @@ type ItemRows struct {
 
 // ItemFromDomain returns the rows of it that Insert and Update write: the
 // item, its supplier links, its in-house cost, its values and its options.
-// Photos are their own resource and never written here. archivedAt stamps a
-// new row of an archived item.
-func ItemFromDomain(it *catalog.Item, archivedAt time.Time) (ItemRows, error) {
+// Photos are their own resource and never written here. archived_at is not
+// part of the rows: Insert refuses an archived item, and Update sets the
+// column in SQL, with now().
+func ItemFromDomain(it *catalog.Item) (ItemRows, error) {
 	tenant, id := it.TenantID(), it.ID()
 	m := Item{
 		TenantID: tenant.String(), ID: id.String(), Name: it.Name(), Description: it.Description(),
@@ -248,9 +249,6 @@ func ItemFromDomain(it *catalog.Item, archivedAt time.Time) (ItemRows, error) {
 	if it.SourcingMode() == catalog.ModeInHouse {
 		days := it.ProductionDays()
 		m.ProductionDays = &days
-	}
-	if it.Archived() {
-		m.ArchivedAt = &archivedAt
 	}
 	rows := ItemRows{Item: m}
 	for _, link := range []func() (supplier.SupplierItem, bool){it.MainSupplier, it.BackupSupplier} {
@@ -466,8 +464,9 @@ type KitRows struct {
 }
 
 // KitFromDomain returns the rows of k that Insert and Update write. Photos
-// are never written here. archivedAt stamps a new row of an archived kit.
-func KitFromDomain(k *catalog.Kit, archivedAt time.Time) KitRows {
+// are never written here, and archived_at is set by the repository in SQL
+// (see ItemFromDomain).
+func KitFromDomain(k *catalog.Kit) KitRows {
 	tenant := k.TenantID().String()
 	m := Kit{
 		TenantID: tenant, ID: k.ID().String(), Name: k.Name(), Description: k.Description(),
@@ -479,9 +478,6 @@ func KitFromDomain(k *catalog.Kit, archivedAt time.Time) KitRows {
 	}
 	if d, ok := k.SafetyMarginDays(); ok {
 		m.SafetyMarginDays = &d
-	}
-	if k.Archived() {
-		m.ArchivedAt = &archivedAt
 	}
 	rows := KitRows{Kit: m}
 	for i, ki := range k.Items() {

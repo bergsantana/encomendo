@@ -231,7 +231,7 @@ func (s *Service) loadStoreRows(ctx context.Context, tenant shared.TenantID) (st
 	for _, k := range rows.kits {
 		members = append(members, k.Items()...)
 	}
-	if rows.facts, err = s.kitFacts(ctx, tenant, members); err != nil {
+	if rows.facts, err = s.publicKitFacts(ctx, tenant, members); err != nil {
 		return storeRows{}, err
 	}
 	return rows, nil

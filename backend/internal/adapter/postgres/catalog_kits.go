@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
-	"time"
+	"fmt"
 
 	"gorm.io/gorm"
 
@@ -28,7 +28,10 @@ func (*Kits) Insert(ctx context.Context, k *catalog.Kit) error {
 	if err != nil {
 		return err
 	}
-	rows := models.KitFromDomain(k, time.Now().UTC())
+	if k.Archived() {
+		return fmt.Errorf("insert kit %v: %w", k.ID(), errArchivedInsert)
+	}
+	rows := models.KitFromDomain(k)
 	if err := db.Create(&rows.Kit).Error; err != nil {
 		return wrap("insert kit", err)
 	}
@@ -43,7 +46,7 @@ func (*Kits) Update(ctx context.Context, k *catalog.Kit) error {
 	if err != nil {
 		return err
 	}
-	rows := models.KitFromDomain(k, time.Now().UTC())
+	rows := models.KitFromDomain(k)
 	m := rows.Kit
 	res := db.Model(&models.Kit{}).
 		Where("tenant_id = ? AND id = ? AND version = ?", m.TenantID, m.ID, k.Version()).
@@ -181,11 +184,11 @@ func loadKits(db *gorm.DB, tenant shared.TenantID, rows []models.Kit) ([]*catalo
 	if err := db.Where("tenant_id = ? AND kit_id IN ?", t, ids).Order("alternative_item_id").Find(&alts).Error; err != nil {
 		return nil, wrap("read kit alternatives", err)
 	}
-	values, err := valuesOf(db, "kit_attribute_values", "kit_id", t, ids)
+	values, err := valuesOf(db, kitOwners, t, ids)
 	if err != nil {
 		return nil, err
 	}
-	photos, err := photosOfOwners(db, "kit_id", t, ids)
+	photos, err := photosOfOwners(db, kitOwners, t, ids)
 	if err != nil {
 		return nil, err
 	}

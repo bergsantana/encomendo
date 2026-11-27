@@ -168,15 +168,23 @@ type ItemFilter struct {
 // write staff-only rows. In a scope with no user ByID and List find nothing
 // (catalog.ErrItemNotFound, an empty page) rather than fail, and Insert and
 // Update are refused with an error that matches no sentinel (a bug, 500).
-// Such a scope reads items through ByIDs (no cost) and Published, which
-// never read a staff-only table. The adapter decides this from
-// appshared.Scope.UserID, in one helper, before any SQL: RLS would hide the
-// supplier rows and turn a rebuild or a replace into a silent loss.
+// Such a scope reads items through PublicFacts and Published, which never
+// read a staff-only table in any scope. The adapter decides this from the
+// scope its transaction was opened with, in one helper, before any SQL: RLS
+// would hide the supplier rows and turn a rebuild or a replace into a silent
+// loss.
+//
+// Order of what hangs on an item: the field values it picked come back in
+// the store's field order (the field's position, then the value's position),
+// not the order they were sent in, because the store keeps no order of its
+// own for them; options come back in position order.
 type Items interface {
 	// Insert stores a new item at its version. It returns an error matching
 	// shared.ErrConflict when an item, of any store, already has the id,
 	// and one matching shared.ErrInvalid when its category, a field value or
-	// a supplier is not its store's (a foreign key).
+	// a supplier is not its store's (a foreign key). An archived item is
+	// refused with an error that matches no sentinel: catalog.NewItem never
+	// returns one, and archiving is an Update.
 	Insert(ctx context.Context, it *catalog.Item) error
 	// Update stores it while the stored version is still it.Version(), and
 	// stores the next version. It returns shared.ErrVersionConflict for a
@@ -187,8 +195,13 @@ type Items interface {
 	ByID(ctx context.Context, tenant shared.TenantID, id shared.ItemID) (*catalog.Item, error)
 	// ByIDs returns the facts of the items with these ids that exist,
 	// archived ones included, in any order; a missing id is simply absent.
-	// In a scope with no user every Cost is nil, and nothing fails.
+	// In a scope with no user every Cost is nil, and nothing fails. Only
+	// the admin kit views read costs through it.
 	ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.ItemID) ([]ItemFacts, error)
+	// PublicFacts is ByIDs for the store page: the same facts, but it reads
+	// only the items table, never supplier_items or item_costs, so every
+	// Cost is nil in every scope, a staff preview included (ADR 0024).
+	PublicFacts(ctx context.Context, tenant shared.TenantID, ids []shared.ItemID) ([]ItemFacts, error)
 	// List returns one page of the store's items matching filter, ordered
 	// by lower(name) and then id, with cursors as described above.
 	List(ctx context.Context, tenant shared.TenantID, filter ItemFilter, page shared.PageRequest) (shared.Page[*catalog.Item], error)
@@ -213,11 +226,18 @@ type KitFilter struct {
 // Kits stores kits with their items and alternatives. Kit rows hold no
 // internal data, so every method works in any scope of the store. Insert
 // and Update never touch photos.
+//
+// Order of what hangs on a kit: items come back in position order, the field
+// values it picked in the store's field order (the field's position, then
+// the value's position), and the alternatives of a kit item as an unordered
+// set (the store keeps no order for them; callers compare them as a set).
 type Kits interface {
 	// Insert stores a new kit at its version. It returns an error matching
 	// shared.ErrConflict when a kit, of any store, already has the id, and
 	// one matching shared.ErrInvalid when an item (member or alternative)
-	// or a field value is not its store's.
+	// or a field value is not its store's. An archived kit is refused with
+	// an error that matches no sentinel: catalog.NewKit never returns one,
+	// and archiving is an Update.
 	Insert(ctx context.Context, k *catalog.Kit) error
 	// Update stores k while the stored version is still k.Version(), and
 	// stores the next version. It returns shared.ErrVersionConflict for a

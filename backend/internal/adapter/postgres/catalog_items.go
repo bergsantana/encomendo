@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -13,6 +12,11 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
+
+// errArchivedInsert is what Insert returns for an archived aggregate:
+// catalog.NewItem and catalog.NewKit never produce one, and archiving is an
+// Update. It matches no sentinel.
+var errArchivedInsert = errors.New("postgres: an archived row cannot be inserted")
 
 // Items implements appcatalog.Items on items, supplier_items, item_costs,
 // item_attribute_values and customization_options. Reads that rebuild whole
@@ -34,7 +38,10 @@ func (*Items) Insert(ctx context.Context, it *catalog.Item) error {
 	if !hasStaff(ctx) {
 		return fmt.Errorf("insert item %v: %w", it.ID(), errStaffScope)
 	}
-	rows, err := models.ItemFromDomain(it, time.Now().UTC())
+	if it.Archived() {
+		return fmt.Errorf("insert item %v: %w", it.ID(), errArchivedInsert)
+	}
+	rows, err := models.ItemFromDomain(it)
 	if err != nil {
 		return err
 	}
@@ -55,7 +62,7 @@ func (*Items) Update(ctx context.Context, it *catalog.Item) error {
 	if !hasStaff(ctx) {
 		return fmt.Errorf("update item %v: %w", it.ID(), errStaffScope)
 	}
-	rows, err := models.ItemFromDomain(it, time.Now().UTC())
+	rows, err := models.ItemFromDomain(it)
 	if err != nil {
 		return err
 	}
@@ -149,9 +156,8 @@ func (*Items) ByID(ctx context.Context, tenant shared.TenantID, id shared.ItemID
 	return items[0], nil
 }
 
-// loadItems reads the children of the item rows, a query per table for the
-// whole page, and rebuilds the items in the order of rows. Call it in a
-// staff scope only.
+// loadItems rebuilds the items of rows, in their order, with a query per
+// child table for the whole page. Call it in a staff scope only.
 func loadItems(db *gorm.DB, tenant shared.TenantID, rows []models.Item) ([]*catalog.Item, error) {
 	if len(rows) == 0 {
 		return []*catalog.Item{}, nil
@@ -160,41 +166,15 @@ func loadItems(db *gorm.DB, tenant shared.TenantID, rows []models.Item) ([]*cata
 	for _, r := range rows {
 		ids = append(ids, r.ID)
 	}
-	t := tenant.String()
-	var (
-		links   []models.SupplierItem
-		costs   []models.ItemCost
-		options []models.Option
-	)
-	if err := db.Where("tenant_id = ? AND item_id IN ?", t, ids).Order("role").Find(&links).Error; err != nil {
-		return nil, wrap("read supplier items", err)
-	}
-	if err := db.Where("tenant_id = ? AND item_id IN ?", t, ids).Find(&costs).Error; err != nil {
-		return nil, wrap("read item costs", err)
-	}
-	if err := db.Where("tenant_id = ? AND item_id IN ?", t, ids).Order("position, id").Find(&options).Error; err != nil {
-		return nil, wrap("read customization options", err)
-	}
-	values, err := valuesOf(db, "item_attribute_values", "item_id", t, ids)
-	if err != nil {
-		return nil, err
-	}
-	photos, err := photosOfOwners(db, "item_id", t, ids)
-	if err != nil {
-		return nil, err
-	}
 	rowsOf := make(map[string]*models.ItemRows, len(rows))
 	for _, r := range rows {
-		rowsOf[r.ID] = &models.ItemRows{Item: r, Values: values[r.ID], Photos: photos[r.ID]}
+		rowsOf[r.ID] = &models.ItemRows{Item: r}
 	}
-	for _, l := range links {
-		rowsOf[l.ItemID].Links = append(rowsOf[l.ItemID].Links, l)
+	if err := attachStaffRows(db, tenant, ids, rowsOf); err != nil {
+		return nil, err
 	}
-	for _, c := range costs {
-		rowsOf[c.ItemID].Cost = &c
-	}
-	for _, o := range options {
-		rowsOf[o.ItemID].Options = append(rowsOf[o.ItemID].Options, o)
+	if err := attachPublicRows(db, tenant, ids, rowsOf); err != nil {
+		return nil, err
 	}
 	out := make([]*catalog.Item, 0, len(rows))
 	for _, r := range rows {
@@ -207,54 +187,48 @@ func loadItems(db *gorm.DB, tenant shared.TenantID, rows []models.Item) ([]*cata
 	return out, nil
 }
 
-// valueRow is a pick of a field value by an item or a kit.
-type valueRow struct {
-	Owner   string
-	ValueID string
+// attachStaffRows reads the supplier links and in-house costs of the items.
+func attachStaffRows(db *gorm.DB, tenant shared.TenantID, ids []string, rowsOf map[string]*models.ItemRows) error {
+	var (
+		links []models.SupplierItem
+		costs []models.ItemCost
+	)
+	if err := db.Where("tenant_id = ? AND item_id IN ?", tenant.String(), ids).Order("role").Find(&links).Error; err != nil {
+		return wrap("read supplier items", err)
+	}
+	if err := db.Where("tenant_id = ? AND item_id IN ?", tenant.String(), ids).Find(&costs).Error; err != nil {
+		return wrap("read item costs", err)
+	}
+	for _, l := range links {
+		rowsOf[l.ItemID].Links = append(rowsOf[l.ItemID].Links, l)
+	}
+	for _, c := range costs {
+		rowsOf[c.ItemID].Cost = &c
+	}
+	return nil
 }
 
-// valuesOf returns, per owner, the field values it picked, in the store's
-// field order (field position, then value position): the join tables keep
-// no order of their own. table is item_attribute_values or
-// kit_attribute_values and ownerColumn its owner column; both are constants
-// of the callers.
-func valuesOf(db *gorm.DB, table, ownerColumn, tenant string, owners []string) (map[string][]string, error) {
-	var rows []valueRow
-	err := db.Table(table+" AS p").
-		Select("p."+ownerColumn+"::text AS owner, p.value_id::text AS value_id").
-		Joins("JOIN attribute_values v ON v.tenant_id = p.tenant_id AND v.id = p.value_id").
-		Joins("JOIN attributes a ON a.tenant_id = v.tenant_id AND a.id = v.attribute_id").
-		Where("p.tenant_id = ? AND p."+ownerColumn+" IN ?", tenant, owners).
-		Order("a.position, a.id, v.position, v.id").Scan(&rows).Error
+// attachPublicRows reads the options, field values and photos of the items.
+func attachPublicRows(db *gorm.DB, tenant shared.TenantID, ids []string, rowsOf map[string]*models.ItemRows) error {
+	var options []models.Option
+	if err := db.Where("tenant_id = ? AND item_id IN ?", tenant.String(), ids).Order("position, id").Find(&options).Error; err != nil {
+		return wrap("read customization options", err)
+	}
+	values, err := valuesOf(db, itemOwners, tenant.String(), ids)
 	if err != nil {
-		return nil, wrap("read "+table, err)
+		return err
 	}
-	out := map[string][]string{}
-	for _, r := range rows {
-		out[r.Owner] = append(out[r.Owner], r.ValueID)
-	}
-	return out, nil
-}
-
-// photosOfOwners returns the photos of the items or kits (ownerColumn is
-// item_id or kit_id) by position. Writing photos is step 3.9's resource.
-func photosOfOwners(db *gorm.DB, ownerColumn, tenant string, owners []string) (map[string][]models.PhotoRead, error) {
-	var rows []models.PhotoRead
-	err := db.Where("tenant_id = ? AND "+ownerColumn+" IN ?", tenant, owners).Order("position, id").Find(&rows).Error
+	photos, err := photosOfOwners(db, itemOwners, tenant.String(), ids)
 	if err != nil {
-		return nil, wrap("read photos", err)
+		return err
 	}
-	out := map[string][]models.PhotoRead{}
-	for _, p := range rows {
-		owner := p.ItemID
-		if ownerColumn == "kit_id" {
-			owner = p.KitID
-		}
-		if owner != nil {
-			out[*owner] = append(out[*owner], p)
-		}
+	for id, r := range rowsOf {
+		r.Values, r.Photos = values[id], photos[id]
 	}
-	return out, nil
+	for _, o := range options {
+		rowsOf[o.ItemID].Options = append(rowsOf[o.ItemID].Options, o)
+	}
+	return nil
 }
 
 // factsRow is one item with the cost columns of its main supplier and of
@@ -285,10 +259,6 @@ func (*Items) ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.It
 	if len(ids) == 0 {
 		return []appcatalog.ItemFacts{}, nil
 	}
-	strs := make([]string, 0, len(ids))
-	for _, id := range ids {
-		strs = append(strs, id.String())
-	}
 	var rows []factsRow
 	err = db.Table("items AS i").
 		Select(`i.id::text AS id, i.name, i.published, i.price_cents, i.currency, i.ready_days,
@@ -297,10 +267,45 @@ func (*Items) ByIDs(ctx context.Context, tenant shared.TenantID, ids []shared.It
 			c.cost_cents AS own_cents, c.currency AS own_currency`).
 		Joins("LEFT JOIN supplier_items m ON m.tenant_id = i.tenant_id AND m.item_id = i.id AND m.role = 'main'").
 		Joins("LEFT JOIN item_costs c ON c.tenant_id = i.tenant_id AND c.item_id = i.id").
-		Where("i.tenant_id = ? AND i.id IN ?", tenant.String(), strs).Scan(&rows).Error
+		Where("i.tenant_id = ? AND i.id IN ?", tenant.String(), idStrings(ids)).Scan(&rows).Error
 	if err != nil {
 		return nil, wrap("read item facts", err)
 	}
+	return factsOf(rows)
+}
+
+// PublicFacts returns the facts of the items that exist, archived ones
+// included, from the items table alone: it never reads supplier_items or
+// item_costs, so no scope, a staff preview included, gets a cost from it. The
+// store page reads kit facts through it (ADR 0024).
+func (*Items) PublicFacts(ctx context.Context, tenant shared.TenantID, ids []shared.ItemID) ([]appcatalog.ItemFacts, error) {
+	db, err := conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []appcatalog.ItemFacts{}, nil
+	}
+	var rows []factsRow
+	err = db.Table("items AS i").
+		Select(`i.id::text AS id, i.name, i.published, i.price_cents, i.currency, i.ready_days,
+			i.archived_at IS NOT NULL AS archived, i.sourcing_mode`).
+		Where("i.tenant_id = ? AND i.id IN ?", tenant.String(), idStrings(ids)).Scan(&rows).Error
+	if err != nil {
+		return nil, wrap("read public item facts", err)
+	}
+	return factsOf(rows)
+}
+
+func idStrings(ids []shared.ItemID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
+}
+
+func factsOf(rows []factsRow) ([]appcatalog.ItemFacts, error) {
 	out := make([]appcatalog.ItemFacts, 0, len(rows))
 	for _, r := range rows {
 		f, err := r.toFacts()
@@ -382,7 +387,7 @@ func (*Items) ActiveKitsHolding(ctx context.Context, tenant shared.TenantID, id 
 		return nil, err
 	}
 	var rows []models.Kit
-	err = db.Where("tenant_id = ? AND archived_at IS NULL", tenant.String()).
+	err = db.Select("id", "name").Where("tenant_id = ? AND archived_at IS NULL", tenant.String()).
 		Where(`(EXISTS (SELECT 1 FROM kit_items ki WHERE ki.tenant_id = kits.tenant_id AND ki.kit_id = kits.id AND ki.item_id = ?)
 			OR EXISTS (SELECT 1 FROM kit_item_alternatives ka WHERE ka.tenant_id = kits.tenant_id AND ka.kit_id = kits.id AND ka.alternative_item_id = ?))`,
 			id.String(), id.String()).
@@ -416,8 +421,26 @@ func (*Items) Published(ctx context.Context, tenant shared.TenantID) ([]appcatal
 	if err != nil {
 		return nil, wrap("read published items", err)
 	}
+	parts, err := loadPublishedRows(db, tenant, rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]appcatalog.PublishedItem, 0, len(rows))
+	for i, p := range parts {
+		r := rows[i]
+		out = append(out, appcatalog.PublishedItem{
+			ID: p.ID, Name: r.Name, Description: r.Description, Category: p.Category, Price: p.Price,
+			ReadyDays: r.ReadyDays, AttributeValues: p.Values, Options: p.Options,
+		})
+	}
+	return out, nil
+}
+
+// loadPublishedRows reads the public children of the item rows and rebuilds
+// what the store page shows of each, in the order of rows.
+func loadPublishedRows(db *gorm.DB, tenant shared.TenantID, rows []models.Item) ([]models.PublishedItemParts, error) {
 	if len(rows) == 0 {
-		return []appcatalog.PublishedItem{}, nil
+		return nil, nil
 	}
 	ids := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -427,7 +450,7 @@ func (*Items) Published(ctx context.Context, tenant shared.TenantID) ([]appcatal
 	if err := db.Where("tenant_id = ? AND item_id IN ?", tenant.String(), ids).Order("position, id").Find(&options).Error; err != nil {
 		return nil, wrap("read customization options", err)
 	}
-	values, err := valuesOf(db, "item_attribute_values", "item_id", tenant.String(), ids)
+	values, err := valuesOf(db, itemOwners, tenant.String(), ids)
 	if err != nil {
 		return nil, err
 	}
@@ -435,16 +458,13 @@ func (*Items) Published(ctx context.Context, tenant shared.TenantID) ([]appcatal
 	for _, o := range options {
 		optionsOf[o.ItemID] = append(optionsOf[o.ItemID], o)
 	}
-	out := make([]appcatalog.PublishedItem, 0, len(rows))
+	out := make([]models.PublishedItemParts, 0, len(rows))
 	for _, r := range rows {
-		parts, err := models.PublishedItemRows{Item: r, Values: values[r.ID], Options: optionsOf[r.ID]}.ToDomain()
+		p, err := models.PublishedItemRows{Item: r, Values: values[r.ID], Options: optionsOf[r.ID]}.ToDomain()
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, appcatalog.PublishedItem{
-			ID: parts.ID, Name: r.Name, Description: r.Description, Category: parts.Category, Price: parts.Price,
-			ReadyDays: r.ReadyDays, AttributeValues: parts.Values, Options: parts.Options,
-		})
+		out = append(out, p)
 	}
 	return out, nil
 }

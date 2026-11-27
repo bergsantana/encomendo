@@ -12,8 +12,10 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/adapter/postgres"
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
+	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/supplier"
 	"github.com/bergsantana/encomendo/backend/test/integration/pgtest"
 )
 
@@ -307,6 +309,161 @@ func TestItemsRepository_QueryIsLiteralWithBackslashes(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// refusedWithNoSentinel reports whether err is a bug-class refusal: set, and
+// matching none of the sentinels the API maps to 4xx.
+func refusedWithNoSentinel(err error) bool {
+	return err != nil && !errors.Is(err, shared.ErrNotFound) && !errors.Is(err, shared.ErrConflict) &&
+		!errors.Is(err, shared.ErrInvalid) && !errors.Is(err, shared.ErrVersionConflict)
+}
+
+func isCursorError(err error) bool {
+	var ve *shared.ValidationError
+	return errors.As(err, &ve) && len(ve.Fields) == 1 && ve.Fields[0].Field == "cursor"
+}
+
+func TestItemsRepository_NoUserScopeRefusesWritesBeforeAnySQL(t *testing.T) {
+	e := newCatalogEnv(t)
+	items := postgres.NewItems()
+	stored := e.inHouseItem("Banco", nil)
+	e.must(func(ctx context.Context) error { return items.Insert(ctx, stored) })
+	fresh := e.inHouseItem("Novo", nil)
+	renamed := e.inHouseItem("Renomeado", nil)
+	storePage := appshared.Scope{TenantID: e.tenant}
+	err := e.tx.WithinTx(appshared.WithScope(context.Background(), storePage), func(ctx context.Context) error {
+		if err := items.Insert(ctx, fresh); !refusedWithNoSentinel(err) {
+			t.Errorf("Insert with no user: %v, want a refusal that matches no sentinel", err)
+		}
+		if err := items.Update(ctx, renamed); !refusedWithNoSentinel(err) {
+			t.Errorf("Update with no user: %v, want a refusal that matches no sentinel", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	row := e.seed.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM items WHERE id = $1`, fresh.ID().String())
+	if err := row.Scan(&n); err != nil || n != 0 {
+		t.Errorf("rows written by a refused Insert = %d, %v; want none", n, err)
+	}
+}
+
+// The staff check reads the scope the transaction was opened with, the one
+// RLS uses, not the one a context claims.
+func TestItemsRepository_StaffCheckReadsTheTransactionScope(t *testing.T) {
+	e := newCatalogEnv(t)
+	items := postgres.NewItems()
+	stored := e.inHouseItem("Banco", nil)
+	e.must(func(ctx context.Context) error { return items.Insert(ctx, stored) })
+
+	storePage := appshared.Scope{TenantID: e.tenant}
+	err := e.tx.WithinTx(appshared.WithScope(context.Background(), storePage), func(ctx context.Context) error {
+		claimsStaff := appshared.WithScope(ctx, e.scope)
+		if err := items.Insert(claimsStaff, e.inHouseItem("Novo", nil)); !refusedWithNoSentinel(err) {
+			t.Errorf("Insert in a store page transaction, context claiming a user: %v, want a refusal", err)
+		}
+		if _, err := items.ByID(claimsStaff, e.tenant, stored.ID()); !errors.Is(err, catalog.ErrItemNotFound) {
+			t.Errorf("ByID in a store page transaction, context claiming a user: %v, want ErrItemNotFound", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The other way round, a staff transaction is not downgraded by a context.
+	e.must(func(ctx context.Context) error {
+		claimsStorePage := appshared.WithScope(ctx, storePage)
+		if _, err := items.ByID(claimsStorePage, e.tenant, stored.ID()); err != nil {
+			t.Errorf("ByID in a staff transaction: %v, want the item", err)
+		}
+		return nil
+	})
+}
+
+func TestNamePages_CursorEdges(t *testing.T) {
+	e := newCatalogEnv(t)
+	items, suppliers := postgres.NewItems(), postgres.NewSuppliers()
+	for _, n := range []string{"Alfa", "Bravo", "Charlie"} {
+		it := e.inHouseItem(n, nil)
+		e.must(func(ctx context.Context) error { return items.Insert(ctx, it) })
+		s, err := supplier.New(e.tenant, shared.SupplierID(pgtest.NewID()), n, "5511987654321")
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.must(func(ctx context.Context) error { return suppliers.Insert(ctx, s) })
+	}
+	var itemCursor, supplierCursor string
+	var cursorRow shared.ItemID
+	e.must(func(ctx context.Context) error {
+		p, err := items.List(ctx, e.tenant, appcatalog.ItemFilter{}, mustPage(t, "", 1))
+		if err != nil || !p.HasMore() {
+			t.Fatalf("first item page = %v, %v", p.Items, err)
+		}
+		itemCursor, cursorRow = p.NextCursor, p.Items[0].ID()
+		sp, err := suppliers.List(ctx, e.tenant, appsupplier.ListFilter{}, mustPage(t, "", 1))
+		if err != nil || !sp.HasMore() {
+			t.Fatalf("first supplier page = %v, %v", sp.Items, err)
+		}
+		supplierCursor = sp.NextCursor
+		return nil
+	})
+
+	// A scope with no user: items list nothing, whatever the cursor; the
+	// suppliers' RLS hides the row the cursor names.
+	storePage := appshared.Scope{TenantID: e.tenant}
+	err := e.tx.WithinTx(appshared.WithScope(context.Background(), storePage), func(ctx context.Context) error {
+		p, err := items.List(ctx, e.tenant, appcatalog.ItemFilter{}, mustPage(t, itemCursor, 1))
+		if err != nil || len(p.Items) != 0 {
+			t.Errorf("items with no user and a cursor = %v, %v; want an empty page", p.Items, err)
+		}
+		_, err = suppliers.List(ctx, e.tenant, appsupplier.ListFilter{}, mustPage(t, supplierCursor, 1))
+		if !isCursorError(err) {
+			t.Errorf("suppliers with no user and a cursor: %v, want a ValidationError on cursor", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The row the cursor names is deleted: the cursor names no visible row.
+	if _, err := e.seed.DB().ExecContext(t.Context(), `DELETE FROM items WHERE id = $1`, cursorRow.String()); err != nil {
+		t.Fatal(err)
+	}
+	err = e.run(func(ctx context.Context) error {
+		_, err := items.List(ctx, e.tenant, appcatalog.ItemFilter{}, mustPage(t, itemCursor, 1))
+		return err
+	})
+	if !isCursorError(err) {
+		t.Errorf("a cursor whose row was deleted: %v, want a ValidationError on cursor", err)
+	}
+}
+
+func TestKitsRepository_AnotherStoresValueIsInvalid(t *testing.T) {
+	e := newCatalogEnv(t)
+	other := newCatalogEnv(t)
+	theirs, err := catalog.NewAttribute(other.tenant, shared.AttributeID(pgtest.NewID()), catalog.AttributeInput{
+		Name: "Serve em", Values: []catalog.ValueInput{{ID: shared.AttributeValueID(pgtest.NewID()), Label: "CB 500X"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.must(func(ctx context.Context) error { return postgres.NewAttributes().Insert(ctx, theirs, 0) })
+	it := e.inHouseItem("Banco", nil)
+	e.must(func(ctx context.Context) error { return postgres.NewItems().Insert(ctx, it) })
+	kit, err := catalog.NewKit(e.tenant, shared.KitID(pgtest.NewID()), catalog.KitInput{
+		Name: "Kit", Price: brl(t, 5000), Items: []catalog.KitItem{{Item: it.ID(), Quantity: 1}},
+		AttributeValues: []shared.AttributeValueID{theirs.Values()[0].ID()},
+	}, catalog.ItemLookup{it.ID(): {Price: it.Price()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = e.run(func(ctx context.Context) error { return postgres.NewKits().Insert(ctx, kit) })
+	if !errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("a kit with another store's value: %v, want ErrInvalid", err)
+	}
 }
 
 func mustPage(t *testing.T, cursor string, limit int) shared.PageRequest {

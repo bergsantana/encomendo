@@ -9,7 +9,6 @@ import (
 
 	"gorm.io/gorm"
 
-	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -18,13 +17,14 @@ import (
 // caller used the wrong scope (ADR 0027).
 var errStaffScope = errors.New("postgres: this write needs a staff scope (a tenant and a user)")
 
-// hasStaff reports whether the scope of ctx has a user. RLS hides the
+// hasStaff reports whether the transaction's scope has a user. RLS hides the
 // staff-only tables (supplier_items, item_costs) from a scope with a tenant
 // and no user, so a read would rebuild a wrong aggregate and a write could
 // never drop the rows it replaces. The repositories ask this before any SQL
-// (ADR 0027).
+// (ADR 0027), and read the scope from the transaction (txScope), the one RLS
+// uses, not from ctx.
 func hasStaff(ctx context.Context) bool {
-	return !appshared.ScopeFrom(ctx).UserID.IsZero()
+	return !txScope(ctx).UserID.IsZero()
 }
 
 // likeEscaper makes text literal for ILIKE, whose escape character is the
