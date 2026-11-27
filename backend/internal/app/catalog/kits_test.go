@@ -253,7 +253,7 @@ func TestListKits_RowsWithTotalsAndCovers(t *testing.T) {
 	if v, _ := h.svc.GetKit(h.viewer(t), s.kit.ID); len(v.Photos) != 1 || v.Photos[0].URL != "https://photos.test/t/a/kits/b/c" {
 		t.Errorf("kit photos = %+v", v.Photos)
 	}
-	h.photos.Fail(errBoom)
+	h.storage.Fail("SignGet", errBoom)
 	if _, err := h.svc.ListKits(h.owner(t), appcatalog.KitFilter{}, mustPage(t, "", 10)); !errors.Is(err, errBoom) {
 		t.Errorf("a failed cover signature: %v", err)
 	}

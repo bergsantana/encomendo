@@ -364,7 +364,9 @@ func TestPublicCatalog_ArchivedAlternativesAreLeftOut(t *testing.T) {
 func TestWrites_DropTheStoresCachedCatalog(t *testing.T) {
 	t.Parallel()
 	for _, uc := range newHarness(t).useCases(t) {
-		if !uc.write {
+		// A signed upload needs catalog:write but records nothing, so it
+		// has no cache to drop.
+		if !uc.write || uc.name == "RequestPhotoUpload" {
 			continue
 		}
 		t.Run(uc.name, func(t *testing.T) {

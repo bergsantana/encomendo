@@ -36,6 +36,11 @@ type UseCases interface {
 	SetKitPublished(ctx context.Context, in SetKitPublishedInput) (KitView, error)
 	ArchiveKit(ctx context.Context, in KitVersionInput) (KitView, error)
 	RestoreKit(ctx context.Context, in KitVersionInput) (KitView, error)
+
+	RequestPhotoUpload(ctx context.Context, in PhotoUploadInput) (PhotoUploadView, error)
+	ConfirmPhoto(ctx context.Context, owner catalog.PhotoOwner, key string) (PhotoConfirmation, error)
+	OrderPhotos(ctx context.Context, owner catalog.PhotoOwner, ids []shared.PhotoID) ([]PhotoView, error)
+	DeletePhoto(ctx context.Context, owner catalog.PhotoOwner, id shared.PhotoID) error
 }
 
 // StoreQueries is the driving port of the store page (milestone 7): the
@@ -289,7 +294,97 @@ type StoreDefaults interface {
 // PhotoURLs signs read URLs for photos in admin views (adapter/storage, step
 // 3.9).
 type PhotoURLs interface {
-	// SignGet returns a URL that reads the object at key until expiresAt,
-	// ttl from now.
+	// SignGet returns a URL that reads the recorded photo at key until
+	// expiresAt, ttl from now. Signing needs no network call.
 	SignGet(ctx context.Context, key string, ttl time.Duration) (url string, expiresAt time.Time, err error)
+}
+
+// StoredPhoto is a recorded photo with its owner and its place among the
+// owner's photos (0 is the cover).
+type StoredPhoto struct {
+	Owner    catalog.PhotoOwner
+	Photo    catalog.Photo
+	Position int
+}
+
+// Photos stores the photo rows of items and kits (the photos table). Photo
+// rows hold no internal data, so every method works in any scope of the
+// store. A photo's id is the last part of its key and its primary key, so a
+// key is recorded once (ADR 0025). An owner's photos sit at positions 0 to
+// n-1 with no gap. Insert, Reorder and Delete serialize on the owner, so two
+// concurrent calls never break the 8-photo limit or the positions. None of
+// them changes the owner's version (plan 3.6).
+type Photos interface {
+	// ByOwner returns the owner's photos by position; none when the owner
+	// has none or is not the store's.
+	ByOwner(ctx context.Context, tenant shared.TenantID, owner catalog.PhotoOwner) ([]catalog.Photo, error)
+	// ByID returns the photo with its owner and position, or
+	// catalog.ErrPhotoNotFound.
+	ByID(ctx context.Context, tenant shared.TenantID, id shared.PhotoID) (StoredPhoto, error)
+	// Insert records p last among the owner's photos and returns its
+	// position. It returns ErrPhotoTaken when a photo, of any owner or
+	// store, already has p's id or key, checked before the limit, so a
+	// repeat of the 8th photo is not catalog.ErrPhotoLimit;
+	// catalog.ErrPhotoLimit when the owner already has 8 photos; and an
+	// error matching shared.ErrInvalid when the owner is not the store's
+	// or p's key is not catalog.PhotoKey(tenant, owner, p.ID()).
+	Insert(ctx context.Context, tenant shared.TenantID, owner catalog.PhotoOwner, p catalog.Photo) (position int, err error)
+	// Reorder puts the owner's photos in the order of ids, which must name
+	// each of them exactly once: otherwise it is the ValidationError on
+	// "photoIds" of catalog.PhotoList.ReorderPhotos, and nothing changes.
+	Reorder(ctx context.Context, tenant shared.TenantID, owner catalog.PhotoOwner, ids []shared.PhotoID) error
+	// Delete removes the owner's photo id, and the photos after it move up
+	// one place. It returns catalog.ErrPhotoNotFound when the owner has no
+	// such photo.
+	Delete(ctx context.Context, tenant shared.TenantID, owner catalog.PhotoOwner, id shared.PhotoID) error
+}
+
+// ObjectInfo is what storage knows of an uploaded object.
+type ObjectInfo struct {
+	// Size is in bytes.
+	Size int64
+	// ETag names this version of the object, so later reads and the
+	// promotion act on the bytes that were checked.
+	ETag string
+}
+
+// SignedUpload is how an app uploads one object: Method to URL, sending
+// exactly Headers and nothing else (no Authorization), before ExpiresAt.
+type SignedUpload struct {
+	URL       string
+	Method    string
+	Headers   map[string]string
+	ExpiresAt time.Time
+}
+
+// PhotoStore is the S3-compatible object store of photos (adapter/storage;
+// ADR 0024, ADR 0028). Uploads land in a staging area that the bucket's
+// lifecycle rule empties after a day; a confirmed upload is promoted to the
+// photo's own place, which no signed URL can write. Keys are the photos'
+// keys (catalog.PhotoKey) in both places; the adapter decides where each
+// place is. Every failure but those named matches shared.ErrUnavailable,
+// so it is a 503 and never looks like a refusal.
+type PhotoStore interface {
+	PhotoURLs
+	// PresignPut signs an upload of one object of contentType to key's
+	// staging place, valid for ttl. The content type is bound into the
+	// signature.
+	PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (SignedUpload, error)
+	// Stat returns the staged upload at key, or ErrObjectMissing.
+	Stat(ctx context.Context, key string) (ObjectInfo, error)
+	// Head returns up to n leading bytes of the staged upload at key, as
+	// long as it is still the version etag names. It returns
+	// ErrObjectMissing, or ErrObjectChanged when it was replaced since.
+	Head(ctx context.Context, key, etag string, n int) ([]byte, error)
+	// DeleteUpload removes the staged upload at key; a missing one is no
+	// error.
+	DeleteUpload(ctx context.Context, key string) error
+	// Promote copies the staged upload at key, at version etag, to the
+	// photo's place, stored as contentType. It returns ErrObjectMissing,
+	// or ErrObjectChanged when the upload was replaced since it was
+	// checked. Promoting the same upload again is harmless.
+	Promote(ctx context.Context, key, etag, contentType string) error
+	// Delete removes the recorded photo's object at key; a missing one is
+	// no error.
+	Delete(ctx context.Context, key string) error
 }

@@ -18,7 +18,8 @@ type Deps struct {
 	Kits       Kits
 	Suppliers  SupplierDirectory
 	Defaults   StoreDefaults
-	Photos     PhotoURLs
+	Photos     Photos
+	Storage    PhotoStore
 	Cache      appshared.Cache
 	Tx         appshared.TxManager
 	IDs        appshared.IDGenerator
@@ -32,7 +33,8 @@ type Service struct {
 	kits       Kits
 	suppliers  SupplierDirectory
 	defaults   StoreDefaults
-	photos     PhotoURLs
+	photos     Photos
+	storage    PhotoStore
 	cache      appshared.Cache
 	tx         appshared.TxManager
 	ids        appshared.IDGenerator
@@ -42,7 +44,7 @@ type Service struct {
 func NewService(d Deps) *Service {
 	return &Service{
 		categories: d.Categories, attributes: d.Attributes, items: d.Items, kits: d.Kits,
-		suppliers: d.Suppliers, defaults: d.Defaults, photos: d.Photos,
+		suppliers: d.Suppliers, defaults: d.Defaults, photos: d.Photos, storage: d.Storage,
 		cache: d.Cache, tx: d.Tx, ids: d.IDs,
 	}
 }

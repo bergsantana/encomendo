@@ -44,5 +44,13 @@
 //     unpublished member of a published kit still shows inside it. Kit days
 //     there may lag a change of the store's default days by up to the
 //     5-minute TTL: tenancy settings do not drop the catalog cache.
+//   - Photos (photos.go) upload straight to storage by a signed URL and are
+//     recorded by a confirm step (ADR 0024, ADR 0025, ADR 0028). The server
+//     picks every key, t/{store}/{items|kits}/{owner}/{photo id}; a confirm
+//     checks the key against the caller's store and the path's owner before
+//     it touches storage, answers a key already recorded on the owner with
+//     that photo, and deletes only an upload that passed the key check, has
+//     no row, and is over 10 MB or not a JPEG, PNG or WebP by its bytes. An
+//     item or kit holds at most 8 photos.
 //   - M3 publishes no outbox events: nothing consumes a catalog change yet.
 package catalog

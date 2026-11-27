@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
@@ -11,6 +12,19 @@ import (
 // even a null one (ADR 0025). It matches shared.ErrForbidden (403
 // forbidden).
 var ErrCostForbidden = fmt.Errorf("catalog: only the owner may send costs: %w", shared.ErrForbidden)
+
+// Errors of the photo ports. Each matches no shared sentinel: the use cases
+// turn them into the contract's answers, so one that leaks is a 500.
+var (
+	// ErrPhotoTaken means a photo row already has the id or the key
+	// (Photos.Insert): a confirm raced another, or the key was recorded.
+	ErrPhotoTaken = errors.New("catalog: photo already recorded")
+	// ErrObjectMissing means storage has no object at the key.
+	ErrObjectMissing = errors.New("catalog: no object at the key")
+	// ErrObjectChanged means the object at the key was replaced after it
+	// was checked.
+	ErrObjectChanged = errors.New("catalog: object changed since it was checked")
+)
 
 // Reference names a row a refusal is about: a kit that holds an item, or an
 // archived item a kit holds. It is the contract's Reference schema.
