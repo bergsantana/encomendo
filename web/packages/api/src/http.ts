@@ -10,6 +10,12 @@ export interface FieldIssue {
   message: string
 }
 
+/** Reference names a row a refusal is about: the kits holding an item (`item_in_kit`), or the archived items in a kit (`item_archived`). */
+export interface Reference {
+  id: string
+  name: string
+}
+
 /** Fields of an RFC 9457 problem+json body. */
 export interface ProblemBody {
   type?: string
@@ -19,6 +25,7 @@ export interface ProblemBody {
   detail?: string
   instance?: string
   errors?: FieldIssue[]
+  references?: Reference[]
 }
 
 /**
@@ -31,6 +38,8 @@ export class ApiError extends Error {
   readonly title: string
   readonly detail: string | undefined
   readonly fieldIssues: FieldIssue[]
+  /** references are the rows an `item_in_kit` or `item_archived` refusal names. */
+  readonly references: Reference[]
   /** retryAfterSeconds is the wait a 429 asks for, from its Retry-After header. */
   readonly retryAfterSeconds: number | undefined
 
@@ -42,6 +51,7 @@ export class ApiError extends Error {
     this.title = body.title ?? 'Erro inesperado'
     this.detail = body.detail
     this.fieldIssues = body.errors ?? []
+    this.references = body.references ?? []
     this.retryAfterSeconds = retryAfterSeconds
   }
 }

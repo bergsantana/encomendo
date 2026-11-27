@@ -3,7 +3,7 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { createHttpClient } from './http'
-import { createTenant, type Tenant } from './tenancy'
+import { createTenant, getSettings, type Tenant, type TenantSettings } from './tenancy'
 
 const base = 'http://api.test'
 const server = setupServer()
@@ -40,5 +40,32 @@ describe('createTenant', () => {
     )
 
     await expect(createTenant(client, { name: 'Alta RPM', slug: 'altarpm' })).rejects.toMatchObject({ status: 409, code: 'slug_taken' })
+  })
+})
+
+describe('getSettings', () => {
+  it('reads the selected store settings with the access token', async () => {
+    const settings: TenantSettings = {
+      stockEnabled: false,
+      productionEnabled: true,
+      purchaseBeforeDeposit: false,
+      depositPercent: 50,
+      assemblyDays: 3,
+      safetyMarginDays: 2,
+      whatsappPhone: null,
+      currency: 'BRL',
+      statusWorkflow: { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01', version: 1, name: 'Encomenda com montagem' },
+      version: 2,
+    }
+    let authorization: string | null = null
+    server.use(
+      http.get(`${base}/api/v1/admin/settings`, ({ request }) => {
+        authorization = request.headers.get('Authorization')
+        return HttpResponse.json(settings)
+      }),
+    )
+
+    await expect(getSettings(client)).resolves.toEqual(settings)
+    expect(authorization).toBe('Bearer access-1')
   })
 })

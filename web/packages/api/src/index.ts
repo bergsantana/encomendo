@@ -1,5 +1,5 @@
 export { ApiError, createHttpClient } from './http'
-export type { FieldIssue, HttpClient, HttpClientOptions, ProblemBody, RequestOptions, SessionHooks } from './http'
+export type { FieldIssue, HttpClient, HttpClientOptions, ProblemBody, Reference, RequestOptions, SessionHooks } from './http'
 export {
   acceptInvitation,
   confirmPasswordReset,
@@ -93,7 +93,7 @@ export type {
 } from './catalog'
 export { createSupplier, getSupplier, listSuppliers, replaceSupplier } from './suppliers'
 export type { ReplaceSupplierRequest, Supplier, SupplierInput, SupplierListRequest, SupplierPage } from './suppliers'
-export { createTenant } from './tenancy'
-export type { CreateTenantRequest, Tenant } from './tenancy'
+export { createTenant, getSettings } from './tenancy'
+export type { CreateTenantRequest, Tenant, TenantSettings } from './tenancy'
 export { getReadiness } from './health'
 export type { Status } from './health'

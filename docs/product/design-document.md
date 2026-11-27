@@ -312,6 +312,26 @@ Drafted by Claude on 2026-11-26 for milestone 3, for the user to review (ADR 002
 - "Informe o nome do campo.", "Informe o valor.", "Este valor já existe neste campo."
 - Removing a value or a field in use asks first: "Remover {valor}? Ele sai de {n} itens e kits.", buttons "Cancelar" and "Remover".
 
+**Also on the Itens screens** (added by Claude in step 3.12, for the user to review)
+
+- Read-only roles: the item opens with the title "Item", the fields disabled and one button, "Fechar". "Categorias" and "Campos" open to read, without "Nova categoria", "Novo campo" or any button that changes anything. The "No portal" switch shows its state, disabled.
+- The category filter is read aloud as "Filtrar por categoria".
+- Item form:
+  - the backup supplier's choice is labelled "Fornecedor reserva", the group "Fornecedor reserva" has the same "Prazo do fornecedor (dias)" and "Custo" fields;
+  - the new supplier's number is typed with its DDD; the app sends it with 55 in front;
+  - "Novo fornecedor" also has a "Cancelar" button;
+  - options and choices are numbered for screen readers, "Opção 1", "Escolha 1";
+  - an empty choice: "Informe a escolha.";
+  - "Salvar" closes the form after "Item salvo.". A new item has no photos until it is saved: "Salve o item para adicionar fotos.";
+  - while a photo goes up: "Enviando a foto…". The first photo shows "Capa" instead of "Usar como capa";
+  - a photo the server refuses as not JPEG, PNG or WebP, or over 10 MB: "Use uma foto JPEG, PNG ou WebP de até 10 MB.";
+  - archiving an item that several kits hold: "Este item está nos kits {A}, {B} e {C}. Tire-o dos kits antes de arquivar."
+- Categorias: renaming shows a field "Novo nome de {categoria}" with "Salvar" and "Cancelar"; the dialog closes with "Fechar". The buttons are read aloud with the category, as "Mover {categoria} para cima", "Renomear {categoria}", "Excluir {categoria}".
+- Campos:
+  - each field has "Salvar campo" (nothing is saved until then); its values are "Valor 1", "Valor 2" …, with "Remover valor";
+  - removing a field whose values are in use asks first: "Remover {campo}? Seus valores saem de até {n} itens e kits." ({n} adds up the uses of its values, so an item that picked two of them counts twice);
+  - a field name already used: "Já existe um campo com este nome."
+
 **Kits**
 
 - Table: "Kit", "Itens", "Preço do kit", "Soma avulsa", "Margem", "Prazo", "No portal". Button "Novo kit". Empty: "Nenhum kit ainda."

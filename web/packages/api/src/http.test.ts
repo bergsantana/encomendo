@@ -85,6 +85,20 @@ describe('createHttpClient', () => {
     expect((error as ApiError).fieldIssues).toEqual([{ field: 'phone', message: 'Informe um WhatsApp válido.' }])
   })
 
+  it('keeps the rows a refusal names', async () => {
+    server.use(
+      http.post(`${base}/archive`, () =>
+        HttpResponse.json(
+          { title: 'No kit', status: 409, code: 'item_in_kit', references: [{ id: 'k1', name: 'Kit Scrambler' }] },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    )
+
+    const error = await client.post('/archive', {}).catch((e: unknown) => e)
+    expect((error as ApiError).references).toEqual([{ id: 'k1', name: 'Kit Scrambler' }])
+  })
+
   it('handles non-JSON error bodies', async () => {
     server.use(http.get(`${base}/broken`, () => new HttpResponse('Bad Gateway', { status: 502 })))
 
