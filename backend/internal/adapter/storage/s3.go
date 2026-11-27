@@ -20,10 +20,19 @@ import (
 // expires everything under it after a day, and nothing else (ADR 0028).
 const UploadPrefix = "uploads/"
 
-// maxRetries is how many times a failed call to the store is tried again.
-const maxRetries = 2
+// maxAttempts is how many times one call to the store is sent, the first
+// included: minio-go's MaxRetries counts every attempt. A few ride out a
+// blip; its default of ten would hold a request for many seconds when the
+// store is down.
+const maxAttempts = 3
 
-// Config is how to reach the bucket. Endpoints are host[:port].
+// DefaultTimeout bounds each call to the store, its attempts included, so
+// a hung store is a quick shared.ErrUnavailable and never holds the write
+// transaction or the owner's lock for long.
+const DefaultTimeout = 10 * time.Second
+
+// Config is how to reach the bucket. Endpoints are host[:port]. Printing
+// or logging it never shows SecretKey.
 type Config struct {
 	// Endpoint is where the API reaches the store for reads, copies and
 	// deletes.
@@ -36,19 +45,40 @@ type Config struct {
 	AccessKey      string
 	SecretKey      string
 	UseSSL         bool
+	// Timeout bounds each call to the store; zero is DefaultTimeout.
+	Timeout time.Duration
 }
 
-// S3 implements appcatalog.PhotoStore on an S3-compatible store: MinIO
-// locally, Cloudflare R2 in production. It talks to Endpoint, and signs
-// URLs for PublicEndpoint with a second client that never connects:
-// with the region set, signing is local. Every failure but a missing or
-// replaced object matches shared.ErrUnavailable. It never logs a secret or
-// a signed URL.
+// String describes c without its secret key, for %v and %s.
+func (c Config) String() string {
+	return fmt.Sprintf("storage.Config{Endpoint:%s PublicEndpoint:%s Bucket:%s Region:%s AccessKey:%s SecretKey:[redacted] UseSSL:%t Timeout:%s}",
+		c.Endpoint, c.PublicEndpoint, c.Bucket, c.Region, c.AccessKey, c.UseSSL, c.Timeout)
+}
+
+// GoString is String, for %#v.
+func (c Config) GoString() string { return c.String() }
+
+// LogValue implements slog.LogValuer without the secret key.
+func (c Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("endpoint", c.Endpoint), slog.String("public_endpoint", c.PublicEndpoint),
+		slog.String("bucket", c.Bucket), slog.String("region", c.Region), slog.String("access_key", c.AccessKey),
+		slog.String("secret_key", "[redacted]"), slog.Bool("use_ssl", c.UseSSL), slog.Duration("timeout", c.Timeout),
+	)
+}
+
+// S3 implements appcatalog.PhotoStore on an S3-compatible store: Silo (the
+// MinIO fork) locally, Cloudflare R2 in production. It talks to Endpoint,
+// and signs URLs for PublicEndpoint with a second client that never
+// connects: with the region set, signing is local. Every failure but a
+// missing or replaced object matches shared.ErrUnavailable. It never logs
+// a secret or a signed URL.
 type S3 struct {
-	api    *minio.Client
-	signer *minio.Client
-	bucket string
-	log    *slog.Logger
+	api     *minio.Client
+	signer  *minio.Client
+	bucket  string
+	timeout time.Duration
+	log     *slog.Logger
 }
 
 var _ appcatalog.PhotoStore = (*S3)(nil)
@@ -63,7 +93,11 @@ func New(cfg Config, log *slog.Logger) (*S3, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &S3{api: api, signer: signer, bucket: cfg.Bucket, log: log}, nil
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	return &S3{api: api, signer: signer, bucket: cfg.Bucket, timeout: timeout, log: log}, nil
 }
 
 func client(cfg Config, endpoint string) (*minio.Client, error) {
@@ -74,9 +108,7 @@ func client(cfg Config, endpoint string) (*minio.Client, error) {
 		// path style keeps one host per endpoint, as R2 and MinIO serve.
 		Region:       cfg.Region,
 		BucketLookup: minio.BucketLookupPath,
-		// A few retries ride out a blip; the default ten would hold a
-		// request for many seconds when the store is down.
-		MaxRetries: maxRetries,
+		MaxRetries:   maxAttempts,
 	})
 	if err != nil {
 		// minio.New fails only on a malformed endpoint; the message names
@@ -94,18 +126,27 @@ func unavailable(doing, key string, err error) error {
 }
 
 // refusal maps the store's answers for a missing or a replaced object to
-// the port's errors, and anything else to unavailable.
+// the port's errors, and anything else to unavailable. Only NoSuchKey means
+// the object is missing: a missing bucket, or any other 404, is a broken
+// store, not an upload nobody made. (A HEAD answer has no body; minio-go
+// reads the code from Silo's and MinIO's x-minio-error-code header, and
+// guesses NoSuchKey for a bare 404, as R2 sends.)
 func refusal(doing, key string, err error) error {
 	var resp minio.ErrorResponse
 	if errors.As(err, &resp) {
-		switch {
-		case resp.Code == minio.NoSuchKey || resp.StatusCode == http.StatusNotFound:
+		switch resp.Code {
+		case minio.NoSuchKey:
 			return fmt.Errorf("storage: %s %s: %w", doing, key, appcatalog.ErrObjectMissing)
-		case resp.Code == minio.PreconditionFailed || resp.StatusCode == http.StatusPreconditionFailed:
+		case minio.PreconditionFailed:
 			return fmt.Errorf("storage: %s %s: %w", doing, key, appcatalog.ErrObjectChanged)
 		}
 	}
 	return unavailable(doing, key, err)
+}
+
+// bounded returns ctx with the store's per-call timeout.
+func (s *S3) bounded(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, s.timeout)
 }
 
 // SignGet implements appcatalog.PhotoURLs: a GET of the photo's object.
@@ -120,7 +161,8 @@ func (s *S3) SignGet(ctx context.Context, key string, ttl time.Duration) (string
 
 // PresignPut implements appcatalog.PhotoStore: a PUT to the staging place,
 // with Content-Type among the signed headers, so an upload of another type
-// fails its signature.
+// fails its signature. A signed PUT cannot cap the size; the confirm step
+// does (ADR 0024, ADR 0028).
 func (s *S3) PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (appcatalog.SignedUpload, error) {
 	expires := time.Now().Add(ttl)
 	headers := http.Header{"Content-Type": []string{contentType}}
@@ -135,6 +177,8 @@ func (s *S3) PresignPut(ctx context.Context, key, contentType string, ttl time.D
 
 // Stat implements appcatalog.PhotoStore.
 func (s *S3) Stat(ctx context.Context, key string) (appcatalog.ObjectInfo, error) {
+	ctx, cancel := s.bounded(ctx)
+	defer cancel()
 	info, err := s.api.StatObject(ctx, s.bucket, uploadName(key), minio.StatObjectOptions{})
 	if err != nil {
 		return appcatalog.ObjectInfo{}, refusal("stat the upload", key, err)
@@ -155,6 +199,8 @@ func (s *S3) Head(ctx context.Context, key, etag string, n int) ([]byte, error) 
 	if err := opts.SetRange(0, int64(n)-1); err != nil {
 		return nil, unavailable("read the upload", key, err)
 	}
+	ctx, cancel := s.bounded(ctx)
+	defer cancel()
 	obj, err := s.api.GetObject(ctx, s.bucket, uploadName(key), opts)
 	if err != nil {
 		return nil, refusal("read the upload", key, err)
@@ -167,12 +213,14 @@ func (s *S3) Head(ctx context.Context, key, etag string, n int) ([]byte, error) 
 	return head, nil
 }
 
-// DeleteUpload implements appcatalog.PhotoStore. The caller goes on
-// without the error, so a failure is logged here; the lifecycle rule
-// removes the upload within a day anyway.
+// DeleteUpload implements appcatalog.PhotoStore. A failure is logged with
+// the key: a refused upload the caller goes on without is removed by the
+// lifecycle rule within a day.
 func (s *S3) DeleteUpload(ctx context.Context, key string) error {
-	if err := s.api.RemoveObject(ctx, s.bucket, uploadName(key), minio.RemoveObjectOptions{}); err != nil {
-		s.log.WarnContext(ctx, "storage: a refused upload was not deleted; the lifecycle rule will", "key", key, "err", err)
+	bctx, cancel := s.bounded(ctx)
+	defer cancel()
+	if err := s.api.RemoveObject(bctx, s.bucket, uploadName(key), minio.RemoveObjectOptions{}); err != nil {
+		s.log.WarnContext(ctx, "storage: a staged upload was not deleted; the lifecycle rule removes it within a day", "key", key, "err", err)
 		return unavailable("delete the upload", key, err)
 	}
 	return nil
@@ -183,6 +231,8 @@ func (s *S3) DeleteUpload(ctx context.Context, key string) error {
 // checked, stored with the sniffed content type. The upload stays until
 // the lifecycle rule removes it, so promoting it again is harmless.
 func (s *S3) Promote(ctx context.Context, key, etag, contentType string) error {
+	ctx, cancel := s.bounded(ctx)
+	defer cancel()
 	src := minio.CopySrcOptions{Bucket: s.bucket, Object: uploadName(key), MatchETag: `"` + etag + `"`}
 	dst := minio.CopyDestOptions{Bucket: s.bucket, Object: key, ReplaceMetadata: true, ContentType: contentType}
 	if _, err := s.api.CopyObject(ctx, dst, src); err != nil {
@@ -196,9 +246,18 @@ func (s *S3) Promote(ctx context.Context, key, etag, contentType string) error {
 // logged here with the key, for an operator to remove: the lifecycle rule
 // covers uploads only (ADR 0028).
 func (s *S3) Delete(ctx context.Context, key string) error {
-	if err := s.api.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+	bctx, cancel := s.bounded(ctx)
+	defer cancel()
+	if err := s.api.RemoveObject(bctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
 		s.log.ErrorContext(ctx, "storage: a deleted photo's object is left in the bucket", "key", key, "err", err)
 		return unavailable("delete the photo", key, err)
 	}
 	return nil
+}
+
+// ReportOrphan implements appcatalog.PhotoStore: the object at key may have
+// no photo row, and no lifecycle rule reaches it (ADR 0028), so its key is
+// logged for an operator.
+func (s *S3) ReportOrphan(ctx context.Context, key string) {
+	s.log.ErrorContext(ctx, "storage: a promoted object may have no photo row and is left in the bucket", "key", key)
 }

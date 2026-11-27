@@ -362,8 +362,11 @@ type SignedUpload struct {
 // lifecycle rule empties after a day; a confirmed upload is promoted to the
 // photo's own place, which no signed URL can write. Keys are the photos'
 // keys (catalog.PhotoKey) in both places; the adapter decides where each
-// place is. Every failure but those named matches shared.ErrUnavailable,
-// so it is a 503 and never looks like a refusal.
+// place is. Every failure of the store but those named matches
+// shared.ErrUnavailable, so it is a 503 and never looks like a refusal; a
+// call that would hang ends with such an error after a bounded time. A
+// caller's bug, such as Head with n < 1 or an empty etag, is a plain error
+// that matches no sentinel (a 500).
 type PhotoStore interface {
 	PhotoURLs
 	// PresignPut signs an upload of one object of contentType to key's
@@ -387,4 +390,9 @@ type PhotoStore interface {
 	// Delete removes the recorded photo's object at key; a missing one is
 	// no error.
 	Delete(ctx context.Context, key string) error
+	// ReportOrphan tells the store that the object promoted to key has no
+	// photo row: the transaction that recorded it failed after Promote. No
+	// lifecycle rule covers that place (ADR 0028), so the adapter logs the
+	// key for an operator. It never fails.
+	ReportOrphan(ctx context.Context, key string)
 }

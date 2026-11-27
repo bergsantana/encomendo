@@ -32,6 +32,7 @@ type Storage struct {
 	faults  map[string]error
 	before  map[string]func()
 	nextTag int
+	orphans []string
 }
 
 var _ appcatalog.PhotoStore = (*Storage)(nil)
@@ -161,6 +162,9 @@ func (s *Storage) upload(key, etag string) (object, error) {
 
 // Head implements appcatalog.PhotoStore.
 func (s *Storage) Head(_ context.Context, key, etag string, n int) ([]byte, error) {
+	if n < 1 || etag == "" {
+		return nil, fmt.Errorf("fake: read %d bytes of %s at etag %q", n, key, etag)
+	}
 	if err := s.enter("Head", key); err != nil {
 		return nil, err
 	}
@@ -195,6 +199,22 @@ func (s *Storage) Promote(_ context.Context, key, etag, contentType string) erro
 	o.contentType = contentType
 	s.photos[key] = o
 	return nil
+}
+
+// ReportOrphan implements appcatalog.PhotoStore: it logs the call, which
+// Orphans returns.
+func (s *Storage) ReportOrphan(_ context.Context, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, "ReportOrphan "+key)
+	s.orphans = append(s.orphans, key)
+}
+
+// Orphans returns the keys reported as orphans, in order.
+func (s *Storage) Orphans() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.orphans...)
 }
 
 // Delete implements appcatalog.PhotoStore.

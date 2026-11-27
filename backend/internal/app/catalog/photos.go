@@ -212,7 +212,7 @@ func (s *Service) recordPhoto(ctx context.Context, tenant shared.TenantID, owner
 		return StoredPhoto{}, false, err
 	}
 	var stored StoredPhoto
-	var already bool
+	var already, copied bool
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		pos, err := s.photos.Insert(ctx, tenant, owner, photo)
 		if errors.Is(err, ErrPhotoTaken) {
@@ -228,9 +228,22 @@ func (s *Service) recordPhoto(ctx context.Context, tenant shared.TenantID, owner
 		stored = StoredPhoto{Owner: owner, Photo: photo, Position: pos}
 		// Inside the transaction: if the copy fails, no row points at a
 		// missing object.
-		return storageError("promote the upload", s.storage.Promote(ctx, key, info.ETag, contentType))
+		err = s.storage.Promote(ctx, key, info.ETag, contentType)
+		copied = mayHaveCopied(err)
+		return storageError("promote the upload", err)
 	})
+	if err != nil && copied {
+		// The object may sit at the photo's key with no row, where no
+		// lifecycle rule reaches (ADR 0028).
+		s.storage.ReportOrphan(ctx, key)
+	}
 	return stored, already, err
+}
+
+// mayHaveCopied reports whether a Promote that returned err may have left
+// an object at the photo's key: always but for a refusal before the copy.
+func mayHaveCopied(err error) bool {
+	return !errors.Is(err, ErrObjectMissing) && !errors.Is(err, ErrObjectChanged)
 }
 
 // storageError maps the storage port's refusals to the contract's answer:
@@ -296,12 +309,16 @@ func (s *Service) OrderPhotos(ctx context.Context, owner catalog.PhotoOwner, ids
 	return s.photoViews(ctx, ordered)
 }
 
-// DeletePhoto removes owner's photo id: the row, then its object. It needs
-// catalog:write and returns ErrInvalidPhotoOwner, and catalog.ErrPhotoNotFound
-// when owner has no such photo. Once the row is gone the photo is gone for
-// every reader, so an object that storage fails to delete is no error: the
-// adapter logs its key for an operator. The owner's version never changes
-// (plan 3.6).
+// DeletePhoto removes owner's photo id: the row and its staged upload, then
+// its object. It needs catalog:write and returns ErrInvalidPhotoOwner, and
+// catalog.ErrPhotoNotFound when owner has no such photo.
+//
+// The staged upload goes in the row's transaction, and a failure to delete
+// it keeps the row (a 503): otherwise a confirm of the same key after the
+// delete would find the upload and record it again, and a key is used once
+// (ADR 0025). Once the row is gone the photo is gone for every reader, so
+// an object that storage fails to delete is no error: the adapter logs its
+// key for an operator. The owner's version never changes (plan 3.6).
 func (s *Service) DeletePhoto(ctx context.Context, owner catalog.PhotoOwner, id shared.PhotoID) error {
 	by, err := writer(ctx, false)
 	if err != nil {
@@ -311,9 +328,15 @@ func (s *Service) DeletePhoto(ctx context.Context, owner catalog.PhotoOwner, id 
 		return err
 	}
 	tenant := by.TenantID()
+	// The key is rebuilt, not read: a row of this owner has exactly this
+	// key (0008_catalog's check).
+	key := catalog.PhotoKey(tenant, owner, id)
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := s.photos.Delete(ctx, tenant, owner, id); err != nil {
 			return fmt.Errorf("delete photo %s: %w", id, err)
+		}
+		if err := s.storage.DeleteUpload(ctx, key); err != nil {
+			return fmt.Errorf("delete the staged upload of photo %s: %w", id, err)
 		}
 		return nil
 	})
@@ -321,9 +344,7 @@ func (s *Service) DeletePhoto(ctx context.Context, owner catalog.PhotoOwner, id 
 		return err
 	}
 	s.invalidate(ctx, tenant)
-	// The key is rebuilt, not read: a row of this owner has exactly this
-	// key (0008_catalog's check).
-	_ = s.storage.Delete(ctx, catalog.PhotoKey(tenant, owner, id)) // logged by the adapter; see above
+	_ = s.storage.Delete(ctx, key) // logged by the adapter; see above
 	return nil
 }
 
