@@ -18,8 +18,12 @@ server {
 
   # The apps never need to send their URL to another site. Set here, not
   # on the server, so API answers keep the API's own no-referrer.
+  # The admin frames only itself and nobody frames it: in the Android shell
+  # a frame of another site would run beside the session (ADR 0029). Frame
+  # directives only, so scripts and styles are untouched.
   location / {
     add_header Referrer-Policy same-origin always;
+    add_header Content-Security-Policy "frame-src 'self'; frame-ancestors 'none'" always;
     try_files $uri $uri/ /index.html;
   }
 
@@ -27,6 +31,7 @@ server {
   location = /index.html {
     add_header Cache-Control "no-store" always;
     add_header Referrer-Policy same-origin always;
+    add_header Content-Security-Policy "frame-src 'self'; frame-ancestors 'none'" always;
   }
 }
 
