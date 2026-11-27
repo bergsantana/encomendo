@@ -1090,7 +1090,10 @@ export interface paths {
          *     workflow and keeps that version.
          *
          *     The answer carries `trackingUrl`, the order's tracking link, this
-         *     once: the server keeps only its hash. With `sendToCustomer`, the
+         *     once: the server keeps only its hash, and the message it records
+         *     has the link left out. Only this answer and `POST …/tracking-link`
+         *     ever carry a tracking link, in `trackingUrl` or inside
+         *     `whatsappUrl`. With `sendToCustomer`, the
          *     order moves to the status after the first and `whatsappUrl` opens
          *     WhatsApp with the summary for the customer; nothing is sent by the
          *     server.
@@ -1124,8 +1127,9 @@ export interface paths {
          *     again (same catalog item in the same line) keep their status.
          *
          *     - Before any payment, in a draft or awaiting-deposit status, needs
-         *       `order:write`; a discount, deposit percent or days other than the
-         *       store's need `order:manage`.
+         *       `order:write`. Terms left out keep the order's current values; a
+         *       discount, deposit percent or days different from the order's
+         *       current ones need `order:manage` (see `TermsInput`).
          *     - After a payment, or past awaiting deposit, needs `order:manage`
          *       and `customerApproved: true`, the seller confirming that the
          *       customer agreed (`400 approval_required` otherwise). The answer's
@@ -1394,7 +1398,7 @@ export interface paths {
         /**
          * Hoje — counts, what needs the team and the next deliveries.
          * @description Needs `order:read`. Built from active orders, for today in the
-         *     store's time zone. `cost` and `margin` follow the cost rule.
+         *     store's time zone. It carries no cost or margin.
          */
         get: operations["getToday"];
         put?: never;
@@ -2131,8 +2135,9 @@ export interface components {
         /**
          * @description The store's time zone, one per Brazilian offset (ADR 0030). It
          *     decides which day "today" is for dates and alerts. Absent until step
-         *     4.8 serves it, which makes it required; absent means
-         *     America/Sao_Paulo.
+         *     4.8 serves it, which makes it required. A store starts on
+         *     America/Sao_Paulo; a settings update that leaves it out keeps the
+         *     stored zone.
          * @default America/Sao_Paulo
          * @enum {string}
          */
@@ -2334,11 +2339,18 @@ export interface components {
             options?: components["schemas"]["OptionChoice"][];
         };
         /**
-         * @description How the order is handed over and paid. A field left out takes the
-         *     default: the store's deposit percent, the kit's or the store's
-         *     assembly and safety margin days, no freight, no discount. A
-         *     discount, deposit percent or days other than the default need
-         *     `order:manage`.
+         * @description How the order is handed over and paid.
+         *
+         *     - On a new order or a quote, a field left out takes the default: the
+         *       store's deposit percent, the kit's or the store's assembly and
+         *       safety margin days, no freight, no discount. A discount, deposit
+         *       percent or days other than the default need `order:manage`.
+         *     - On a change (`PUT /orders/{orderId}`, or a quote with `orderId`),
+         *       a field left out keeps the order's current value, and a discount,
+         *       deposit percent or days different from the order's current ones
+         *       need `order:manage`, whatever the store default is. Staff can
+         *       change lines without resending terms an owner or admin set, and
+         *       can never put them back to the default.
          */
         TermsInput: {
             handover: components["schemas"]["Handover"];
@@ -2447,7 +2459,7 @@ export interface components {
             change: components["schemas"]["OrderChange"];
             /**
              * Format: uri
-             * @description Present when the order was paid; the wa.me link with the change summary for the customer.
+             * @description Present when the order was paid; the wa.me link with the change summary for the customer. It never carries a tracking link.
              */
             whatsappUrl?: string;
         };
@@ -2488,7 +2500,7 @@ export interface components {
             order: components["schemas"]["Order"];
             /**
              * Format: uri
-             * @description The wa.me link with the message for the client. Nothing was sent.
+             * @description The wa.me link with the message for the client. Nothing was sent. It never carries a tracking link.
              */
             whatsappUrl: string;
         };
@@ -2613,8 +2625,8 @@ export interface components {
             releaseDate: components["schemas"]["CivilDate"] | null;
             /** @description The date promised to the client. */
             deliveryDate: components["schemas"]["CivilDate"];
-            /** @description The date was changed by hand, so the deposit no longer resets it. */
-            deliveryDateSetByOwner: boolean;
+            /** @description Someone with `order:manage` changed the date by hand, so the deposit no longer resets it. */
+            deliveryDateChanged: boolean;
             /** @description Precisa chegar até = delivery date − assembly days. */
             arrivalLimit: components["schemas"]["CivilDate"];
             assemblyDays: number;
@@ -2742,8 +2754,10 @@ export interface components {
                 customerName: string;
                 handedOverOn: components["schemas"]["CivilDate"];
                 total: components["schemas"]["Money"];
-                cost: components["schemas"]["Money"] | null;
-                margin: components["schemas"]["Margin"] | null;
+                /** @description Owner only, as every cost; null when an item's cost was unknown. */
+                cost?: components["schemas"]["Money"] | null;
+                /** @description Owner only, as every margin; null without a full cost. */
+                margin?: components["schemas"]["Margin"] | null;
             }[];
         };
         /**
@@ -2764,8 +2778,12 @@ export interface components {
                 current: boolean;
             }[];
             cancelled: boolean;
-            /** @description The date promised to the client. */
-            forecast: components["schemas"]["CivilDate"];
+            /**
+             * @description The date promised to the client (`orders.delivery_date`), never
+             *     the items' expected dates: a forecast later than the promise is
+             *     "Pode atrasar", which the client never sees.
+             */
+            deliveryDate: components["schemas"]["CivilDate"];
             items: {
                 name: string;
                 quantity: number;
@@ -2962,6 +2980,8 @@ export interface components {
          * @description The order's state refuses the call:
          *
          *     - `version_conflict`: someone saved first; reload.
+         *     - `conflict`: the same `Idempotency-Key` is still being handled; try
+         *       again.
          *     - `invalid_transition`: the status is not one of the order's `moves`.
          *     - `guard_failed`: a phase the move enters is not ready; `guard` says
          *       which (`deposit_unpaid`, `items_not_ready`, `balance_unpaid`).

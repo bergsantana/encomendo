@@ -21,8 +21,9 @@ const (
 	// tracking link (ADR 0030).
 	PermOrderWrite Permission = "order:write"
 	// PermOrderManage covers what changes the deal with the client: cancel,
-	// change the promised date, change an order after a payment, and set a
-	// discount, a deposit percent or days other than the store's (ADR 0030).
+	// change the promised date, change an order after a payment (until it
+	// enters assembling), and set a discount, a deposit percent or days other
+	// than the store's (ADR 0030).
 	PermOrderManage Permission = "order:manage"
 	// PermOrderOverride is the owner's: release an order without the deposit
 	// and void a wrong payment (ADR 0030; docs/architecture.md section 4.2).
@@ -52,9 +53,11 @@ const (
 
 // grantsOf is the role → permission map of docs/architecture.md section
 // 5.4: the owner does everything; admins run the store except finance,
-// settings and the owner's own membership; staff work orders, receiving and
-// production; viewers only read, and never see costs or margins (that rule is
-// a policy function in the contexts that hold costs, not a permission).
+// settings, the owner's own membership and the owner's order overrides
+// (releasing without the deposit, voiding a payment); staff work orders,
+// receiving and production; viewers only read, and never see costs or
+// margins (that rule is a policy function in the contexts that hold costs,
+// not a permission).
 // Each list is sorted, and a new slice is built on every call so no caller
 // can change the map.
 func grantsOf(role shared.Role) []Permission {
