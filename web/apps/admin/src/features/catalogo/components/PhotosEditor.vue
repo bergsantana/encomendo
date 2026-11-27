@@ -9,6 +9,8 @@ import type { Photo } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
 import { useId } from 'vue'
 
+import { photoOwnerWord } from '../photoMessage'
+
 withDefaults(
   defineProps<{
     photos: readonly Photo[]
@@ -48,7 +50,7 @@ function chosen(event: Event): void {
       v-if="!saved"
       class="hint"
     >
-      Salve o {{ subject }} para adicionar fotos.
+      Salve o {{ photoOwnerWord[subject] }} para adicionar fotos.
     </p>
     <template v-else>
       <p

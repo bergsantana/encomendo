@@ -3,21 +3,16 @@ import {
   archiveItem,
   createItem,
   createSupplier,
-  deleteItemPhoto,
   getItem,
-  getSettings,
   type Item,
   type ItemSummary,
   listItems,
   listSuppliers,
-  orderItemPhotos,
-  type Photo,
   type Reference,
   replaceItem,
   restoreItem,
   setItemPublished,
   type Supplier,
-  uploadPhoto,
 } from '@encomendo/api'
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowRef } from 'vue'
@@ -27,8 +22,10 @@ import { useForm } from '../../composables/useForm'
 import { errorMessage } from '../../errorMessage'
 import { useSessionStore } from '../../stores/session'
 import { formField, type ItemDraft, itemChecks, toItemInput } from './itemForm'
-import { photoMessage } from './photoMessage'
+import { useKits } from './kits'
+import { usePhotos } from './photos'
 import { isSupplierPhone, supplierPhone } from './phone'
+import { useStoreSettings } from './storeSettings'
 import { useTaxonomy } from './taxonomy'
 
 /** ItemFilters are the search box, the category filter and "Mostrar arquivados". */
@@ -53,9 +50,11 @@ function inKitMessage(kits: Reference[]): string {
 }
 
 /**
- * useCatalogStore backs the Catálogo screen, Itens tab: the item list and its
- * filters, the item drawer, the supplier created inside it, the photos, and
- * the categories and fields dialogs. Reading needs `catalog:read` and every
+ * useCatalogStore backs the Catálogo screen: the Itens tab (the item list and
+ * its filters, the item drawer, the supplier created inside it, the photos,
+ * and the categories and fields dialogs) and the Kits tab, which `useKits`
+ * keeps. Both tabs share the taxonomy and the store settings, so there is one
+ * copy of each. The Kits tab's names start with `kit`. Reading needs `catalog:read` and every
  * write `catalog:write`; the API checks both. Costs and margins are the
  * owner's (ADR 0025): the store never sends a cost key for another role, and
  * shows what the API sent.
@@ -63,19 +62,20 @@ function inKitMessage(kits: Reference[]): string {
 export const useCatalogStore = defineStore('catalog', () => {
   const session = useSessionStore()
   const taxonomy = useTaxonomy()
+  const settings = useStoreSettings()
+  const kitsTab = useKits({ taxonomy, settings })
 
   const items = shallowRef<ItemSummary[]>([])
   const nextCursor = ref<string | undefined>(undefined)
   const loading = ref(false)
-  /** loaded is true once the first read ended, so the screen tells "loading" from "empty". */
+  /** loaded is true once a list read succeeded, so the screen tells "loading" from "empty". */
   const loaded = ref(false)
+  /** loadFailed is true after a failed open, when the tab offers "Tentar de novo". */
+  const loadFailed = ref(false)
   const filters = reactive<ItemFilters>({ q: '', categoryId: '', includeArchived: false })
   let listRead = 0
 
   const suppliers = shallowRef<Supplier[]>([])
-  const stockEnabled = ref(false)
-  const productionEnabled = ref(false)
-  const currency = ref('BRL')
 
   /** publishingId is the item whose "No portal" is being saved. */
   const publishingId = ref<string | null>(null)
@@ -90,14 +90,11 @@ export const useCatalogStore = defineStore('catalog', () => {
   const drawerLoading = ref(false)
   /** drawerKey changes when the drawer's item is read again, so the form starts over from it. */
   const drawerKey = ref(0)
-  const photos = shallowRef<Photo[]>([])
-  const photoError = ref<string | null>(null)
-  const photoBusy = ref(false)
   /** conflict is true after `version_conflict`, when the drawer offers "Recarregar". */
   const conflict = ref(false)
   const itemForm = useForm()
   const supplierForm = useForm()
-  let photoUploads: AbortController | null = null
+  const itemPhotos = usePhotos('item', () => editing.value?.id ?? null)
 
   /** sendsCosts says whether the signed-in role may write costs: the owner only (ADR 0025). */
   const sendsCosts = computed(() => session.role === 'owner')
@@ -149,18 +146,11 @@ export const useCatalogStore = defineStore('catalog', () => {
     suppliers.value = all
   }
 
-  async function readSettings(): Promise<void> {
-    const settings = await getSettings(api)
-    stockEnabled.value = settings.stockEnabled
-    productionEnabled.value = settings.productionEnabled
-    currency.value = settings.currency
-  }
-
   /** open reads the list and everything the drawer and dialogs choose from. */
   async function open(): Promise<void> {
     notice.value = null
-    await guard(() => Promise.all([readItems(undefined), taxonomy.loadCategories(), taxonomy.loadAttributes(), readSuppliers(), readSettings()]))
-    loaded.value = true
+    const read = await guard(() => Promise.all([readItems(undefined), taxonomy.loadCategories(), taxonomy.loadAttributes(), readSuppliers(), settings.load()]))
+    loadFailed.value = read === undefined
   }
 
   /** search reads the first page again with the current filters. */
@@ -194,12 +184,12 @@ export const useCatalogStore = defineStore('catalog', () => {
     itemForm.clear()
     supplierForm.clear()
     conflict.value = false
-    photoError.value = null
+    itemPhotos.clearError()
   }
 
   function showItem(item: Item | null): void {
     editing.value = item
-    photos.value = item?.photos ?? []
+    itemPhotos.set(item?.photos ?? [])
     drawerKey.value += 1
     resetDrawer()
     drawerOpen.value = true
@@ -225,8 +215,7 @@ export const useCatalogStore = defineStore('catalog', () => {
 
   /** closeDrawer closes it, dropping unsaved edits and any photo still going up. */
   function closeDrawer(): void {
-    photoUploads?.abort()
-    photoUploads = null
+    itemPhotos.abort()
     drawerOpen.value = false
     editing.value = null
     resetDrawer()
@@ -333,61 +322,17 @@ export const useCatalogStore = defineStore('catalog', () => {
     return created
   }
 
-  /** addPhotos uploads the chosen files in turn to the open item, stopping at the first one refused. */
-  async function addPhotos(files: File[]): Promise<void> {
-    const current = editing.value
-    if (current === null) return
-    photoError.value = null
-    photoUploads = new AbortController()
-    photoBusy.value = true
-    try {
-      for (const file of files) {
-        const photo = await uploadPhoto(api, { ownerType: 'item', ownerId: current.id, file, signal: photoUploads.signal })
-        photos.value = [...photos.value, photo]
-      }
-    } catch (failure) {
-      photoError.value = photoMessage(failure)
-    } finally {
-      photoBusy.value = false
-    }
-  }
-
-  /** makeCover puts a photo first, keeping the others in their order. */
-  async function makeCover(photo: Photo): Promise<void> {
-    const current = editing.value
-    if (current === null) return
-    photoError.value = null
-    try {
-      const ids = [photo.id, ...photos.value.filter((other) => other.id !== photo.id).map((other) => other.id)]
-      photos.value = (await orderItemPhotos(api, current.id, ids)).items
-    } catch (failure) {
-      photoError.value = photoMessage(failure)
-    }
-  }
-
-  /** removePhoto deletes a photo of the open item. */
-  async function removePhoto(photo: Photo): Promise<void> {
-    const current = editing.value
-    if (current === null) return
-    photoError.value = null
-    try {
-      await deleteItemPhoto(api, current.id, photo.id)
-      photos.value = photos.value.filter((other) => other.id !== photo.id)
-    } catch (failure) {
-      photoError.value = photoMessage(failure)
-    }
-  }
-
   return {
     items,
     hasMore: computed(() => nextCursor.value !== undefined),
     loading,
     loaded,
+    loadFailed,
     filters,
     suppliers,
-    stockEnabled,
-    productionEnabled,
-    currency,
+    stockEnabled: settings.stockEnabled,
+    productionEnabled: settings.productionEnabled,
+    currency: settings.currency,
     sendsCosts,
     publishingId,
     notice,
@@ -396,9 +341,9 @@ export const useCatalogStore = defineStore('catalog', () => {
     drawerOpen,
     drawerLoading,
     drawerKey,
-    photos,
-    photoError,
-    photoBusy,
+    photos: itemPhotos.photos,
+    photoError: itemPhotos.error,
+    photoBusy: itemPhotos.busy,
     conflict,
     saving: itemForm.submitting,
     formError: itemForm.error,
@@ -437,8 +382,46 @@ export const useCatalogStore = defineStore('catalog', () => {
     archive,
     restore,
     addSupplier,
-    addPhotos,
-    makeCover,
-    removePhoto,
+    addPhotos: itemPhotos.add,
+    makeCover: itemPhotos.makeCover,
+    removePhoto: itemPhotos.remove,
+    // The Kits tab.
+    kits: kitsTab.kits,
+    kitsHasMore: kitsTab.hasMore,
+    kitsLoading: kitsTab.loading,
+    kitsLoaded: kitsTab.loaded,
+    kitsLoadFailed: kitsTab.loadFailed,
+    includeArchivedKits: kitsTab.includeArchived,
+    catalogItems: kitsTab.catalogItems,
+    defaultAssemblyDays: settings.assemblyDays,
+    defaultSafetyMarginDays: settings.safetyMarginDays,
+    publishingKitId: kitsTab.publishingId,
+    kitNotice: kitsTab.notice,
+    kitError: kitsTab.error,
+    editingKit: kitsTab.editing,
+    kitEditorOpen: kitsTab.editorOpen,
+    kitEditorLoading: kitsTab.editorLoading,
+    kitConflict: kitsTab.conflict,
+    kitSaving: kitsTab.saving,
+    kitFormError: kitsTab.formError,
+    kitFieldErrors: kitsTab.fieldErrors,
+    kitPhotos: kitsTab.photos.photos,
+    kitPhotoError: kitsTab.photos.error,
+    kitPhotoBusy: kitsTab.photos.busy,
+    openKits: kitsTab.open,
+    searchKits: kitsTab.search,
+    setIncludeArchivedKits: kitsTab.setIncludeArchived,
+    loadMoreKits: kitsTab.loadMore,
+    publishKit: kitsTab.setPublished,
+    openNewKit: kitsTab.openNew,
+    openKit: kitsTab.openEdit,
+    closeKitEditor: kitsTab.closeEditor,
+    reloadKit: kitsTab.reload,
+    saveKit: kitsTab.save,
+    archiveKit: kitsTab.archive,
+    restoreKit: kitsTab.restore,
+    addKitPhotos: kitsTab.photos.add,
+    makeKitCover: kitsTab.photos.makeCover,
+    removeKitPhoto: kitsTab.photos.remove,
   }
 })

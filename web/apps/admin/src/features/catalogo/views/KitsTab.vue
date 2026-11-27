@@ -14,38 +14,39 @@ import { usePermission } from '../../../composables/usePermission'
 import KitDrawer from '../components/KitDrawer.vue'
 import KitsTable from '../components/KitsTable.vue'
 import type { KitDraft } from '../kitForm'
-import { useKitsStore } from '../kitStore'
+import { useCatalogStore } from '../store'
 
-const store = useKitsStore()
+const store = useCatalogStore()
 const {
   kits,
-  hasMore,
-  loading,
-  loaded,
-  includeArchived,
+  kitsHasMore: hasMore,
+  kitsLoading: loading,
+  kitsLoaded: loaded,
+  kitsLoadFailed: loadFailed,
+  includeArchivedKits: includeArchived,
   catalogItems,
   categories,
   attributes,
   defaultAssemblyDays,
   defaultSafetyMarginDays,
-  publishingId,
-  notice,
-  error,
-  editing,
-  editorOpen,
-  photos,
-  photoError,
-  photoBusy,
-  conflict,
-  saving,
-  formError,
-  fieldErrors,
+  publishingKitId: publishingId,
+  kitNotice: notice,
+  kitError: error,
+  editingKit: editing,
+  kitEditorOpen: editorOpen,
+  kitPhotos: photos,
+  kitPhotoError: photoError,
+  kitPhotoBusy: photoBusy,
+  kitConflict: conflict,
+  kitSaving: saving,
+  kitFormError: formError,
+  kitFieldErrors: fieldErrors,
 } = storeToRefs(store)
 const canWrite = usePermission('catalog:write')
 const archivedId = useId()
 const status = useTemplateRef<HTMLElement>('status')
 
-onMounted(() => store.open())
+onMounted(() => store.openKits())
 
 // The editor closes after an archive, taking the button just clicked with it:
 // focus lands on what happened.
@@ -59,21 +60,21 @@ async function save(draft: KitDraft): Promise<void> {
 }
 
 async function archive(): Promise<void> {
-  await store.archive()
+  await store.archiveKit()
   if (notice.value !== null) await focusStatus()
 }
 
 async function restore(): Promise<void> {
-  await store.restore()
+  await store.restoreKit()
   if (notice.value !== null) await focusStatus()
 }
 
 function toggleArchived(event: Event): void {
-  if (event.target instanceof HTMLInputElement) void store.setIncludeArchived(event.target.checked)
+  if (event.target instanceof HTMLInputElement) void store.setIncludeArchivedKits(event.target.checked)
 }
 
 function coverPhoto(photo: Photo): void {
-  void store.makeCover(photo)
+  void store.makeKitCover(photo)
 }
 </script>
 
@@ -99,8 +100,8 @@ function coverPhoto(photo: Photo): void {
       {{ error }}
     </p>
     <BaseButton
-      v-if="error && !loaded"
-      @click="store.open()"
+      v-if="loadFailed"
+      @click="store.openKits()"
     >
       Tentar de novo
     </BaseButton>
@@ -119,7 +120,7 @@ function coverPhoto(photo: Photo): void {
         v-if="canWrite"
         variant="primary"
         class="new"
-        @click="store.openNew()"
+        @click="store.openNewKit()"
       >
         Novo kit
       </BaseButton>
@@ -130,11 +131,11 @@ function coverPhoto(photo: Photo): void {
       :kits="kits"
       :can-write="canWrite"
       :publishing-id="publishingId"
-      @edit="store.openEdit($event)"
-      @publish="(kit, published) => store.setPublished(kit, published)"
+      @edit="store.openKit($event)"
+      @publish="(kit, published) => store.publishKit(kit, published)"
     />
     <p
-      v-else-if="loading || !loaded"
+      v-else-if="(loading || !loaded) && !error"
       class="muted"
     >
       Carregando os kits…
@@ -145,7 +146,7 @@ function coverPhoto(photo: Photo): void {
       </p>
       <BaseButton
         v-if="canWrite"
-        @click="store.openNew()"
+        @click="store.openNewKit()"
       >
         Novo kit
       </BaseButton>
@@ -153,7 +154,7 @@ function coverPhoto(photo: Photo): void {
     <BaseButton
       v-if="hasMore"
       :disabled="loading"
-      @click="store.loadMore()"
+      @click="store.loadMoreKits()"
     >
       Carregar mais
     </BaseButton>
@@ -176,13 +177,13 @@ function coverPhoto(photo: Photo): void {
       :photo-error="photoError"
       :photo-busy="photoBusy"
       @save="save"
-      @cancel="store.closeEditor()"
+      @cancel="store.closeKitEditor()"
       @archive="archive"
       @restore="restore"
       @reload="store.reloadKit()"
-      @add-photos="store.addPhotos($event)"
+      @add-photos="store.addKitPhotos($event)"
       @cover-photo="coverPhoto"
-      @remove-photo="store.removePhoto($event)"
+      @remove-photo="store.removeKitPhoto($event)"
     />
   </div>
 </template>

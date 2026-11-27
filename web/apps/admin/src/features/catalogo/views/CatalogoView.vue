@@ -27,6 +27,7 @@ const {
   hasMore,
   loading,
   loaded,
+  loadFailed,
   filters,
   suppliers,
   stockEnabled,
@@ -155,7 +156,7 @@ function coverPhoto(photo: Photo): void {
         {{ error }}
       </p>
       <BaseButton
-        v-if="error && !loaded"
+        v-if="loadFailed"
         @click="store.open()"
       >
         Tentar de novo
@@ -181,7 +182,7 @@ function coverPhoto(photo: Photo): void {
         @publish="(item, published) => store.setPublished(item, published)"
       />
       <p
-        v-else-if="loading || !loaded"
+        v-else-if="(loading || !loaded) && !error"
         class="muted"
       >
         Carregando o catálogo…

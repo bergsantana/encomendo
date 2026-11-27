@@ -1182,3 +1182,90 @@ describe('the Campos dialog keeps what is typed', () => {
     expect(dialog.get('[role=group]').element.contains(document.activeElement)).toBe(true)
   })
 })
+
+describe('when the first read fails', () => {
+  it('offers "Tentar de novo" and lists the items when it works', async () => {
+    signedInAs('admin', writer)
+    let reads = 0
+    server.use(http.get('*/api/v1/admin/catalog/items', () => (++reads === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json({ items: [summary()] }))))
+    const app = await openApp('/catalogo')
+    await flushPromises()
+
+    expect(app.wrapper.get('[role=alert]').text()).toBe('O servidor não respondeu. Tente de novo em instantes.')
+    expect(app.wrapper.text()).not.toContain('Carregando o catálogo…')
+    expect(app.wrapper.text()).not.toContain('Nenhum item no catálogo ainda.')
+
+    await button(app.wrapper, 'Tentar de novo').trigger('click')
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Banco de couro Scrambler'))
+
+    expect(app.wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(app.wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+
+  it('still offers it when only the categories failed', async () => {
+    signedInAs('admin', writer)
+    let reads = 0
+    server.use(http.get('*/api/v1/admin/catalog/categories', () => (++reads === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json({ items: [bancos] }))))
+    const app = await openApp('/catalogo')
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Banco de couro Scrambler'))
+
+    await button(app.wrapper, 'Tentar de novo').trigger('click')
+    await flushPromises()
+
+    expect(app.wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+})
+
+describe('archiving and restoring with edits not saved', () => {
+  it('asks "Descartar as alterações?" before archiving, and archives only on "Descartar"', async () => {
+    signedInAs('admin', writer)
+    const archived: unknown[] = []
+    server.use(
+      http.get(`*/api/v1/admin/catalog/items/${bancoId}`, () => HttpResponse.json(item())),
+      http.post(`*/api/v1/admin/catalog/items/${bancoId}/archive`, async ({ request }) => {
+        archived.push(await request.json())
+        return HttpResponse.json(item({ archived: true, published: false, version: 4 }))
+      }),
+    )
+    const { wrapper } = await openCatalog()
+    const drawer = await openItem(wrapper)
+    await field(drawer, 'Nome').setValue('Outro nome')
+
+    await button(drawer, 'Arquivar').trigger('click')
+    await flushPromises()
+    expect(drawer.text()).toContain('Descartar as alterações?')
+    expect(archived).toEqual([])
+
+    await button(drawer, 'Continuar editando').trigger('click')
+    expect(drawer.text()).not.toContain('Descartar as alterações?')
+    await button(drawer, 'Arquivar').trigger('click')
+    await button(drawer, 'Descartar').trigger('click')
+    await flushPromises()
+
+    expect(archived).toEqual([{ version: 3 }])
+  })
+
+  it('asks before restoring too', async () => {
+    signedInAs('admin', writer)
+    const restored: unknown[] = []
+    server.use(
+      http.get(`*/api/v1/admin/catalog/items/${bancoId}`, () => HttpResponse.json(item({ archived: true, published: false }))),
+      http.post(`*/api/v1/admin/catalog/items/${bancoId}/restore`, async ({ request }) => {
+        restored.push(await request.json())
+        return HttpResponse.json(item({ version: 4 }))
+      }),
+    )
+    const { wrapper } = await openCatalog()
+    const drawer = await openItem(wrapper)
+    await field(drawer, 'Nome').setValue('Outro nome')
+
+    await button(drawer, 'Restaurar').trigger('click')
+    await flushPromises()
+    expect(drawer.text()).toContain('Descartar as alterações?')
+    expect(restored).toEqual([])
+    await button(drawer, 'Descartar').trigger('click')
+    await flushPromises()
+
+    expect(restored).toEqual([{ version: 3 }])
+  })
+})

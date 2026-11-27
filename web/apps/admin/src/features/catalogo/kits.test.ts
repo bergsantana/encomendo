@@ -832,3 +832,132 @@ describe('kit photos', () => {
     expect(drawer.get('[role=alert]').text()).toBe('Cada kit pode ter até 8 fotos.')
   })
 })
+
+describe('when a read fails', () => {
+  it('offers "Tentar de novo" on the Kits tab, and lists the kits when it works', async () => {
+    signedInAs('admin', writer)
+    let reads = 0
+    server.use(http.get('*/api/v1/admin/catalog/kits', () => (++reads === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json({ items: [kitSummary()] }))))
+    const app = await openApp('/catalogo')
+    await button(app.wrapper, 'Kits').trigger('click')
+    await flushPromises()
+
+    expect(app.wrapper.get('[role=alert]').text()).toBe('O servidor não respondeu. Tente de novo em instantes.')
+    expect(app.wrapper.text()).not.toContain('Carregando os kits…')
+    expect(app.wrapper.text()).not.toContain('Nenhum kit ainda.')
+
+    await button(app.wrapper, 'Tentar de novo').trigger('click')
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Kit Scrambler CB 500X'))
+
+    expect(app.wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(app.wrapper.findAll('button').map((b) => b.text())).not.toContain('Tentar de novo')
+  })
+
+  it('shows the kits that were read when the categories could not be', async () => {
+    signedInAs('admin', writer)
+    let reads = 0
+    server.use(http.get('*/api/v1/admin/catalog/categories', () => (++reads <= 2 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json({ items: [bancos, guidoes] }))))
+    const app = await openApp('/catalogo')
+    await button(app.wrapper, 'Kits').trigger('click')
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Kit Scrambler CB 500X'))
+    await flushPromises()
+
+    expect(app.wrapper.get('[role=alert]').text()).toBe('O servidor não respondeu. Tente de novo em instantes.')
+    await button(app.wrapper, 'Tentar de novo').trigger('click')
+    await flushPromises()
+
+    expect(app.wrapper.find('[role=alert]').exists()).toBe(false)
+  })
+})
+
+describe('archiving and restoring with edits not saved', () => {
+  it('asks "Descartar as alterações?" before archiving, and archives only on "Descartar"', async () => {
+    signedInAs('admin', writer)
+    serveKit(kit())
+    const archived: unknown[] = []
+    server.use(
+      http.post(`*/api/v1/admin/catalog/kits/${kitId}/archive`, async ({ request }) => {
+        archived.push(await request.json())
+        return HttpResponse.json(kit({ archived: true, published: false, version: 5 }))
+      }),
+    )
+    const { wrapper } = await openKits()
+    const drawer = await openKit(wrapper)
+    await field(drawer, 'Nome').setValue('Outro nome')
+
+    await button(drawer, 'Arquivar').trigger('click')
+    await flushPromises()
+    expect(drawer.text()).toContain('Descartar as alterações?')
+    expect(archived).toEqual([])
+
+    await button(drawer, 'Continuar editando').trigger('click')
+    expect(drawer.text()).not.toContain('Descartar as alterações?')
+    await button(drawer, 'Arquivar').trigger('click')
+    await button(drawer, 'Descartar').trigger('click')
+    await flushPromises()
+
+    expect(archived).toEqual([{ version: 4 }])
+  })
+
+  it('asks before restoring too', async () => {
+    signedInAs('admin', writer)
+    serveKit(kit({ archived: true, published: false }))
+    const restored: unknown[] = []
+    server.use(
+      http.post(`*/api/v1/admin/catalog/kits/${kitId}/restore`, async ({ request }) => {
+        restored.push(await request.json())
+        return HttpResponse.json(kit({ version: 5 }))
+      }),
+    )
+    const { wrapper } = await openKits()
+    const drawer = await openKit(wrapper)
+    await field(drawer, 'Nome').setValue('Outro nome')
+
+    await button(drawer, 'Restaurar').trigger('click')
+    await flushPromises()
+    expect(restored).toEqual([])
+    await button(drawer, 'Descartar').trigger('click')
+    await flushPromises()
+
+    expect(restored).toEqual([{ version: 4 }])
+  })
+})
+
+describe('the kit editor with a category the store no longer has', () => {
+  it('lists the alternatives flat, with no suggestion heading', async () => {
+    signedInAs('admin', writer)
+    serve({ categories: [] })
+    serveKit(kit())
+    const { wrapper } = await openKits()
+    const drawer = await openKit(wrapper)
+
+    const swap = group(group(drawer, 'Banco de couro Scrambler'), 'Pode trocar por')
+
+    expect(swap.findAll('legend').map((legend) => legend.text())).toEqual(['Pode trocar por'])
+    expect(swap.findAll('label').map((l) => l.text())).toContain('Banco de couro Premium')
+  })
+})
+
+describe('an archived item named twice', () => {
+  it('is said once', async () => {
+    signedInAs('admin', writer)
+    serveKit(kit())
+    server.use(
+      http.put(`*/api/v1/admin/catalog/kits/${kitId}`, () =>
+        problem(409, 'item_archived', 'Item arquivado', {
+          references: [
+            { id: pedalId, name: 'Pedal antigo' },
+            { id: pedalId, name: 'Pedal antigo' },
+          ],
+        }),
+      ),
+    )
+    const { wrapper } = await openKits()
+    const drawer = await openKit(wrapper)
+
+    await drawer.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(drawer.get('[role=alert]').text()).toBe('Pedal antigo está arquivado e não pode entrar no kit.')
+  })
+})

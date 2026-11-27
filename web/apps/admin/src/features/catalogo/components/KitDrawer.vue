@@ -57,7 +57,8 @@ const emit = defineEmits<{
 const draft = reactive<KitDraft>(props.kit === null ? emptyKitDraft() : draftFromKit(props.kit))
 /** initial is the form as it opened or was last saved, to tell whether anything was typed since. */
 const initial = ref(JSON.stringify(draft))
-const discarding = ref(false)
+/** pending is the way out waiting for "Descartar as alterações?": closing, or archiving or restoring with edits not saved. */
+const pending = ref<'cancel' | 'archive' | 'restore' | null>(null)
 const descriptionId = useId()
 const publishedId = useId()
 const swapName = useId()
@@ -81,7 +82,7 @@ watch(
   (kit) => {
     Object.assign(draft, kit === null ? emptyKitDraft() : draftFromKit(kit))
     initial.value = JSON.stringify(draft)
-    discarding.value = false
+    pending.value = null
   },
 )
 
@@ -96,16 +97,22 @@ watch(
 )
 
 /**
- * requestClose is every way out that drops the draft (Cancelar, Escape, a
- * click outside). With unsaved edits it asks first, so a stray click cannot
- * throw them away.
+ * ask is every way out that drops the draft (Cancelar, Escape, a click
+ * outside) and the two that end it ("Arquivar", "Restaurar"). With unsaved
+ * edits it asks first, so a stray click cannot throw them away.
  */
-function requestClose(): void {
+function ask(action: 'cancel' | 'archive' | 'restore'): void {
   if (!props.canWrite || !edited.value) {
-    emit('cancel')
+    run(action)
     return
   }
-  discarding.value = true
+  pending.value = action
+}
+
+function run(action: 'cancel' | 'archive' | 'restore'): void {
+  if (action === 'cancel') emit('cancel')
+  else if (action === 'archive') emit('archive')
+  else emit('restore')
 }
 </script>
 
@@ -113,7 +120,7 @@ function requestClose(): void {
   <BaseDialog
     :title="title"
     variant="drawer"
-    @close="requestClose"
+    @close="ask('cancel')"
   >
     <form
       class="form"
@@ -250,9 +257,9 @@ function requestClose(): void {
       </div>
 
       <DiscardQuestion
-        v-if="discarding"
-        @keep="discarding = false"
-        @discard="emit('cancel')"
+        v-if="pending !== null"
+        @keep="pending = null"
+        @discard="run(pending)"
       />
 
       <div class="buttons">
@@ -264,18 +271,18 @@ function requestClose(): void {
           >
             Salvar
           </BaseButton>
-          <BaseButton @click="requestClose">
+          <BaseButton @click="ask('cancel')">
             Cancelar
           </BaseButton>
           <BaseButton
             v-if="kit !== null && !archived"
-            @click="emit('archive')"
+            @click="ask('archive')"
           >
             Arquivar
           </BaseButton>
           <BaseButton
             v-if="kit !== null && archived"
-            @click="emit('restore')"
+            @click="ask('restore')"
           >
             Restaurar
           </BaseButton>

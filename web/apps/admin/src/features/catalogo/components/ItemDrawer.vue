@@ -63,7 +63,8 @@ const descriptionId = useId()
 const publishedId = useId()
 /** initial is the form as it opened, to tell whether anything was typed since. */
 const initial = JSON.stringify(draft)
-const discarding = ref(false)
+/** pending is the way out waiting for "Descartar as alterações?": closing, or archiving or restoring with edits not saved. */
+const pending = ref<'cancel' | 'archive' | 'restore' | null>(null)
 
 const archived = computed(() => props.item?.archived === true)
 const title = computed(() => (!props.canWrite ? 'Item' : props.item === null ? 'Novo item' : 'Editar item'))
@@ -80,17 +81,25 @@ function supplierErrors(slot: 'main' | 'backup'): Record<string, string> {
   }
 }
 
+const edited = computed(() => JSON.stringify(draft) !== initial)
+
 /**
- * requestClose is every way out that drops the draft (Cancelar, Escape, a
- * click outside). With unsaved edits it asks first, so a stray click cannot
- * throw them away.
+ * ask is every way out that drops the draft (Cancelar, Escape, a click
+ * outside) and the two that end it ("Arquivar", "Restaurar"). With unsaved
+ * edits it asks first, so a stray click cannot throw them away.
  */
-function requestClose(): void {
-  if (!props.canWrite || JSON.stringify(draft) === initial) {
-    emit('cancel')
+function ask(action: 'cancel' | 'archive' | 'restore'): void {
+  if (!props.canWrite || !edited.value) {
+    run(action)
     return
   }
-  discarding.value = true
+  pending.value = action
+}
+
+function run(action: 'cancel' | 'archive' | 'restore'): void {
+  if (action === 'cancel') emit('cancel')
+  else if (action === 'archive') emit('archive')
+  else emit('restore')
 }
 
 function chooseMode(value: string): void {
@@ -134,7 +143,7 @@ defineExpose({
   <BaseDialog
     :title="title"
     variant="drawer"
-    @close="requestClose"
+    @close="ask('cancel')"
   >
     <form
       class="form"
@@ -288,9 +297,9 @@ defineExpose({
       </div>
 
       <DiscardQuestion
-        v-if="discarding"
-        @keep="discarding = false"
-        @discard="emit('cancel')"
+        v-if="pending !== null"
+        @keep="pending = null"
+        @discard="run(pending)"
       />
 
       <div class="buttons">
@@ -302,18 +311,18 @@ defineExpose({
           >
             Salvar
           </BaseButton>
-          <BaseButton @click="requestClose">
+          <BaseButton @click="ask('cancel')">
             Cancelar
           </BaseButton>
           <BaseButton
             v-if="item !== null && !archived"
-            @click="emit('archive')"
+            @click="ask('archive')"
           >
             Arquivar
           </BaseButton>
           <BaseButton
             v-if="item !== null && archived"
-            @click="emit('restore')"
+            @click="ask('restore')"
           >
             Restaurar
           </BaseButton>

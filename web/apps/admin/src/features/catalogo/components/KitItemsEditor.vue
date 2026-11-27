@@ -50,11 +50,13 @@ interface AlternativeGroup {
 function alternativesFor(row: KitItemDraft): AlternativeGroup[] {
   const own = itemsById.value.get(row.itemId)
   const candidates = props.catalogItems.filter((item) => item.id !== row.itemId && (!item.archived || row.alternativeItemIds.includes(item.id)))
-  const categoryId = own?.categoryId ?? null
-  const suggested = categoryId === null ? [] : candidates.filter((item) => item.categoryId === categoryId)
+  // Without a category the store still knows (none, or one deleted meanwhile), there is nothing to suggest from.
+  const ownCategory = own?.categoryId ?? null
+  const categoryName = ownCategory === null ? undefined : categoryNames.value.get(ownCategory)
+  const suggested = categoryName === undefined ? [] : candidates.filter((item) => item.categoryId === ownCategory)
   const others = candidates.filter((item) => !suggested.includes(item))
   const groups: AlternativeGroup[] = []
-  if (suggested.length > 0) groups.push({ title: `Sugestões da categoria ${categoryNames.value.get(categoryId ?? '') ?? ''}`, items: suggested })
+  if (suggested.length > 0) groups.push({ title: `Sugestões da categoria ${categoryName}`, items: suggested })
   if (others.length > 0) groups.push({ title: suggested.length > 0 ? 'Outros itens' : null, items: others })
   return groups
 }

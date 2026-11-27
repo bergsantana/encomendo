@@ -1,72 +1,62 @@
 import {
   ApiError,
   archiveKit,
-  type Attribute,
-  type Category,
   createKit,
-  deleteKitPhoto,
   getKit,
-  getSettings,
   type ItemSummary,
   type Kit,
   type KitSummary,
-  listAttributes,
-  listCategories,
   listItems,
   listKits,
-  orderKitPhotos,
-  type Photo,
   type Reference,
   replaceKit,
   restoreKit,
   setKitPublished,
-  uploadPhoto,
 } from '@encomendo/api'
-import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 
 import { api } from '../../api'
 import { useForm } from '../../composables/useForm'
 import { errorMessage } from '../../errorMessage'
 import { type KitDraft, kitChecks, kitField, toKitInput } from './kitForm'
-import { photoMessage } from './photoMessage'
+import { usePhotos } from './photos'
+import type { useStoreSettings } from './storeSettings'
+import type { useTaxonomy } from './taxonomy'
 
 const pageSize = 50
 const fixTheFields = 'Confira os campos destacados.'
 const conflictMessage = 'Outra pessoa alterou este kit. Recarregue para ver a versão atual.'
 
-/** archivedMessage names the archived items a kit write was refused for (`item_archived`). */
+/** archivedMessage names the archived items a kit write was refused for (`item_archived`), once each. */
 function archivedMessage(items: Reference[]): string {
-  if (items.length === 0) return 'Um item do kit está arquivado e não pode entrar no kit.'
-  return items.map((item) => `${item.name} está arquivado e não pode entrar no kit.`).join(' ')
+  const names = new Map(items.map((item) => [item.id, item.name]))
+  if (names.size === 0) return 'Um item do kit está arquivado e não pode entrar no kit.'
+  return [...names.values()].map((name) => `${name} está arquivado e não pode entrar no kit.`).join(' ')
 }
 
 /**
- * useKitsStore backs the Kits tab of Catálogo: the kit list, the kit editor,
- * its photos, and what the editor chooses from (the store's items, fields and
- * default days). It is the second half of the Catálogo feature, apart from
- * `useCatalogStore` only to keep each store readable. Reading needs
- * `catalog:read` and every write `catalog:write`; the API checks both.
+ * useKits is the Kits tab of Catálogo: the kit list, the kit editor, its
+ * photos, and the store's items the editor chooses from. The catalog store
+ * uses it and shares the categories, fields and settings with the Itens tab,
+ * so there is one copy of each. Reading needs `catalog:read` and every write
+ * `catalog:write`; the API checks both.
  *
- * Totals, discounts, margins and days are the API's (ADR 0025): the store
- * keeps the kit as the API returned it and never works any of them out.
+ * Totals, discounts, margins and days are the API's (ADR 0025): this keeps
+ * the kit as the API returned it and never works any of them out.
  */
-export const useKitsStore = defineStore('catalogKits', () => {
+export function useKits(deps: { taxonomy: ReturnType<typeof useTaxonomy>; settings: ReturnType<typeof useStoreSettings> }) {
   const kits = shallowRef<KitSummary[]>([])
   const nextCursor = ref<string | undefined>(undefined)
   const loading = ref(false)
-  /** loaded is true once the first read ended, so the screen tells "loading" from "empty". */
+  /** loaded is true once a list read succeeded, so the screen tells "loading" from "empty". */
   const loaded = ref(false)
+  /** loadFailed is true after a failed open, when the tab offers "Tentar de novo". */
+  const loadFailed = ref(false)
   const includeArchived = ref(false)
   let listRead = 0
 
   /** catalogItems are every item of the store, archived ones too, so a kit row can name and place its item. */
   const catalogItems = shallowRef<ItemSummary[]>([])
-  const categories = shallowRef<Category[]>([])
-  const attributes = shallowRef<Attribute[]>([])
-  /** defaultAssemblyDays and defaultSafetyMarginDays are the store's, shown as "Padrão da loja". */
-  const defaultAssemblyDays = ref<number | null>(null)
-  const defaultSafetyMarginDays = ref<number | null>(null)
 
   const publishingId = ref<string | null>(null)
   /** notice is the last change that went through, for a status line. */
@@ -78,13 +68,10 @@ export const useKitsStore = defineStore('catalogKits', () => {
   const editing = shallowRef<Kit | null>(null)
   const editorOpen = ref(false)
   const editorLoading = ref(false)
-  const photos = shallowRef<Photo[]>([])
-  const photoError = ref<string | null>(null)
-  const photoBusy = ref(false)
   /** conflict is true after `version_conflict`, when the editor offers "Recarregar". */
   const conflict = ref(false)
   const form = useForm()
-  let photoUploads: AbortController | null = null
+  const photos = usePhotos('kit', () => editing.value?.id ?? null)
 
   async function guard<T>(call: () => Promise<T>): Promise<T | undefined> {
     error.value = null
@@ -123,21 +110,16 @@ export const useKitsStore = defineStore('catalogKits', () => {
     catalogItems.value = all
   }
 
-  async function readSettings(): Promise<void> {
-    const settings = await getSettings(api)
-    defaultAssemblyDays.value = settings.assemblyDays
-    defaultSafetyMarginDays.value = settings.safetyMarginDays
-  }
-
-  /** open reads the list and everything the editor chooses from. */
+  /**
+   * open reads the list and everything the editor chooses from, all at once,
+   * so one read failing does not keep the others from showing.
+   */
   async function open(): Promise<void> {
     notice.value = null
-    await guard(async () => {
-      categories.value = (await listCategories(api)).items
-      attributes.value = (await listAttributes(api)).items
-      await Promise.all([readKits(undefined), readCatalogItems(), readSettings()])
-    })
-    loaded.value = true
+    const read = await guard(() =>
+      Promise.all([readKits(undefined), readCatalogItems(), deps.taxonomy.loadCategories(), deps.taxonomy.loadAttributes(), deps.settings.load()]),
+    )
+    loadFailed.value = read === undefined
   }
 
   /** search reads the first page again with the current filter. */
@@ -176,12 +158,12 @@ export const useKitsStore = defineStore('catalogKits', () => {
   function resetEditor(): void {
     form.clear()
     conflict.value = false
-    photoError.value = null
+    photos.clearError()
   }
 
   function showKit(kit: Kit | null): void {
     editing.value = kit
-    photos.value = kit?.photos ?? []
+    photos.set(kit?.photos ?? [])
     resetEditor()
     editorOpen.value = true
   }
@@ -206,15 +188,14 @@ export const useKitsStore = defineStore('catalogKits', () => {
 
   /** closeEditor closes it, dropping unsaved edits and any photo still going up. */
   function closeEditor(): void {
-    photoUploads?.abort()
-    photoUploads = null
+    photos.abort()
     editorOpen.value = false
     editing.value = null
     resetEditor()
   }
 
-  /** reloadKit reads the open kit again ("Recarregar"), dropping the edits that lost the race. */
-  async function reloadKit(): Promise<void> {
+  /** reload reads the open kit again ("Recarregar"), dropping the edits that lost the race. */
+  async function reload(): Promise<void> {
     const current = editing.value
     if (current === null) return
     try {
@@ -237,12 +218,12 @@ export const useKitsStore = defineStore('catalogKits', () => {
   }
 
   /**
-   * saveKit creates or replaces the kit from the form and resolves whether it
+   * save creates or replaces the kit from the form and resolves whether it
    * was saved. The editor stays open on the kit the API returned, so the
    * totals and days it shows are the new ones and photos can be added to a
    * kit that was just created.
    */
-  async function saveKit(draft: KitDraft): Promise<boolean> {
+  async function save(draft: KitDraft): Promise<boolean> {
     conflict.value = false
     notice.value = null
     const checks = kitChecks(draft).map((check): [string, string, string] => [check.field, check.ok ? 'ok' : '', check.message])
@@ -298,75 +279,25 @@ export const useKitsStore = defineStore('catalogKits', () => {
     )
   }
 
-  /** addPhotos uploads the chosen files in turn to the open kit, stopping at the first one refused. */
-  async function addPhotos(files: File[]): Promise<void> {
-    const current = editing.value
-    if (current === null) return
-    photoError.value = null
-    photoUploads = new AbortController()
-    photoBusy.value = true
-    try {
-      for (const file of files) {
-        const photo = await uploadPhoto(api, { ownerType: 'kit', ownerId: current.id, file, signal: photoUploads.signal })
-        photos.value = [...photos.value, photo]
-      }
-    } catch (failure) {
-      photoError.value = photoMessage(failure, 'kit')
-    } finally {
-      photoBusy.value = false
-    }
-  }
-
-  /** makeCover puts a photo first, keeping the others in their order. */
-  async function makeCover(photo: Photo): Promise<void> {
-    const current = editing.value
-    if (current === null) return
-    photoError.value = null
-    try {
-      const ids = [photo.id, ...photos.value.filter((other) => other.id !== photo.id).map((other) => other.id)]
-      photos.value = (await orderKitPhotos(api, current.id, ids)).items
-    } catch (failure) {
-      photoError.value = photoMessage(failure, 'kit')
-    }
-  }
-
-  /** removePhoto deletes a photo of the open kit. */
-  async function removePhoto(photo: Photo): Promise<void> {
-    const current = editing.value
-    if (current === null) return
-    photoError.value = null
-    try {
-      await deleteKitPhoto(api, current.id, photo.id)
-      photos.value = photos.value.filter((other) => other.id !== photo.id)
-    } catch (failure) {
-      photoError.value = photoMessage(failure, 'kit')
-    }
-  }
-
   return {
     kits,
     hasMore: computed(() => nextCursor.value !== undefined),
     loading,
     loaded,
+    loadFailed,
     includeArchived,
     catalogItems,
-    categories,
-    attributes,
-    defaultAssemblyDays,
-    defaultSafetyMarginDays,
     publishingId,
     notice,
     error,
     editing,
     editorOpen,
     editorLoading,
-    photos,
-    photoError,
-    photoBusy,
     conflict,
     saving: form.submitting,
     formError: form.error,
     fieldErrors: form.fieldErrors,
+    photos,
     open,
     search,
     setIncludeArchived,
@@ -375,12 +306,9 @@ export const useKitsStore = defineStore('catalogKits', () => {
     openNew,
     openEdit,
     closeEditor,
-    reloadKit,
-    saveKit,
+    reload,
+    save,
     archive,
     restore,
-    addPhotos,
-    makeCover,
-    removePhoto,
   }
-})
+}
