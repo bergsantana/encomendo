@@ -76,14 +76,17 @@ func TestPolicies_OnlyTheListedExtrasWidenReads(t *testing.T) {
 	if len(asymmetric) != 0 {
 		t.Errorf("tenant_isolation policies that are not FOR ALL with USING = WITH CHECK: %v", asymmetric)
 	}
-	// staff_only narrows reads; TestStaffOnlyPolicies pins its expression.
+	// staff_only and the audit_log pair narrow reads; TestStaffOnlyPolicies
+	// and TestAuditLogPolicies pin their expressions.
 	got := tableNames(t, db, `SELECT tablename || '.' || policyname FROM pg_policies
-		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')`)
+		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')
+		  AND tablename <> 'audit_log'`)
 	if !slices.Equal(got, extraPolicies) {
 		t.Errorf("extra policies = %v, want exactly the reviewed %v", got, extraPolicies)
 	}
 	loose := tableNames(t, db, `SELECT tablename || '.' || policyname || ' ' || cmd || ': ' || qual FROM pg_policies
 		WHERE schemaname = 'public' AND policyname NOT IN ('tenant_isolation', 'staff_only')
+		  AND tablename <> 'audit_log'
 		  AND (cmd <> 'SELECT' OR qual NOT LIKE '((current_tenant_id() IS NULL) AND %')`)
 	if len(loose) != 0 {
 		t.Errorf("extra policies that are not SELECT only behind current_tenant_id() IS NULL: %v", loose)

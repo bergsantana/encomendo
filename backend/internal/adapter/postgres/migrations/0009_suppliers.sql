@@ -9,8 +9,8 @@
 -- item, which keeps items.ready_days in step (ADR 0025). A cost belongs to
 -- the item and supplier pair, not to the main or backup slot.
 --
--- Neither table is audited yet: audit_log keeps whole rows and a store page
--- scope can read it (see 0008_catalog).
+-- Neither table is audited yet: audit_log keeps whole rows, and every staff
+-- role reads it while supplier costs are the owner's (see 0008_catalog).
 
 -- +goose Up
 CREATE TABLE suppliers (
