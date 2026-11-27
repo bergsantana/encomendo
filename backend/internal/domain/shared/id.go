@@ -365,3 +365,39 @@ func (id ChoiceID) MarshalText() ([]byte, error) { return marshalTyped(id) }
 
 // UnmarshalText works as ID.UnmarshalText.
 func (id *ChoiceID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// CustomerID identifies a customer of one store.
+type CustomerID ID
+
+// ParseCustomerID parses a customer id; see ParseID for the errors.
+func ParseCustomerID(s string) (CustomerID, error) { return parseTyped[CustomerID](s) }
+
+// String returns the canonical form.
+func (id CustomerID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id CustomerID) IsZero() bool { return id == CustomerID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id CustomerID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *CustomerID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// AddressID identifies one address of a customer.
+type AddressID ID
+
+// ParseAddressID parses an address id; see ParseID for the errors.
+func ParseAddressID(s string) (AddressID, error) { return parseTyped[AddressID](s) }
+
+// String returns the canonical form.
+func (id AddressID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id AddressID) IsZero() bool { return id == AddressID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id AddressID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *AddressID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
