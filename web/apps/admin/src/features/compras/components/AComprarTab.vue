@@ -7,12 +7,13 @@
  */
 import type { ToBuySupplier } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import type { Preview, SentOrder } from '../store'
+import type { CardError, CopyStatus, Preview, SentOrder } from '../store'
 import SupplierCard from './SupplierCard.vue'
 
-defineProps<{
+const props = defineProps<{
   suppliers: readonly ToBuySupplier[]
   loaded: boolean
   loading: boolean
@@ -21,7 +22,11 @@ defineProps<{
   preview: Preview | null
   sending: boolean
   sent: SentOrder | null
-  copyStatus: string | null
+  copyStatus: CopyStatus | null
+  /** cardError is the refusal of a send, shown on its supplier's card. */
+  cardError: CardError | null
+  /** truncated says the API read only part of the store's orders: the list may not have everything. */
+  truncated: boolean
   /** purchaseBeforeDeposit is "Liberar compras antes do sinal": it changes the hint of an empty list. */
   purchaseBeforeDeposit: boolean
 }>()
@@ -30,19 +35,40 @@ const emit = defineEmits<{
   pick: [orderItemId: string, picked: boolean, supplierId: string]
   togglePreview: [supplierId: string]
   send: [supplierId: string]
-  copy: [text: string]
+  copy: [text: string, supplierId: string | null]
   openLink: []
   retry: []
 }>()
+
+/** A refusal for a supplier whose card is gone (every item of it left the list) has no card to sit on: it shows at the top. */
+const orphanError = computed(() => {
+  const refused = props.cardError
+  if (refused === null || props.suppliers.some((supplier) => supplier.supplierId === refused.supplierId)) return null
+  return refused.message
+})
+
+function forCard(supplierId: string): string | null {
+  return props.cardError?.supplierId === supplierId ? props.cardError.message : null
+}
+
+function statusFor(supplierId: string): string | null {
+  return props.copyStatus?.supplierId === supplierId ? props.copyStatus.text : null
+}
 </script>
 
 <template>
   <div class="tab">
     <p
-      v-if="error"
+      v-if="error ?? orphanError"
       role="alert"
     >
-      {{ error }}
+      {{ error ?? orphanError }}
+    </p>
+    <p
+      v-if="truncated"
+      role="status"
+    >
+      Mostrando só os itens dos 500 pedidos ativos com entrega mais próxima. A lista pode não ter tudo.
     </p>
     <BaseButton
       v-if="error && !loaded"
@@ -62,7 +88,7 @@ const emit = defineEmits<{
         <BaseButton @click="emit('openLink')">
           Abrir o WhatsApp
         </BaseButton>
-        <BaseButton @click="emit('copy', sent.text)">
+        <BaseButton @click="emit('copy', sent.text, null)">
           Copiar mensagem
         </BaseButton>
         <RouterLink
@@ -74,10 +100,10 @@ const emit = defineEmits<{
       </div>
     </div>
     <p
-      v-if="copyStatus"
+      v-if="copyStatus && copyStatus.supplierId === null"
       role="status"
     >
-      {{ copyStatus }}
+      {{ copyStatus.text }}
     </p>
 
     <SupplierCard
@@ -87,10 +113,12 @@ const emit = defineEmits<{
       :unchecked="unchecked"
       :preview="preview?.supplierId === supplier.supplierId ? preview : null"
       :sending="sending"
+      :error="forCard(supplier.supplierId)"
+      :status="statusFor(supplier.supplierId)"
       @pick="(orderItemId, picked) => emit('pick', orderItemId, picked, supplier.supplierId)"
       @toggle-preview="emit('togglePreview', supplier.supplierId)"
       @send="emit('send', supplier.supplierId)"
-      @copy="(text) => emit('copy', text)"
+      @copy="(text) => emit('copy', text, supplier.supplierId)"
     />
 
     <p

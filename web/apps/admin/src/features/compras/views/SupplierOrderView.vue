@@ -46,9 +46,13 @@ function close(): void {
   store.clearDialogError()
 }
 
-/** done closes the dialog once its write went through; a refusal leaves it open with the message. */
+/**
+ * done closes the dialog once its write went through, and also on a version
+ * conflict: that message and "Recarregar" are on the page, behind a modal
+ * dialog they could not be reached. Any other refusal stays in the dialog.
+ */
 async function done(write: Promise<boolean>): Promise<void> {
-  if (await write) dialog.value = null
+  if ((await write) || conflict.value) dialog.value = null
 }
 </script>
 

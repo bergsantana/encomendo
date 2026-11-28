@@ -164,6 +164,20 @@ describe('A comprar', () => {
     expect(admin.wrapper.text()).not.toContain('Custo')
   })
 
+  it('says the list may not be complete when the API read only part of the orders', async () => {
+    use({ toBuy: { ...toBuyAnswer(), truncated: true } })
+
+    const { wrapper } = await openCompras()
+
+    expect(wrapper.get('[role=status]').text()).toBe('Mostrando só os itens dos 500 pedidos ativos com entrega mais próxima. A lista pode não ter tudo.')
+  })
+
+  it('says nothing about it when the list is whole', async () => {
+    const { wrapper } = await openCompras()
+
+    expect(wrapper.text()).not.toContain('Mostrando só')
+  })
+
   it('tells "Nada para comprar agora." with the hint for deposit-first stores', async () => {
     use({ toBuy: { suppliers: [], truncated: false } })
 
@@ -247,6 +261,20 @@ describe('"Ver mensagem"', () => {
     expect(wrapper.text()).toContain('Não foi possível copiar a mensagem.')
   })
 
+  it('closes the open message when every box is taken off, instead of loading forever', async () => {
+    const { wrapper } = await openCompras()
+    const second = card(wrapper, 'Moto Peças')
+    await button(second, 'Ver mensagem').trigger('click')
+    await vi.waitFor(() => expect(second.find('pre').exists()).toBe(true))
+
+    await field(second, '4× Pastilha de freio').setValue(false)
+    await flushPromises()
+
+    expect(second.find('pre').exists()).toBe(false)
+    expect(second.text()).not.toContain('Carregando a mensagem')
+    expect(second.text()).not.toContain('Copiar mensagem')
+  })
+
   it('needs at least one box: with none, both buttons wait and the hint says why', async () => {
     const { wrapper } = await openCompras()
     const second = card(wrapper, 'Moto Peças')
@@ -255,6 +283,7 @@ describe('"Ver mensagem"', () => {
     await field(second, '4× Pastilha de freio').setValue(false)
 
     expect(second.text()).toContain('Marque ao menos um item.')
+    expect(second.text()).not.toContain('Carregando a mensagem')
     expect(button(second, 'Enviar pelo WhatsApp').attributes('disabled')).toBeDefined()
     expect(button(second, 'Ver mensagem').attributes('disabled')).toBeDefined()
   })
@@ -358,7 +387,26 @@ describe('"Enviar pelo WhatsApp"', () => {
 
     await button(card(wrapper, 'Moto Peças'), 'Enviar pelo WhatsApp').trigger('click')
 
-    await vi.waitFor(() => expect(wrapper.get('[role=alert]').text()).toContain('foi entregue ou cancelado'))
+    await vi.waitFor(() => expect(card(wrapper, 'Moto Peças').get('[role=alert]').text()).toContain('foi entregue ou cancelado'))
+    expect(card(wrapper, 'Couros Paulista').find('[role=alert]').exists()).toBe(false)
+  })
+
+  it('forgets the last send, messages and preview when Compras is shown again', async () => {
+    captureSend(() => HttpResponse.json(sentAnswer(), { status: 201 }))
+    use({ orders: [] })
+    const { wrapper } = await openCompras()
+    await button(card(wrapper, 'Moto Peças'), 'Ver mensagem').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('pre').exists()).toBe(true))
+    await button(card(wrapper, 'Couros Paulista'), 'Enviar pelo WhatsApp').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Pedido de compra C-0012 criado.'))
+
+    await wrapper.get('#tab-enviadas').trigger('click')
+    await flushPromises()
+    await wrapper.get('#tab-a-comprar').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('criado.')
+    expect(wrapper.find('pre').exists()).toBe(false)
   })
 })
 

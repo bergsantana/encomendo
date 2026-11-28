@@ -30,11 +30,12 @@ export function lineStatusLabel(status: PurchaseLineStatus): string {
 
 /**
  * lineTone borrows a phase for the badge's color and icon: a line waits on
- * the supplier like an order in sourcing, a received one is "Pronto /
- * Recebida" green, and the others are neutral. Only the badge reads it.
+ * the supplier like an order in sourcing, a defective one waits for its
+ * replacement the same way, a received one is "Pronto / Recebida" green, and
+ * a cancelled one is neutral. Only the badge reads it.
  */
 export function lineTone(status: PurchaseLineStatus): Phase {
-  if (status === 'sent' || status === 'in_transit') return 'sourcing'
+  if (status === 'sent' || status === 'in_transit' || status === 'defective') return 'sourcing'
   if (status === 'received') return 'ready'
   return 'cancelled'
 }

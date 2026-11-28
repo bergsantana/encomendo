@@ -108,6 +108,8 @@ describe('the pedido de compra screen', () => {
 
     const situation = wrapper.findAll('tbody tr').map((row) => row.get('td[data-label="Situação"]').text())
     expect(situation).toEqual(['Em trânsito', 'Recebida', 'Com defeito (reposição em Compras)', 'Cancelada', 'Avisar o fornecedor'])
+    const tones = wrapper.findAll('tbody tr').slice(0, 4).map((row) => row.get('[data-tone]').attributes('data-tone'))
+    expect(tones).toEqual(['waiting', 'ready', 'waiting', 'neutral'])
     expect(wrapper.text()).toContain('Costura solta')
   })
 
@@ -232,6 +234,31 @@ describe('"Informar prazo"', () => {
     await button(wrapper, 'Recarregar').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Prazo do fornecedor: 01/12/2026'))
     expect(wrapper.text()).not.toContain('Outra pessoa alterou')
+  })
+})
+
+describe('a version conflict from a dialog', () => {
+  async function conflictFrom(open: string, confirm: string, order: SupplierOrder, role: 'owner' | 'admin') {
+    const { wrapper } = await openOrder(order, role)
+    answerWrites(() => problem(409, 'version_conflict', 'x'))
+    await button(wrapper, open).trigger('click')
+    const dialog = wrapper.get('[role=dialog]')
+    if (open === 'Informar prazo') await field(dialog, 'Data prometida pelo fornecedor').setValue('2026-12-03')
+    await button(dialog, confirm).trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it.each([
+    ['Informar prazo', 'Salvar prazo', 'admin'],
+    ['Informar preço pago', 'Salvar preços', 'owner'],
+    ['Desfazer envio', 'Desfazer envio', 'admin'],
+  ] as const)('closes %s and shows the message and "Recarregar" on the page', async (open, confirm, role) => {
+    const wrapper = await conflictFrom(open, confirm, supplierOrderAnswer(role === 'owner'), role)
+
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+    expect(wrapper.get('[role=alert]').text()).toContain('Outra pessoa alterou este pedido de compra. Recarregue para ver a versão atual.')
+    expect(button(wrapper, 'Recarregar')).toBeTruthy()
   })
 })
 

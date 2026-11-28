@@ -34,8 +34,9 @@ import { copyText } from '../../clipboard'
 import { useForm } from '../../composables/useForm'
 import { errorMessage } from '../../errorMessage'
 import { openWhatsapp } from '../../openLink'
-import { isWhatsappNumber, whatsappDigits } from '../../phone'
+import { whatsappDigits } from '../../phone'
 import { useSessionStore } from '../../stores/session'
+import { supplierChecks } from '../catalogo/supplierChecks'
 import { conflictMessage, lineClosedMessage, notToBuyMessage, orderClosedMessage, receivedMessage } from './labels'
 
 const pageSize = 30
@@ -53,6 +54,18 @@ export interface SentOrder {
   supplierName: string
   whatsappUrl: string
   text: string
+}
+
+/** CopyStatus is what "Copiar mensagem" did and where to say it: on a supplier's card, or on the "criado" block when `supplierId` is null. */
+export interface CopyStatus {
+  supplierId: string | null
+  text: string
+}
+
+/** CardError is the refusal of a send, for the card of the supplier it was for. */
+export interface CardError {
+  supplierId: string
+  message: string
 }
 
 /** Preview is the message of "Ver mensagem" for one supplier's checked items. */
@@ -118,11 +131,17 @@ export const useComprasStore = defineStore('compras', () => {
   const preview = ref<Preview | null>(null)
   const sending = ref(false)
   const sent = shallowRef<SentOrder | null>(null)
-  /** copyStatus is what "Copiar mensagem" did, for a status line. */
-  const copyStatus = ref<string | null>(null)
+  /**
+   * copyStatus is what "Copiar mensagem" did, for a status line on the card
+   * it was done from (`supplierId`), or on the "criado" block when null.
+   */
+  const copyStatus = shallowRef<CopyStatus | null>(null)
+  /** cardError is the refusal of a send or a preview, shown on the card of the supplier it was for. */
+  const cardError = shallowRef<CardError | null>(null)
   let sendKey: string | null = null
   let sendBody = ''
   let previewRead = 0
+  let toBuyRead = 0
 
   function pickedIds(supplierId: string): string[] {
     const supplier = suppliers.value.find((candidate) => candidate.supplierId === supplierId)
@@ -130,9 +149,12 @@ export const useComprasStore = defineStore('compras', () => {
   }
 
   async function readToBuy(): Promise<void> {
+    const read = ++toBuyRead
     toBuyLoading.value = true
     try {
       const answer = await toBuy(api)
+      // A newer read started meanwhile: its answer is the one to show.
+      if (read !== toBuyRead) return
       suppliers.value = answer.suppliers
       truncated.value = answer.truncated
       toBuyLoaded.value = true
@@ -140,9 +162,9 @@ export const useComprasStore = defineStore('compras', () => {
       const here = new Set(answer.suppliers.flatMap((supplier) => supplier.items.map((item) => item.orderItemId)))
       unchecked.value = new Set([...unchecked.value].filter((id) => here.has(id)))
     } catch (failure) {
-      toBuyError.value = errorMessage(failureOf(failure))
+      if (read === toBuyRead) toBuyError.value = errorMessage(failureOf(failure))
     } finally {
-      toBuyLoading.value = false
+      if (read === toBuyRead) toBuyLoading.value = false
     }
   }
 
@@ -157,9 +179,18 @@ export const useComprasStore = defineStore('compras', () => {
     }
   }
 
-  /** loadToBuy reads "A comprar" again, keeping the boxes the person took off. */
+  /**
+   * loadToBuy reads "A comprar" again, keeping the boxes the person took off.
+   * What the last visit left on screen (the "criado" block, a message, an open
+   * preview) is dropped, so nothing stale shows after coming back to Compras.
+   */
   async function loadToBuy(): Promise<void> {
     toBuyError.value = null
+    cardError.value = null
+    copyStatus.value = null
+    sent.value = null
+    preview.value = null
+    previewRead += 1
     await Promise.all([readToBuy(), readSettings()])
   }
 
@@ -175,8 +206,9 @@ export const useComprasStore = defineStore('compras', () => {
   async function readPreview(supplierId: string): Promise<void> {
     const ids = pickedIds(supplierId)
     const read = ++previewRead
+    // Nothing is checked: there is no message to show, so the preview closes.
     if (ids.length === 0) {
-      preview.value = { supplierId, text: null, loading: false, error: null }
+      preview.value = null
       return
     }
     preview.value = { supplierId, text: preview.value?.text ?? null, loading: true, error: null }
@@ -191,6 +223,7 @@ export const useComprasStore = defineStore('compras', () => {
   /** togglePreview opens "Ver mensagem" for a supplier, with the text the API built for the checked items, or closes it. */
   async function togglePreview(supplierId: string): Promise<void> {
     copyStatus.value = null
+    cardError.value = null
     if (preview.value?.supplierId === supplierId) {
       previewRead += 1
       preview.value = null
@@ -223,6 +256,7 @@ export const useComprasStore = defineStore('compras', () => {
     sending.value = true
     sent.value = null
     copyStatus.value = null
+    cardError.value = null
     toBuyError.value = null
     try {
       const answer = await sendSupplierOrder(api, body, sendKey)
@@ -236,7 +270,7 @@ export const useComprasStore = defineStore('compras', () => {
       return true
     } catch (failure) {
       const refused = failureOf(failure)
-      toBuyError.value = refusalOfSend(refused)
+      cardError.value = { supplierId, message: refusalOfSend(refused) }
       // The picks are stale: the list is read again so the person sees what is still there.
       if (refused.code === 'item_not_to_buy' || refused.code === 'order_closed') void readToBuy()
       return false
@@ -261,8 +295,8 @@ export const useComprasStore = defineStore('compras', () => {
   }
 
   /** copyMessage copies a message to the clipboard ("Copiar mensagem") and says so, or says it could not. */
-  async function copyMessage(text: string): Promise<void> {
-    copyStatus.value = (await copyText(text)) ? 'Mensagem copiada.' : 'Não foi possível copiar a mensagem.'
+  async function copyMessage(text: string, supplierId: string | null): Promise<void> {
+    copyStatus.value = { supplierId, text: (await copyText(text)) ? 'Mensagem copiada.' : 'Não foi possível copiar a mensagem.' }
   }
 
   // ---- Enviadas ----
@@ -581,11 +615,7 @@ export const useComprasStore = defineStore('compras', () => {
     supplierConflict.value = false
     const current = editing.value
     const saved = await supplierForm.attempt(
-      [
-        ['name', name.trim(), 'Informe o nome do fornecedor.'],
-        ['whatsappPhone', whatsapp.trim(), 'Informe o WhatsApp do fornecedor.'],
-        ['whatsappPhone', isWhatsappNumber(whatsapp) || whatsapp.trim() === '' ? 'ok' : '', 'Confira o número: use DDD e 8 ou 9 dígitos.'],
-      ],
+      supplierChecks(name, whatsapp),
       { byCode: { version_conflict: supplierConflictMessage, invalid: fixTheFields } },
       async () => {
         const body = { name: name.trim(), whatsappPhone: whatsappDigits(whatsapp) }
@@ -627,6 +657,7 @@ export const useComprasStore = defineStore('compras', () => {
     sending,
     sent,
     copyStatus,
+    cardError,
     unchecked,
     loadToBuy,
     setPicked,
