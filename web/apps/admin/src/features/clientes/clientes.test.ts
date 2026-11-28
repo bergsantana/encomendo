@@ -627,6 +627,17 @@ describe("the customer's orders", () => {
     ])
   })
 
+  it('links each order number to the order screen, by the route named order', async () => {
+    const { wrapper } = await openClientes()
+
+    const dialog = await openCustomer(wrapper)
+
+    expect(dialog.findAll('section li a').map((a) => [a.text(), a.attributes('href')])).toEqual([
+      ['P-0231', `/pedidos/${later.id}`],
+      ['P-0198', `/pedidos/${earlier.id}`],
+    ])
+  })
+
   it('sorts by order number, not by the order the API sent', async () => {
     const middle = orderSummary(encomendaMontagem, 'confirmado', { id: '0190f3c4-5e1a-7b2c-8d3e-000000000203', number: 'P-0210', deliveryDate: '2026-12-01' })
     serve({ orders: [earlier, middle, later] })
