@@ -1080,6 +1080,9 @@ type Catalog interface {
 type Customers interface {
 	Get(ctx context.Context, id shared.CustomerID) (CustomerFacts, error) // name, phone, addresses
 	Create(ctx context.Context, name, phone string) (CustomerFacts, error)
+	// AddAddress ("Novo endereço" inside Novo pedido and Alterar pedido): order:write adds
+	// one address to the customer, in the order's transaction. See 3.6b.
+	AddAddress(ctx context.Context, id shared.CustomerID, a order.DeliveryAddress) (order.DeliveryAddress, error)
 }
 
 type Workflows interface {
@@ -1139,7 +1142,8 @@ type LineRequest = appcatalog.OrderLineRequest (mapped, not aliased, to keep the
 
 type TermsInput struct {
 	Handover         order.Handover
-	Address          shared.AddressID
+	Address          shared.AddressID        // one of the customer's; or NewAddress, never both (3.6b)
+	NewAddress       *order.DeliveryAddress  // "Novo endereço": delivery only, added to the customer on a write
 	Freight          shared.Money
 	Discount         *shared.Money // Create: nil = zero. Change: nil = the order's current value
 	DepositPercent   *int          // Create: nil = store default. Change: nil = current
@@ -1311,6 +1315,18 @@ func NewTrackingView(o *order.Order, store string) TrackingView
 - **`write`** is one helper for the writes that load an order at a version, change it, save it with its events, and answer the view. `anyVersion` skips the version check, for the tracking link.
 - **`Quote` with `Order` set** runs the change on the loaded order in memory and never saves it. A quote with no customer names a delivery address but does not look it up.
 - **`app/catalog.OrderLines`** returns its own types (`OrderLine`, `OrderItem`, `SupplierFact`, `OrderKit`, `ChosenOption`). `inproc.OrderCatalog` maps them to `order.LineSpec`. An archived kit is an error matching `catalog.ErrItemArchived`.
+
+### 3.6b As built in the order view gaps (PR `feat/m4-order-view-gaps`)
+
+- **Quote and views.**
+  - `QuoteView` gains `RefundDue` (the changed order's `RefundDue()`, zero on a new order), `DaysAfterDeposit` (`CivilDate.DaysUntil` from today, or from the release date for a released order, to the promise) and the owner-only `Cost` and `Margin` (`identity.SeesCosts`, nil for every other role).
+  - `View` gains `DepositOwed` (the domain's `Order.DepositOwed()`: `DepositDue()` less the non-void deposit payments, floored at 0) and `Customer.WhatsAppURL` (`WhatsApp.Link(phone, "")`, which leaves out `?text=`).
+- **`TermsInput.NewAddress`** ("Novo endereço"):
+  - It is mutually exclusive with `Address` and refused on a pickup (`terms.newAddress`).
+  - `Service.withNewAddress` runs after the customer is known and before `resolveTerms`, on create, change and quote. It adds the address through the `Customers` port in the call's transaction, then sets `Address` to the new id and appends the address to the customer's facts, so `resolveTerms` is unchanged.
+  - A quote (`writeCtx.preview`) only checks it with `customer.CheckNewAddress`, with a fresh id, and saves nothing.
+  - Field errors become `terms.newAddress.<field>`, and the 10-address limit `terms.newAddress`.
+- **`Customers.AddAddress(ctx, id, a) (order.DeliveryAddress, error)`** returns the stored address with its new id, not the whole customer. `inproc.OrderCustomers` calls the new `app/customer` use case `AddAddress` (`order:write`), which loads the customer, calls `customer.(*Customer).AddAddress` (limit of 10, every address check) and saves through `Repository.Update` with the version check.
 
 ### 3.7 `app/schedule` (step 4.11)
 

@@ -134,3 +134,7 @@ Two new permissions join `order:read` and `order:write`, so the apps can hide th
 - **Days on a change are the order's own.** A change keeps the order's assembly and safety margin days, and does not derive them again from the kits the new lines hold, so swapping a 6-day kit for a loose item keeps 6 days. Only someone with `order:manage` changes them. Product to confirm.
 - **Option prices are a domain rule.** `catalog.PriceWithOptions` gives (price + extras) × quantity, and `AddOptionExtras` adds the extras chosen for a kit's item. Both sit next to the kit swap pricing.
 
+### 2026-11-27, from the order screens (order view gaps)
+
+- **Staff add a customer's address from an order.** Anyone with `order:write` may add an address to a customer from "Novo pedido" and "Alterar pedido" ("Novo endereço", `terms.newAddress`), in the order's own transaction, because the design document puts it there. They can never edit or remove an address; that stays `customer:write`, as in Clientes. A quote checks the address and does not save it.
+
