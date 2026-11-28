@@ -50,7 +50,7 @@ func newRealRig(t *testing.T) *realRig {
 	if r.c, err = handler.NewCatalog(handler.CatalogDeps{UseCases: svc, Limiter: &limiter{refuse: map[string]bool{}}, Log: discardLog()}); err != nil {
 		t.Fatal(err)
 	}
-	if r.s, err = handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliers, Log: discardLog()}); err != nil {
+	if r.s, err = handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliers, Items: svc, Log: discardLog()}); err != nil {
 		t.Fatal(err)
 	}
 	return r

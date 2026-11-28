@@ -19,12 +19,14 @@ import (
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
 	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	apppurchasing "github.com/bergsantana/encomendo/backend/internal/app/purchasing"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
+	"github.com/bergsantana/encomendo/backend/internal/domain/purchasing"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
@@ -147,6 +149,17 @@ func TestError_MapsDomainErrors(t *testing.T) {
 		{"archived kit on an order route", ItemUnavailable(fmt.Errorf("kit: %w", catalog.ErrItemArchived)), 409, CodeItemUnavailable},
 		{"handover required", fmt.Errorf("advance: %w", shared.NewValidationError(shared.FieldError{Field: "handover", Message: "x"})), 400, CodeInvalid},
 		{"payment not found", order.ErrPaymentNotFound, 404, CodeNotFound},
+		{"item not to buy", fmt.Errorf("send: %w", apppurchasing.ErrItemNotToBuy), 409, CodeItemNotToBuy},
+		{"supplier order received", fmt.Errorf("undo: %w", purchasing.ErrSupplierOrderReceived), 409, CodeSupplierOrderReceived},
+		{"line closed", purchasing.ErrLineClosed, 409, CodeLineClosed},
+		{"supplier order undone", purchasing.ErrUndone, 409, CodeLineClosed},
+		{"nothing open", purchasing.ErrNothingOpen, 409, CodeLineClosed},
+		{"supplier order not found", purchasing.ErrSupplierOrderNotFound, 404, CodeNotFound},
+		{"line not found", purchasing.ErrLineNotFound, 404, CodeNotFound},
+		{"receipt not found", apppurchasing.ErrReceiptNotFound, 404, CodeNotFound},
+		{"receipt photo key of another store", purchasing.ErrPhotoKey, 400, CodePhotoNotUploaded},
+		{"receipt photo over the limit stays an invalid field", purchasing.ErrPhotoLimit, 400, CodeInvalid},
+		{"purchasing call without a key", apppurchasing.ErrIdempotencyKeyRequired, 400, CodeIdempotencyKeyMissing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -418,6 +431,7 @@ func TestCodes_AreInTheContract(t *testing.T) {
 		CodeInvalidTransition, CodeGuardFailed, CodeOrderNotEditable, CodeOrderClosed, CodeApprovalRequired, CodePaymentExceedsDue,
 		CodeInvalidItemMove, CodeNoBackupSupplier, CodeItemUnavailable, CodePhoneTaken, CodeWorkflowNotFound,
 		CodeIdempotencyKeyMissing, CodeIdempotencyKeyReused, CodeItemMovedByPurchasing,
+		CodeItemNotToBuy, CodeSupplierOrderReceived, CodeLineClosed,
 	}
 	for _, code := range codes {
 		if !listed[code] {

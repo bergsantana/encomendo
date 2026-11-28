@@ -58,6 +58,24 @@
   --enc-control-height: 48px;
 }
 
+/*
+ * Workshop sizes (Receber itens): 18 px text, 56 px targets and a 64 px main
+ * action, for hands that are dirty or gloved. A scoped tier, not a density
+ * of the page: put `enc-workshop` on the root of the one screen that needs it.
+ * It sits below `enc-density-admin` and the phone breakpoint, so it holds at
+ * every width. `font-size` is set as well, because body text is already
+ * resolved from the admin density by the time it reaches this element.
+ */
+.enc-workshop {
+  --enc-body-size: 18px;
+  --enc-control-height: 56px;
+  --enc-primary-height: 64px;
+  font-size: 18px;
+}
+.enc-workshop .enc-button.enc-button--primary {
+  height: var(--enc-primary-height);
+}
+
 body {
   margin: 0;
   background: var(--enc-ground);

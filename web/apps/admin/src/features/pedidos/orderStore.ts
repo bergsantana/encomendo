@@ -10,6 +10,8 @@ import {
   newIdempotencyKey,
   type Order,
   orderHistory,
+  type OrderPurchase,
+  orderPurchases,
   recordPayment,
   releaseOrder,
   sendTrackingLink,
@@ -27,6 +29,8 @@ import { type Handover, type ItemCheck, type ItemStatus, itemStatusLabel } from 
 import { openWhatsapp } from '../../openLink'
 
 const conflictMessage = 'Outra pessoa alterou este pedido. Recarregue para ver a versão atual.'
+/** movedByPurchasingMessage is the refusal of a manual move of a bought item (`item_moved_by_purchasing`, ADR 0031). */
+const movedByPurchasingMessage = 'Este item é movido por Compras. Use Compras ou Receber itens.'
 const historySize = 50
 
 /** PaymentInput is what "Registrar pagamento" sends, with the amount already in cents. */
@@ -42,7 +46,9 @@ export interface PaymentInput {
  * release, change the date, send the tracking link, cancel). Every write
  * sends the `version` read, and the answer replaces the order, so the screen
  * always shows what the API says; nothing is worked out here. The wa.me
- * links are the API's and are only opened. A payment keeps its
+ * links are the API's and are only opened. The bought items also read what
+ * purchasing knows of them (`purchases`, by item): their pedido de compra,
+ * the supplier's promised date and the chat link. A payment keeps its
  * `Idempotency-Key` across retries until its input changes or it succeeds.
  */
 export const useOrderStore = defineStore('order', () => {
@@ -67,6 +73,9 @@ export const useOrderStore = defineStore('order', () => {
   /** guardMessage is why "Mover para …" was refused, under the buttons. */
   const guardMessage = ref<string | null>(null)
   const conflict = ref(false)
+
+  /** purchases is what purchasing knows of the bought items, by order item; items made in house have none. */
+  const purchases = shallowRef<Readonly<Record<string, OrderPurchase>>>({})
 
   const history = shallowRef<HistoryEntry[]>([])
   const historyCursor = ref<string | undefined>(undefined)
@@ -104,8 +113,19 @@ export const useOrderStore = defineStore('order', () => {
     }
   }
 
+  /** readPurchases reads the bought items' purchasing details. Without them the screen simply shows less, so a failed read says nothing. */
+  async function readPurchases(orderId: string): Promise<void> {
+    try {
+      const answer = await orderPurchases(api, orderId)
+      if (order.value?.id === orderId) purchases.value = Object.fromEntries(answer.items.map((purchase) => [purchase.orderItemId, purchase]))
+    } catch (failure) {
+      if (!(failure instanceof ApiError)) throw failure
+    }
+  }
+
   function reset(): void {
     order.value = null
+    purchases.value = {}
     loadError.value = null
     notice.value = null
     whatsappUrl.value = null
@@ -140,7 +160,7 @@ export const useOrderStore = defineStore('order', () => {
     } finally {
       loading.value = false
     }
-    await readHistory(undefined)
+    await Promise.all([readHistory(undefined), readPurchases(orderId)])
   }
 
   /** reload reads the open order again ("Recarregar"), dropping every message. */
@@ -173,6 +193,7 @@ export const useOrderStore = defineStore('order', () => {
       const answer = await write()
       order.value = take(answer)
       void readHistory(undefined)
+      void readPurchases(order.value.id)
       return true
     } catch (failure) {
       if (!(failure instanceof ApiError)) throw failure
@@ -236,6 +257,7 @@ export const useOrderStore = defineStore('order', () => {
     const moved = await act(
       () => moveOrderItem(api, current.id, itemId, { to, version: current.version, ...(check === undefined ? {} : { check }) }),
       (answer) => answer,
+      { own: { item_moved_by_purchasing: movedByPurchasingMessage } },
     )
     if (!moved || check !== 'defective') return moved
     const back = order.value?.items.find((item) => item.id === itemId)
@@ -389,6 +411,12 @@ export const useOrderStore = defineStore('order', () => {
     if (order.value !== null) openWhatsapp(order.value.customer.whatsappUrl)
   }
 
+  /** openSupplierChat opens the supplier's chat of a delayed item, with the link the API sent for it (only to the roles that buy). */
+  function openSupplierChat(itemId: string): void {
+    const url = purchases.value[itemId]?.supplierChatUrl
+    if (url !== undefined) openWhatsapp(url)
+  }
+
   /** clearDialogError forgets the refusal shown in a dialog, when it is opened or closed. */
   function clearDialogError(): void {
     dialogError.value = null
@@ -410,6 +438,7 @@ export const useOrderStore = defineStore('order', () => {
     hasMoreHistory: computed(() => historyCursor.value !== undefined),
     historyLoading,
     historyError,
+    purchases,
     open,
     reload,
     loadMoreHistory,
@@ -424,6 +453,7 @@ export const useOrderStore = defineStore('order', () => {
     cancel,
     openWhatsappLink,
     openChat,
+    openSupplierChat,
     clearDialogError,
   }
 })

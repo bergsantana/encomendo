@@ -86,6 +86,13 @@ export const routes: RouteRecordRaw[] = [
         meta: { permission: 'purchase:write' },
       },
       {
+        // The same screen as the "Receber itens" tab of Compras; staff, who cannot open Compras, reach it here.
+        path: 'compras/receber',
+        name: 'receive',
+        component: () => import('../features/compras/views/ReceberView.vue'),
+        meta: { permission: 'receiving:write' },
+      },
+      {
         path: 'catalogo',
         name: 'catalog',
         component: () => import('../features/catalogo/views/CatalogoView.vue'),

@@ -29,6 +29,7 @@ import (
 	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
 	appidentity "github.com/bergsantana/encomendo/backend/internal/app/identity"
 	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	apppurchasing "github.com/bergsantana/encomendo/backend/internal/app/purchasing"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
@@ -109,6 +110,7 @@ type services struct {
 	workflows  *appworkflow.Service
 	customers  *appcustomer.Service
 	orders     *apporder.Service
+	purchasing *apppurchasing.Service
 	tokens     *auth.AccessTokens
 	limiter    ratelimit.Limiter
 	pseudonyms ratelimit.Pseudonyms
@@ -166,7 +168,7 @@ func buildHandlers(cfg config.Config, log *slog.Logger, svc services) (apihttp.H
 	if err != nil {
 		return apihttp.Handlers{}, err
 	}
-	suppliersH, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: svc.suppliers, Log: log})
+	suppliersH, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: svc.suppliers, Items: svc.catalog, Log: log})
 	if err != nil {
 		return apihttp.Handlers{}, err
 	}
@@ -175,6 +177,9 @@ func buildHandlers(cfg config.Config, log *slog.Logger, svc services) (apihttp.H
 		return apihttp.Handlers{}, err
 	}
 	orderH.Auth, orderH.Tenancy, orderH.Catalog, orderH.Suppliers = authH, tenancyH, catalogH, suppliersH
+	if orderH.Purchasing, err = handler.NewPurchasing(handler.PurchasingDeps{UseCases: svc.purchasing, Limiter: svc.limiter, Log: log}); err != nil {
+		return apihttp.Handlers{}, err
+	}
 	return orderH, nil
 }
 
@@ -237,10 +242,11 @@ func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, err
 		return services{}, err
 	}
 	tenancySvc := apptenancy.NewService(tenancyDeps)
-	suppliers, catalog, err := buildCatalog(cfg.Storage, base, tenancySvc, log)
+	photos, err := newPhotoStore(cfg.Storage, log)
 	if err != nil {
 		return services{}, err
 	}
+	suppliers, catalog := buildCatalog(photos, base, tenancySvc)
 	customers := appcustomer.NewService(postgres.NewCustomers(), tx, ids)
 	orders, err := buildOrders(cfg.Origins.StoreTemplate, base, orderContexts{
 		tenancy: tenancySvc, catalog: catalog, customers: customers, workflows: workflows,
@@ -248,9 +254,13 @@ func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, err
 	if err != nil {
 		return services{}, err
 	}
+	purchasing, err := buildPurchasing(base, purchasingContexts{tenancy: tenancySvc, suppliers: suppliers, orders: orders, photos: photos})
+	if err != nil {
+		return services{}, err
+	}
 	return services{
 		identity: identity, tenancy: tenancySvc, catalog: catalog, suppliers: suppliers,
-		workflows: workflows, customers: customers, orders: orders, tokens: tokens,
+		workflows: workflows, customers: customers, orders: orders, purchasing: purchasing, tokens: tokens,
 	}, nil
 }
 
@@ -289,16 +299,34 @@ func buildOrders(storeTemplate string, base basePorts, c orderContexts) (*appord
 	})
 }
 
-// buildCatalog wires the supplier and catalog contexts. The catalog reads
-// supplier names and the store's defaults through inproc ports, so the
-// dependency runs one way, catalog to supplier and tenancy (ADR 0025).
-func buildCatalog(
-	store config.Storage, base basePorts, tenancySvc *apptenancy.Service, log *slog.Logger,
-) (*appsupplier.Service, *appcatalog.Service, error) {
-	photos, err := newPhotoStore(store, log)
-	if err != nil {
-		return nil, nil, err
-	}
+// purchasingContexts are the services the purchasing context reads through
+// inproc ports: it depends on them, and none of them on it (ADR 0031).
+type purchasingContexts struct {
+	tenancy   *apptenancy.Service
+	suppliers *appsupplier.Service
+	orders    *apporder.Service
+	photos    *storage.S3
+}
+
+// buildPurchasing wires Compras and Receber itens. It is built after the
+// order service, which it moves items through; nothing depends on it but the
+// router. Supplier messages are wa.me links, so nothing here can send one,
+// and the receiving photos go to the same bucket as the catalog's, under
+// their own keys (ADR 0028).
+func buildPurchasing(base basePorts, c purchasingContexts) (*apppurchasing.Service, error) {
+	return apppurchasing.NewService(apppurchasing.Deps{
+		Repo: postgres.NewPurchasing(base.ids), Orders: inproc.NewPurchasingOrders(c.orders),
+		Suppliers: inproc.NewPurchasingSuppliers(c.suppliers), Store: inproc.NewPurchasingStore(c.tenancy, base.clock),
+		Links: notify.NewWhatsAppLinks(), Photos: storage.NewReceiptStore(c.photos),
+		Idempotency: postgres.NewIdempotency(), Tx: base.tx, Clock: base.clock, IDs: base.ids,
+	})
+}
+
+// buildCatalog wires the supplier and catalog contexts over the photo
+// bucket. The catalog reads supplier names and the store's defaults through
+// inproc ports, so the dependency runs one way, catalog to supplier and
+// tenancy (ADR 0025).
+func buildCatalog(photos *storage.S3, base basePorts, tenancySvc *apptenancy.Service) (*appsupplier.Service, *appcatalog.Service) {
 	suppliers := appsupplier.NewService(appsupplier.Deps{Suppliers: postgres.NewSuppliers(), Tx: base.tx, IDs: base.ids})
 	catalog := appcatalog.NewService(appcatalog.Deps{
 		Categories: postgres.NewCategories(), Attributes: postgres.NewAttributes(), Items: postgres.NewItems(),
@@ -306,7 +334,7 @@ func buildCatalog(
 		Suppliers: inproc.NewCatalogSuppliers(suppliers), Defaults: inproc.NewCatalogDefaults(tenancySvc),
 		Cache: base.cache, Tx: base.tx, IDs: base.ids,
 	})
-	return suppliers, catalog, nil
+	return suppliers, catalog
 }
 
 // newPhotoStore opens the photo bucket's client. The secret goes straight

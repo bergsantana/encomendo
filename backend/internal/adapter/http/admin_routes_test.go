@@ -22,7 +22,7 @@ import (
 
 // adminPaths are every admin operation of the contract: the nine store and
 // team ones, then the catalog, supplier and milestone 4 ones.
-var adminPaths = slices.Concat(tenancyAdminPaths, catalogAdminPaths, supplierAdminPaths, orderAdminPaths)
+var adminPaths = slices.Concat(tenancyAdminPaths, catalogAdminPaths, supplierAdminPaths, orderAdminPaths, purchasingAdminPaths)
 
 var tenancyAdminPaths = []struct{ method, path string }{
 	{"POST", "/api/v1/admin/tenants"},
@@ -137,7 +137,7 @@ func adminRouterWith(t *testing.T, uc *tenancyReached, stores middleware.StoreCh
 	if err != nil {
 		t.Fatal(err)
 	}
-	sup, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliersReached{n: &uc.calls}, Log: log})
+	sup, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliersReached{n: &uc.calls}, Items: supplierItemsReached{n: &uc.calls}, Log: log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,9 @@ func adminRequest(method, path, token string) *http.Request {
 		body = `{"role":"staff"}`
 	default:
 		if body = newOrderBody(method, path); body == "" {
-			body, _ = newCatalogBody(method, path)
+			if body = newPurchasingBody(method, path); body == "" {
+				body, _ = newCatalogBody(method, path)
+			}
 		}
 	}
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -206,8 +208,9 @@ func TestRouter_AdminPathsListEveryRoute(t *testing.T) {
 	all := Handlers{
 		Tenancy: &handler.Tenancy{}, Catalog: &handler.Catalog{}, Suppliers: &handler.Suppliers{}, Workflows: &handler.Workflows{},
 		Customers: &handler.Customers{}, Orders: &handler.Orders{}, Today: &handler.Today{}, Finance: &handler.Finance{},
+		Purchasing: &handler.Purchasing{},
 	}
-	if n := len(adminRoutes(all)); len(adminPaths) != n || n != 9+29+4+23 {
+	if n := len(adminRoutes(all)); len(adminPaths) != n || n != 9+29+5+23+16 {
 		t.Fatalf("adminPaths lists %d routes, the router mounts %d", len(adminPaths), n)
 	}
 }

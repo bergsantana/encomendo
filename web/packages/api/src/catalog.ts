@@ -327,10 +327,23 @@ const photoTypes: readonly string[] = ['image/jpeg', 'image/png', 'image/webp']
 // pointless upload of a file that is clearly too big.
 const maxPhotoBytes = 10 * 1024 * 1024
 
-const defaultStorageTimeoutMs = 120_000
+/** defaultStorageTimeoutMs is how long the storage `PUT` may take when the caller names no limit. */
+export const defaultStorageTimeoutMs = 120_000
 
 function isPhotoType(type: string): type is PhotoUploadRequest['contentType'] {
   return photoTypes.includes(type)
+}
+
+/**
+ * checkPhotoFile returns the file's content type when it is a JPEG, PNG or
+ * WebP of at most 10 MB, and throws PhotoFileError before any request is made
+ * otherwise. Receiving photos share it (receipts.ts).
+ */
+export function checkPhotoFile(file: Blob): PhotoUploadRequest['contentType'] {
+  const contentType = file.type
+  if (!isPhotoType(contentType)) throw new PhotoFileError('photo_type_unsupported')
+  if (file.size > maxPhotoBytes) throw new PhotoFileError('photo_too_large')
+  return contentType
 }
 
 /**
@@ -343,9 +356,7 @@ function isPhotoType(type: string): type is PhotoUploadRequest['contentType'] {
  * PhotoUploadError and confirms nothing; a caller's abort is rethrown as is.
  */
 export async function uploadPhoto(client: HttpClient, input: PhotoUploadInput): Promise<Photo> {
-  const contentType = input.file.type
-  if (!isPhotoType(contentType)) throw new PhotoFileError('photo_type_unsupported')
-  if (input.file.size > maxPhotoBytes) throw new PhotoFileError('photo_too_large')
+  const contentType = checkPhotoFile(input.file)
 
   const upload = await requestPhotoUpload(client, { ownerType: input.ownerType, ownerId: input.ownerId, contentType })
   await putToStorage(upload, input.file, input.signal, input.storageTimeoutMs ?? defaultStorageTimeoutMs)
@@ -373,7 +384,7 @@ function storageSignal(callerSignal: AbortSignal | undefined, timeoutMs: number)
  * (ADR 0024). A caller's abort is rethrown untouched; a timeout or network
  * failure becomes PhotoUploadError.
  */
-async function putToStorage(upload: PhotoUpload, file: Blob, callerSignal: AbortSignal | undefined, timeoutMs: number): Promise<void> {
+export async function putToStorage(upload: PhotoUpload, file: Blob, callerSignal: AbortSignal | undefined, timeoutMs: number): Promise<void> {
   let response: Response
   try {
     // Looked up on every call so a test mock or polyfill installed later applies.

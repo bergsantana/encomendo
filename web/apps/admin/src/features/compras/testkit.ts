@@ -1,4 +1,19 @@
-import type { Notice, PurchaseLine, Supplier, SupplierItemUse, SupplierOrder, SupplierOrderSummary, TenantSettings, ToBuy, ToBuyItem, ToBuySupplier } from '@encomendo/api'
+import type {
+  Notice,
+  PurchaseLine,
+  Receipt,
+  ReceiptRequest,
+  Supplier,
+  SupplierItemUse,
+  SupplierOrder,
+  SupplierOrderSummary,
+  TenantSettings,
+  ToBuy,
+  ToBuyItem,
+  ToBuySupplier,
+  ToReceive,
+  ToReceiveLine,
+} from '@encomendo/api'
 import { http, HttpResponse } from 'msw'
 
 import { brl, encomendaMontagem, settingsUsing } from '../../testing/orders'
@@ -180,4 +195,82 @@ export function serve(backend: Backend = {}) {
     http.get('*/api/v1/admin/suppliers/:id/items', () => HttpResponse.json({ items: backend.supplierItems ?? [] })),
   ]
   return { handlers, seen }
+}
+
+/** receiveLine is one line to receive; with `counter` it has no `lineId`: an item bought at the counter, received by its `orderItemId`. */
+export function receiveLine(n: number, overrides: Partial<ToReceiveLine> = {}, counter = false): ToReceiveLine {
+  return {
+    ...(counter ? {} : { lineId: id(6000 + n) }),
+    orderId: orderIds.first,
+    orderNumber: 'P-0231',
+    orderItemId: id(9000 + n),
+    name: 'Banco de couro CB 500X',
+    quantity: 2,
+    choices: [{ name: 'Cor', label: 'Preto' }],
+    ...overrides,
+  }
+}
+
+/** toReceiveAnswer is Receber itens: C-0012 from Couros Paulista with two lines, C-0013 from Moto Peças with one, and one item bought at the counter. */
+export function toReceiveAnswer(): ToReceive {
+  return {
+    groups: [
+      {
+        supplierOrderId,
+        number: 'C-0012',
+        supplierName: couros.name,
+        lines: [receiveLine(1), receiveLine(2, { name: 'Capa de banco', quantity: 1, choices: [], orderId: orderIds.second, orderNumber: 'P-0232' })],
+      },
+      { supplierOrderId: id(5002), number: 'C-0013', supplierName: motoPecas.name, lines: [receiveLine(3, { name: 'Pastilha de freio', quantity: 4, choices: [] })] },
+    ],
+    toBuy: [receiveLine(4, { name: 'Parafuso M8', quantity: 10, choices: [] }, true)],
+    truncated: false,
+  }
+}
+
+/** savedReceipt is the answer of a receipt that moved nothing but its entries. */
+export function savedReceipt(overrides: Partial<Receipt> = {}): Receipt {
+  return { id: id(4001), receivedAt: '2026-11-28T14:00:00Z', entries: [], completedOrders: [], backToBuy: [], ...overrides }
+}
+
+/** Receiving is what the fake API of Receber itens answers, and what it was asked. */
+export interface Receiving {
+  toReceive: ToReceive
+  /** receipts are the saves it was sent, with their Idempotency-Key. */
+  receipts: { body: ReceiptRequest; key: string | null }[]
+  /** uploads are the content types asked for, in order. */
+  uploads: string[]
+  /** answers override a step by name: `upload`, `storage` or `receipt`. */
+  answers: Partial<Record<'upload' | 'storage' | 'receipt', () => Response | Promise<Response>>>
+  receipt: Receipt
+  reads: number
+}
+
+/** newReceiving starts the fake API of Receber itens. */
+export function newReceiving(overrides: Partial<Receiving> = {}): Receiving {
+  return { toReceive: toReceiveAnswer(), receipts: [], uploads: [], answers: {}, receipt: savedReceipt(), reads: 0, ...overrides }
+}
+
+/** serveReceiving answers Receber itens: the list, the upload request, the storage `PUT` and the receipt. */
+export function serveReceiving(state: Receiving) {
+  return [
+    http.get('*/api/v1/admin/purchasing/to-receive', () => {
+      state.reads += 1
+      return HttpResponse.json(state.toReceive)
+    }),
+    http.post('*/api/v1/admin/purchasing/receipt-photo-uploads', async ({ request }) => {
+      const body = (await request.json()) as { contentType: string }
+      state.uploads.push(body.contentType)
+      const key = `t/tenant/receipts/photo-${state.uploads.length}`
+      return (
+        (await state.answers.upload?.()) ??
+        HttpResponse.json({ key, uploadUrl: `http://storage.test/bucket/${key}`, method: 'PUT', headers: { 'Content-Type': body.contentType }, expiresAt: '2026-11-28T15:00:00Z' }, { status: 201 })
+      )
+    }),
+    http.put('http://storage.test/bucket/*', async () => (await state.answers.storage?.()) ?? new HttpResponse(null, { status: 200 })),
+    http.post('*/api/v1/admin/purchasing/receipts', async ({ request }) => {
+      state.receipts.push({ body: (await request.json()) as ReceiptRequest, key: request.headers.get('Idempotency-Key') })
+      return (await state.answers.receipt?.()) ?? HttpResponse.json(state.receipt, { status: 201 })
+    }),
+  ]
 }

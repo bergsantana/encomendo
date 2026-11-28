@@ -19,6 +19,7 @@ import FornecedoresTab from '../components/FornecedoresTab.vue'
 import NoticesPanel from '../components/NoticesPanel.vue'
 import SupplierDrawer from '../components/SupplierDrawer.vue'
 import { type ComprasTab, useComprasStore } from '../store'
+import ReceberView from './ReceberView.vue'
 
 const store = useComprasStore()
 const {
@@ -161,14 +162,15 @@ function openSupplier(supplier: Supplier | null): void {
       />
     </div>
 
-    <!-- "Receber itens" is step 5.14's: its panel is empty until that screen lands. -->
     <div
       v-else-if="tab === 'receber'"
       id="panel-receber"
       role="tabpanel"
       aria-labelledby="tab-receber"
       class="panel"
-    />
+    >
+      <ReceberView embedded />
+    </div>
 
     <div
       v-else

@@ -42,6 +42,30 @@ func TestPurchasingStore_NameAndTodayInTheStoresZone(t *testing.T) {
 	}
 }
 
+func TestPurchasingStore_CurrencyAndLocation(t *testing.T) {
+	t.Parallel()
+	clock := sharedfake.NewClock(time.Date(2026, 12, 2, 2, 0, 0, 0, time.UTC))
+	port := inproc.NewPurchasingStore(fixedDefaults{v: apptenancy.StoreDefaultsView{Currency: "BRL", TimeZone: tenancy.TimeZone("America/Manaus")}}, clock)
+	if cur, err := port.Currency(context.Background()); err != nil || cur != "BRL" {
+		t.Errorf("Currency = %q, %v", cur, err)
+	}
+	loc, err := port.Location(context.Background())
+	if err != nil || loc.String() != "America/Manaus" {
+		t.Errorf("Location = %v, %v; want America/Manaus", loc, err)
+	}
+	badZone := inproc.NewPurchasingStore(fixedDefaults{v: apptenancy.StoreDefaultsView{TimeZone: tenancy.TimeZone("Mars/Olympus")}}, clock)
+	if _, err := badZone.Location(context.Background()); err == nil {
+		t.Error("Location accepted an unknown time zone")
+	}
+	failing := inproc.NewPurchasingStore(fixedDefaults{err: shared.ErrNotFound}, clock)
+	if _, err := failing.Currency(context.Background()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Currency on a failed read: err = %v", err)
+	}
+	if _, err := failing.Location(context.Background()); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Location on a failed read: err = %v", err)
+	}
+}
+
 func TestPurchasingSuppliers_ContactFromTheSupplier(t *testing.T) {
 	t.Parallel()
 	ids := sharedfake.NewIDs(sharedfake.NewClock(time.Date(2026, 12, 1, 12, 0, 0, 0, time.UTC)))
