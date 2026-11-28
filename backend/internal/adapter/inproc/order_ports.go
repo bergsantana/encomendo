@@ -137,6 +137,17 @@ func (c *OrderCustomers) FindOrCreate(ctx context.Context, name, phone string) (
 	return customerFacts(v), nil
 }
 
+// AddAddress adds a to the customer through the customer use case (order:write
+// there, so staff may add an address from an order and never edit one). The
+// returned address carries the id the customer gave it.
+func (c *OrderCustomers) AddAddress(ctx context.Context, id shared.CustomerID, a order.DeliveryAddress) (order.DeliveryAddress, error) {
+	added, err := c.customers.AddAddress(ctx, id, customer.AddressSpec(a))
+	if err != nil {
+		return order.DeliveryAddress{}, err
+	}
+	return order.DeliveryAddress(added), nil
+}
+
 func customerFacts(v appcustomer.View) apporder.CustomerFacts {
 	f := apporder.CustomerFacts{ID: v.ID, Name: v.Name, Phone: v.Phone}
 	for _, a := range v.Addresses {

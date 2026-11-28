@@ -163,6 +163,7 @@ func TestOrders_ValidationNamesTheField(t *testing.T) {
 		{"bad swap", "POST", base + "/quote", `{"lines":[{"kitId":"` + orKit.String() + `","swaps":[{"itemId":"` + ctItem.String() + `"}]}],"terms":` + orTerms + `}`, "lines[0].swaps[0].withItemId"},
 		{"bad option", "POST", base + "/quote", `{"lines":[{"itemId":"` + ctItem.String() + `","quantity":1,"options":[{"itemId":"x","optionId":"x","choiceId":"x"}]}],"terms":` + orTerms + `}`, "lines[0].options[0].optionId"},
 		{"bad address", "POST", base + "/quote", `{"lines":` + orLines + `,"terms":{"handover":"delivery","addressId":"x"}}`, "terms.addressId"},
+		{"new address without street", "POST", base + "/quote", `{"lines":` + orLines + `,"terms":{"handover":"delivery","newAddress":{"label":"Obra","cep":"69057000","city":"Manaus","state":"AM"}}}`, "terms.newAddress.street"},
 		{"bad order id", "POST", base + "/quote", `{"lines":` + orLines + `,"terms":` + orTerms + `,"orderId":"x"}`, "orderId"},
 		{"bad customer id", "POST", base, `{"customerId":"x","lines":` + orLines + `,"terms":` + orTerms + `}`, "customerId"},
 		{"new customer without phone", "POST", base, `{"newCustomer":{"name":"Ana"},"lines":` + orLines + `,"terms":` + orTerms + `}`, "newCustomer.phone"},

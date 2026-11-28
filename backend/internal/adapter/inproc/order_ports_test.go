@@ -2,6 +2,7 @@ package inproc_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
+	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
@@ -44,6 +46,35 @@ func TestOrderCustomers_FindsByPhoneOrCreates(t *testing.T) {
 	got, err := port.Get(ctx, made.ID)
 	if err != nil || got.Phone != "5592981234567" {
 		t.Errorf("get: %+v %v", got, err)
+	}
+}
+
+func TestOrderCustomers_AddAddressNeedsOnlyOrderWriteAndGivesItsOwnID(t *testing.T) {
+	t.Parallel()
+	ids := sharedfake.NewIDs(sharedfake.NewClock(time.Date(2026, 12, 1, 12, 0, 0, 0, time.UTC)))
+	tenant := shared.TenantID(ids.NewID())
+	user := shared.UserID(ids.NewID())
+	port := inproc.NewOrderCustomers(appcustomer.NewService(customerfake.NewStore(), sharedfake.NewTxManager(), ids))
+	made, err := port.FindOrCreate(staff(t, user, tenant, shared.RoleStaff), "João Pereira", "5592981234567")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := order.DeliveryAddress{Label: "Obra", CEP: "69000000", Street: "Rua Nova", Number: "5", City: "Manaus", State: "AM"}
+
+	if _, err := port.AddAddress(staff(t, user, tenant, shared.RoleViewer), made.ID, spec); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("viewer: err = %v, want forbidden", err)
+	}
+	added, err := port.AddAddress(staff(t, user, tenant, shared.RoleStaff), made.ID, spec)
+	if err != nil || added.ID.IsZero() || added.Street != "Rua Nova" {
+		t.Fatalf("staff: %+v %v", added, err)
+	}
+	got, err := port.Get(staff(t, user, tenant, shared.RoleStaff), made.ID)
+	if err != nil || len(got.Addresses) != 1 || got.Addresses[0].ID != added.ID {
+		t.Errorf("customer = %+v %v, want the address added", got, err)
+	}
+	spec.CEP = "1"
+	if _, err := port.AddAddress(staff(t, user, tenant, shared.RoleStaff), made.ID, spec); !errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("bad cep: err = %v, want a validation error", err)
 	}
 }
 

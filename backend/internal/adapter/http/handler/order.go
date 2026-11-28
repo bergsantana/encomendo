@@ -66,7 +66,7 @@ func (h *Orders) Quote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.uc.Quote(r.Context(), in)
-	h.answer(w, r, http.StatusOK, err, func() any { return dto.NewQuote(v) })
+	h.answer(w, r, http.StatusOK, err, func() any { return dto.NewQuote(v, seesCosts(r)) })
 }
 
 // Create is POST /api/v1/admin/orders: 201, also for a replay of the same

@@ -24,17 +24,22 @@ type WhatsAppLinks struct{}
 func NewWhatsAppLinks() WhatsAppLinks { return WhatsAppLinks{} }
 
 // Link returns https://wa.me/{phone}?text={text}, the text percent-encoded
-// (accents, line breaks, "&" and "+" included; spaces as %20). It returns shared.ErrInvalid
-// unless phone is 55 + DDD + 8 or 9 digits, digits only, and the text has
-// 1 to 2000 characters of valid UTF-8.
+// (accents, line breaks, "&" and "+" included; spaces as %20). An empty text
+// gives https://wa.me/{phone} with no "?text=", which only opens the chat
+// ("Abrir conversa no WhatsApp"). It returns shared.ErrInvalid unless phone
+// is 55 + DDD + 8 or 9 digits, digits only, and the text has at most 2000
+// characters of valid UTF-8.
 func (WhatsAppLinks) Link(phone, text string) (string, error) {
 	if !shared.ValidWhatsAppPhone(phone) {
 		// The number is left out of the error: a customer's phone is never
 		// written to an error that could reach a log (backend/CLAUDE.md).
 		return "", fmt.Errorf("wa.me link: invalid phone: %w", shared.ErrInvalid)
 	}
+	if text == "" {
+		return "https://wa.me/" + phone, nil
+	}
 	n := utf8.RuneCountInString(text)
-	if n == 0 || n > maxMessageRunes || !utf8.ValidString(text) {
+	if n > maxMessageRunes || !utf8.ValidString(text) {
 		return "", fmt.Errorf("wa.me link: text of %d characters: %w", n, shared.ErrInvalid)
 	}
 	// QueryEscape writes a space as "+", which some WhatsApp clients show

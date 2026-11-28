@@ -120,6 +120,38 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 	return viewOf(c, c.Version()), nil
 }
 
+// AddAddress adds spec to the customer as a new address with a new id (spec's
+// own id is ignored) and stores the next version (order:write: staff may add
+// an address from an order, never edit or remove one; ADR 0030, Amendments).
+// It returns customer.ErrNotFound for an unknown customer, shared.ErrVersionConflict
+// when another write got there first, and a ValidationError naming the bare
+// address field ("cep"), or "addresses" past 10 addresses.
+func (s *Service) AddAddress(ctx context.Context, id shared.CustomerID, spec customer.AddressSpec) (AddressView, error) {
+	by, err := authz.Require(ctx, identity.PermOrderWrite)
+	if err != nil {
+		return AddressView{}, err
+	}
+	spec.ID = shared.AddressID(s.ids.NewID())
+	var added customer.Address
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		c, err := s.repo.ByID(ctx, by.TenantID(), id)
+		if err != nil {
+			return fmt.Errorf("load customer %s: %w", id, err)
+		}
+		if added, err = c.AddAddress(spec); err != nil {
+			return err
+		}
+		if err := s.repo.Update(ctx, c); err != nil { // optimistic lock on version
+			return fmt.Errorf("save customer %s: %w", id, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return AddressView{}, err
+	}
+	return AddressView(added), nil
+}
+
 // Update replaces a customer's fields and addresses (customer:write). An
 // address keeps its id only when the customer already has it; any other
 // gets a new one. It returns customer.ErrNotFound for an unknown customer,

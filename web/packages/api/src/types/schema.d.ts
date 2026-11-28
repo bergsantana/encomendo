@@ -1057,7 +1057,9 @@ export interface paths {
          *     create: prices, deposit, each item's expected date and the delivery
          *     date, all computed by the server. With `orderId`, it quotes a change
          *     to that order, counting dates from its release date. Nothing is
-         *     written.
+         *     written, and a `terms.newAddress` is checked and used but never
+         *     saved. `cost` and `margin` are the owner's and absent for every
+         *     other role.
          */
         post: operations["quoteOrder"];
         delete?: never;
@@ -1087,7 +1089,10 @@ export interface paths {
          *     the store's need `order:manage`. Requires `Idempotency-Key`. Give
          *     `customerId`, or `newCustomer` (found by WhatsApp number first,
          *     created when absent). The order takes the store's current status
-         *     workflow and keeps that version.
+         *     workflow and keeps that version. `terms.newAddress` ("Novo
+         *     endereço") is added to the customer in the same transaction and used
+         *     as the delivery address; `order:write` is enough for that, though
+         *     editing or removing a customer's addresses needs `customer:write`.
          *
          *     The answer carries `trackingUrl`, the order's tracking link, this
          *     once: the server keeps only its hash, and the message it records
@@ -2333,7 +2338,10 @@ export interface components {
         LineRequest: {
             kitId?: components["schemas"]["Uuid"];
             itemId?: components["schemas"]["Uuid"];
-            /** @description Loose items only; a kit line is one kit. */
+            /**
+             * @description Required for a loose item, 1 to 99. A kit line is always one kit
+             *     and refuses a quantity (add the kit again for another).
+             */
             quantity?: number;
             swaps?: components["schemas"]["Swap"][];
             options?: components["schemas"]["OptionChoice"][];
@@ -2354,8 +2362,19 @@ export interface components {
          */
         TermsInput: {
             handover: components["schemas"]["Handover"];
-            /** @description One of the customer's addresses; required for delivery. */
+            /** @description One of the customer's addresses. A delivery needs this or `newAddress`, never both. */
             addressId?: components["schemas"]["Uuid"];
+            /**
+             * @description "Novo endereço": delivery only, and not together with `addressId`.
+             *     On a create or a change the server adds it to the customer, in
+             *     the same transaction, and delivers there; `order:write` is
+             *     enough, though editing or removing a customer's addresses
+             *     needs `customer:write`. A quote uses it without saving it. Its
+             *     `id` is ignored. A refused field is reported as
+             *     `terms.newAddress.<field>` (`terms.newAddress` for the limit of
+             *     10 addresses).
+             */
+            newAddress?: components["schemas"]["AddressInput"];
             /** @description Frete; delivery only. */
             freightCents?: components["schemas"]["Cents"];
             /** @description Desconto; never above the lines' total. */
@@ -2397,21 +2416,45 @@ export interface components {
             price: components["schemas"]["Money"];
             items: components["schemas"]["QuoteItem"][];
         };
-        /** @description Prices, deposit and dates, all computed by the server. */
+        /**
+         * @description Prices, deposit and dates, all computed by the server; the client
+         *     does no money or date arithmetic. `cost` and `margin` are owner
+         *     only: absent for every other role, and null for the owner when an
+         *     item's cost is unknown.
+         */
         Quote: {
             lines: components["schemas"]["QuoteLine"][];
             subtotal: components["schemas"]["Money"];
             freight: components["schemas"]["Money"];
             discount: components["schemas"]["Money"];
             total: components["schemas"]["Money"];
+            /**
+             * @description "Valor a devolver" after the change: what the order would owe
+             *     back when the new total is below what was paid. Always zero for
+             *     a new order.
+             */
+            refundDue: components["schemas"]["Money"];
             depositPercent: number;
+            /** @description The full deposit (Sinal) of the quoted order. */
             depositDue: components["schemas"]["Money"];
             /** @description The days counted in the deadline; 0 when the workflow has no assembling. */
             assemblyDays: number;
             safetyMarginDays: number;
             deliveryDate: components["schemas"]["CivilDate"];
+            /**
+             * @description Calendar days from the day the deadline counts from to
+             *     `deliveryDate`, for "({n} dias depois do sinal)". That day is
+             *     today (the store's) for a new order and for a change to an order
+             *     not yet released, and the order's `releaseDate` for a change to
+             *     a released one.
+             */
+            daysAfterDeposit: number;
             /** @description Precisa chegar até. */
             arrivalLimit: components["schemas"]["CivilDate"];
+            /** @description Owner only; absent for every other role. Null when an item's cost is unknown. */
+            cost?: components["schemas"]["Money"] | null;
+            /** @description Owner only; absent for every other role. Over what is sold (the total less the freight). Null without a full cost. */
+            margin?: components["schemas"]["Margin"] | null;
         };
         /** @description Exactly one of `customerId` and `newCustomer`. */
         CreateOrderRequest: {
@@ -2595,6 +2638,14 @@ export interface components {
                 id: components["schemas"]["Uuid"];
                 name: string;
                 phone: components["schemas"]["CustomerPhone"];
+                /**
+                 * Format: uri
+                 * @description A `wa.me` link that opens the chat with the customer, with
+                 *     no text, for "Abrir conversa no WhatsApp". Clients never
+                 *     build wa.me links themselves.
+                 * @example https://wa.me/5592981234567
+                 */
+                whatsappUrl: string;
             };
             status: components["schemas"]["OrderStatus"];
             /** @description The workflow at the version the order was made with. */
@@ -2612,7 +2663,14 @@ export interface components {
             /** @description subtotal + freight − discount. */
             total: components["schemas"]["Money"];
             depositPercent: number;
+            /** @description The full deposit (Sinal), whatever was already paid. */
             depositDue: components["schemas"]["Money"];
+            /**
+             * @description The deposit still to pay: `depositDue` less the deposit payments
+             *     not void, never below zero. "Registrar pagamento" prefills Sinal
+             *     with it, and Saldo with `balanceDue`.
+             */
+            depositOwed: components["schemas"]["Money"];
             depositPaid: boolean;
             /** @description Every payment not void. */
             paid: components["schemas"]["Money"];

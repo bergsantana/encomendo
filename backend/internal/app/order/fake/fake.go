@@ -15,6 +15,7 @@ import (
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
+	"github.com/bergsantana/encomendo/backend/internal/domain/customer"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/workflow"
@@ -384,6 +385,28 @@ func (f *Customers) FindOrCreate(ctx context.Context, name, phone string) (appor
 	return c, nil
 }
 
+// AddAddress implements apporder.Customers with the real checks of
+// customer.CheckNewAddress (fields, limit of 10). The address it adds goes
+// away when the caller's transaction fails, as in Postgres.
+func (f *Customers) AddAddress(ctx context.Context, id shared.CustomerID, a order.DeliveryAddress) (order.DeliveryAddress, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return order.DeliveryAddress{}, fmt.Errorf("fake: customer %s: %w", id, shared.ErrNotFound)
+	}
+	a.ID = shared.AddressID(f.next())
+	checked, err := customer.CheckNewAddress(len(c.Addresses), customer.AddressSpec(a))
+	if err != nil {
+		return order.DeliveryAddress{}, err
+	}
+	sharedfake.KeepOnRollback(ctx, &f.mu, f.byID, id)
+	added := order.DeliveryAddress(checked)
+	c.Addresses = append(append([]order.DeliveryAddress(nil), c.Addresses...), added)
+	f.byID[id] = c
+	return added, nil
+}
+
 // Count returns how many customers the store has.
 func (f *Customers) Count() int {
 	f.mu.Lock()
@@ -455,6 +478,9 @@ type WhatsApp struct{}
 
 // Link implements apporder.WhatsApp.
 func (WhatsApp) Link(phone, text string) (string, error) {
+	if text == "" {
+		return "https://wa.me/" + phone, nil
+	}
 	return "https://wa.me/" + phone + "?text=" + url.QueryEscape(text), nil
 }
 

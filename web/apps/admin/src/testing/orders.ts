@@ -125,7 +125,7 @@ export function orderAsAdmin(workflow: StatusWorkflow = encomendaMontagem, statu
   return {
     id: id(201),
     number: 'P-0231',
-    customer: { id: joao.id, name: joao.name, phone: joao.phone },
+    customer: { id: joao.id, name: joao.name, phone: joao.phone, whatsappUrl: `https://wa.me/${joao.phone}` },
     status: statusOf(workflow, statusKey),
     workflow,
     moves: workflow.statuses.filter((status) => status.key !== statusKey),
@@ -157,6 +157,7 @@ export function orderAsAdmin(workflow: StatusWorkflow = encomendaMontagem, statu
     total: brl(129990),
     depositPercent: 50,
     depositDue: brl(64995),
+    depositOwed: brl(64995),
     depositPaid: false,
     paid: brl(0),
     balanceDue: brl(129990),

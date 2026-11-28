@@ -94,6 +94,10 @@ func (s *Service) applyChange(ctx context.Context, o *order.Order, in ChangeInpu
 	if err != nil {
 		return order.ChangeResult{}, err
 	}
+	in.Terms, c, err = s.withNewAddress(ctx, in.Terms, c, w)
+	if err != nil {
+		return order.ChangeResult{}, err
+	}
 	lines, err := s.changeLines(ctx, o, in.Lines)
 	if err != nil {
 		return order.ChangeResult{}, err

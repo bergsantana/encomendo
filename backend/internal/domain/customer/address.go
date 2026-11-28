@@ -74,6 +74,27 @@ func checkAddress(i int, s AddressSpec) (Address, error) {
 	if s.ID.IsZero() {
 		return Address{}, fmt.Errorf("address %d has no id: %w", i, ErrInvalidCustomer)
 	}
+	a, err := checkFields(s)
+	return a, prefixFields(err, at(fieldAddresses, i))
+}
+
+// CheckNewAddress trims s and checks it as AddAddress would for a customer
+// who already has have addresses, without a customer: the order quote
+// validates a "Novo endereço" it never saves. A ValidationError names the
+// field bare ("cep", "street"), or "addresses" for the limit of 10. It
+// returns ErrInvalidCustomer for a zero id, which is a bug, not input.
+func CheckNewAddress(have int, s AddressSpec) (Address, error) {
+	if have >= maxAddresses {
+		return Address{}, fieldError(fieldAddresses, msgTooManyAddrs)
+	}
+	if s.ID.IsZero() {
+		return Address{}, fmt.Errorf("new address has no id: %w", ErrInvalidCustomer)
+	}
+	return checkFields(s)
+}
+
+// checkFields trims s and reports every invalid field by its bare name.
+func checkFields(s AddressSpec) (Address, error) {
 	a := Address{
 		ID:         s.ID,
 		Label:      strings.TrimSpace(s.Label),
@@ -98,7 +119,7 @@ func checkAddress(i int, s AddressSpec) (Address, error) {
 		errs = append(errs, checkText(r))
 	}
 	errs = append(errs, checkCEP(a.CEP), checkState(a.State))
-	return a, prefixFields(shared.MergeValidation(errs...), at(fieldAddresses, i))
+	return a, shared.MergeValidation(errs...)
 }
 
 // checkText reports a ValidationError on r.field when the value is missing

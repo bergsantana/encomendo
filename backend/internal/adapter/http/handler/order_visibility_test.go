@@ -90,6 +90,7 @@ func (r *visRig) do(role shared.Role, method, path string, body any, key string)
 	mux := http.NewServeMux()
 	for pattern, h := range map[string]http.HandlerFunc{
 		"POST " + visBase:                                                   r.o.Create,
+		"POST " + visBase + "/quote":                                        r.o.Quote,
 		"GET " + visBase:                                                    r.o.List,
 		"GET " + visBase + "/{orderId}":                                     r.o.Get,
 		"PUT " + visBase + "/{orderId}":                                     r.o.Change,
@@ -194,6 +195,31 @@ func assertVisibility(t *testing.T, role shared.Role, what string, order map[str
 	}
 }
 
+// assertQuoteVisibility checks a quote's answer: the owner gets `cost` and
+// `margin`, every other role neither, and a refused role gets a problem.
+func assertQuoteVisibility(t *testing.T, role shared.Role, wantStatus, status int, out map[string]any) {
+	t.Helper()
+	if status != wantStatus {
+		t.Fatalf("quote as %s answered %d %v, want %d", role, status, out, wantStatus)
+	}
+	_, hasCost := out["cost"]
+	_, hasMargin := out["margin"]
+	switch {
+	case status >= 400:
+		walk(out, "quote problem", func(path, key string, _ any) {
+			if ownerKeys[key] {
+				t.Errorf("quote problem as %s carries %s", role, key)
+			}
+		})
+	case role == shared.RoleOwner:
+		if !hasCost || !hasMargin {
+			t.Errorf("quote as owner: cost %v margin %v, want both: %v", hasCost, hasMargin, out)
+		}
+	case hasCost || hasMargin:
+		t.Errorf("quote as %s carries cost %v margin %v, which only the owner sees", role, hasCost, hasMargin)
+	}
+}
+
 // orderOf is the Order inside an answer: the body itself, or its "order".
 func orderOf(out map[string]any) map[string]any {
 	if o, ok := out["order"].(map[string]any); ok {
@@ -271,6 +297,11 @@ func TestOrders_CostsAreTheOwnersOnly(t *testing.T) {
 					t.Errorf("a replay carries the tracking link again")
 				}
 			}
+
+			// The quote has the owner's cost and margin too, and no one else's.
+			quoteBody := map[string]any{"lines": r.createBody()["lines"], "terms": r.createBody()["terms"]}
+			status, out = r.do(role, "POST", visBase+"/quote", quoteBody, "")
+			assertQuoteVisibility(t, role, write, status, out)
 
 			// Change, advance, item moves, payment and its replay.
 			change := map[string]any{"lines": r.createBody()["lines"], "terms": r.createBody()["terms"], "customerApproved": false, "version": version}
