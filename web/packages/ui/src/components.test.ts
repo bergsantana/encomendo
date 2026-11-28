@@ -117,6 +117,16 @@ describe('BaseInput', () => {
     expect(input.attributes('aria-invalid')).toBeUndefined()
   })
 
+  it('takes a day as a date field, in the API\'s YYYY-MM-DD form', async () => {
+    const wrapper = field({ label: 'De', type: 'date', modelValue: '2026-11-01' })
+    const input = wrapper.get('input')
+
+    expect(input.attributes('type')).toBe('date')
+    expect((input.element as HTMLInputElement).value).toBe('2026-11-01')
+    await input.setValue('2026-10-05')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['2026-10-05']])
+  })
+
   it('emits what the user types', async () => {
     const wrapper = field()
 
