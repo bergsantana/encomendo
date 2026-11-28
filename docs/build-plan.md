@@ -2,7 +2,7 @@
 
 Tracks how much of the system is built, milestone by milestone. The milestones and their order come from `docs/architecture.md` section 11; the scope of each item comes from sections 4, 7 and 8 of the same document. This file records **status only**. If it disagrees with the architecture or the product docs, those win.
 
-**Last audited:** 2026-11-27, at the close of milestone 3. Run locally: backend lint (golangci-lint v2.15.0), unit, contract and integration tests (Postgres, RLS, Redis, and storage on Silo) pass; the coverage gate passes on the merged unit and integration profiles (94.6% overall, 96.6% domain and app); web lint, typecheck, unit tests and the Playwright suite against the real stack pass; mobile `./gradlew check` and `:androidApp:assembleDebug` pass in a container (`scripts/mobile-docker.sh`). CI is green on every milestone 3 PR (#52 to #71). **Not run:** the Android device walkthrough, which waits for KVM in the WSL VM.
+**Last audited:** 2026-11-27, at the close of milestone 4. Run locally: backend lint (golangci-lint v2.15.0, 0 issues), unit, contract and integration tests (Postgres, RLS, Redis, and storage on Silo) pass; the coverage gate passes on the merged unit and integration profiles (93.9% overall, 95.7% domain and app); web lint, typecheck and unit tests (770 in admin) pass; the Playwright suite passes against the real stack at desktop and phone size (10 passed, the 13 mock-only tests skipped) and its mock-only part passes without a stack (13 passed, 10 skipped). The mobile `./gradlew check` was not rerun: `mobile/` is frozen and nothing in it changed since the milestone 3 audit. CI is green on every milestone 4 PR (#77 to #86). **Not run:** the Android device walkthrough, which waits for a physical phone over `adb` because KVM is blocked in the WSL VM (see the milestone 4 plan's Result).
 
 ## How to keep this file honest
 
@@ -24,23 +24,24 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
-| 4 | Customers, orders and deadlines | 15 | 17 | In progress: the backend is built and served (#78 to #82, #84, #85); every web screen is built (#83 and the Pedidos PR); the phone, real-stack and shell checks and the close remain |
+| 4 | Customers, orders and deadlines | 17 | 17 | Done: the backend is built and served (#77 to #82, #84, #85), every web screen is built (#83, #86), and the order flow runs against the real stack at desktop and phone size; only the Android shell walkthrough is pending, on a physical phone |
 | 5 | Purchasing and receiving | 0 | 9 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **80** | **127** | **about 63%** (63.0%) |
+|   | **All milestones** | **82** | **127** | **about 65%** (64.6%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
 ### What exists today
 
-- **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers, rate limits, authn), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM with the pgx driver, Redis client and cache, goose migrations `0001`–`0011`, and the bounded contexts built so far:
+- **Backend:** config, slog logger, HTTP server with the middleware chain (request ID, logging, recover, security headers, rate limits, authn), RFC 9457 problem responses, `/healthz` and `/readyz`, GORM with the pgx driver, Redis client and cache, goose migrations `0001`–`0015`, and the bounded contexts built so far:
   - `domain/shared`, `identity` and `tenancy` (milestones 1–2; the default status workflow is a reference in tenant settings until the workflow context lands in milestone 4), served through `/auth/*`, tenants, settings and members;
+  - milestone 4: `domain/workflow` (phases, the four presets), `domain/schedule` (civil dates, delivery date, arrival limit, alerts), `domain/customer` and `domain/order` (kit lines, item lifecycles, payments by hand with voids, `Advance` with phase guards, promise against forecast dates, cancel, tracking token); `app/workflow`, `app/customer`, `app/order` and `app/schedule`; the order, customer, workflow, idempotency and outbox repositories, with the staff-only and client-read RLS tiers; `Idempotency-Key` in Postgres; and the HTTP operations for orders, payments, customers, status workflows, Hoje and Financeiro, with the `wa.me` links the API builds (nothing is sent). The tracking route and the client area are milestone 7.
   - milestone 3: `domain/catalog` (items, sourcing mode, categories, "Serve em" fields, customization options, kits, kit swap, photos), `domain/supplier` (suppliers, supplier items with lead time, cost and a backup) and `domain/schedule` days; `app/catalog` and `app/supplier` with fakes and owner-only cost views; Postgres repositories with staff-only RLS for internal tables; a Redis-backed cache with tenant-prefixed keys; `adapter/storage`, the S3-compatible photo store with signed uploads staged under `uploads/` (R2 in production, Silo in development and CI); and the catalog and supplier HTTP operations.
-- **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, generated types, auth, tenancy, members, catalog, suppliers and the photo upload) and `packages/ui`. Admin has login, sign-up, the store picker, Hoje, Equipe and Catálogo (Itens with categories and fields, Kits with swappable items, photos, "No portal"; Custo and Margem only for the owner). Playwright runs the admin and Catálogo flows against the real stack. The store app resolves the tenant from the subdomain and renders a shell.
+- **Web:** pnpm workspace with `admin` and `store` apps, `packages/api` (fetch wrapper, generated types, auth, tenancy, members, catalog, suppliers and the photo upload) and `packages/ui`. Admin has login, sign-up, the store picker, Hoje, Pedidos (list, Novo pedido, the order screen with its timeline), Clientes, Financeiro, Configurações (the status list choice), Equipe and Catálogo (Itens with categories and fields, Kits with swappable items, photos, "No portal"; Custo and Margem only for the owner). Playwright runs the admin, Catálogo and Pedidos flows against the real stack, at desktop and phone size. The store app resolves the tenant from the subdomain and renders a shell.
 - **Mobile:** KMP shell with the milestone 2 session, auth and Equipe screens, plus `feature/catalogo`: the Itens list and form, the Kits list and editor, and photo upload and thumbnails (Coil with a bearer-less client). `core:data` caches recent catalog reads in Room per store, keeps costs apart by role, and Sair clears it (ADR 0026). The Fornecedores data layer is built; its screens come with Compras.
-- **Delivery:** `docker compose` stack (postgres, redis, migrate, api, web, Mailpit and Silo for photos), API and web Dockerfiles, five GitHub workflows, Dependabot, PR template, ADRs 0001–0028, an OpenAPI file covering the health endpoints, milestone 2 and the whole milestone 3 catalog and supplier API (all served). `scripts/android-emulator-docker.sh` runs the Android walkthroughs in Docker.
+- **Delivery:** `docker compose` stack (postgres, redis, migrate, api, web, Mailpit and Silo for photos), API and web Dockerfiles, five GitHub workflows, Dependabot, PR template, ADRs 0001–0030, an OpenAPI file covering the health endpoints, milestone 2, the milestone 3 catalog and supplier API and the milestone 4 order API (all served). `scripts/android-emulator-docker.sh` runs the Android walkthroughs in Docker.
 
 ---
 
@@ -215,12 +216,12 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 
 ### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
-- [ ] Hoje, Pedidos, Clientes, Financeiro and the workflow setting work at phone size
+- [x] Hoje, Pedidos, Clientes, Financeiro and the workflow setting work at phone size (step 4.23: `web/e2e/phone-pedidos.spec.ts` runs the order flow against `make stack-up` at 390 × 844, checking no side scroll and 48 px controls on Pedidos, Novo pedido, Pedido, Hoje, Clientes, Financeiro and Configurações, with every dialog as a full-screen sheet. The Android shell walkthrough of these screens is pending, with the rest of 3.5's: see the plan's Result)
 
 ### Done when
 
 - [x] Every preset workflow has tests for each allowed and forbidden move and each phase guard (`domain/workflow` `TestPresets_Moves`, `domain/order` `TestAdvance_<Preset>_EveryMove_WithGuardHeldAndBroken`)
-- [ ] Changing a delivery date returns a `wa.me` link and nothing is sent automatically
+- [x] Changing a delivery date returns a `wa.me` link and nothing is sent automatically (steps 4.10, 4.14 and 4.23: the use case and handler tests check the link and that nothing is sent; `web/e2e/pedidos.spec.ts` changes a date on the real stack, checks that the app opens only an `https://wa.me/` link with a text that names no supplier, cost or alert, and records that the browser made no request to WhatsApp)
 
 **Answered (ADR 0023):** the owner records payments by hand, with no PIX in v1. Stores pick one of the four presets and cannot rename statuses. The deposit is 50% by default, assembly 3 days and safety margin 2 days.
 
@@ -343,7 +344,7 @@ These are checked in every milestone. Use them to spot a layer that is falling b
 | Web types generated from OpenAPI | Working (`make api-types`, checked in `web.yml`) |
 | Management on every device: each admin screen at desktop and phone size, opened by the Android shell (ADR 0029) | Hoje, Equipe and Catálogo on desktop; their phone layouts and the shell are milestone 3.5. The native app (`mobile/`) is frozen with Hoje, Equipe and Catálogo built |
 | Client visibility (no suppliers, costs, margins, "Pode atrasar" for clients) | The milestone 3 tests: public view types carry no cost or margin, the RLS staff-only case reads zero rows in a store page scope, and costs reach the owner only. The store page routes and their end-to-end test land in milestone 7 |
-| ADRs | 0001–0028 written |
+| ADRs | 0001–0030 written |
 
 ## Order of migrations
 
