@@ -162,6 +162,7 @@ func RunRepositoryContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 	t.Run("a cursor the repository did not issue is invalid", func(t *testing.T) { listBadCursor(t, newHarness(t)) })
 	t.Run("the list counts orders", func(t *testing.T) { listOrders(t, newHarness(t)) })
 	t.Run("another store's customers are invisible", func(t *testing.T) { otherTenant(t, newHarness(t)) })
+	t.Run("a search never finds another store's customer", func(t *testing.T) { searchStaysInStore(t, newHarness(t)) })
 	t.Run("rows cannot be written into another store", func(t *testing.T) { writesStayInScope(t, newHarness(t)) })
 	t.Run("a scope with no user still sees the store", func(t *testing.T) { noUserScope(t, newHarness(t)) })
 	t.Run("needs a transaction", func(t *testing.T) { needsTx(t, newHarness(t)) })
@@ -708,6 +709,44 @@ func otherTenant(t *testing.T, h Harness) {
 	if got.Name() != "Bravo" || got.Version() != 1 || len(got.Addresses()) != 1 {
 		t.Errorf("B's customer after A's attempts: %+v; want it untouched", got)
 	}
+}
+
+// searchStaysInStore: a name and a number that exist only in store A find
+// nothing when store B searches for them, whether B's scope names B's own
+// store or A's. The control search in A proves the customer is findable, so
+// the empty answers are not an empty fixture.
+func searchStaysInStore(t *testing.T, h Harness) {
+	a, b := h.newTenant(t), h.newTenant(t)
+	h.add(t, b, "Bruno")
+	h.in(t, a.scope(), func(ctx context.Context) error {
+		return h.Customers.Insert(ctx, h.build(t, a, "Zelda Unica", "5592987654321"))
+	})
+	queries := []struct{ name, query string }{
+		{"a name", "Zelda"},
+		{"the name in capitals", "ZELDA UNICA"},
+		{"the digits of the number", "987654321"},
+		{"the number typed as people do", "(92) 98765-4321"},
+	}
+	h.in(t, a.scope(), func(ctx context.Context) error {
+		for _, q := range queries {
+			p, err := h.Customers.List(ctx, a.id, appcustomer.ListFilter{Query: q.query}, page(t, "", 10))
+			if err != nil || !slices.Equal(names(p), []string{"Zelda Unica"}) {
+				t.Errorf("A searching %s = %v, %v; want its own customer", q.name, names(p), err)
+			}
+		}
+		return nil
+	})
+	h.in(t, b.scope(), func(ctx context.Context) error {
+		for _, q := range queries {
+			for _, store := range []tenant{a, b} {
+				p, err := h.Customers.List(ctx, store.id, appcustomer.ListFilter{Query: q.query}, page(t, "", 10))
+				if err != nil || len(p.Items) != 0 {
+					t.Errorf("B searching %s (as %v) = %v, %v; want nothing", q.name, store.id, names(p), err)
+				}
+			}
+		}
+		return nil
+	})
 }
 
 func writesStayInScope(t *testing.T, h Harness) {

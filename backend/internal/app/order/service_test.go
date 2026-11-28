@@ -658,7 +658,13 @@ func TestViews_CostsAndMarginsForTheOwnerOnly(t *testing.T) {
 // section 2, rule 8).
 func TestTrackingView_HasNoInternalField(t *testing.T) {
 	t.Parallel()
-	refused := []string{"cost", "margin", "supplier", "leaddays", "atrisk", "alert", "expected", "recordedby", "history", "token", "phone", "reason"}
+	// Substrings of the lower-cased field name; the view's own fields (store,
+	// number, steps, label, current, cancelled, deliverydate, items, name,
+	// quantity, options, arrived, total, paid, balancedue, handover) contain none.
+	refused := []string{
+		"cost", "margin", "supplier", "lead", "atrisk", "alert", "expected", "recordedby", "history", "token", "phone", "reason",
+		"by", "actor", "user", "staff", "sourcing", "check", "defective", "safety", "assembly",
+	}
 	var walk func(reflect.Type, string)
 	walk = func(rt reflect.Type, path string) {
 		switch rt.Kind() {
