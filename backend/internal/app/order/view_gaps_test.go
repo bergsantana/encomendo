@@ -198,6 +198,24 @@ func TestCreate_NewAddressUndoneWhenTheOrderIsRefusedLater(t *testing.T) {
 	}
 }
 
+func TestCreate_NewAddressIsAddedOnceWhenTheCreateIsReplayed(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	in := apporder.CreateInput{Customer: h.joao.ID, Lines: []apporder.LineRequest{h.bancoLine()},
+		Terms: apporder.TermsInput{Handover: order.HandoverDelivery, NewAddress: goodNewAddress()}, Idempotency: h.key()}
+	first, err := h.svc.Create(h.staff(t), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := h.svc.Create(h.staff(t), in)
+	if err != nil || again.Order.ID != first.Order.ID {
+		t.Fatalf("replay = %v %v, want the first order", again.Order.ID, err)
+	}
+	if got, _ := h.customers.Get(h.staff(t), h.joao.ID); len(got.Addresses) != 2 {
+		t.Errorf("customer has %d addresses after a replay, want the old one and the new one", len(got.Addresses))
+	}
+}
+
 func TestCreate_NewAddressNeedsOnlyOrderWrite(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)

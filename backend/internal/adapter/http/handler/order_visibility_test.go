@@ -420,3 +420,34 @@ func TestOrders_MissingKeyIsRefusedAfterThePermission(t *testing.T) {
 		t.Errorf("the key with another body answered %d %v, want 422 idempotency_key_reused", status, out)
 	}
 }
+
+// TestOrders_HandlerDropsCostsForEveryoneButTheOwner proves the handler's own
+// gate: the fake use case answers costs whoever asks, and only the owner's
+// answer may carry them (backend/CLAUDE.md, costs are the owner's).
+func TestOrders_HandlerDropsCostsForEveryoneButTheOwner(t *testing.T) {
+	t.Parallel()
+
+	quote := fmt.Sprintf(`{"lines":%s,"terms":%s}`, orLines, orTerms)
+	for _, role := range []shared.Role{shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff} {
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+
+			h := newOrHandlers(t)
+			h.orders.costs = true
+			for _, q := range []orRequest{
+				{method: "POST", path: "/api/v1/admin/orders/quote", body: quote},
+				{method: "GET", path: "/api/v1/admin/orders/" + orOrder.String()},
+			} {
+				q.caller = staffIn(t, role)
+				rec := h.serve(t, q)
+				if rec.Code != 200 {
+					t.Fatalf("%s %s as %s: %d %s", q.method, q.path, role, rec.Code, rec.Body.String())
+				}
+				_, hasCost := body(t, rec)["cost"]
+				if hasCost != (role == shared.RoleOwner) {
+					t.Errorf("%s %s as %s: cost present %v", q.method, q.path, role, hasCost)
+				}
+			}
+		})
+	}
+}
