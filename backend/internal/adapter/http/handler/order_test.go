@@ -309,6 +309,9 @@ func TestOrders_FinanceReadsThePeriod(t *testing.T) {
 	if totals["orders"] != float64(1) {
 		t.Errorf("toReceive = %v, want the number of orders", totals)
 	}
+	if list, _ := totals["list"].([]any); len(list) != 1 || list[0].(map[string]any)["number"] == nil {
+		t.Errorf("toReceive.list = %v, want the order with a balance", totals["list"])
+	}
 }
 
 func TestOrders_MapErrorsToProblems(t *testing.T) {
