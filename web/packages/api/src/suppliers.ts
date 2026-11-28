@@ -13,6 +13,11 @@ export type SupplierInput = Schemas['SupplierInput']
 /** ReplaceSupplierRequest is the body of PUT /api/v1/admin/suppliers/{supplierId}: the input plus the `version` read. */
 export type ReplaceSupplierRequest = Schemas['ReplaceSupplierRequest']
 
+/** SupplierItemUse is one catalog item a supplier supplies, as main or backup, with its lead time. Its `cost` is the owner's only. */
+export type SupplierItemUse = Schemas['SupplierItemUse']
+/** SupplierItemUseList is the items a supplier supplies. */
+export type SupplierItemUseList = Schemas['SupplierItemUseList']
+
 /** SupplierListRequest asks for one page of suppliers, optionally only those whose name contains `q`. */
 export interface SupplierListRequest extends PageRequest {
   q?: string
@@ -44,4 +49,9 @@ export function getSupplier(client: HttpClient, supplierId: string): Promise<Sup
  */
 export function replaceSupplier(client: HttpClient, supplierId: string, body: ReplaceSupplierRequest): Promise<Supplier> {
   return client.put<Supplier>(`/api/v1/admin/suppliers/${encodeURIComponent(supplierId)}`, body)
+}
+
+/** supplierItems calls GET /api/v1/admin/suppliers/{supplierId}/items: the catalog items the supplier supplies, for the Fornecedores tab. Archived items are left out. */
+export function supplierItems(client: HttpClient, supplierId: string): Promise<SupplierItemUseList> {
+  return client.get<SupplierItemUseList>(`/api/v1/admin/suppliers/${encodeURIComponent(supplierId)}/items`)
 }
