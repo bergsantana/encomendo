@@ -616,7 +616,7 @@ Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 
 ### Fornecedores (tab of Compras)
 
-- Table "Fornecedor", "WhatsApp", "Itens", "Pedidos de compra abertos". Search "Buscar fornecedor". Button "Novo fornecedor".
+- Table "Fornecedor", "WhatsApp" (cards on the phone). Search "Buscar fornecedor". Button "Novo fornecedor". While loading: "Carregando os fornecedores…".
 - Empty: "Nenhum fornecedor ainda. Você também pode criar um fornecedor no cadastro do item."
 - **Form** (drawer; full screen on the phone), title "Novo fornecedor" or "Fornecedor":
   - "Nome" and "WhatsApp" (hint "Com DDD, como (92) 99123-4567."), with the errors already used in Catálogo;

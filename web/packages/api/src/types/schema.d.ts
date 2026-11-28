@@ -1435,6 +1435,385 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/purchasing/to-buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compras, "A comprar" — the bought items still to buy, by supplier.
+         * @description Needs `purchase:write` (owner, admin). An item shows here while it is
+         *     bought (`to_order`, or `stock` until milestone 6), still `to_buy`, and
+         *     its order is purchasable: not cancelled or handed over, and released
+         *     (deposit paid or released by the owner) or, with "Liberar compras
+         *     antes do sinal" on, past draft (ADR 0031). Nothing is stored for
+         *     these items until they are sent. The supplier is the order's, as the
+         *     order item was sold (or switched to the backup), never the catalog's
+         *     current one. `cost` is the owner's only. Reads at most 500 active
+         *     orders; past that `truncated` is true.
+         */
+        get: operations["getToBuy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The message a pedido de compra would send, for picked items.
+         * @description Needs `purchase:write`. Writes nothing. The text sums the same
+         *     catalog item with the same choices into one line and never carries
+         *     the client's name, phone, address or order number (ADR 0031;
+         *     docs/product/design-document.md, System rules). The number shown is
+         *     the store's next one; it is taken only when the order is sent.
+         */
+        post: operations["previewSupplierOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compras, "Enviadas" — the store's pedidos de compra, newest first.
+         * @description Needs `purchase:write`.
+         */
+        get: operations["listSupplierOrders"];
+        put?: never;
+        /**
+         * Send picked items to their supplier ("Enviar pelo WhatsApp").
+         * @description Needs `purchase:write`. Takes the store's next number (`C-0001`),
+         *     writes one line per item, moves each item to `sent_to_supplier`, and
+         *     answers the `wa.me` link with the message, which the app opens.
+         *     Nothing is sent by the server (CLAUDE.md, rule 8). Every item must be
+         *     in "A comprar" for this supplier now: otherwise `409
+         *     item_not_to_buy` and nothing changes. A replay with the same
+         *     `Idempotency-Key` answers the same pedido de compra.
+         */
+        post: operations["sendSupplierOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders/{supplierOrderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One pedido de compra with its lines.
+         * @description Needs `purchase:write`. `cost` and `paidCost` are the owner's only.
+         */
+        get: operations["getSupplierOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/promised-date": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record the supplier's promised date ("Prazo do fornecedor").
+         * @description Needs `purchase:write`. `date` applies to every open line, and each
+         *     entry of `lines` overrides it for one line. Each item's expected
+         *     date (the forecast) becomes the promised date plus its options'
+         *     extra days, and alerts follow; the delivery date promised to the
+         *     client never moves (ADR 0030, ADR 0031). A day before today in the
+         *     store's time zone is `400 invalid`.
+         */
+        put: operations["recordPromisedDate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/in-transit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark every sent line as in transit ("Marcar como em trânsito").
+         * @description Needs `purchase:write`. Lines already in transit, received or cancelled stay as they are.
+         */
+        post: operations["markSupplierOrderInTransit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo a send ("Desfazer envio").
+         * @description Needs `purchase:write`. Only while no line was received or found
+         *     defective: otherwise `409 supplier_order_received`. Its lines are
+         *     cancelled, its items go back to `to_buy` (and show again in "A
+         *     comprar"), and its number is never used again.
+         */
+        post: operations["undoSupplierOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/paid-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record the unit price actually paid per line ("Informar preço pago").
+         * @description Owner only (`purchase:write` and the cost policy, ADR 0025):
+         *     `403` for anyone else. Financeiro's margins use the paid price when
+         *     there is one, and the cost at order time otherwise (ADR 0031). A
+         *     cancelled line is `409 line_closed`.
+         */
+        put: operations["recordPaidPrices"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/to-receive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Receber itens — what can be received, by pedido de compra.
+         * @description Needs `receiving:write` (owner, admin, staff). Open lines (`sent`,
+         *     `in_transit`) grouped by pedido de compra, then the items still in
+         *     "A comprar", which can be received as bought at the counter. Carries
+         *     no cost.
+         */
+        get: operations["getToReceive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/receipt-photo-uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a short-lived URL to upload one receiving photo (item or invoice).
+         * @description Needs `receiving:write`. As catalog photo uploads (ADR 0024, ADR
+         *     0028): the server picks the key, the app uploads with `method` to
+         *     `uploadUrl` sending exactly `headers`, then names the key in the
+         *     receipt. An upload never named in a receipt is removed after a day.
+         *     Limited like catalog uploads (ADR 0021).
+         */
+        post: operations["requestReceiptPhotoUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a receipt ("Salvar recebimento").
+         * @description Needs `receiving:write`. Each entry names an open line (`lineId`) or
+         *     an item still in "A comprar" bought at the counter (`orderItemId`),
+         *     with its check. A line is received whole (ADR 0031). `defective`
+         *     needs `note`. Photos are optional: up to 2 per entry and 4 invoice
+         *     photos, each a key from `receipt-photo-uploads`. `ok` moves the item
+         *     to `received`; `defective` moves it back to `to_buy`, where it shows
+         *     again in "A comprar" as "Reposição". A replay with the same
+         *     `Idempotency-Key` answers the same receipt.
+         */
+        post: operations["recordReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * "Avisar o fornecedor" — sent lines no longer needed.
+         * @description Needs `purchase:write`. An open line whose order was cancelled,
+         *     whose item was removed from the order, or whose item's quantity or
+         *     choices changed after it was sent (ADR 0031). Each carries a `wa.me`
+         *     link asking the supplier to cancel; its text never names the client.
+         */
+        get: operations["listPurchaseNotices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/notices/{lineId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a notice as resolved ("Marcar como resolvido").
+         * @description Needs `purchase:write`. Cancels the line. A line that is no longer a
+         *     notice is `409 line_closed`. An item whose quantity or choices
+         *     changed goes back to `to_buy`, so it is bought again as it is now.
+         */
+        post: operations["resolvePurchaseNotice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/orders/{orderId}/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What purchasing knows of one order's bought items.
+         * @description Needs `order:read`. One entry per bought item of the order: its
+         *     open or last line, pedido de compra and promised date.
+         *     `supplierChatUrl` ("Falar com o fornecedor") is only for
+         *     `purchase:write`, and its text names the pedido de compra and the
+         *     item, never the client (ADR 0031).
+         */
+        get: operations["getOrderPurchases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/purchasing/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hoje's purchasing entries.
+         * @description Needs `purchase:write`; the admin calls it beside `getToday` only
+         *     for roles that have it. Items to send per supplier, pedidos de
+         *     compra sent more than 2 days ago with no promised date, and notices.
+         */
+        get: operations["getPurchasingToday"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/suppliers/{supplierId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The catalog items a supplier supplies, as main or backup.
+         * @description Needs `catalog:read`. For the Fornecedores tab of Compras. Archived
+         *     items are left out. `cost` is the owner's only (ADR 0025).
+         */
+        get: operations["listSupplierItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1457,7 +1836,7 @@ export interface components {
              * @description Stable machine-readable code. New codes may be added; existing ones never change.
              * @enum {string}
              */
-            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended" | "name_taken" | "category_in_use" | "item_in_kit" | "item_archived" | "photo_limit" | "photo_invalid" | "photo_not_uploaded" | "invalid_transition" | "guard_failed" | "order_not_editable" | "order_closed" | "approval_required" | "payment_exceeds_due" | "invalid_item_move" | "no_backup_supplier" | "item_unavailable" | "phone_taken" | "workflow_not_found" | "idempotency_key_required" | "idempotency_key_reused";
+            code: "invalid" | "not_found" | "method_not_allowed" | "conflict" | "forbidden" | "internal" | "not_ready" | "unauthenticated" | "invalid_credentials" | "tenant_required" | "version_conflict" | "rate_limited" | "email_taken" | "slug_taken" | "already_member" | "invalid_code" | "email_unavailable" | "tenant_suspended" | "name_taken" | "category_in_use" | "item_in_kit" | "item_archived" | "photo_limit" | "photo_invalid" | "photo_not_uploaded" | "invalid_transition" | "guard_failed" | "order_not_editable" | "order_closed" | "approval_required" | "payment_exceeds_due" | "invalid_item_move" | "no_backup_supplier" | "item_unavailable" | "phone_taken" | "workflow_not_found" | "idempotency_key_required" | "idempotency_key_reused" | "item_moved_by_purchasing" | "item_not_to_buy" | "supplier_order_received" | "line_closed";
             detail?: string;
             instance?: string;
             errors?: components["schemas"]["FieldIssue"][];
@@ -2596,7 +2975,11 @@ export interface components {
             /** @description Received and checked ok, made and checked ok, or installed. */
             arrived: boolean;
             alerts: components["schemas"]["AlertKind"][];
-            /** @description What `POST …/move` accepts now. */
+            /**
+             * @description What `POST …/move` accepts now. For a bought item only
+             *     `installed`, once received: Compras and Receber itens move the
+             *     rest (ADR 0031).
+             */
             nextMoves: components["schemas"]["ItemStatus"][];
             /** @description Bought items only. */
             supplier?: components["schemas"]["ItemSupplier"];
@@ -2725,7 +3108,7 @@ export interface components {
             nextCursor?: string;
         };
         /** @enum {string} */
-        HistoryKind: "created" | "status" | "item" | "backup_supplier" | "payment" | "payment_voided" | "released" | "date" | "changed" | "tracking_link" | "cancelled";
+        HistoryKind: "created" | "status" | "item" | "backup_supplier" | "payment" | "payment_voided" | "released" | "date" | "changed" | "tracking_link" | "cancelled" | "promised_date";
         /** @description One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them. */
         HistoryEntry: {
             kind: components["schemas"]["HistoryKind"];
@@ -2751,6 +3134,8 @@ export interface components {
             newDate?: components["schemas"]["CivilDate"];
             reason?: string;
             customerApproved?: boolean;
+            /** @description With an item move made by purchasing, or a promised date, the pedido de compra. */
+            ref?: components["schemas"]["SupplierOrderNumber"];
         };
         HistoryPage: {
             items: components["schemas"]["HistoryEntry"][];
@@ -2873,6 +3258,289 @@ export interface components {
             paid: components["schemas"]["Money"];
             balanceDue: components["schemas"]["Money"];
             handover: components["schemas"]["Handover"];
+        };
+        /**
+         * @description A pedido de compra's number, counted per store from 1 (ADR 0031).
+         * @example C-0012
+         */
+        SupplierOrderNumber: string;
+        /** @description An option choice of a bought item, as the order item was sold. */
+        PurchaseChoice: {
+            /** @example Cor */
+            name: string;
+            /** @example Preto */
+            label: string;
+        };
+        ToBuyItem: {
+            orderId: components["schemas"]["Uuid"];
+            /** @example P-0231 */
+            orderNumber: string;
+            orderItemId: components["schemas"]["Uuid"];
+            catalogItemId: components["schemas"]["Uuid"];
+            name: string;
+            quantity: number;
+            choices: components["schemas"]["PurchaseChoice"][];
+            arrivalLimit: components["schemas"]["CivilDate"];
+            /** @description "Reposição": the item was received defective and is bought again. */
+            replacement: boolean;
+            /** @description Unit cost at order time. The owner's only; absent for every other role. */
+            cost?: components["schemas"]["Money"];
+        };
+        ToBuySupplier: {
+            supplierId: components["schemas"]["Uuid"];
+            supplierName: string;
+            whatsappPhone?: components["schemas"]["SupplierPhone"];
+            items: components["schemas"]["ToBuyItem"][];
+        };
+        ToBuy: {
+            /** @description By supplier name. */
+            suppliers: components["schemas"]["ToBuySupplier"][];
+            /** @description True when the store has more active orders than one read covers (500). */
+            truncated: boolean;
+        };
+        SupplierOrderRequest: {
+            supplierId: components["schemas"]["Uuid"];
+            orderItemIds: components["schemas"]["Uuid"][];
+        };
+        SupplierMessagePreview: {
+            /** @description The message as the supplier gets it; never with client data. */
+            text: string;
+        };
+        /** @enum {string} */
+        PurchaseLineStatus: "sent" | "in_transit" | "received" | "defective" | "cancelled";
+        /**
+         * @description Why a sent line is no longer needed ("Avisar o fornecedor").
+         * @enum {string}
+         */
+        NoticeReason: "order_cancelled" | "item_removed" | "item_changed";
+        /** @description Staff data; never in a client view. */
+        PurchaseLine: {
+            id: components["schemas"]["Uuid"];
+            orderId: components["schemas"]["Uuid"];
+            orderNumber: string;
+            /** @description Null once the item was removed from the order. */
+            orderItemId: components["schemas"]["Uuid"] | null;
+            catalogItemId: components["schemas"]["Uuid"];
+            name: string;
+            quantity: number;
+            choices: components["schemas"]["PurchaseChoice"][];
+            status: components["schemas"]["PurchaseLineStatus"];
+            /** @description The supplier's promised date for this line ("Prazo do fornecedor"). */
+            promisedDate: components["schemas"]["CivilDate"] | null;
+            /** @description The order item's forecast ("Previsto"); null once removed. */
+            expectedDate: components["schemas"]["CivilDate"] | null;
+            /** @description The order's "Precisa chegar até"; null once removed. */
+            arrivalLimit: components["schemas"]["CivilDate"] | null;
+            alerts: components["schemas"]["AlertKind"][];
+            notice: components["schemas"]["NoticeReason"] | null;
+            /** @description The note of a defective check; empty otherwise. */
+            checkNote: string;
+            /** @description Unit cost at order time. The owner's only. */
+            cost?: components["schemas"]["Money"];
+            /** @description Unit price actually paid. The owner's only; absent for every other role. */
+            paidCost?: components["schemas"]["Money"] | null;
+        };
+        /**
+         * @description `sent` while a line is still sent; `in_transit` once every open line
+         *     is in transit; `received` when no line is open; `undone` after
+         *     "Desfazer envio".
+         * @enum {string}
+         */
+        SupplierOrderState: "sent" | "in_transit" | "received" | "undone";
+        SupplierOrderSummary: {
+            id: components["schemas"]["Uuid"];
+            number: components["schemas"]["SupplierOrderNumber"];
+            supplierId: components["schemas"]["Uuid"];
+            supplierName: string;
+            /** Format: date-time */
+            sentAt: string;
+            promisedDate: components["schemas"]["CivilDate"] | null;
+            /** @description Lines received or found defective. */
+            received: number;
+            /** @description Lines not cancelled. */
+            total: number;
+            state: components["schemas"]["SupplierOrderState"];
+        };
+        SupplierOrderPage: {
+            items: components["schemas"]["SupplierOrderSummary"][];
+            /** @description Absent on the last page. */
+            nextCursor?: string;
+        };
+        SupplierOrder: components["schemas"]["SupplierOrderSummary"] & {
+            sentBy: components["schemas"]["Actor"];
+            /**
+             * Format: uri
+             * @description A `wa.me` link with no text, to open the chat with the supplier.
+             */
+            whatsappUrl: string;
+            lines: components["schemas"]["PurchaseLine"][];
+            /** @description True while nothing on it was received or found defective. */
+            canUndo: boolean;
+            version: number;
+        };
+        SentSupplierOrder: {
+            supplierOrder: components["schemas"]["SupplierOrder"];
+            /**
+             * Format: uri
+             * @description The `wa.me` link with the message; the app opens it. Nothing was sent by the server.
+             */
+            whatsappUrl: string;
+            /** @description The message, for "Copiar mensagem". */
+            text: string;
+        };
+        PromisedDateRequest: {
+            version: number;
+            date: components["schemas"]["CivilDate"];
+            /** @description A different date for some lines. */
+            lines?: {
+                lineId: components["schemas"]["Uuid"];
+                date: components["schemas"]["CivilDate"];
+            }[];
+        };
+        PaidPricesRequest: {
+            version: number;
+            prices: {
+                lineId: components["schemas"]["Uuid"];
+                cents: components["schemas"]["Cents"];
+            }[];
+        };
+        ToReceiveLine: {
+            /** @description Absent for an item still in "A comprar" (bought at the counter). */
+            lineId?: components["schemas"]["Uuid"];
+            orderId: components["schemas"]["Uuid"];
+            orderNumber: string;
+            orderItemId: components["schemas"]["Uuid"];
+            name: string;
+            quantity: number;
+            choices: components["schemas"]["PurchaseChoice"][];
+        };
+        ToReceiveGroup: {
+            /** @description Absent for the group of items bought at the counter. */
+            supplierOrderId?: components["schemas"]["Uuid"];
+            number?: components["schemas"]["SupplierOrderNumber"];
+            supplierName: string;
+            lines: components["schemas"]["ToReceiveLine"][];
+        };
+        ToReceive: {
+            /** @description Open pedidos de compra, oldest send first. */
+            groups: components["schemas"]["ToReceiveGroup"][];
+            /** @description "Comprados sem pedido de compra": items still in "A comprar". */
+            toBuy: components["schemas"]["ToReceiveLine"][];
+            truncated: boolean;
+        };
+        ReceiptPhotoUploadRequest: {
+            /** @enum {string} */
+            contentType: "image/jpeg" | "image/png" | "image/webp";
+        };
+        /** @description Exactly one of `lineId` and `orderItemId`. */
+        ReceiptEntry: {
+            lineId?: components["schemas"]["Uuid"];
+            orderItemId?: components["schemas"]["Uuid"];
+            check: components["schemas"]["Check"];
+            /** @description Required for `defective` ("O que houve?"). */
+            note?: string;
+            photoKeys?: string[];
+        };
+        ReceiptRequest: {
+            entries: components["schemas"]["ReceiptEntry"][];
+            invoicePhotoKeys?: string[];
+        };
+        OrderRef: {
+            orderId: components["schemas"]["Uuid"];
+            orderNumber: string;
+        };
+        Receipt: {
+            id: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            receivedAt: string;
+            entries: {
+                lineId: components["schemas"]["Uuid"];
+                orderId: components["schemas"]["Uuid"];
+                orderNumber: string;
+                orderItemId: components["schemas"]["Uuid"];
+                name: string;
+                check: components["schemas"]["Check"];
+            }[];
+            /** @description Orders whose every item has now arrived and been checked. */
+            completedOrders: components["schemas"]["OrderRef"][];
+            /** @description Items found defective, back in "A comprar". */
+            backToBuy: {
+                orderItemId: components["schemas"]["Uuid"];
+                name: string;
+            }[];
+        };
+        Notice: {
+            lineId: components["schemas"]["Uuid"];
+            supplierOrderId: components["schemas"]["Uuid"];
+            number: components["schemas"]["SupplierOrderNumber"];
+            supplierName: string;
+            orderId: components["schemas"]["Uuid"];
+            orderNumber: string;
+            name: string;
+            quantity: number;
+            reason: components["schemas"]["NoticeReason"];
+            /**
+             * Format: uri
+             * @description "Avisar pelo WhatsApp": asks the supplier to cancel; never names the client.
+             */
+            whatsappUrl: string;
+        };
+        NoticeList: {
+            items: components["schemas"]["Notice"][];
+        };
+        OrderPurchase: {
+            orderItemId: components["schemas"]["Uuid"];
+            supplierName: string;
+            /**
+             * @description `to_buy` while the item is in "A comprar"; otherwise its latest line's status.
+             * @enum {string}
+             */
+            status: "to_buy" | "sent" | "in_transit" | "received" | "defective";
+            lineId?: components["schemas"]["Uuid"];
+            supplierOrderId?: components["schemas"]["Uuid"];
+            number?: components["schemas"]["SupplierOrderNumber"];
+            promisedDate?: components["schemas"]["CivilDate"];
+            /**
+             * Format: uri
+             * @description "Falar com o fornecedor", a `wa.me` link with a text that never names the client. Only for `purchase:write`.
+             */
+            supplierChatUrl?: string;
+        };
+        OrderPurchases: {
+            items: components["schemas"]["OrderPurchase"][];
+        };
+        /** @enum {string} */
+        PurchasingNeedKind: "to_send" | "no_promised_date" | "notify_supplier";
+        PurchasingNeed: {
+            kind: components["schemas"]["PurchasingNeedKind"];
+            supplierName: string;
+            supplierId?: components["schemas"]["Uuid"];
+            /** @description With `to_send`, the items to buy from the supplier. */
+            count?: number;
+            supplierOrderId?: components["schemas"]["Uuid"];
+            number?: components["schemas"]["SupplierOrderNumber"];
+            /** @description With `no_promised_date`, days since it was sent. */
+            days?: number;
+            /** @description With `notify_supplier`. */
+            itemName?: string;
+        };
+        PurchasingToday: {
+            /** @description Items in "A comprar" ("Compras a enviar"). */
+            toSend: number;
+            /** @description Notices first, then pedidos de compra with no promised date, then items to send. */
+            needs: components["schemas"]["PurchasingNeed"][];
+        };
+        SupplierItemUse: {
+            itemId: components["schemas"]["Uuid"];
+            itemName: string;
+            /** @enum {string} */
+            role: "main" | "backup";
+            leadDays: components["schemas"]["Days"];
+            /** @description The owner's only. */
+            cost?: components["schemas"]["Money"];
+        };
+        SupplierItemUseList: {
+            items: components["schemas"]["SupplierItemUse"][];
         };
     };
     responses: {
@@ -3069,8 +3737,31 @@ export interface components {
          *       already bought.
          *     - `item_unavailable`: an item or kit of the order is archived;
          *       `references` names it.
+         *     - `item_moved_by_purchasing`: a bought item moves through Compras and
+         *       Receber itens; on the order only `received → installed` (ADR 0031).
          */
         OrderConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description The purchase's state refuses the call:
+         *
+         *     - `version_conflict`: someone saved first; reload.
+         *     - `conflict`: the same `Idempotency-Key` is still being handled; try
+         *       again.
+         *     - `item_not_to_buy`: an item is no longer in "A comprar" for this
+         *       supplier (sent by someone else, removed, or its order cancelled).
+         *     - `supplier_order_received`: something on it was already received.
+         *     - `line_closed`: the line was already received, found defective or
+         *       cancelled, or is no longer a notice.
+         *     - `order_closed`: an order of the call was handed over or cancelled.
+         */
+        PurchaseConflict: {
             headers: {
                 [name: string]: unknown;
             };
@@ -3110,6 +3801,12 @@ export interface components {
         OrderId: components["schemas"]["Uuid"];
         /** @description An item of the order (`Order.items[].id`), not a catalog item. */
         OrderItemId: components["schemas"]["Uuid"];
+        /** @description A pedido de compra. */
+        SupplierOrderId: components["schemas"]["Uuid"];
+        /** @description A purchase line (`PurchaseLine.id`). */
+        PurchaseLineId: components["schemas"]["Uuid"];
+        /** @description `open` (the default): sent or in transit. `all`: every pedido de compra. */
+        SupplierOrderStateFilter: "open" | "all";
         PaymentId: components["schemas"]["Uuid"];
         /**
          * @description One key per user action, kept for that action's retries (a UUID is
@@ -5569,6 +6266,497 @@ export interface operations {
             400: components["responses"]["Invalid"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getToBuy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The items to buy. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToBuy"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    previewSupplierOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description The text. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierMessagePreview"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["PurchaseConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listSupplierOrders: {
+        parameters: {
+            query?: {
+                /** @description `open` (the default): sent or in transit. `all`: every pedido de compra. */
+                state?: components["parameters"]["SupplierOrderStateFilter"];
+                /** @description Opaque position from the previous page's `nextCursor`. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierOrderPage"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    sendSupplierOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description One key per user action, kept for that action's retries (a UUID is
+                 *     fine). Missing: `400 idempotency_key_required`. Kept 24 hours (ADR
+                 *     0030).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplierOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description The pedido de compra and its link. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SentSupplierOrder"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["PurchaseConflict"];
+            422: components["responses"]["IdempotencyKeyReused"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getSupplierOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pedido de compra. */
+                supplierOrderId: components["parameters"]["SupplierOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pedido de compra. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierOrder"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    recordPromisedDate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pedido de compra. */
+                supplierOrderId: components["parameters"]["SupplierOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromisedDateRequest"];
+            };
+        };
+        responses: {
+            /** @description The pedido de compra with its lines redated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierOrder"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PurchaseConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    markSupplierOrderInTransit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pedido de compra. */
+                supplierOrderId: components["parameters"]["SupplierOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The pedido de compra. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierOrder"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PurchaseConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    undoSupplierOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pedido de compra. */
+                supplierOrderId: components["parameters"]["SupplierOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The pedido de compra, undone. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierOrder"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PurchaseConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    recordPaidPrices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pedido de compra. */
+                supplierOrderId: components["parameters"]["SupplierOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaidPricesRequest"];
+            };
+        };
+        responses: {
+            /** @description The pedido de compra. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierOrder"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PurchaseConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getToReceive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What can be received. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToReceive"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    requestReceiptPhotoUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiptPhotoUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Where and how to upload. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoUpload"];
+                };
+            };
+            400: components["responses"]["Invalid"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    recordReceipt: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description One key per user action, kept for that action's retries (a UUID is
+                 *     fine). Missing: `400 idempotency_key_required`. Kept 24 hours (ADR
+                 *     0030).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiptRequest"];
+            };
+        };
+        responses: {
+            /** @description The receipt and what it completed. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Receipt"];
+                };
+            };
+            400: components["responses"]["PhotoRefused"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["PurchaseConflict"];
+            422: components["responses"]["IdempotencyKeyReused"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listPurchaseNotices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The notices, oldest send first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    resolvePurchaseNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A purchase line (`PurchaseLine.id`). */
+                lineId: components["parameters"]["PurchaseLineId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resolved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PurchaseConflict"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getOrderPurchases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order's purchases. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPurchases"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    getPurchasingToday: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchasingToday"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            "5XX": components["responses"]["ServerFailure"];
+        };
+    };
+    listSupplierItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                supplierId: components["parameters"]["SupplierId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierItemUseList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             "5XX": components["responses"]["ServerFailure"];
         };
     };
