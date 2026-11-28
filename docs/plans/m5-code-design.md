@@ -690,6 +690,7 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
 - **The repository refuses a scope without a staff user** before any write, as the order repository does (`hasStaff`), since referential actions bypass RLS.
 - **Costs are copied, not passed:** `InsertSupplierOrder` and `InsertCounterLine` write `purchase_line_costs` with `INSERT … SELECT cost_cents FROM order_item_sourcing WHERE tenant_id = ? AND order_item_id = ?`, so a line sent by an admin keeps the owner's cost.
 - Order repository changes: `ItemRecord.Promised`, `Sourcing.PaidCost` and `HistoryEntry.Ref`.
+- **`pruneParts` must not delete and re-insert a kept item** (security review of 5.5). An item whose line id changed is deleted and inserted again under the same id. With 0016, that delete nulls the item's open purchase line, so Compras flags a false "Avisar o fornecedor" and the item can be sent twice. It also cascades `order_item_sourcing`, which loses `promised_date` and `paid_cost_cents`. 5.9 first confirms whether `app/order` ever keeps an item id under a new line id. If it does, either the domain refuses that for an item past `to_buy`, or the repository moves the item in place, which needs `UPDATE (line_id)` on `order_items` in a new migration. Test: `TestOrders_ChangeKeepsTheItemsPurchaseLine` (integration).
 
 **Contract suite:** `test/contract/purchasing_repository.go`, run against `fake` and Postgres. It covers:
 

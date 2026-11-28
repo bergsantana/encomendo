@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -167,13 +168,13 @@ func TestPurchaseLine_ItemMustBelongToItsOrder(t *testing.T) {
 		return err
 	})
 	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
-		t.Errorf("an item of another order: err = %v, want a foreign key violation (23503)", err)
+	if !errors.As(err, &pgErr) || pgErr.Code != "23503" || pgErr.ConstraintName != "purchase_lines_order_item_fkey" {
+		t.Errorf("an item of another order: err = %v, want a violation of purchase_lines_order_item_fkey", err)
 	}
 }
 
-// TestPurchaseLines_RulesOfTheRow: the CHECKs of a line, as one statement
-// each.
+// TestPurchaseLines_RulesOfTheRow: the CHECKs of a line, one statement
+// each, each a check violation (23514), not a missing grant.
 func TestPurchaseLines_RulesOfTheRow(t *testing.T) {
 	t.Parallel()
 	w := seed(t)
@@ -183,7 +184,6 @@ func TestPurchaseLines_RulesOfTheRow(t *testing.T) {
 		"a reason while open":        "cancel_reason = 'undone'",
 		"received without a day":     "status = 'received'",
 		"defective without a note":   "status = 'defective', received_on = current_date",
-		"a counter line still open":  "supplier_order_id = NULL",
 	} {
 		err := inScope(t, app, storeA(w), func(ctx context.Context, tx *sql.Tx) error {
 			var line string
@@ -194,8 +194,74 @@ func TestPurchaseLines_RulesOfTheRow(t *testing.T) {
 			return err
 		})
 		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) || (pgErr.Code != "23514" && pgErr.Code != "42501") {
-			t.Errorf("%s: err = %v, want a check violation or no grant", name, err)
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Errorf("%s: err = %v, want a check violation (23514)", name, err)
+		}
+	}
+	counter := func(status, receivedOn string) error {
+		return inScope(t, app, storeA(w), func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `WITH `+cteCustomer+`, `+cteOrder+`, `+cteLine+`, `+cteOrderItemFull+`, `+cteSupplier+`
+				INSERT INTO purchase_lines (tenant_id, id, supplier_order_id, supplier_id, order_id, order_item_id,
+					catalog_item_id, name, quantity, status, received_on, position)
+				SELECT s.tenant_id, gen_random_uuid(), NULL, s.id, oi.order_id, oi.id, gen_random_uuid(),
+					'Banco de couro', 1, $2, `+receivedOn+`, 0 FROM s, oi`, w.a.String(), status)
+			return err
+		})
+	}
+	var pgErr *pgconn.PgError
+	if err := counter("sent", "NULL"); !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+		t.Errorf("an open line with no pedido de compra: err = %v, want a check violation", err)
+	}
+	if err := counter("received", "current_date"); err != nil {
+		t.Errorf("a counter line received at once: %v", err)
+	}
+}
+
+// TestPurchaseLines_ForeignKeysStayInTheStore: as store A, a line naming
+// store B's pedido de compra, order and item, or supplier is refused by a
+// composite key (foreign key checks bypass RLS, so only tenant_id in every
+// key keeps them in the store), and a line's supplier must be its pedido de
+// compra's. Each line is otherwise valid (received at once, so no open-line
+// clash), so only the key can refuse it.
+func TestPurchaseLines_ForeignKeysStayInTheStore(t *testing.T) {
+	t.Parallel()
+	w := seed(t)
+	app := env.Open(t, pgtest.App)
+	db := env.Seeder(t).DB()
+	var bOrder, bItem, bSupplier, bSupplierOrder string
+	if err := db.QueryRowContext(t.Context(), `SELECT order_id, order_item_id, supplier_id, supplier_order_id
+		FROM purchase_lines WHERE tenant_id = $1 AND order_item_id IS NOT NULL AND supplier_order_id IS NOT NULL LIMIT 1`,
+		w.b.String()).Scan(&bOrder, &bItem, &bSupplier, &bSupplierOrder); err != nil {
+		t.Fatal(err)
+	}
+	type refs struct{ so, supplier, order, item string }
+	for name, change := range map[string]func(own refs, otherSupplier string) refs{
+		"B's pedido de compra":          func(r refs, _ string) refs { r.so = bSupplierOrder; return r },
+		"B's order and item":            func(r refs, _ string) refs { r.order, r.item = bOrder, bItem; return r },
+		"B's supplier, no pedido":       func(r refs, _ string) refs { r.so, r.supplier = "", bSupplier; return r },
+		"not its pedido's own supplier": func(r refs, other string) refs { r.supplier = other; return r },
+	} {
+		err := inScope(t, app, storeA(w), func(ctx context.Context, tx *sql.Tx) error {
+			var own refs
+			if err := tx.QueryRowContext(ctx, purchaseChain+` SELECT so.id, so.supplier_id, oi.order_id, oi.id FROM so, oi`,
+				w.a.String()).Scan(&own.so, &own.supplier, &own.order, &own.item); err != nil {
+				return err
+			}
+			var other string
+			if err := tx.QueryRowContext(ctx, `WITH `+cteSupplier+` SELECT id FROM s`, w.a.String()).Scan(&other); err != nil {
+				return err
+			}
+			r := change(own, other)
+			_, err := tx.ExecContext(ctx, `INSERT INTO purchase_lines (tenant_id, id, supplier_order_id, supplier_id,
+					order_id, order_item_id, catalog_item_id, name, quantity, status, received_on, check_note, position)
+				VALUES ($1, gen_random_uuid(), NULLIF($2, '')::uuid, $3, $4, $5, gen_random_uuid(), 'Banco de couro', 1,
+					'received', current_date, '', 9)`,
+				w.a.String(), r.so, r.supplier, r.order, r.item)
+			return err
+		})
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+			t.Errorf("%s: err = %v, want a foreign key violation (23503)", name, err)
 		}
 	}
 }
@@ -257,5 +323,53 @@ func TestSourcing_PurchasingColumnsGranted(t *testing.T) {
 	})
 	if err != nil {
 		t.Errorf("update the purchasing columns of sourcing: %v", err)
+	}
+}
+
+// TestPurchasingTables_RefuseADirectInsert: a store page scope writing a
+// purchasing row straight onto store A's own seeded parents is refused by
+// that table's own staff_only policy, not by a parent's (security review of
+// 5.5, as TestStaffOnlyTables_RefuseADirectInsert for the catalog).
+func TestPurchasingTables_RefuseADirectInsert(t *testing.T) {
+	t.Parallel()
+	w := seed(t)
+	app := env.Open(t, pgtest.App)
+	db := env.Seeder(t).DB()
+	var so, supplier, order, item, line, receipt string
+	if err := db.QueryRowContext(t.Context(), `SELECT pl.supplier_order_id, pl.supplier_id, pl.order_id, pl.order_item_id, pl.id
+		FROM purchase_lines pl WHERE pl.tenant_id = $1 AND pl.supplier_order_id IS NOT NULL AND pl.order_item_id IS NOT NULL LIMIT 1`,
+		w.a.String()).Scan(&so, &supplier, &order, &item, &line); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(t.Context(), `SELECT id FROM receipts WHERE tenant_id = $1 LIMIT 1`, w.a.String()).Scan(&receipt); err != nil {
+		t.Fatal(err)
+	}
+	for table, q := range map[string]struct {
+		sql  string
+		args []any
+	}{
+		"purchase_counters": {`INSERT INTO purchase_counters (tenant_id) VALUES ($1)`, nil},
+		"supplier_orders": {`INSERT INTO supplier_orders (tenant_id, id, number, supplier_id, supplier_name, supplier_phone,
+			sent_at, sent_by, message_text, message_url) VALUES ($1, gen_random_uuid(), 999999, $2, 'Couros', '5511991234567',
+			now(), gen_random_uuid(), 'Olá', 'https://wa.me/5511991234567')`, []any{supplier}},
+		"purchase_lines": {`INSERT INTO purchase_lines (tenant_id, id, supplier_order_id, supplier_id, order_id, order_item_id,
+			catalog_item_id, name, quantity, status, received_on, position) VALUES ($1, gen_random_uuid(), $2, $3, $4, $5,
+			gen_random_uuid(), 'Banco', 1, 'received', current_date, 9)`, []any{so, supplier, order, item}},
+		"purchase_line_costs": {`INSERT INTO purchase_line_costs (tenant_id, line_id, currency, cost_cents) VALUES ($1, $2, 'BRL', 1)`, []any{line}},
+		"receipts":            {`INSERT INTO receipts (tenant_id, id, received_by, received_at) VALUES ($1, gen_random_uuid(), gen_random_uuid(), now())`, nil},
+		"receipt_lines": {`INSERT INTO receipt_lines (tenant_id, receipt_id, line_id, check_result) VALUES ($1, $2, $3, 'ok')`,
+			[]any{receipt, line}},
+		"receipt_photos": {`INSERT INTO receipt_photos (tenant_id, id, receipt_id, object_key, content_type, size_bytes)
+			SELECT $1::uuid, p.id, $2::uuid, 't/' || $1::text || '/receipts/' || p.id, 'image/png', 10 FROM (SELECT gen_random_uuid() AS id) p`,
+			[]any{receipt}},
+	} {
+		err := inScope(t, app, storePage(w), func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, q.sql, append([]any{w.a.String()}, q.args...)...)
+			return err
+		})
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" || !strings.Contains(pgErr.Message, `"`+table+`"`) {
+			t.Errorf("direct insert into %s as a store page: err = %v, want 42501 from %s's own policy", table, err, table)
+		}
 	}
 }
