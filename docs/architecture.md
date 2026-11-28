@@ -329,15 +329,15 @@ internal/adapter/
 │   ├── models/                GORM structs with tags, one file per context, + toDomain/fromDomain mappers
 │   ├── identity_repo.go, tenancy_repo.go, workflow_repo.go, catalog_repo.go, supplier_repo.go,
 │   │   purchasing_repo.go, customer_repo.go, inventory_repo.go, order_repo.go, production_repo.go,
-│   │   portal_repo.go, outbox_repo.go
+│   │   portal_repo.go, outbox_repo.go,
+│   │   idempotency_repo.go    Idempotency-Key storage: a row in the same transaction as the write (ADR 0030)
 │   └── migrations/
 │       ├── embed.go           //go:embed *.sql
 │       └── 0001_… .sql        (section 7)
 ├── redis/
 │   ├── client.go
 │   ├── cache.go               implements app/shared.Cache, JSON values, tenant-prefixed keys
-│   ├── ratelimiter.go         sliding window (Lua script in a .lua file)
-│   └── idempotency.go         Idempotency-Key storage for POST endpoints
+│   └── ratelimiter.go         sliding window (Lua script in a .lua file)
 ├── auth/
 │   ├── keys.go                Ed25519 key set, kid = RFC 7638 thumbprint, keys print as their kid (ADR 0019)
 │   ├── jwt.go                 issue/verify access tokens (EdDSA, kid rotation)
@@ -365,6 +365,8 @@ internal/adapter/
 - `Updates(struct)` skips zero values: use `Select("*")` or a map when a field must become 0, "" or false.
 - `Preload` only what the use case returns.
 - GORM logger goes through slog; slow-query threshold from config.
+
+**Idempotency keys live in Postgres, not Redis (ADR 0030).** A POST that creates a resource (an order, a payment) writes its `idempotency_keys` row (key, a SHA-256 of the method, path and body, and the id of what was created) in the same transaction as the write, so a retry is exactly-once: either both rows exist or neither. A replay answers the resource as it is now, not a stored body; the same key with another request is refused (`idempotency_key_reused`). Keys expire after 24 hours and are ignored after that. Redis could not give that guarantee, because a crash between the write and the key left a window for a duplicate, and an outage of Redis must never fail a request (below).
 
 **Redis cache rules:**
 
@@ -432,7 +434,7 @@ Business users (owners, admins, staff) always log in. Clients may log in, but ne
 5. Store page routes resolve the tenant from the Host subdomain, then set the same variable; public reads expose only published data.
 6. Cross-tenant platform jobs (the deadline check) use a separate `encomendo_platform` role from `cmd/worker`, never from the API.
 7. Client area requests set `app.client_account_id` instead of `app.tenant_id`. The tables a client reads (`orders`, `order_items`, `payments`, `tenants` name only, and the global `status_workflows` / `workflow_statuses` for step names) get a second, `SELECT`-only policy: `current_tenant_id() IS NULL AND client_account_id = current_client_account_id()` (the global workflow tables need no tenant policy). The tenant guard keeps it off in every store scope, like the store picker policies (ADR 0010), and the RLS suite lists every policy besides `tenant_isolation`. No write policy uses it, and supplier, cost and purchasing tables have no client policy at all.
-8. **Staff-only tier (ADR 0024).** Internal tables (`item_costs`, `suppliers`, `supplier_items`, and later the purchasing tables) use a `staff_only` policy: a row is visible only with a tenant **and** a staff user set. A store page scope (tenant, no user) reads zero rows from them whatever its query, so a wrong query cannot leak a supplier or a cost. `audit_log` reads are staff-only too, while its inserts keep the tenant check (`0010`). Tables the store page reads (`items`, `kits`, `photos`) keep `tenant_isolation`, and the queries select published rows only.
+8. **Staff-only tier (ADR 0024).** Internal tables (`item_costs`, `suppliers`, `supplier_items`, `order_item_sourcing`, `order_messages`, and later the purchasing tables) use a `staff_only` policy: a row is visible only with a tenant **and** a staff user set. A store page scope (tenant, no user) reads zero rows from them whatever its query, so a wrong query cannot leak a supplier or a cost. `audit_log` reads are staff-only too, while its inserts keep the tenant check (`0010`). Tables the store page reads (`items`, `kits`, `photos`) keep `tenant_isolation`, and the queries select published rows only.
 
 ```sql
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
@@ -480,11 +482,13 @@ internal/adapter/postgres/migrations/
 ├── 0009_suppliers.sql              suppliers, supplier_items (both staff-only)
 ├── 0010_audit_log_staff_reads.sql  audit_log reads become staff-only (writes keep the tenant check)
 ├── 0011_lower_name_indexes.sql     lower(name) indexes for the keyset pages (ADR 0027)
+├── 0012_customers.sql              customers, customer_addresses
+├── 0013_orders.sql                 order_counters, orders, order_lines, order_items, order_item_sourcing (staff-only),
+│                                   payments, order_status_history, order_messages (staff-only)
+├── 0014_idempotency.sql            idempotency_keys
+├── 0015_settings_time_zone.sql     tenant_settings.time_zone
 └── planned, in the order they are expected to land; each takes the next free number and
     carries its own RLS policies (ADR 0014):
-    customers        customers, customer_addresses
-    orders           orders, order_items, order_status_history, payments, order_messages
-    idempotency      idempotency_keys
     purchasing       supplier_orders, purchase_lines, receipts, receipt_photos
     inventory        stock_items, stock_movements, stock_reservations
     production       production_jobs, production_stages, production_capacity
@@ -505,7 +509,7 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. V
 | `tenants` | Self | `slug unique` (the subdomain label; reserved words blocked), `niche`, `status`; policy `id = current tenant` |
 | `memberships` | Yes | `(tenant_id, user_id) unique`, `role`; policy also lets a user see their own memberships for tenant switching |
 | `invitations` | Yes | `email citext`, `role` (never owner), `token_hash`, `invited_by`, `expires_at`, `accepted_at`, `revoked_at`; one pending per `(tenant_id, email)` (ADR 0011) |
-| `tenant_settings` | Yes | `status_workflow_id` + `status_workflow_version`, `stock_enabled`, `production_enabled`, `purchase_before_deposit`, `deposit_percent` (50), `assembly_days` (3), `safety_margin_days` (2), currency, WhatsApp phone |
+| `tenant_settings` | Yes | `status_workflow_id` + `status_workflow_version`, `stock_enabled`, `production_enabled`, `purchase_before_deposit`, `deposit_percent` (50), `assembly_days` (3), `safety_margin_days` (2), `time_zone` (one of four Brazilian zones, default `America/Sao_Paulo`; it decides which day "today" is, 0015), currency, WhatsApp phone |
 | `categories` | Yes | Store-made, name unique ignoring case; deleting one in use is refused (`category_in_use`); audited (ADR 0024) |
 | `attributes`, `attribute_values`, `item_attribute_values`, `kit_attribute_values` | Yes | Template-style fields such as "Serve em" as ordered value lists; values keep their ids across edits; items and kits point at values |
 | `items` | Yes | `sourcing_mode`, `price_cents`, `currency`, `production_days`, `ready_days` (the main supplier's lead time or `production_days`, kept by the catalog repository so the store page never reads supplier tables), `published` ("No portal"), `archived_at` (items are archived, never deleted), `version`. No cost here (ADR 0025) |
@@ -515,18 +519,23 @@ Each file has `-- +goose Up` and `-- +goose Down`; CI runs up → down → up. V
 | `photos` | Yes | One row per confirmed photo of an item or kit: key `t/{tenant}/{items\|kits}/{owner}/{photo id}`, `position`; replaces the `media` table the plan sketched (ADRs 0025, 0028) |
 | `suppliers` | Yes, staff-only | Name (not unique: two suppliers may share one, and `lower(name)` is only a paging index), `whatsapp_phone` (`55` + DDD + number); no cost |
 | `supplier_items` | Yes, staff-only | An item's `main` or `backup` supplier with `lead_days` and `cost_cents`: the cost is per item and supplier, not per slot, and is null when none was recorded (ADR 0025) |
-| `customers` | Yes | Name, WhatsApp phone unique per tenant; optional `client_account_id` |
+| `customers`, `customer_addresses` | Yes | A customer belongs to one store (the same person in two stores is two rows). Name, `whatsapp_phone` (`55` + DDD + number, unique per tenant), optional email, notes, optional `client_account_id` (M7), `version`. Up to 10 addresses, replaced as a set when the customer is saved. Never deleted: orders point at them. `tenant_isolation`, audited, no client policy (0012) |
 | `stock_items`, `stock_movements`, `stock_reservations` | Yes | Movements append-only; on-hand quantity derived from them; minimum quantity per item |
-| `orders`, `order_items` | Yes | Items carry a `jsonb` snapshot and an item status; orders carry `workflow_id`, `workflow_version`, `status_key`, `delivery_date`, `assembly_days`, `safety_margin_days`, `handover` (delivery/pickup), `tracking_token_hash`, optional `client_account_id`, `version` |
-| `order_status_history` | Yes | Who, from, to (status key and phase), when; includes date changes |
-| `payments` | Yes | `kind` (deposit/balance), amount, method, recorded by, when |
-| `order_messages` | Yes | Every `wa.me` link generated for the order: to whom, text, when |
+| `order_counters` | Yes | One counter per store; the order's insert transaction takes the next number (`order.Number`, shown as P-0231), so two orders never share one. `tenant_isolation` |
+| `orders` | Yes | `number` unique per tenant; `customer_id`; `workflow_id` + `workflow_version` (kept for life, ADR 0004) and `status_key`; `delivery_date` (the promise) with `promise_changed_by_hand`; `release_date` and `released_by` (a release without the deposit); `assembly_days`, `safety_margin_days`, `deposit_percent`; `subtotal_cents`, `freight_cents`, `discount_cents`; `handover` with the order's own copy of the delivery address (`delivery_address` as `jsonb`, no foreign key); `handed_over_as`, `handed_over_at`; `cancelled_at` and `cancel_reason` (cancelled is never a status row); `tracking_token_hash` (SHA-256, never the token); `client_account_id` (M7: `encomendo_app` may not insert or update it yet); `version`. `tenant_isolation` plus the client `SELECT` policy `client_read` (0013) |
+| `order_lines` | Yes | One line per kit or loose item sold: `position`, `kit_id` and a `kit` snapshot (name, swaps; null for a loose item), `price_cents`, the kit's own day overrides. `tenant_isolation` plus `client_read` |
+| `order_items` | Yes | One row per item of a line (a kit line holds one per kit item): `snapshot` (`jsonb`: name, unit price, quantity, options, lead days), `sourcing_mode`, `status` along its lifecycle, `check_result` (`ok` / `defective`), `expected_date` (the forecast), `arrived_on`. No supplier and no cost, so the client policy can never reach them. `tenant_isolation` plus `client_read` |
+| `order_item_sourcing` | Yes, staff-only | The item's supplier, its backup and the cost at order time (per unit, null when unknown). No foreign key to `suppliers`: the snapshot outlives a renamed or removed supplier. Not audited (costs are the owner's). `staff_only`, no client policy |
+| `order_status_history` | Yes | Append-only: who did what (`kind`: created, status, item, backup_supplier, payment, payment_voided, released, date, changed, tracking_link, cancelled), when, and a `jsonb` detail. Holds staff ids and free-text reasons, so it uses the 0010 pair: `history_write` (any scope of the store may insert; the store page writes its own "created" entry in M7, and must not use `RETURNING`) and `staff_read` (a tenant and a user). No client policy |
+| `payments` | Yes | `kind` (`deposit` / `balance`), `amount_cents`, `method` (`pix`, `dinheiro`, `cartao_credito`, `cartao_debito`, `transferencia`, `outro`), `recorded_by`, `recorded_at`. Recorded by hand and never deleted: a wrong one is voided (`voided_at`, `voided_by`, `void_reason`), and a voided payment does not count. `tenant_isolation` plus `client_read` |
+| `order_messages` | Yes, staff-only | Every `wa.me` link made for the order: `kind` (tracking_link, created, date_changed, changed), the customer's phone, the text, the `https://wa.me/` url, who and when. The text never holds a tracking link (ADR 0030, Amendments). Not audited. `staff_only`, no client policy |
 | `supplier_orders`, `purchase_lines` | Yes | A line points to one order item, or to a restock (`order_item_id` null); expected and promised dates; status |
 | `receipts`, `receipt_photos` | Yes | `ok` / `defective` per line; item photo and invoice photo |
 | `production_jobs`, `production_stages`, `production_capacity` | Yes | One job per in-house item; ordered stages; weekly capacity |
 | `templates` | No | Global niche presets: categories, attributes, default sourcing per category, sample kits, wording, suggested status workflow; read-only to tenants |
 | `storefronts`, `storefront_sections` | Yes | Template id, logo, brand color, cover photo; sections on/off (Kits prontos, Monte o seu, Acompanhar pedido) |
-| `audit_log`, `outbox_events`, `idempotency_keys` | Yes | Written by triggers or in the same transaction; append-only for `encomendo_app`, which never reads the outbox. `audit_log` is read by staff only (a scope with a tenant and no user reads nothing, 0010); `item_costs`, `suppliers` and `supplier_items` stay out of the audit because every role reads it and costs are the owner's |
+| `idempotency_keys` | Yes | `(tenant_id, key)` primary key, a SHA-256 of the method, path and body, the `resource_id` the first call created, `expires_at` (24 hours). Written in the same transaction as the write it guards (ADR 0030); a replay answers the resource as it is now. `tenant_isolation`, not audited |
+| `audit_log`, `outbox_events` | Yes | Written by triggers or in the same transaction; append-only for `encomendo_app`, which never reads the outbox. `audit_log` is read by staff only (a scope with a tenant and no user reads nothing, 0010); `item_costs`, `suppliers`, `supplier_items`, `order_item_sourcing` and `order_messages` stay out of the audit because every role reads it and costs and phones are staff-only |
 
 **Conventions:** UUIDv7 primary keys generated in Go. The exception is rows written by a trigger or an adapter rather than built as aggregates (`audit_log`, `outbox_events`): `bigint` identity, which gives insert order, not commit order, so never read it as a cursor. Every tenant table has `tenant_id uuid not null references tenants`, an index starting with `tenant_id`, `created_at`, `updated_at`. Money = `bigint` cents + `char(3)` currency. Composite foreign keys `(tenant_id, id)` so a row can never reference another tenant's row.
 
