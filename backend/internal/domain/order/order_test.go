@@ -226,7 +226,7 @@ func TestAlerts_AtRiskAndLateOnlyBeforeArrival(t *testing.T) {
 	if got := o.Alerts(date(t, "2026-12-07"))[ids[0]]; len(got) != 2 {
 		t.Errorf("after the expected date: %v, want at_risk and late", got)
 	}
-	if err := o.MoveItem(ids[1], order.ItemReceived, &ok, date(t, "2026-12-07"), day1, owner(t, o)); err != nil {
+	if err := move(o, ids[1], order.ItemReceived, &ok, date(t, "2026-12-07"), owner(t, o)); err != nil {
 		t.Fatal(err)
 	}
 	if got, has := o.Alerts(date(t, "2026-12-07"))[ids[1]]; has {

@@ -135,8 +135,11 @@ func (s *Service) Advance(ctx context.Context, in AdvanceInput) (View, error) {
 		}})
 }
 
-// MoveItem moves one item along its sourcing mode's lifecycle
-// (order:write; ADR 0030: by hand until milestones 5 and 6).
+// MoveItem moves one item by hand (order:write): an in-house item along
+// its lifecycle until milestone 6, a bought one only from received to
+// installed. Any other move of a bought item is
+// order.ErrItemMovedByPurchasing, since purchasing moves it
+// (MovePurchased; ADR 0031).
 func (s *Service) MoveItem(ctx context.Context, in MoveItemInput) (View, error) {
 	return s.write(ctx, write{perm: identity.PermOrderWrite, order: in.Order, version: in.Version,
 		change: func(_ context.Context, o *order.Order, w writeCtx) ([]appshared.Event, error) {

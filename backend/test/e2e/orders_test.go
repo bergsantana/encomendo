@@ -9,11 +9,13 @@ import (
 	"time"
 )
 
-// ordersStore is a store that sells one bought item with a 15-day supplier,
-// on the encomenda_montagem workflow, with one customer.
+// ordersStore is a store that sells one bought item with a 15-day supplier
+// and one item made in-house in 15 days, on the encomenda_montagem
+// workflow, with one customer.
 type ordersStore struct {
 	owner    *session
-	item     string
+	item     string // bought: moves through purchasing (ADR 0031)
+	made     string // in-house: moves by hand until milestone 6
 	customer string
 	email    string
 }
@@ -54,19 +56,38 @@ func newOrdersStore(t *testing.T) *ordersStore {
 		"backupSupplier": nil, "attributeValueIds": []any{}, "options": []any{}, "published": true,
 	}, owner.access), 201, "create item")
 
+	// Produção on, for the in-house item.
+	settings = must(t, call(t, "GET", "/api/v1/admin/settings", nil, owner.access), 200, "read settings again")
+	edit := map[string]any{"productionEnabled": true, "version": settings.Body["version"]}
+	for _, k := range []string{"stockEnabled", "purchaseBeforeDeposit", "depositPercent", "assemblyDays", "safetyMarginDays", "whatsappPhone", "timeZone"} {
+		edit[k] = settings.Body[k]
+	}
+	must(t, call(t, "PUT", "/api/v1/admin/settings", edit, owner.access), 200, "turn Produção on")
+	made := must(t, call(t, "POST", "/api/v1/admin/catalog/items", map[string]any{
+		"name": "Banco de couro sob medida", "description": "", "categoryId": nil, "sourcingMode": "in_house", "priceCents": 100000,
+		"productionDays": 15, "productionCostCents": 40000, "mainSupplier": nil, "backupSupplier": nil,
+		"attributeValueIds": []any{}, "options": []any{}, "published": true,
+	}, owner.access), 201, "create the in-house item")
+
 	email := unique("cliente") + "@teste.encomendo.local"
 	customer := must(t, call(t, "POST", "/api/v1/admin/customers", map[string]any{
 		"name": "João Pereira", "phone": "5592981234567", "email": email, "notes": "", "addresses": []any{},
 	}, owner.access), 201, "create customer")
-	return &ordersStore{owner: owner, item: item.str("id"), customer: customer.str("id"), email: email}
+	return &ordersStore{owner: owner, item: item.str("id"), made: made.str("id"), customer: customer.str("id"), email: email}
 }
 
-// create makes an order of one item and returns the answer.
+// create makes an order of the bought item and returns the answer.
 func (s *ordersStore) create(t *testing.T, key string, send bool) answer {
+	t.Helper()
+	return s.createOf(t, s.item, key, send)
+}
+
+// createOf makes an order of one item and returns the answer.
+func (s *ordersStore) createOf(t *testing.T, item, key string, send bool) answer {
 	t.Helper()
 	return must(t, callWith(t, "POST", "/api/v1/admin/orders", map[string]any{
 		"customerId": s.customer, "sendToCustomer": send,
-		"lines": []any{map[string]any{"itemId": s.item, "quantity": 1}},
+		"lines": []any{map[string]any{"itemId": item, "quantity": 1}},
 		"terms": map[string]any{"handover": "pickup"},
 	}, s.owner.access, map[string]string{"Idempotency-Key": key}), 201, "create order")
 }
@@ -85,13 +106,15 @@ func cents(o map[string]any, key string) float64 {
 }
 
 // Milestone 4's flow against the real stack: from a chosen workflow to an
-// order handed over, with the deposit, the items received, every guard and
-// the balance (docs/plans/m4-customers-orders-deadlines.md, step 4.14).
+// order handed over, with the deposit, the items made, every guard and the
+// balance (docs/plans/m4-customers-orders-deadlines.md, step 4.14). The
+// item is made in-house: bought items move through purchasing, whose flow
+// is TestPurchasing_* (step 5.10; ADR 0031).
 func TestOrders_FromQuoteToHandover(t *testing.T) {
 	t.Parallel()
 
 	s := newOrdersStore(t)
-	created := s.create(t, unique("order"), true)
+	created := s.createOf(t, s.made, unique("order"), true)
 	o := created.Body["order"].(map[string]any)
 	id := o["id"].(string)
 	if created.str("trackingUrl") == "" || !strings.HasPrefix(created.str("whatsappUrl"), "https://wa.me/5592981234567?text=") {
@@ -134,9 +157,10 @@ func TestOrders_FromQuoteToHandover(t *testing.T) {
 		t.Fatalf("advance before the items arrive = %d %v, want 409 guard_failed items_not_ready", early.Status, early.Body)
 	}
 	itemID := o["items"].([]any)[0].(map[string]any)["id"].(string)
-	o = must(t, call(t, "POST", "/api/v1/admin/orders/"+id+"/items/"+itemID+"/move", map[string]any{"to": "received", "check": "ok", "version": version(o)}, s.owner.access), 200, "receive the item").Body
+	o = must(t, call(t, "POST", "/api/v1/admin/orders/"+id+"/items/"+itemID+"/move", map[string]any{"to": "in_production", "version": version(o)}, s.owner.access), 200, "start making the item").Body
+	o = must(t, call(t, "POST", "/api/v1/admin/orders/"+id+"/items/"+itemID+"/move", map[string]any{"to": "ready", "check": "ok", "version": version(o)}, s.owner.access), 200, "the item is made").Body
 	if it := o["items"].([]any)[0].(map[string]any); it["arrived"] != true || it["check"] != "ok" {
-		t.Errorf("item after receiving = %v, want arrived and checked ok", it)
+		t.Errorf("item after making it = %v, want arrived and checked ok", it)
 	}
 
 	// Em montagem, Pronto, the balance, Entregue (pickup).
@@ -243,5 +267,24 @@ func TestOrders_AKeyIsPerPerson(t *testing.T) {
 	}
 	if _, ok := second.Body["order"].(map[string]any)["cost"]; ok {
 		t.Errorf("staff got a cost: %v", second.Body["order"])
+	}
+}
+
+// A bought item is not moved on the order: Compras and Receber itens move
+// it, and the order offers no move until it is received (ADR 0031).
+func TestOrders_BoughtItemsMoveOnlyThroughPurchasing(t *testing.T) {
+	t.Parallel()
+
+	s := newOrdersStore(t)
+	o := s.create(t, unique("order"), false).Body["order"].(map[string]any)
+	id := o["id"].(string)
+	it := o["items"].([]any)[0].(map[string]any)
+	if moves, _ := it["nextMoves"].([]any); len(moves) != 0 {
+		t.Errorf("a bought item to buy offers %v, want no move on the order", moves)
+	}
+	got := call(t, "POST", "/api/v1/admin/orders/"+id+"/items/"+it["id"].(string)+"/move",
+		map[string]any{"to": "received", "check": "ok", "version": version(o)}, s.owner.access)
+	if got.Status != 409 || got.str("code") != "item_moved_by_purchasing" {
+		t.Errorf("receive a bought item on the order = %d %v, want 409 item_moved_by_purchasing", got.Status, got.Body)
 	}
 }

@@ -24,6 +24,7 @@ const (
 	HistoryChanged        HistoryKind = "changed"
 	HistoryTrackingLink   HistoryKind = "tracking_link"
 	HistoryCancelled      HistoryKind = "cancelled"
+	HistoryPromised       HistoryKind = "promised_date" // a supplier's promised date (ADR 0031)
 )
 
 // HistoryEntry is one event of an order's history, for staff. Only the
@@ -50,4 +51,8 @@ type HistoryEntry struct {
 	OldDate, NewDate shared.CivilDate
 	Reason           string
 	CustomerApproved bool
+
+	// Ref is the pedido de compra ("C-0012") of an item move made by
+	// purchasing or of a promised date; empty otherwise.
+	Ref string
 }

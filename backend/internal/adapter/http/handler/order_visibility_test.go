@@ -324,11 +324,14 @@ func TestOrders_CostsAreTheOwnersOnly(t *testing.T) {
 			if manage == 200 {
 				version++
 			}
-			status, out = r.do(role, "POST", path+"/items/"+itemID+"/move", map[string]any{"to": "sent_to_supplier", "version": version}, "")
-			check("move item", write, status, out)
+			// A bought item moves through purchasing (ADR 0031): writers are
+			// refused with 409, and nothing changes the version.
+			moveWant := write
 			if write == 200 {
-				version++
+				moveWant = 409
 			}
+			status, out = r.do(role, "POST", path+"/items/"+itemID+"/move", map[string]any{"to": "sent_to_supplier", "version": version}, "")
+			check("move item", moveWant, status, out)
 			pay := map[string]any{"kind": "deposit", "amountCents": 10000, "method": "pix", "version": version}
 			payKey := r.key()
 			status, out = r.do(role, "POST", path+"/payments", pay, payKey)

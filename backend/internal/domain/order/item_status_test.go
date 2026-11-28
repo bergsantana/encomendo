@@ -119,7 +119,7 @@ func TestMoveItem_DefectiveGoesBack(t *testing.T) {
 			o = restoreAt(t, o, "purchasing", func(r *order.Record) { r.Lines[0].Items[0].Status = tt.from })
 			id := o.Items()[0].ID()
 			today := date(t, "2026-12-05")
-			if err := o.MoveItem(id, tt.to, &bad, today, day1, owner(t, o)); err != nil {
+			if err := move(o, id, tt.to, &bad, today, owner(t, o)); err != nil {
 				t.Fatal(err)
 			}
 			it := o.Items()[0]
@@ -143,7 +143,7 @@ func TestMoveItem_ReceivedOkArrivesToday(t *testing.T) {
 	promise := o.Promise()
 	id := o.Items()[0].ID()
 	today := date(t, "2026-12-03")
-	if err := o.MoveItem(id, order.ItemReceived, &ok, today, day1, owner(t, o)); err != nil {
+	if err := move(o, id, order.ItemReceived, &ok, today, owner(t, o)); err != nil {
 		t.Fatal(err)
 	}
 	it := o.Items()[0]
@@ -169,7 +169,10 @@ func TestMoveItem_Refusals(t *testing.T) {
 	if err := o.MoveItem(id, order.ItemInstalled, nil, today, day1, by); !errors.Is(err, order.ErrInvalidItemMove) {
 		t.Errorf("skip to installed: err = %v, want ErrInvalidItemMove", err)
 	}
-	if err := o.MoveItem(id, order.ItemReceived, nil, today, day1, by); !errors.Is(err, order.ErrInvalidItemMove) {
+	if err := o.MoveItem(id, order.ItemReceived, &ok, today, day1, by); !errors.Is(err, order.ErrItemMovedByPurchasing) {
+		t.Errorf("receive a bought item by hand: err = %v, want ErrItemMovedByPurchasing", err)
+	}
+	if err := o.MovePurchased(order.PurchaseMove{Item: id, To: order.ItemReceived}, today, day1, by); !errors.Is(err, order.ErrInvalidItemMove) {
 		t.Errorf("receive without check: err = %v, want ErrInvalidItemMove", err)
 	}
 	if err := o.MoveItem(shared.OrderItemID(testkit.NextID()), order.ItemSentToSupplier, nil, today, day1, by); !errors.Is(err, order.ErrItemNotFound) {

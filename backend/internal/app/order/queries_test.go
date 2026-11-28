@@ -51,14 +51,19 @@ func (h *harness) walk(ctx context.Context, t *testing.T, v apporder.View, keys 
 func (h *harness) arrive(ctx context.Context, t *testing.T, v apporder.View) apporder.View {
 	t.Helper()
 	ok := order.CheckOK
+	// Bought items arrive through purchasing's path since milestone 5 (ADR 0031).
+	moves := make([]apporder.PurchaseMoveInput, 0, len(v.Items))
 	for _, i := range v.Items {
-		var err error
-		v, err = h.svc.MoveItem(ctx, apporder.MoveItemInput{Order: v.ID, Item: i.ID, To: order.ItemReceived, Check: &ok, Version: v.Version})
-		if err != nil {
-			t.Fatalf("MoveItem: %v", err)
-		}
+		moves = append(moves, apporder.PurchaseMoveInput{Order: v.ID, Move: order.PurchaseMove{Item: i.ID, To: order.ItemReceived, Check: &ok}})
 	}
-	return v
+	if err := h.svc.MovePurchased(ctx, moves); err != nil {
+		t.Fatalf("MovePurchased: %v", err)
+	}
+	got, err := h.svc.Get(ctx, v.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	return got
 }
 
 // released makes an order and pays its deposit, which releases it today.
@@ -323,7 +328,8 @@ func TestHistory_NamesTheItemOfAnItemMove(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	v := h.create(h.staff(t), t, nil).Order
-	if _, err := h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[0].ID, To: order.ItemSentToSupplier, Version: v.Version}); err != nil {
+	sent := order.PurchaseMove{Item: v.Items[0].ID, To: order.ItemSentToSupplier, Ref: "C-0001"}
+	if err := h.svc.MovePurchased(h.admin(t), []apporder.PurchaseMoveInput{{Order: v.ID, Move: sent}}); err != nil {
 		t.Fatal(err)
 	}
 	page, err := h.svc.History(h.viewer(t), v.ID, firstPage)

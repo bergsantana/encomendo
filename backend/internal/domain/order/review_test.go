@@ -56,11 +56,11 @@ func TestChange_KeepsDatesOfSurvivingItems(t *testing.T) {
 	redo, done := o.Items()[0].ID(), o.Items()[1].ID()
 	by := owner(t, o)
 	// The first item came back defective on 12-10: expected again 12-15.
-	if err := o.MoveItem(redo, order.ItemReceived, &bad, date(t, "2026-12-10"), day1, by); err != nil {
+	if err := move(o, redo, order.ItemReceived, &bad, date(t, "2026-12-10"), by); err != nil {
 		t.Fatal(err)
 	}
 	// The second arrived late, on 12-20.
-	if err := o.MoveItem(done, order.ItemReceived, &ok, date(t, "2026-12-20"), day1, by); err != nil {
+	if err := move(o, done, order.ItemReceived, &ok, date(t, "2026-12-20"), by); err != nil {
 		t.Fatal(err)
 	}
 	s := changeSpec(t, o, "2026-12-11")

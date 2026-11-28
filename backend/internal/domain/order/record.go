@@ -61,6 +61,7 @@ type ItemRecord struct {
 	Check     *Check
 	Expected  shared.CivilDate
 	ArrivedOn shared.CivilDate
+	Promised  shared.CivilDate // the supplier's promised date; zero when none
 }
 
 // PaymentRecord is a stored payment.
@@ -95,7 +96,7 @@ func (o *Order) Record() Record {
 		for _, i := range l.items {
 			lr.Items = append(lr.Items, ItemRecord{
 				ID: i.id, Snapshot: cloneSnapshot(i.snapshot), Sourcing: cloneSourcing(i.sourcing),
-				Status: i.status, Check: clonePtr(i.check), Expected: i.expected, ArrivedOn: i.arrivedOn,
+				Status: i.status, Check: clonePtr(i.check), Expected: i.expected, ArrivedOn: i.arrivedOn, Promised: i.promised,
 			})
 		}
 		r.Lines = append(r.Lines, lr)
@@ -159,7 +160,7 @@ func (o *Order) restoreLines(lines []LineRecord) error {
 			}
 			l.items = append(l.items, Item{
 				id: ir.ID, line: lr.ID, snapshot: cloneSnapshot(ir.Snapshot), sourcing: cloneSourcing(ir.Sourcing),
-				status: ir.Status, check: clonePtr(ir.Check), expected: ir.Expected, arrivedOn: ir.ArrivedOn,
+				status: ir.Status, check: clonePtr(ir.Check), expected: ir.Expected, arrivedOn: ir.ArrivedOn, promised: ir.Promised,
 			})
 		}
 		o.lines = append(o.lines, l)

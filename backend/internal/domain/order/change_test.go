@@ -157,7 +157,7 @@ func TestChange_KeepsSurvivingItemState(t *testing.T) {
 
 	o := testkit.NewOrder().WithItems(2).Build(t)
 	kept := o.Items()[0].ID()
-	if err := o.MoveItem(kept, order.ItemReceived, &ok, date(t, "2026-12-01"), day1, owner(t, o)); err != nil {
+	if err := move(o, kept, order.ItemReceived, &ok, date(t, "2026-12-01"), owner(t, o)); err != nil {
 		t.Fatal(err)
 	}
 	s := changeSpec(t, o, "2026-12-02")
