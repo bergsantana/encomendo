@@ -81,6 +81,7 @@ CREATE TABLE supplier_orders (
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
     UNIQUE (tenant_id, number),
+    UNIQUE (tenant_id, id, supplier_id), -- a line's supplier is its pedido de compra's
     FOREIGN KEY (tenant_id, supplier_id) REFERENCES suppliers (tenant_id, id),
     CHECK ((undone_at IS NULL) = (undone_by IS NULL))
 );
@@ -110,11 +111,13 @@ CREATE TABLE purchase_lines (
     updated_at        timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id),
     UNIQUE (tenant_id, id),
-    FOREIGN KEY (tenant_id, supplier_order_id) REFERENCES supplier_orders (tenant_id, id),
+    -- MATCH SIMPLE: a counter line (no pedido de compra) skips this key.
+    CONSTRAINT purchase_lines_supplier_order_fkey FOREIGN KEY (tenant_id, supplier_order_id, supplier_id)
+        REFERENCES supplier_orders (tenant_id, id, supplier_id),
     FOREIGN KEY (tenant_id, supplier_id) REFERENCES suppliers (tenant_id, id),
     FOREIGN KEY (tenant_id, order_id) REFERENCES orders (tenant_id, id),
-    FOREIGN KEY (tenant_id, order_id, order_item_id) REFERENCES order_items (tenant_id, order_id, id)
-        ON DELETE SET NULL (order_item_id),
+    CONSTRAINT purchase_lines_order_item_fkey FOREIGN KEY (tenant_id, order_id, order_item_id)
+        REFERENCES order_items (tenant_id, order_id, id) ON DELETE SET NULL (order_item_id),
     CHECK ((status = 'cancelled') = (cancel_reason IS NOT NULL)),
     CHECK (supplier_order_id IS NOT NULL OR status IN ('received', 'defective')),
     CHECK ((status IN ('received', 'defective')) = (received_on IS NOT NULL)),
@@ -254,8 +257,12 @@ DROP TABLE purchase_lines;
 DROP TABLE supplier_orders;
 DROP TABLE purchase_counters;
 ALTER TABLE order_items DROP CONSTRAINT order_items_tenant_order_id_key;
--- A promised_date history entry cannot survive the old CHECK.
+-- A promised_date history entry cannot survive the old CHECK. The owner is
+-- bound by FORCE RLS and the table has no delete policy, so lift it for
+-- this one statement (inside goose's transaction).
+ALTER TABLE order_status_history NO FORCE ROW LEVEL SECURITY;
 DELETE FROM order_status_history WHERE kind = 'promised_date';
+ALTER TABLE order_status_history FORCE ROW LEVEL SECURITY;
 ALTER TABLE order_status_history DROP CONSTRAINT order_status_history_kind_check;
 ALTER TABLE order_status_history ADD CONSTRAINT order_status_history_kind_check
     CHECK (kind IN ('created', 'status', 'item', 'backup_supplier', 'payment', 'payment_voided', 'released',
