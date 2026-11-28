@@ -25,7 +25,7 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
 | 4 | Customers, orders and deadlines | 17 | 17 | Done: the backend is built and served (#77 to #82, #84, #85), every web screen is built (#83, #86), and the order flow runs against the real stack at desktop and phone size; only the Android shell walkthrough is pending, on a physical phone |
-| 5 | Purchasing and receiving | 0 | 9 | Not started |
+| 5 | Purchasing and receiving | 0 | 9 | Planned: `docs/plans/m5-purchasing-receiving.md`, ADR 0031 |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
@@ -231,6 +231,8 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 
 Goal: the business buys only what was sold, tells the supplier without leaking the client, and checks what arrives.
 
+Plan: `docs/plans/m5-purchasing-receiving.md` (steps 5.1–5.16). Decisions: ADR 0031.
+
 ### Backend
 
 - [ ] `domain/purchasing`: purchase line, supplier order, supplier message (never carries client name or phone, with test), receipt (`ok` / `defective`)
@@ -250,7 +252,7 @@ Goal: the business buys only what was sold, tells the supplier without leaking t
 
 ### Done when
 
-- [ ] Order with deposit paid → purchase lines appear → supplier message copied → items received on a phone with no signal → synced later
+- [ ] Order with deposit paid → purchase lines appear → supplier message sent through `wa.me` with no client data → items received on a phone, a dropped save retried without recording twice (reworded 2026-11-28: online only, ADR 0029 and ADR 0031)
 
 ---
 
@@ -405,3 +407,4 @@ Do not decide these silently. Copied from `docs/architecture.md` section 12. All
 | 2026-11-27 | `audit_log` reads are staff-only (a scope with a tenant and no user reads nothing); inserts keep the tenant check; internal tables stay out of the audit until audit views hide costs (milestone 8) | migration `0010_audit_log_staff_reads` (security review of step 3.4) |
 | 2026-11-27 | The user's decision: the Android management app becomes a Capacitor shell that opens the hosted web admin (`web/apps/android`, app id `br.com.encomendo.app`, private signed APKs first, then the Play Store); the native `mobile/` app is frozen; rule 6 now means every admin screen works at desktop and phone sizes; offline use is dropped for v1; milestone 3.5 builds it | ADR 0029 |
 | 2026-11-27 | Milestone 4 order model: staff create orders in the admin; kit lines; staff-only `order_item_sourcing`; promise vs forecast dates in a per-store time zone (the user's choice); items moved by hand until M5 and stock items at lead time until M6 (the user's choice); payments by hand with voids; a new tracking link on every send (the user's choice); `Idempotency-Key` in Postgres in the write's transaction; the user's choices on roles (`order:manage`, `order:override`, `customer:write`), extras (Frete, Desconto, Sinal per order) and changes to paid orders (seller-confirmed approval, before Montagem, "Valor a devolver") | ADR 0030 |
+| 2026-11-28 | Milestone 5: online only; Compras is the only path for bought items; purchases start in the order's transaction through an in-process event dispatcher; supplier orders numbered C-0001 with a summed message and no client data; defects re-bought; price paid owner-only | ADR 0031 |

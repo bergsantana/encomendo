@@ -552,6 +552,116 @@ Prefilled texts the API puts in `wa.me` links. `{loja}` is the store's name, `{n
 
 The texts never name a supplier, a cost or "Pode atrasar" (System rules).
 
+## Milestone 5 screens
+
+Drafted by Claude on 2026-11-28 for milestone 5, for the user to review in the plan's PR (ADR 0031). The messages in "Account and store screens" and the date and `{Montagem}` conventions of "Milestone 4 screens" apply here too. A **pedido de compra** is what the store sends one supplier, numbered per store as "C-0012"; a client's order stays a **pedido** ("P-0231"). Costs and "Preço pago" are the Dono's only.
+
+### Menu
+
+Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · Configurações. "Compras" needs `purchase:write` (Dono, Admin). A Funcionário, who only receives, gets the entry "Receber itens" in its place.
+
+### Compras
+
+- Title "Compras". Tabs "A comprar", "Enviadas", "Receber itens", "Fornecedores". While loading: "Carregando as compras…".
+- **A comprar:** one card per supplier, with its name, its WhatsApp and "{n} itens" ("1 item").
+  - Each line has a box (all checked at first), "{qtd}× {item}" with its choices ("Cor: Preto"), "Pedido P-0231" (opens the order) and "Precisa chegar até {data}". A replacement shows the badge "Reposição". For the Dono: "Custo {valor}".
+  - "Ver mensagem" shows the text the API built for the checked lines, with "Copiar mensagem".
+  - Button "Enviar pelo WhatsApp", with the hint "Os itens marcados ficam como Enviada ao fornecedor." "Marque ao menos um item."
+  - After it: "Pedido de compra C-0012 criado." with "Abrir o WhatsApp" (it stays until the next action, in case the browser blocked the automatic opening), "Copiar mensagem" and "Ver pedido de compra".
+  - Empty: "Nada para comprar agora." with the hint "Os itens aparecem aqui quando o cliente paga o sinal." (with "Liberar compras antes do sinal" on: "… quando o pedido sai do rascunho.").
+- **Enviadas:** filter "Abertos" / "Todos".
+  - Table "Pedido de compra", "Fornecedor", "Enviado em", "Prazo do fornecedor" ("Sem prazo" when there is none), "Recebidos" ("{a} de {b}"), "Situação" ("Enviado", "Em trânsito", "Recebido", "Desfeito").
+  - On the phone each is a card with the same lines. Empty: "Nenhum pedido de compra ainda." "Carregar mais".
+- **Avisar o fornecedor**, above the tabs when there are any: "{n} itens já enviados não são mais necessários." Each shows "C-0012 · {fornecedor}", "{qtd}× {item}", and why: "O pedido P-0231 foi cancelado." or "{item} saiu do pedido P-0231."
+  - Buttons "Avisar pelo WhatsApp" and "Marcar como resolvido". After it: "Resolvido. A linha foi cancelada."
+
+### Pedido de compra
+
+- Title "Pedido de compra C-0012", the supplier's name with "Abrir conversa no WhatsApp", "Enviado em {data} por {quem}". A pedido de compra that is not there: "Pedido de compra não encontrado."
+- **Itens:** table "Item", "Qtd", "Pedido", "Precisa chegar até", "Previsto", "Situação".
+  - "Situação" names: "Enviada ao fornecedor", "Em trânsito", "Recebida", "Com defeito (reposição em Compras)", "Cancelada", "Avisar o fornecedor".
+  - For the Dono, "Custo" and "Preço pago" too.
+  - A line whose "Previsto" is after "Precisa chegar até" shows "Pode atrasar" with its icon.
+- **Prazo do fornecedor:** "Informar prazo" opens "Data prometida pelo fornecedor" (for every item), then "Prazo diferente para um item" (one date per line), and "Salvar prazo".
+  - "Escolha uma data a partir de hoje."
+  - After it: "Prazo salvo. As datas previstas dos pedidos foram atualizadas." When a line is now late for its order: "{item} do pedido P-0231 pode atrasar a entrega. Veja o pedido para resolver."
+- "Marcar como em trânsito". After it: "Itens em trânsito."
+- "Receber itens" opens Receber itens on this pedido de compra.
+- **Informar preço pago** (Dono): one field per line, "Preço pago (por unidade)", filled with the cost at order time; "Salvar preços".
+  - "Confira o valor."
+  - After it: "Preços salvos. As margens do Financeiro usam o preço pago."
+- **Desfazer envio**, while nothing was received: "Desfazer o envio do pedido de compra C-0012? Os itens voltam para A comprar. O número C-0012 não será usado de novo." with "Desfazer envio" and "Voltar".
+  - After it: "Envio desfeito."
+  - Once something was received: "Este pedido de compra já tem itens recebidos e não pode ser desfeito."
+- "Outra pessoa alterou este pedido de compra. Recarregue para ver a versão atual.", with "Recarregar".
+
+### Receber itens
+
+Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
+
+- Title "Receber itens". While loading: "Carregando o que falta receber…". Search "Buscar item, pedido ou fornecedor".
+- One group per pedido de compra, "C-0012 · {fornecedor}", then "Comprados sem pedido de compra", the lines still in "A comprar", for items bought at the counter. Empty: "Nada para receber agora."
+- Each line shows "{qtd}× {item}", its choices and "Pedido P-0231", with two large buttons, "Tudo certo" and "Com defeito".
+  - Hint above the list: "Marque um item só quando toda a quantidade chegou."
+  - "Com defeito" opens "O que houve?" (required: "Conte o que houve com {item}.") and "Foto do item".
+  - "Tudo certo" also offers "Foto do item". At most 2 photos per item: "Cada item pode ter até 2 fotos."
+- "Foto da nota fiscal", once per save, at most 4: "Cada recebimento pode ter até 4 fotos da nota."
+  - The file input offers the camera or the gallery. While a photo goes up: "Enviando a foto…".
+  - Errors as in Catálogo: "Use uma foto JPEG, PNG ou WebP de até 10 MB.", "A foto não foi enviada. Tente de novo."
+- Button "Salvar recebimento" ("Marque Tudo certo ou Com defeito em ao menos um item.").
+  - A save that fails keeps every check and photo, and "Tentar de novo" sends the same save again.
+- After it: "Recebimento salvo." Then, as they apply:
+  - "{item} voltou para A comprar. A reposição está em Compras.";
+  - "Pedido P-0231: todos os itens chegaram e foram conferidos." with "Abrir pedido".
+
+### Fornecedores (tab of Compras)
+
+- Table "Fornecedor", "WhatsApp", "Itens", "Pedidos de compra abertos". Search "Buscar fornecedor". Button "Novo fornecedor".
+- Empty: "Nenhum fornecedor ainda. Você também pode criar um fornecedor no cadastro do item."
+- **Form** (drawer; full screen on the phone), title "Novo fornecedor" or "Fornecedor":
+  - "Nome" and "WhatsApp" (hint "Com DDD, como (92) 99123-4567."), with the errors already used in Catálogo;
+  - "Itens deste fornecedor": "Item", "Papel" ("Principal", "Reserva"), "Prazo (dias)" and, for the Dono, "Custo";
+  - "Salvar", "Cancelar". After it: "Fornecedor salvo."
+
+### Changes to Pedido (the order screen)
+
+- An item bought from a supplier no longer has the buttons "Marcar como enviada ao fornecedor", "Marcar como em trânsito", "Tudo certo" or "Com defeito". Its "Situação" shows the status, then "C-0012" (opens the pedido de compra) and "Prazo do fornecedor {data}" when there is one.
+  - It keeps "Marcar como instalada" once received.
+  - While "A comprar" it shows "Ver em Compras"; once sent it shows "Receber itens" (for those who receive).
+  - Items of Produção própria keep their buttons.
+- If the API refuses a move because purchasing drives it: "Este item é movido por Compras. Use Compras ou Receber itens."
+- The delay banner gains "Falar com o fornecedor ({fornecedor})" (Dono, Admin), which opens WhatsApp.
+- **Histórico** gains:
+  - "O sistema gerou as compras de {n} itens";
+  - "Ana enviou {item} ao fornecedor (C-0012)";
+  - "Ana informou o prazo do fornecedor de {item}: {data}";
+  - "Ana marcou {item} como em trânsito";
+  - "Ana desfez o envio de {item} (C-0012)";
+  - "Ana recebeu {item} (tudo certo)";
+  - "Ana recebeu {item} com defeito: {nota}".
+
+### Changes to Hoje
+
+- A summary card "Compras a enviar" ({n} itens), for Dono and Admin, which opens Compras.
+- **"Precisa de você"** gains, for Dono and Admin:
+  - "{n} itens para comprar de {fornecedor}." (opens A comprar);
+  - "Pedido de compra C-0012 sem prazo do fornecedor há {n} dias." (more than 2 days after sending);
+  - "Avise {fornecedor}: {item} não é mais necessário (C-0012)."
+
+### Supplier messages
+
+Prefilled texts the API puts in `wa.me` links to a supplier. `{fornecedor}` is the supplier's name and `{loja}` the store's. The lines sum the same item with the same choices.
+
+- **Pedido de compra:**
+  "Olá, {fornecedor}! Aqui é da {loja}.
+  Pedido de compra {C-0012}:
+  • {qtd}× {item} ({opção}: {escolha}, …)
+  Pode me confirmar a data de entrega?"
+- **Falar com o fornecedor:** "Olá, {fornecedor}! Aqui é da {loja}. Sobre o pedido de compra {C-0012}: {qtd}× {item}. Consegue me confirmar a data de entrega?" (before it is sent: "Sobre {qtd}× {item}: consegue me dizer o prazo de entrega?")
+- **Avisar o fornecedor:** "Olá, {fornecedor}! Aqui é da {loja}. Sobre o pedido de compra {C-0012}: não vou mais precisar de {qtd}× {item}. Consegue cancelar?"
+
+Product rule: these texts never carry the client's name, phone or address, nor the client's order number (System rules).
+
 ## Visual identity
 
 Encomendo reuses the Repair Shop [design system](https://claude.ai/artifact/LbV8eABEAJLXfSWEGodUSw): calm, "a well-kept workshop", where graphite does actions and color only means status.
