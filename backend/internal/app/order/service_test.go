@@ -36,6 +36,7 @@ type harness struct {
 	clock     *sharedfake.Clock
 	ids       *sharedfake.IDs
 	store     shared.TenantID
+	facts     *fake.Store
 	// banco is a to_order item (R$ 1.000,00, 15 days, cost R$ 400,00) with a
 	// backup supplier; joao is a customer with an address.
 	banco  shared.ItemID
@@ -64,12 +65,13 @@ func newHarnessIn(t *testing.T, zone string) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.facts = fake.NewStore(apporder.StoreFacts{
+		Name: "Alta RPM", Slug: "altarpm", WhatsApp: "5592991234567", Currency: "BRL",
+		DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, Location: loc,
+	})
 	svc, err := apporder.NewService(apporder.Deps{
 		Repo: h.repo, Catalog: h.catalog, Customers: h.customers, Workflows: h.workflows,
-		Store: fake.NewStore(apporder.StoreFacts{
-			Name: "Alta RPM", Slug: "altarpm", WhatsApp: "5592991234567", Currency: "BRL",
-			DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, Location: loc,
-		}),
+		Store:    h.facts,
 		Tracking: fake.Tracking{}, WhatsApp: fake.WhatsApp{},
 		Idempotency: sharedfake.NewIdempotency(clock), Secrets: sharedfake.NewSecrets(),
 		Tx: h.tx, Events: h.events, Clock: clock, IDs: ids,

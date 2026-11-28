@@ -14,20 +14,22 @@ import (
 // with these values (a kit's total days), but never shows the safety margin
 // on its own: it is the store's buffer. Orders build on the rest: the
 // deposit percent, the time zone that decides "today", the store's name,
-// address and WhatsApp number for the wa.me messages, and the status
-// workflow new orders take.
+// address and WhatsApp number for the wa.me messages, the status workflow
+// new orders take, and whether purchases may start before the deposit.
 type StoreDefaultsView struct {
 	Currency          string
 	AssemblyDays      int
 	SafetyMarginDays  int
 	StockEnabled      bool
 	ProductionEnabled bool
-	DepositPercent    int
-	TimeZone          tenancy.TimeZone
-	Slug              string
-	StoreName         string
-	WhatsAppPhone     string
-	Workflow          tenancy.WorkflowRef
+	// PurchaseBeforeDeposit is "Liberar compras antes do sinal" (ADR 0031).
+	PurchaseBeforeDeposit bool
+	DepositPercent        int
+	TimeZone              tenancy.TimeZone
+	Slug                  string
+	StoreName             string
+	WhatsAppPhone         string
+	Workflow              tenancy.WorkflowRef
 }
 
 // StoreDefaults returns the defaults of the store in the request's scope. It
@@ -62,7 +64,7 @@ func (s *Service) StoreDefaults(ctx context.Context) (StoreDefaultsView, error) 
 	e := st.Editable()
 	return StoreDefaultsView{
 		Currency: st.Currency(), AssemblyDays: e.AssemblyDays, SafetyMarginDays: e.SafetyMarginDays,
-		StockEnabled: e.StockEnabled, ProductionEnabled: e.ProductionEnabled,
+		StockEnabled: e.StockEnabled, ProductionEnabled: e.ProductionEnabled, PurchaseBeforeDeposit: e.PurchaseBeforeDeposit,
 		DepositPercent: e.DepositPercent, TimeZone: e.TimeZone, Slug: store.Slug().String(), StoreName: store.Name().String(),
 		WhatsAppPhone: e.WhatsAppPhone, Workflow: st.Workflow(),
 	}, nil
