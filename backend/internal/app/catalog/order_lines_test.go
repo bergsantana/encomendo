@@ -104,6 +104,7 @@ func TestOrderLines_Refusals(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	banco, red, black := h.banco(t)
+	plain := h.createItem(t, inHouseInput("Simples", 2_000, 1))
 	archived := h.createItem(t, inHouseInput("Antigo", 1_000, 1))
 	if _, err := h.svc.ArchiveItem(h.owner(t), appcatalog.ItemVersionInput{ID: archived.ID, Version: archived.Version}); err != nil {
 		t.Fatal(err)
@@ -116,14 +117,18 @@ func TestOrderLines_Refusals(t *testing.T) {
 		"two choices":             {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 1, Options: []appcatalog.OptionChoice{red, black}}, shared.ErrInvalid},
 		"choice of another option": {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 1, Options: []appcatalog.OptionChoice{
 			{Item: banco.ID, Option: red.Option, Choice: shared.ChoiceID(h.ids.NewID())}}}, shared.ErrInvalid},
-		"choice for another item": {appcatalog.OrderLineRequest{Item: archived.ID, Quantity: 1, Options: []appcatalog.OptionChoice{red}}, catalog.ErrItemArchived},
-		"quantity 0":              {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 0, Options: []appcatalog.OptionChoice{red}}, shared.ErrInvalid},
-		"quantity 100":            {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 100, Options: []appcatalog.OptionChoice{red}}, shared.ErrInvalid},
-		"kit and item":            {appcatalog.OrderLineRequest{Item: banco.ID, Kit: shared.KitID(h.ids.NewID()), Quantity: 1}, shared.ErrInvalid},
-		"neither":                 {appcatalog.OrderLineRequest{Quantity: 1}, shared.ErrInvalid},
-		"archived item":           {appcatalog.OrderLineRequest{Item: archived.ID, Quantity: 1}, catalog.ErrItemArchived},
-		"unknown item":            {appcatalog.OrderLineRequest{Item: shared.ItemID(h.ids.NewID()), Quantity: 1}, catalog.ErrItemNotFound},
-		"unknown kit":             {appcatalog.OrderLineRequest{Kit: shared.KitID(h.ids.NewID())}, catalog.ErrKitNotFound},
+		"choice for another item": {appcatalog.OrderLineRequest{Item: plain.ID, Quantity: 1, Options: []appcatalog.OptionChoice{red}}, shared.ErrInvalid},
+		"stale option id": {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 1, Options: []appcatalog.OptionChoice{red,
+			{Item: banco.ID, Option: shared.OptionID(h.ids.NewID()), Choice: red.Choice}}}, shared.ErrInvalid},
+		"swaps on a loose item": {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 1, Options: []appcatalog.OptionChoice{red},
+			Swaps: []catalog.Swap{{Item: banco.ID, With: plain.ID}}}, shared.ErrInvalid},
+		"quantity 0":    {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 0, Options: []appcatalog.OptionChoice{red}}, shared.ErrInvalid},
+		"quantity 100":  {appcatalog.OrderLineRequest{Item: banco.ID, Quantity: 100, Options: []appcatalog.OptionChoice{red}}, shared.ErrInvalid},
+		"kit and item":  {appcatalog.OrderLineRequest{Item: banco.ID, Kit: shared.KitID(h.ids.NewID()), Quantity: 1}, shared.ErrInvalid},
+		"neither":       {appcatalog.OrderLineRequest{Quantity: 1}, shared.ErrInvalid},
+		"archived item": {appcatalog.OrderLineRequest{Item: archived.ID, Quantity: 1}, catalog.ErrItemArchived},
+		"unknown item":  {appcatalog.OrderLineRequest{Item: shared.ItemID(h.ids.NewID()), Quantity: 1}, catalog.ErrItemNotFound},
+		"unknown kit":   {appcatalog.OrderLineRequest{Kit: shared.KitID(h.ids.NewID())}, catalog.ErrKitNotFound},
 	}
 	for name, tt := range tests {
 		if _, err := h.svc.OrderLines(h.staff(t), []appcatalog.OrderLineRequest{tt.req}); !errors.Is(err, tt.want) {

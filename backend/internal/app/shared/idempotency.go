@@ -26,6 +26,12 @@ func (k IdempotencyKey) IsZero() bool { return k.Key == "" }
 // 422 idempotency_key_reused.
 var ErrIdempotencyKeyReused = fmt.Errorf("idempotency key reused: %w", shared.ErrConflict)
 
+// ErrIdempotencyKeyInFlight means another call with the same key stored it
+// first, while this one was running: the caller's transaction must roll
+// back, and a retry then replays the first call's resource. It matches
+// shared.ErrConflict; the API answers 409 conflict ("try again").
+var ErrIdempotencyKeyInFlight = fmt.Errorf("idempotency key in flight: %w", shared.ErrConflict)
+
 // Idempotency remembers which resource a key created, inside the write's
 // own transaction, so a retry with the same key and request is answered
 // with that resource as it is now, exactly once (ADR 0030). Keys are per
@@ -38,6 +44,8 @@ type Idempotency interface {
 	Recall(ctx context.Context, k IdempotencyKey) (resource string, ok bool, err error)
 	// Remember stores that k created resource, for ttl. It must run in the
 	// same WithinTx as the write, so a rolled back write forgets the key. It
-	// returns ErrNoTransaction outside a transaction.
+	// returns ErrIdempotencyKeyInFlight when the key is already stored and
+	// not expired (a concurrent first call won), and ErrNoTransaction
+	// outside a transaction.
 	Remember(ctx context.Context, k IdempotencyKey, resource string, ttl time.Duration) error
 }

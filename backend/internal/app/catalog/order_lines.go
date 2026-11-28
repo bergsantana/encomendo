@@ -133,18 +133,20 @@ func (s *Service) orderLine(ctx context.Context, tenant shared.TenantID, path st
 }
 
 func (s *Service) looseLine(ctx context.Context, tenant shared.TenantID, path string, r OrderLineRequest) (OrderLine, error) {
-	if r.Quantity < 1 || r.Quantity > maxLineQuantity || len(r.Swaps) > 0 {
+	if len(r.Swaps) > 0 {
+		return OrderLine{}, fieldErr(path+".swaps", msgLineSwaps)
+	}
+	if r.Quantity < 1 || r.Quantity > maxLineQuantity {
 		return OrderLine{}, fieldErr(path+".quantity", msgLineQuantity)
 	}
 	item, err := s.orderItem(ctx, tenant, path, r.Item, r.Quantity, r.Options)
 	if err != nil {
 		return OrderLine{}, err
 	}
-	unit, err := withExtras(item.UnitPrice, item.Options)
-	if err != nil {
+	if err := unknownChoices(path, r.Options, []OrderItem{item}); err != nil {
 		return OrderLine{}, err
 	}
-	price, err := times(unit, r.Quantity)
+	price, err := catalog.PriceWithOptions(item.UnitPrice, extras(item.Options), r.Quantity)
 	if err != nil {
 		return OrderLine{}, err
 	}
@@ -185,7 +187,7 @@ func (s *Service) kitLine(ctx context.Context, tenant shared.TenantID, path stri
 		if err != nil {
 			return OrderLine{}, err
 		}
-		if price, err = addExtras(price, item.Options, ki.Quantity); err != nil {
+		if price, err = catalog.AddOptionExtras(price, extras(item.Options), ki.Quantity); err != nil {
 			return OrderLine{}, err
 		}
 		line.Items = append(line.Items, item)
@@ -339,28 +341,13 @@ func domainLookup(facts map[shared.ItemID]ItemFacts) catalog.ItemLookup {
 	return out
 }
 
-func withExtras(unit shared.Money, options []ChosenOption) (shared.Money, error) {
-	return addExtras(unit, options, 1)
-}
-
-// addExtras returns m plus every option's extra price times qty.
-func addExtras(m shared.Money, options []ChosenOption, qty int) (shared.Money, error) {
-	for _, o := range options {
-		extra, err := times(o.ExtraPrice, qty)
-		if err != nil {
-			return shared.Money{}, err
-		}
-		if m, err = m.Add(extra); err != nil {
-			return shared.Money{}, err
-		}
+// extras are the chosen options' extra prices.
+func extras(options []ChosenOption) []shared.Money {
+	out := make([]shared.Money, len(options))
+	for i, o := range options {
+		out[i] = o.ExtraPrice
 	}
-	return m, nil
-}
-
-// times returns m × n. Catalog amounts are bounded (R$ 1.000.000.000,00) and
-// n by 99, so the product fits; NewMoney still refuses a bad currency.
-func times(m shared.Money, n int) (shared.Money, error) {
-	return shared.NewMoney(m.Cents()*int64(n), m.Currency())
+	return out
 }
 
 func fieldErr(field, message string) error {
@@ -371,6 +358,7 @@ func fieldErr(field, message string) error {
 const (
 	msgLineKitOrItem   = "Escolha um kit ou um item."
 	msgLineQuantity    = "Use uma quantidade de 1 a 99."
+	msgLineSwaps       = "Só um kit tem itens para trocar."
 	msgOptionRequired  = "Escolha %s."
 	msgOptionOneChoice = "Escolha só uma opção em %s."
 	msgOptionUnknown   = "Esta opção não é de um item da linha."

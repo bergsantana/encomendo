@@ -112,7 +112,13 @@ func (c *OrderCustomers) Get(ctx context.Context, id shared.CustomerID) (apporde
 }
 
 // FindOrCreate returns the store's customer with phone, unchanged, or
-// creates one with name and phone (order:write on the customer side).
+// creates one with name and phone (order:write on the customer side). When
+// a concurrent order created the customer first, it finds that one.
+//
+// Milestone 7: on the public store page a phone proves nothing, so the
+// store page must answer no facts (name, addresses) of a customer matched
+// only by phone, and use no stored address (docs/plans/m4-code-design.md
+// section 8).
 func (c *OrderCustomers) FindOrCreate(ctx context.Context, name, phone string) (apporder.CustomerFacts, error) {
 	v, err := c.customers.ByPhone(ctx, phone)
 	if err == nil {
@@ -122,6 +128,9 @@ func (c *OrderCustomers) FindOrCreate(ctx context.Context, name, phone string) (
 		return apporder.CustomerFacts{}, fmt.Errorf("find customer by phone: %w", err)
 	}
 	v, err = c.customers.Create(ctx, appcustomer.CreateInput{Spec: customer.Spec{Name: name, Phone: phone}})
+	if errors.Is(err, appcustomer.ErrPhoneTaken) {
+		v, err = c.customers.ByPhone(ctx, phone)
+	}
 	if err != nil {
 		return apporder.CustomerFacts{}, err
 	}

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"unicode"
@@ -209,5 +210,25 @@ func checkOptionInvariants(t *testing.T, o CustomizationOption) {
 		if c.ExtraPrice().IsNegative() || c.ExtraPrice().Cents() > maxAmountCents || c.ExtraDays() < 0 || c.ExtraDays() > 365 {
 			t.Errorf("choice %q adds %v and %d days", label, c.ExtraPrice(), c.ExtraDays())
 		}
+	}
+}
+
+func TestPriceWithOptions_UnitPlusExtrasTimesQuantity(t *testing.T) {
+	t.Parallel()
+	brl := func(c int64) shared.Money { m, _ := shared.NewMoney(c, "BRL"); return m }
+	got, err := PriceWithOptions(brl(10_000), []shared.Money{brl(500), brl(250)}, 3)
+	if err != nil || got.Cents() != 32_250 {
+		t.Errorf("PriceWithOptions = %v %v, want (100,00 + 5,00 + 2,50) × 3", got, err)
+	}
+	kit, err := AddOptionExtras(brl(29_000), []shared.Money{brl(500)}, 2)
+	if err != nil || kit.Cents() != 30_000 {
+		t.Errorf("AddOptionExtras = %v %v, want 290,00 + 5,00 × 2", kit, err)
+	}
+	usd, _ := shared.NewMoney(1, "USD")
+	if _, err := PriceWithOptions(brl(1), []shared.Money{usd}, 1); !errors.Is(err, shared.ErrCurrencyMismatch) {
+		t.Errorf("mixed currency: err = %v", err)
+	}
+	if _, err := PriceWithOptions(brl(math.MaxInt64/2), nil, 3); !errors.Is(err, shared.ErrMoneyOverflow) {
+		t.Errorf("overflow: err = %v", err)
 	}
 }

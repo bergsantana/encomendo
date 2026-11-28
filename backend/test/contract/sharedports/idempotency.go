@@ -30,6 +30,7 @@ func RunIdempotencyContract(t *testing.T, newHarness func(t *testing.T) Idempote
 	t.Run("the same key with another request is refused", func(t *testing.T) { idemReused(t, newHarness(t)) })
 	t.Run("a rolled back write forgets the key", func(t *testing.T) { idemRollback(t, newHarness(t)) })
 	t.Run("keys are per store", func(t *testing.T) { idemPerStore(t, newHarness(t)) })
+	t.Run("a key stored by another call is in flight", func(t *testing.T) { idemInFlight(t, newHarness(t)) })
 	t.Run("needs a transaction", func(t *testing.T) { idemNeedsTx(t, newHarness(t)) })
 }
 
@@ -107,6 +108,17 @@ func idemPerStore(t *testing.T, h IdempotencyHarness) {
 	remember(t, h, h.Store, k)
 	if _, ok, err := recall(t, h, h.Other, idemKey("pedido-4", 2)); err != nil || ok {
 		t.Errorf("another store's key: ok %v err %v, want a new key", ok, err)
+	}
+}
+
+func idemInFlight(t *testing.T, h IdempotencyHarness) {
+	k := idemKey("pedido-5", 1)
+	remember(t, h, h.Store, k)
+	err := h.Tx.WithinTx(inStore(h.Store), func(ctx context.Context) error {
+		return h.Keys.Remember(ctx, k, h.Resource, time.Hour)
+	})
+	if !errors.Is(err, appshared.ErrIdempotencyKeyInFlight) {
+		t.Errorf("second Remember of a stored key: err = %v, want ErrIdempotencyKeyInFlight", err)
 	}
 }
 

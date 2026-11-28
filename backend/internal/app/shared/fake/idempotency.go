@@ -61,6 +61,9 @@ func (f *Idempotency) Remember(ctx context.Context, k appshared.IdempotencyKey, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	id := idemKey{tx.scope.TenantID, k.Key}
+	if e, ok := f.keys[id]; ok && f.clock.Now().Before(e.expires) {
+		return appshared.ErrIdempotencyKeyInFlight
+	}
 	KeepOnRollback(ctx, &f.mu, f.keys, id)
 	f.keys[id] = idemEntry{hash: k.RequestHash, resource: resource, expires: f.clock.Now().Add(ttl)}
 	return nil
