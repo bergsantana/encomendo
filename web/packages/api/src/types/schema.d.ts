@@ -6690,6 +6690,7 @@ export interface operations {
             400: components["responses"]["PhotoRefused"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["PurchaseConflict"];
             422: components["responses"]["IdempotencyKeyReused"];
             "5XX": components["responses"]["ServerFailure"];

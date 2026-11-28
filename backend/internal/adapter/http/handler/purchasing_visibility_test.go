@@ -163,7 +163,7 @@ func newPuRealRig(t *testing.T) *puRealRig {
 	today := shared.DateOf(clock.Now(), zone)
 	items, repo, suppliers := fake.NewOrderItems(today), fake.NewRepository(), fake.NewSuppliers()
 	repo.LinkCosts(items)
-	repo.NameUser(userID, "Dona Rita")
+	repo.NameUser(tenantID, userID, "Dona Rita")
 	contact := apppurchasing.SupplierContact{ID: shared.SupplierID(ids.NewID()), Name: "Couros Paulista", Phone: "5511987654321"}
 	suppliers.Add(contact)
 	svc, err := apppurchasing.NewService(apppurchasing.Deps{
