@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadPage } from '../../pageLoad'
 import { button, closeApps, field, link, openApp } from '../../testing/app'
 import { authSession } from '../../testing/fixtures'
+import { todayHandler } from '../../testing/today'
 import { encomendaMontagem, orderProblem, prontaEntrega, settingsUsing, workflows } from '../../testing/orders'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
@@ -29,7 +30,7 @@ const signedInAs = (role: 'owner' | 'admin' | 'staff' | 'viewer', permissions: P
 /** serve answers the two reads the screen makes; `current` is what the store uses now. */
 function serve(current: TenantSettings = settingsUsing(encomendaMontagem)) {
   server.use(
-    http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })),
+    todayHandler(),
     http.get('*/api/v1/admin/settings', () => HttpResponse.json(current)),
     http.get('*/api/v1/admin/status-workflows', () => HttpResponse.json({ items: workflows })),
   )

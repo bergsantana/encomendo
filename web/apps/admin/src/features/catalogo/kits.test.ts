@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadPage } from '../../pageLoad'
 import { closeApps, openApp } from '../../testing/app'
 import { authSession } from '../../testing/fixtures'
+import { todayHandler } from '../../testing/today'
 import { bancoId, bancos, brl, button, columnHeaders, field, group, guidoes, plain, problem, readOnly, serveEm, settings, summary, writer } from './testkit'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
@@ -89,7 +90,7 @@ interface Backend {
 /** serve answers the reads every open of Catálogo makes, the Kits tab included. */
 function serve(backend: Backend = {}) {
   server.use(
-    http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })),
+    todayHandler(),
     http.get('*/api/v1/admin/catalog/items', () => HttpResponse.json({ items: backend.items ?? catalogItems })),
     http.get('*/api/v1/admin/catalog/categories', () => HttpResponse.json({ items: backend.categories ?? [bancos, guidoes] })),
     http.get('*/api/v1/admin/catalog/attributes', () => HttpResponse.json({ items: [serveEm] })),

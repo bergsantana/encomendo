@@ -523,7 +523,9 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
   - "Pronto há {n} dias e ainda não entregue." (after 2 days)
   - "Valor a devolver: {valor}."
   - Nothing: "Nada precisa de você agora."
-- **"Próximas entregas":** the active orders by delivery date: number, customer, status, "Itens prontos {a} de {b}", "Entrega {data}". "Ver todos os pedidos".
+- **"Próximas entregas":** the active orders by delivery date: number, customer, status, "Itens prontos {a} de {b}", "Entrega {data}". "Ver todos os pedidos". Nothing coming: "Nenhuma entrega prevista."
+- While loading: "Carregando o resumo de hoje…". With more active orders than Hoje reads: "Mostrando só os 500 pedidos ativos com entrega mais próxima. Os números e os avisos desta tela cobrem só esses pedidos."
+- "Entregas nos próximos 7 dias" opens the plain order list until the list can filter by delivery window.
 
 ### Financeiro
 

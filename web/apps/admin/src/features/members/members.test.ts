@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { button, closeApps, field, link, openApp, submitForm } from '../../testing/app'
 import { loadPage } from '../../pageLoad'
 import { altaRpm, authSession, gate, problem } from '../../testing/fixtures'
+import { todayHandler } from '../../testing/today'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
 
@@ -49,7 +50,7 @@ function team(members: Member[] = [ana, bruno], invitations: Invitation[] = [car
   )
 }
 
-beforeEach(() => server.use(http.get('*/readyz', () => HttpResponse.json({ status: 'ok' }))))
+beforeEach(() => server.use(todayHandler()))
 
 /** row is the table row that names someone. */
 function row(wrapper: VueWrapper, text: string) {

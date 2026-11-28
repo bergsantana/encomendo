@@ -9,6 +9,7 @@ import { loadPage } from '../../pageLoad'
 import { useSessionStore } from '../../stores/session'
 import { button, closeApps, field, link, openApp, submitForm } from '../../testing/app'
 import { altaRpm, authSession, gate, problem } from '../../testing/fixtures'
+import { todayHandler } from '../../testing/today'
 
 // A full page load cannot happen in jsdom; the tests check where it would go.
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
@@ -24,7 +25,7 @@ afterAll(() => server.close())
 enableAutoUnmount(afterEach)
 afterEach(closeApps)
 
-const ready = http.get('*/readyz', () => HttpResponse.json({ status: 'ok' }))
+const ready = todayHandler()
 const noSession = http.post('*/auth/refresh', () => problem(401, 'unauthenticated', 'Sessão expirada'))
 const signedIn = http.post('*/auth/refresh', () => HttpResponse.json(authSession()))
 

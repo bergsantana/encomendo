@@ -16,6 +16,15 @@ export function formatCivilDate(day: string): string {
   return formatDate(`${day}T12:00:00Z`, 'UTC')
 }
 
+/**
+ * formatLongDay shows a calendar day from the API as the title of Hoje does,
+ * "sexta-feira, 27 de novembro". Like `formatCivilDate` it never moves the day
+ * by the viewer's zone.
+ */
+export function formatLongDay(day: string): string {
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`))
+}
+
 /** formatMoney shows integer cents as currency, such as "R$ 129,90". The amount is never turned into a float for arithmetic. */
 export function formatMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(cents / 100)

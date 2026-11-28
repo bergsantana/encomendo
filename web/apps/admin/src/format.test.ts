@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { centsToText, formatCivilDate, formatDate, formatDays, formatMargin, formatMoney, parseCents } from './format'
+import { centsToText, formatCivilDate, formatDate, formatDays, formatLongDay, formatMargin, formatMoney, parseCents } from './format'
 
 describe('formatDate', () => {
   it('shows a day the Brazilian way, in the given time zone', () => {
@@ -17,6 +17,13 @@ describe('formatCivilDate', () => {
   it("shows the day as written, whatever the viewer's time zone", () => {
     expect(formatCivilDate('2026-12-12')).toBe('12/12/2026')
     expect(formatCivilDate('2026-01-01')).toBe('01/01/2026')
+  })
+})
+
+describe('formatLongDay', () => {
+  it("shows the weekday, the day and the month, whatever the viewer's zone", () => {
+    expect(formatLongDay('2026-11-27')).toBe('sexta-feira, 27 de novembro')
+    expect(formatLongDay('2026-12-01')).toBe('terça-feira, 1 de dezembro')
   })
 })
 
