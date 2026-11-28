@@ -10,7 +10,7 @@ import type { Today } from '@encomendo/api'
 import { RouterLink } from 'vue-router'
 
 import { formatDays, formatMoney } from '../../../format'
-import AlertTag from './AlertTag.vue'
+import AlertBadge from '../../../components/AlertBadge.vue'
 
 type Need = Today['needsYou'][number]
 
@@ -68,7 +68,7 @@ function sentence(need: Need): string {
             <span>{{ need.order.customer.name }}</span>
           </span>{{ ' ' }}
           <span class="what">
-            <AlertTag
+            <AlertBadge
               v-if="need.kind === 'late' || need.kind === 'at_risk'"
               :kind="need.kind"
             />{{ ' ' }}

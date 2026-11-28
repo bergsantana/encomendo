@@ -125,7 +125,7 @@ describe('who can open Financeiro', () => {
     const { wrapper } = await openApp('/hoje')
 
     const entries = wrapper.findAll('nav a.menu-link').map((entry) => entry.text())
-    expect(entries).toEqual(['Hoje', 'Catálogo', 'Clientes', 'Financeiro', 'Equipe', 'Configurações'])
+    expect(entries).toEqual(['Hoje', 'Pedidos', 'Catálogo', 'Clientes', 'Financeiro', 'Equipe', 'Configurações'])
     expect(link(wrapper, 'Financeiro').attributes('href')).toBe('/financeiro')
   })
 

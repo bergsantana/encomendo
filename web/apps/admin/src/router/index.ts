@@ -3,11 +3,6 @@ import { createRouter, createWebHistory, type Router, type RouteRecordRaw, type 
 import DashboardLayout from '../layouts/DashboardLayout.vue'
 import { createAuthGuard } from './guards'
 
-// PLACEHOLDER: the Pedidos branch (features/pedidos) replaces this with the real
-// order list and order screen, under the same names and paths. Hoje needs both
-// names to link to; the merge keeps the Pedidos routes and drops these.
-const pedidosPlaceholder = { render: () => null }
-
 /**
  * Routes are added by each feature as it lands. `requiresAuth` and
  * `requiresStore` on the dashboard protect every screen inside it;
@@ -52,8 +47,6 @@ export const routes: RouteRecordRaw[] = [
     children: [
       { path: '', redirect: { name: 'hoje' } },
       { path: 'hoje', name: 'hoje', component: () => import('../features/hoje/views/HojeView.vue') },
-      { path: 'pedidos', name: 'orders', component: pedidosPlaceholder, meta: { permission: 'order:read' } },
-      { path: 'pedidos/:orderId', name: 'order', component: pedidosPlaceholder, meta: { permission: 'order:read' } },
       {
         path: 'pedidos',
         name: 'orders',

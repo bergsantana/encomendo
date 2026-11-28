@@ -10,7 +10,7 @@ import { StatusBadge } from '@encomendo/ui'
 import { RouterLink } from 'vue-router'
 
 import { formatCivilDate } from '../../../format'
-import AlertTag from './AlertTag.vue'
+import AlertBadge from '../../../components/AlertBadge.vue'
 
 defineProps<{
   orders: readonly OrderSummary[]
@@ -84,7 +84,7 @@ function kinds(order: OrderSummary): ('late' | 'at_risk')[] {
                 :label="order.status.label"
                 :phase="order.status.phase"
               />
-              <AlertTag
+              <AlertBadge
                 v-for="kind in kinds(order)"
                 :key="kind"
                 :kind="kind"
