@@ -146,7 +146,8 @@ export function orderAsAdmin(workflow: StatusWorkflow = encomendaMontagem, statu
         arrivedOn: null,
         arrived: false,
         alerts: [],
-        nextMoves: ['sent_to_supplier'],
+        // A bought item moves through Compras: the API offers no manual move until it is received (ADR 0031).
+        nextMoves: [],
       },
     ],
     handover: 'pickup',
@@ -206,6 +207,7 @@ export const problemCodes = {
   order_not_editable: [409, 'Este pedido já está em montagem e não pode mais ser alterado.'],
   order_closed: [409, 'Este pedido já foi entregue ou cancelado.'],
   invalid_item_move: [409, 'O item não pode ir para este estado.'],
+  item_moved_by_purchasing: [409, 'Este item é movido por Compras.'],
   no_backup_supplier: [409, 'Este item não tem fornecedor reserva.'],
   item_unavailable: [409, 'Há item arquivado no pedido.'],
   idempotency_key_reused: [422, 'Esta chave já foi usada em outro pedido.'],

@@ -94,8 +94,8 @@ func newWorld(t *testing.T) *world {
 		staff: testkit.Staff(t, tenant, shared.RoleStaff), viewer: testkit.Staff(t, tenant, shared.RoleViewer),
 	}
 	w.repo.LinkCosts(w.items)
-	w.repo.NameUser(w.owner.UserID(), "Dona Rita")
-	w.repo.NameUser(w.admin.UserID(), "Seu Jorge")
+	w.repo.NameUser(tenant, w.owner.UserID(), "Dona Rita")
+	w.repo.NameUser(tenant, w.admin.UserID(), "Seu Jorge")
 	w.supplier = apppurchasing.SupplierContact{ID: shared.SupplierID(ids.NewID()), Name: "Couros Paulista", Phone: supplierPhone}
 	w.suppliers.Add(w.supplier)
 	svc, err := apppurchasing.NewService(w.deps())

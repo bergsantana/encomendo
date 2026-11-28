@@ -1,4 +1,4 @@
-import type { HistoryEntry, Item, ItemSummary, Kit, KitSummary, Order, Quote } from '@encomendo/api'
+import type { HistoryEntry, Item, ItemSummary, Kit, KitSummary, Order, OrderPurchase, Quote } from '@encomendo/api'
 import { http, HttpResponse } from 'msw'
 import type { SetupServer } from 'msw/node'
 
@@ -159,6 +159,8 @@ export interface Call {
 export interface OrderState {
   order: Order
   history: HistoryEntry[]
+  /** purchases is what purchasing knows of the order's bought items. */
+  purchases: OrderPurchase[]
   /** answers override what a write answers, by name: advance, release, move, backup, payment, void, date, tracking, cancel, change. */
   answers: Partial<Record<string, () => Response | Promise<Response>>>
   calls: Record<string, Call[]>
@@ -168,7 +170,7 @@ export interface OrderState {
 
 /** newOrderState starts the handlers of one order. */
 export function newOrderState(order: Order): OrderState {
-  return { order, history: [], answers: {}, calls: {}, timeZone: 'America/Sao_Paulo' }
+  return { order, history: [], purchases: [], answers: {}, calls: {}, timeZone: 'America/Sao_Paulo' }
 }
 
 /**
@@ -190,6 +192,7 @@ export function serveOrder(server: SetupServer, state: OrderState): void {
     http.get('*/api/v1/admin/settings', () => HttpResponse.json(settingsUsing(encomendaMontagem, { timeZone: state.timeZone }))),
     http.get('*/api/v1/admin/orders/:id', () => HttpResponse.json(state.order)),
     http.get('*/api/v1/admin/orders/:id/history', () => HttpResponse.json({ items: state.history })),
+    http.get('*/api/v1/admin/purchasing/orders/:id/lines', () => HttpResponse.json({ items: state.purchases })),
     http.post('*/api/v1/admin/orders/:id/advance', ({ request }) => write('advance', request, current)),
     http.post('*/api/v1/admin/orders/:id/release', ({ request }) => write('release', request, current)),
     http.post('*/api/v1/admin/orders/:id/items/:itemId/move', ({ request }) => write('move', request, current)),

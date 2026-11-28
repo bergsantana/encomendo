@@ -314,9 +314,10 @@ type Repository interface {
 	InsertReceipt(ctx context.Context, r *purchasing.Receipt) error
 	// Receipt returns a stored receipt, or ErrReceiptNotFound.
 	Receipt(ctx context.Context, tenant shared.TenantID, id shared.ReceiptID) (StoredReceipt, error)
-	// StaffNames returns the names of the staff users in ids, for those the
-	// store has; an unknown id is left out.
-	StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error)
+	// StaffNames returns the names of the users in ids who are members of
+	// tenant; any other id, a user of another store included, is left out
+	// (security review of 5.6–5.8: never a read of users by id alone).
+	StaffNames(ctx context.Context, tenant shared.TenantID, ids []shared.UserID) (map[shared.UserID]string, error)
 }
 
 // SentMessage is the message a supplier order was sent with, kept as it

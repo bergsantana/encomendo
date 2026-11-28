@@ -64,7 +64,7 @@ type Repository struct {
 	receipts map[shared.ReceiptID]receiptRow
 	received map[lineKey]bool // lines in a receipt
 	photos   map[string]bool
-	names    map[shared.UserID]string
+	names    map[shared.TenantID]map[shared.UserID]string
 	costs    CostSource
 	fail     error
 }
@@ -76,7 +76,7 @@ func NewRepository() *Repository {
 	return &Repository{
 		orders: map[orderKey]orderRow{}, counters: map[shared.TenantID]purchasing.Number{},
 		counter: map[lineKey]counterRow{}, seq: map[lineKey]int{}, receipts: map[shared.ReceiptID]receiptRow{},
-		received: map[lineKey]bool{}, photos: map[string]bool{}, names: map[shared.UserID]string{},
+		received: map[lineKey]bool{}, photos: map[string]bool{}, names: map[shared.TenantID]map[shared.UserID]string{},
 	}
 }
 
@@ -88,11 +88,14 @@ func (r *Repository) LinkCosts(c CostSource) {
 	r.costs = c
 }
 
-// NameUser sets the name StaffNames gives for a user.
-func (r *Repository) NameUser(id shared.UserID, name string) {
+// NameUser makes id a member of tenant named name, for StaffNames.
+func (r *Repository) NameUser(tenant shared.TenantID, id shared.UserID, name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.names[id] = name
+	if r.names[tenant] == nil {
+		r.names[tenant] = map[shared.UserID]string{}
+	}
+	r.names[tenant][id] = name
 }
 
 // Fail makes every later call return err; nil heals it.
@@ -545,18 +548,14 @@ func (r *Repository) Receipt(ctx context.Context, tenant shared.TenantID, id sha
 
 // StaffNames implements apppurchasing.Repository, with the names set by
 // NameUser.
-func (r *Repository) StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error) {
-	if !sharedfake.InTx(ctx) {
-		return nil, appshared.ErrNoTransaction
+func (r *Repository) StaffNames(ctx context.Context, tenant shared.TenantID, ids []shared.UserID) (map[shared.UserID]string, error) {
+	if err := r.enter(ctx, tenant); err != nil {
+		return nil, err
 	}
-	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.fail != nil {
-		return nil, r.fail
-	}
 	out := map[shared.UserID]string{}
 	for _, id := range ids {
-		if n, ok := r.names[id]; ok {
+		if n, ok := r.names[tenant][id]; ok {
 			out[id] = n
 		}
 	}

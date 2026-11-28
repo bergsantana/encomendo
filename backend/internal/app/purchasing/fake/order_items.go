@@ -140,7 +140,13 @@ func (f *OrderItems) ToBuy(context.Context) (apppurchasing.ToBuyItems, error) {
 		return apppurchasing.ToBuyItems{}, f.fail
 	}
 	out := apppurchasing.ToBuyItems{Truncated: f.truncated}
-	for _, id := range f.order {
+	// Earliest delivery first, as the port promises; the arrival limit
+	// stands for the delivery date here (both move together).
+	ids := slices.Clone(f.order)
+	slices.SortStableFunc(ids, func(a, b shared.OrderID) int {
+		return f.orders[b].facts.ArrivalLimit.DaysUntil(f.orders[a].facts.ArrivalLimit)
+	})
+	for _, id := range ids {
 		o := f.orders[id]
 		if !o.purchasable || o.facts.Closed {
 			continue
@@ -273,8 +279,15 @@ func (f *OrderItems) RecordPaidCosts(ctx context.Context, costs []apppurchasing.
 		return f.fail
 	}
 	for _, c := range costs {
-		if _, err := f.item(c.Order, c.Item, false); err != nil {
+		it, err := f.item(c.Order, c.Item, false)
+		if err != nil {
 			return err
+		}
+		if !it.Bought {
+			return order.ErrInvalidItemMove
+		}
+		if c.Cost.Currency() != "BRL" || c.Cost.IsNegative() {
+			return fmt.Errorf("fake: paid cost %s: %w", c.Cost, shared.ErrInvalid) // the fake's orders are in BRL
 		}
 	}
 	for _, c := range costs {

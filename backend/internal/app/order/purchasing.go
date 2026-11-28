@@ -343,8 +343,9 @@ func requirePurchaseMoves(ctx context.Context, moves []PurchaseMoveInput) (share
 }
 
 // requireAny returns the caller when they hold one of perms, and the
-// refusal of the last one otherwise. A refusal that is not ErrForbidden
-// (no principal, a scope that changed) comes back at once.
+// refusal of the last one otherwise. A refusal about the caller rather
+// than the permission (no principal, no store, a scope that changed) comes
+// back at once, since no other permission can fix it.
 func requireAny(ctx context.Context, perms ...identity.Permission) (shared.Principal, error) {
 	var last error
 	for _, perm := range perms {
@@ -352,7 +353,7 @@ func requireAny(ctx context.Context, perms ...identity.Permission) (shared.Princ
 		if err == nil {
 			return by, nil
 		}
-		if !errors.Is(err, shared.ErrForbidden) {
+		if !errors.Is(err, shared.ErrForbidden) || errors.Is(err, authz.ErrScopeMismatch) || errors.Is(err, authz.ErrTenantRequired) {
 			return shared.Principal{}, err
 		}
 		last = err
