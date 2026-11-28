@@ -42,7 +42,9 @@ type outgoing struct {
 
 // message builds the wa.me link of m's text for the user to send, and
 // records the message with the tracking link replaced. Nothing is sent
-// (docs/architecture.md section 2, rule 9).
+// (docs/architecture.md section 2, rule 9). The texts come from
+// messages.go and are never empty: WhatsApp.Link turns an empty text into a
+// bare chat link, so it is no check that a message was written.
 func (s *Service) message(ctx context.Context, m outgoing) (string, error) {
 	url, err := s.d.WhatsApp.Link(m.to.Phone, m.text)
 	if err != nil {
