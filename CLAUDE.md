@@ -81,6 +81,11 @@ The full table is in `docs/architecture.md` section 4.2. The names you will use 
 | Manter o desconto / cobrar a soma avulsa | kit swap mode `keep` / `lose` (ADR 0023) |
 | Arquivar / Restaurar | `Archive` / `Restore` on items and kits; nothing in the catalog is deleted (ADR 0025) |
 | Número do pedido (P-0231) | `order.Number`: counted per store from 1, shown with `String()` as "P-" and at least four digits (ADR 0030) |
+| Pedido de compra (C-0012) | `purchasing.SupplierOrder` and its `Number`: counted per store from 1, shown as "C-" and at least four digits; never called "pedido" alone (ADR 0031) |
+| Linha de compra, reposição | `purchasing.PurchaseLine`; a replacement line made by a "Com defeito" check (ADR 0031) |
+| Recebimento | `purchasing.Receipt`: one save on Receber itens, all or nothing per line (ADR 0031) |
+| Avisar o fornecedor | a supplier notice: a sent line no longer needed, flagged until resolved (ADR 0031) |
+| Prazo do fornecedor / Preço pago | the supplier's promised date (fills the forecast, never the promise) / the unit price actually paid, owner only (ADR 0031) |
 | Linha do pedido (um kit, ou um item avulso) | `order.Line`: a kit sold at its kit price holds one `order.Item` per kit item, each with its own status and expected date; a loose item is a line of one |
 | Entrega prevista (a promessa) / Previsto (a previsão) | The promise is `Order.Promise()` (the API calls it `deliveryDate`), moved only by `ChangeDeliveryDate`; the forecast is each `order.Item`'s expected date. An alert compares the forecast to the promise less assembly days (ADR 0030) |
 | Anular pagamento | `Order.VoidPayment`: a wrong payment is voided with a reason and never deleted; a voided payment does not count. Owner only |
