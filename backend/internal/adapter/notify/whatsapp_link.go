@@ -1,0 +1,38 @@
+package notify
+
+import (
+	"fmt"
+	"net/url"
+	"unicode/utf8"
+
+	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+)
+
+// maxMessageRunes bounds a prefilled WhatsApp text. The texts of
+// docs/product/design-document.md are a few hundred characters; the bound
+// keeps a free-text reason from making a link phones refuse to open.
+const maxMessageRunes = 2000
+
+// WhatsAppLinks builds wa.me links with a prefilled text: the user taps one
+// and sends the message from their own WhatsApp. Nothing is sent by the
+// server, and no paid WhatsApp API is used (docs/architecture.md section 2,
+// rule 9).
+type WhatsAppLinks struct{}
+
+// NewWhatsAppLinks returns the link builder.
+func NewWhatsAppLinks() WhatsAppLinks { return WhatsAppLinks{} }
+
+// Link returns https://wa.me/{phone}?text={text}, the text percent-encoded
+// (accents, line breaks and "&" included). It returns shared.ErrInvalid
+// unless phone is 55 + DDD + 8 or 9 digits, digits only, and the text has
+// 1 to 2000 characters of valid UTF-8.
+func (WhatsAppLinks) Link(phone, text string) (string, error) {
+	if !shared.ValidWhatsAppPhone(phone) {
+		return "", fmt.Errorf("wa.me link: phone %q: %w", phone, shared.ErrInvalid)
+	}
+	n := utf8.RuneCountInString(text)
+	if n == 0 || n > maxMessageRunes || !utf8.ValidString(text) {
+		return "", fmt.Errorf("wa.me link: text of %d characters: %w", n, shared.ErrInvalid)
+	}
+	return "https://wa.me/" + phone + "?text=" + url.QueryEscape(text), nil
+}
