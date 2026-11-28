@@ -156,6 +156,9 @@ func TestTypedIDs_ParseFormatAndZero(t *testing.T) {
 	t.Run("OrderLineID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseOrderLineID) })
 	t.Run("OrderItemID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseOrderItemID) })
 	t.Run("PaymentID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParsePaymentID) })
+	t.Run("SupplierOrderID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseSupplierOrderID) })
+	t.Run("PurchaseLineID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParsePurchaseLineID) })
+	t.Run("ReceiptID", func(t *testing.T) { t.Parallel(); checkTypedID(t, ParseReceiptID) })
 }
 
 func TestTypedIDs_RoundTripThroughJSON(t *testing.T) {
@@ -216,6 +219,9 @@ func TestTypedIDs_UnmarshalRejectsMalformed(t *testing.T) {
 		"OrderLineID":      new(OrderLineID),
 		"OrderItemID":      new(OrderItemID),
 		"PaymentID":        new(PaymentID),
+		"SupplierOrderID":  new(SupplierOrderID),
+		"PurchaseLineID":   new(PurchaseLineID),
+		"ReceiptID":        new(ReceiptID),
 	}
 	for name, dst := range targets {
 		if err := json.Unmarshal([]byte(`"not-an-id"`), dst); !errors.Is(err, ErrInvalidID) {

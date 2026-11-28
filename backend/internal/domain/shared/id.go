@@ -473,3 +473,57 @@ func (id PaymentID) MarshalText() ([]byte, error) { return marshalTyped(id) }
 
 // UnmarshalText works as ID.UnmarshalText.
 func (id *PaymentID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// SupplierOrderID identifies a supplier order (pedido de compra, C-0012).
+type SupplierOrderID ID
+
+// ParseSupplierOrderID parses a supplier order id; see ParseID for the errors.
+func ParseSupplierOrderID(s string) (SupplierOrderID, error) { return parseTyped[SupplierOrderID](s) }
+
+// String returns the canonical form.
+func (id SupplierOrderID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id SupplierOrderID) IsZero() bool { return id == SupplierOrderID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id SupplierOrderID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *SupplierOrderID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// PurchaseLineID identifies one line of a purchase, which buys one order item.
+type PurchaseLineID ID
+
+// ParsePurchaseLineID parses a purchase line id; see ParseID for the errors.
+func ParsePurchaseLineID(s string) (PurchaseLineID, error) { return parseTyped[PurchaseLineID](s) }
+
+// String returns the canonical form.
+func (id PurchaseLineID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id PurchaseLineID) IsZero() bool { return id == PurchaseLineID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id PurchaseLineID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *PurchaseLineID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
+
+// ReceiptID identifies a receipt saved on Receber itens.
+type ReceiptID ID
+
+// ParseReceiptID parses a receipt id; see ParseID for the errors.
+func ParseReceiptID(s string) (ReceiptID, error) { return parseTyped[ReceiptID](s) }
+
+// String returns the canonical form.
+func (id ReceiptID) String() string { return ID(id).String() }
+
+// IsZero reports whether the id is unset.
+func (id ReceiptID) IsZero() bool { return id == ReceiptID{} }
+
+// MarshalText works as ID.MarshalText.
+func (id ReceiptID) MarshalText() ([]byte, error) { return marshalTyped(id) }
+
+// UnmarshalText works as ID.UnmarshalText.
+func (id *ReceiptID) UnmarshalText(b []byte) error { return unmarshalTyped(id, b) }
