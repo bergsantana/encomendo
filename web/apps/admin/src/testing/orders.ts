@@ -189,8 +189,8 @@ export function orderAsOwner(workflow: StatusWorkflow = encomendaMontagem, statu
 }
 
 /**
- * problemCodes are the order refusals the API can answer, with the status and
- * `pt-BR` title each carries. `orderProblem(code)` builds the response.
+ * problemCodes are the refusals the order and customer calls can answer, with
+ * the status and pt-BR title each carries. `orderProblem(code)` builds the response.
  */
 export const problemCodes = {
   invalid: [400, 'Confira os campos destacados.'],
@@ -208,6 +208,7 @@ export const problemCodes = {
   no_backup_supplier: [409, 'Este item não tem fornecedor reserva.'],
   item_unavailable: [409, 'Há item arquivado no pedido.'],
   idempotency_key_reused: [422, 'Esta chave já foi usada em outro pedido.'],
+  phone_taken: [409, 'Já existe um cliente com este WhatsApp.'],
 } as const
 
 /** ProblemCode is a code `orderProblem` knows. */

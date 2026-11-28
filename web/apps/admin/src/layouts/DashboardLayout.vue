@@ -4,7 +4,8 @@
  * right. Menu order follows the product: Hoje · Pedidos · Compras · Produção ·
  * Estoque · Catálogo · Clientes · Financeiro. Each feature adds its entry
  * when it ships; Produção and Estoque show only when the tenant turns them on.
- * Equipe comes after them, for the roles that manage the team. The foot of
+ * Equipe comes after them, for the roles that manage the team, then
+ * Configurações for the owner. The foot of
  * the menu shows who is signed in, in which store, and logs out; App leaves
  * for login once the session has ended.
  *
@@ -26,6 +27,8 @@ import { useSessionStore } from '../stores/session'
 interface MenuItem {
   label: string
   to: { name: string }
+  /** alsoOn lists other routes of the same screen, such as a customer's own address, that keep the entry marked. */
+  alsoOn?: string[]
   /** permission hides the entry from roles without it; the route and the API check it again. */
   permission?: Permission
 }
@@ -33,6 +36,7 @@ interface MenuItem {
 const items: MenuItem[] = [
   { label: 'Hoje', to: { name: 'hoje' } },
   { label: 'Catálogo', to: { name: 'catalog' }, permission: 'catalog:read' },
+  { label: 'Clientes', to: { name: 'customers' }, alsoOn: ['customer'], permission: 'order:read' },
   { label: 'Equipe', to: { name: 'members' }, permission: 'members:manage' },
   { label: 'Configurações', to: { name: 'settings' }, permission: 'settings:write' },
 ]
@@ -49,6 +53,11 @@ const closeButton = useTemplateRef<HTMLButtonElement>('closeButton')
 const drawer = useTemplateRef<HTMLElement>('drawer')
 const page = useTemplateRef<HTMLElement>('page')
 const route = useRoute()
+
+/** isOnScreen marks an entry whose screen has more than one address. */
+function isOnScreen(item: MenuItem): boolean {
+  return item.alsoOn?.includes(String(route.name)) ?? false
+}
 const isPhone = useIsPhone()
 
 async function openDrawer(): Promise<void> {
@@ -177,6 +186,7 @@ watch(isPhone, (phone) => {
         :key="item.label"
         :to="item.to"
         class="menu-link"
+        :class="{ 'menu-link--active': isOnScreen(item) }"
         active-class="menu-link--active"
       >
         {{ item.label }}

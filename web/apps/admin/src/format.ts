@@ -7,6 +7,15 @@ export function formatDate(iso: string, timeZone?: string): string {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone }).format(new Date(iso))
 }
 
+/**
+ * formatCivilDate shows a calendar day from the API ("2026-12-12", such as a
+ * delivery date) as "12/12/2026". A civil day has no time zone, so it is
+ * written as it came and never moved by the viewer's zone.
+ */
+export function formatCivilDate(day: string): string {
+  return formatDate(`${day}T12:00:00Z`, 'UTC')
+}
+
 /** formatMoney shows integer cents as currency, such as "R$ 129,90". The amount is never turned into a float for arithmetic. */
 export function formatMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(cents / 100)
