@@ -10,8 +10,10 @@ import (
 	"sync"
 
 	apppurchasing "github.com/bergsantana/encomendo/backend/internal/app/purchasing"
+	sharedfake "github.com/bergsantana/encomendo/backend/internal/app/shared/fake"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/purchasing"
+	"github.com/bergsantana/encomendo/backend/internal/domain/schedule"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -188,7 +190,7 @@ func (f *OrderItems) Orders(_ context.Context, ids []shared.OrderID) ([]apppurch
 
 // Move implements apppurchasing.OrderItems: every move is checked before
 // any is applied, so a refusal moves nothing.
-func (f *OrderItems) Move(_ context.Context, moves []apppurchasing.ItemMove) error {
+func (f *OrderItems) Move(ctx context.Context, moves []apppurchasing.ItemMove) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
@@ -212,6 +214,7 @@ func (f *OrderItems) Move(_ context.Context, moves []apppurchasing.ItemMove) err
 		staged[m.Item] = m.To
 	}
 	for _, m := range moves {
+		f.keep(ctx, m.Order)
 		it, _ := f.item(m.Order, m.Item, true)
 		apply(it, m, f.today)
 		f.moves++
@@ -220,7 +223,7 @@ func (f *OrderItems) Move(_ context.Context, moves []apppurchasing.ItemMove) err
 }
 
 // RecordPromisedDates implements apppurchasing.OrderItems.
-func (f *OrderItems) RecordPromisedDates(_ context.Context, dates []apppurchasing.ItemPromise) error {
+func (f *OrderItems) RecordPromisedDates(ctx context.Context, dates []apppurchasing.ItemPromise) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
@@ -239,14 +242,31 @@ func (f *OrderItems) RecordPromisedDates(_ context.Context, dates []apppurchasin
 		}
 	}
 	for _, d := range dates {
+		f.keep(ctx, d.Order)
 		it, _ := f.item(d.Order, d.Item, true)
 		it.Promised, it.Expected = d.Date, d.Date
+		it.Alerts = alertsOf(it.Expected, f.orders[d.Order].facts.ArrivalLimit, f.today)
 	}
 	return nil
 }
 
+// alertsOf is the alert the forecast raises against the order's "Precisa
+// chegar até": at risk when it comes after it, late when that day is
+// already past too. It stands in for the schedule's rules, which the order
+// context owns.
+func alertsOf(expected, arrivalLimit, today shared.CivilDate) []schedule.Alert {
+	switch {
+	case !expected.After(arrivalLimit):
+		return nil
+	case arrivalLimit.Before(today):
+		return []schedule.Alert{schedule.AlertLate}
+	default:
+		return []schedule.Alert{schedule.AlertAtRisk}
+	}
+}
+
 // RecordPaidCosts implements apppurchasing.OrderItems.
-func (f *OrderItems) RecordPaidCosts(_ context.Context, costs []apppurchasing.ItemCost) error {
+func (f *OrderItems) RecordPaidCosts(ctx context.Context, costs []apppurchasing.ItemCost) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
@@ -258,9 +278,26 @@ func (f *OrderItems) RecordPaidCosts(_ context.Context, costs []apppurchasing.It
 		}
 	}
 	for _, c := range costs {
+		sharedfake.KeepOnRollback(ctx, &f.mu, f.paid, c.Item)
 		f.paid[c.Item] = c.Cost
 	}
 	return nil
+}
+
+// keep makes a failed transaction undo what this one does to an order's
+// items, as the order context's own repository would. The caller holds the
+// lock; the undo takes it.
+func (f *OrderItems) keep(ctx context.Context, id shared.OrderID) {
+	o := f.orders[id]
+	if o == nil {
+		return
+	}
+	before := slices.Clone(o.facts.Items)
+	sharedfake.OnRollback(ctx, func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		o.facts.Items = before
+	})
 }
 
 // item returns a pointer to an item of an order. With open, a closed order
@@ -310,6 +347,20 @@ func apply(it *apppurchasing.OrderItemFacts, m apppurchasing.ItemMove, today sha
 		it.Arrived = true
 	}
 	if it.Status == order.ItemToBuy {
-		it.Promised, it.Expected = shared.CivilDate{}, today
+		it.Promised, it.Expected, it.Alerts = shared.CivilDate{}, today, nil
 	}
+}
+
+// Cost returns the order-time unit cost of an item, as the order's
+// sourcing holds it; the fake Repository copies it into new lines, as the
+// Postgres one does in SQL.
+func (f *OrderItems) Cost(item shared.OrderItemID) (shared.Money, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, o := range f.orders {
+		if c, ok := o.costs[item]; ok {
+			return c, true
+		}
+	}
+	return shared.Money{}, false
 }

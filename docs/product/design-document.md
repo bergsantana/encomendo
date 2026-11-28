@@ -565,19 +565,23 @@ Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · C
 - Title "Compras". Tabs "A comprar", "Enviadas", "Receber itens", "Fornecedores". While loading: "Carregando as compras…".
 - **A comprar:** one card per supplier, with its name, its WhatsApp and "{n} itens" ("1 item").
   - Each line has a box (all checked at first), "{qtd}× {item}" with its choices ("Cor: Preto"), "Pedido P-0231" (opens the order) and "Precisa chegar até {data}". A replacement shows the badge "Reposição". For the Dono: "Custo (por unidade) {valor}".
-  - "Ver mensagem" shows the text the API built for the checked lines, with "Copiar mensagem".
+  - "Ver mensagem" shows the text the API built for the checked lines, with "Copiar mensagem". After copying: "Mensagem copiada."; if the browser refuses: "Não foi possível copiar a mensagem."
+  - Refusals: "Algum item marcado já não está em A comprar. A lista foi atualizada; confira e envie de novo." (`item_not_to_buy`) and "Um pedido desta compra foi entregue ou cancelado. A lista foi atualizada; confira e envie de novo." (`order_closed`). "Enviar pelo WhatsApp" is a secondary button on each card, since a screen of several suppliers has no single primary action.
   - Button "Enviar pelo WhatsApp", with the hint "Os itens marcados ficam como Enviada ao fornecedor." "Marque ao menos um item."
   - After it: "Pedido de compra C-0012 criado." with "Abrir o WhatsApp" (it stays until the next action, in case the browser blocked the automatic opening), "Copiar mensagem" and "Ver pedido de compra".
   - Empty: "Nada para comprar agora." with the hint "Os itens aparecem aqui quando o cliente paga o sinal." (with "Liberar compras antes do sinal" on: "… quando o pedido sai do rascunho.").
+  - With more active orders than one read covers: "Mostrando só os itens dos 500 pedidos ativos com entrega mais próxima. A lista pode não ter tudo."
 - **Enviadas:** filter "Abertos" / "Todos".
   - Table "Pedido de compra", "Fornecedor", "Enviado em", "Prazo do fornecedor" ("Sem prazo" when there is none), "Recebidos" ("{a} de {b}"), "Situação" ("Enviado", "Em trânsito", "Recebido", "Desfeito").
   - On the phone each is a card with the same lines. Empty: "Nenhum pedido de compra ainda." "Carregar mais".
 - **Avisar o fornecedor**, above the tabs when there are any: "{n} itens já enviados não são mais necessários." Each shows "C-0012 · {fornecedor}", "{qtd}× {item}", and why: "O pedido P-0231 foi cancelado." or "{item} saiu do pedido P-0231."
+  - A third reason, when the item's quantity or choices changed after it was sent: "{item} mudou no pedido P-0231." One notice reads "1 item já enviado não é mais necessário."
   - Buttons "Avisar pelo WhatsApp" and "Marcar como resolvido". After it: "Resolvido. A linha foi cancelada."
 
 ### Pedido de compra
 
-- Title "Pedido de compra C-0012", the supplier's name with "Abrir conversa no WhatsApp", "Enviado em {data} por {quem}". A pedido de compra that is not there: "Pedido de compra não encontrado."
+- Title "Pedido de compra C-0012", the supplier's name with "Abrir conversa no WhatsApp", "Enviado em {data} por {quem}". While loading: "Carregando as compras…". A pedido de compra that is not there: "Pedido de compra não encontrado."
+- The dialogs are titled "Informar prazo", "Informar preço pago" and "Desfazer envio". A line already closed: "Esta linha já foi recebida ou cancelada. Recarregue para ver a situação atual."
 - **Itens:** table "Item", "Qtd", "Pedido", "Precisa chegar até", "Previsto", "Situação".
   - "Situação" names: "Enviada ao fornecedor", "Em trânsito", "Recebida", "Com defeito (reposição em Compras)", "Cancelada", "Avisar o fornecedor".
   - For the Dono, "Custo (por unidade)" and "Preço pago (por unidade)" too.
@@ -617,10 +621,10 @@ Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 ### Fornecedores (tab of Compras)
 
 - Table "Fornecedor", "WhatsApp" (cards on the phone). Search "Buscar fornecedor". Button "Novo fornecedor". While loading: "Carregando os fornecedores…".
-- Empty: "Nenhum fornecedor ainda. Você também pode criar um fornecedor no cadastro do item."
+- Empty: "Nenhum fornecedor ainda. Você também pode criar um fornecedor no cadastro do item." A search with nothing: "Nenhum fornecedor encontrado." "Outra pessoa alterou este fornecedor. Recarregue para ver a versão atual."
 - **Form** (drawer; full screen on the phone), title "Novo fornecedor" or "Fornecedor":
   - "Nome" and "WhatsApp" (hint "Com DDD, como (92) 99123-4567."), with the errors already used in Catálogo;
-  - "Itens deste fornecedor": "Item", "Papel" ("Principal", "Reserva"), "Prazo (dias)" and, for the Dono, "Custo";
+  - "Itens deste fornecedor": "Item", "Papel" ("Principal", "Reserva"), "Prazo (dias)" and, for the Dono, "Custo"; none: "Nenhum item usa este fornecedor.";
   - "Salvar", "Cancelar". After it: "Fornecedor salvo."
 
 ### Changes to Pedido (the order screen)

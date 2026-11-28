@@ -131,11 +131,18 @@ type SupplierContact struct {
 }
 
 // Store gives the store's facts purchasing needs (inproc over tenancy and
-// the clock): its name for the supplier texts and its day, in its time
-// zone, for dates.
+// the clock): its name for the supplier texts, its currency for the prices
+// paid, and its day and time zone for dates.
 type Store interface {
 	Name(ctx context.Context) (string, error)
+	// Today returns the store's current day in its time zone.
 	Today(ctx context.Context) (shared.CivilDate, error)
+	// Currency returns the store's ISO 4217 code, such as "BRL": the
+	// currency of the prices paid, which the app sends as bare cents.
+	Currency(ctx context.Context) (string, error)
+	// Location returns the store's time zone, to turn an instant into the
+	// day it fell on in the store (ADR 0030).
+	Location(ctx context.Context) (*time.Location, error)
 }
 
 // SupplierLinks builds wa.me links with a prefilled text (adapter/notify).
@@ -186,4 +193,164 @@ type ReceiptPhotos interface {
 	DeleteUpload(ctx context.Context, key string) error
 	// ReportOrphan logs a promoted object with no row. It never fails.
 	ReportOrphan(ctx context.Context, key string)
+}
+
+// UseCases is the driving port of Compras and Receber itens, which the HTTP
+// adapter calls (docs/plans/m5-code-design.md section 3.2). Every method
+// checks its permission first and returns an error matching
+// shared.ErrForbidden without it; the writes that create (Send, Receive)
+// also need an Idempotency-Key.
+type UseCases interface {
+	// ToBuy is "A comprar" by supplier (purchase:write). Costs are the
+	// owner's only.
+	ToBuy(ctx context.Context) (ToBuyView, error)
+	// Preview returns the message a pedido de compra would send, taking no
+	// number and writing nothing (purchase:write).
+	Preview(ctx context.Context, in PickInput) (string, error)
+	// Send makes the pedido de compra of the picked items (purchase:write).
+	Send(ctx context.Context, in SendInput) (SentView, error)
+	// SupplierOrders lists the pedidos de compra, newest first
+	// (purchase:write); open leaves out the received and the undone.
+	SupplierOrders(ctx context.Context, open bool, p shared.PageRequest) (shared.Page[SupplierOrderSummary], error)
+	// SupplierOrder returns one pedido de compra with its lines
+	// (purchase:write).
+	SupplierOrder(ctx context.Context, id shared.SupplierOrderID) (SupplierOrderView, error)
+	// RecordPromisedDate records the supplier's promised dates (purchase:write).
+	RecordPromisedDate(ctx context.Context, in PromisedDateInput) (SupplierOrderView, error)
+	// MarkInTransit marks every sent line in transit (purchase:write).
+	MarkInTransit(ctx context.Context, in VersionInput) (SupplierOrderView, error)
+	// Undo is "Desfazer envio" (purchase:write).
+	Undo(ctx context.Context, in VersionInput) (SupplierOrderView, error)
+	// RecordPaidPrices records the unit prices paid (the owner only).
+	RecordPaidPrices(ctx context.Context, in PaidPricesInput) (SupplierOrderView, error)
+	// ToReceive is what Receber itens lists (receiving:write); it carries no cost.
+	ToReceive(ctx context.Context) (ToReceiveView, error)
+	// RequestPhotoUpload signs the upload of one receiving photo (receiving:write).
+	RequestPhotoUpload(ctx context.Context, contentType string) (PhotoUploadView, error)
+	// Receive saves one receipt (receiving:write).
+	Receive(ctx context.Context, in ReceiptInput) (ReceiptView, error)
+	// Notices lists the sent lines no longer needed (purchase:write).
+	Notices(ctx context.Context) ([]NoticeView, error)
+	// ResolveNotice is "Marcar como resolvido" (purchase:write).
+	ResolveNotice(ctx context.Context, line shared.PurchaseLineID) error
+	// OrderLines is what purchasing knows of one order's bought items
+	// (order:read); the chat link only for purchase:write.
+	OrderLines(ctx context.Context, id shared.OrderID) ([]OrderLineView, error)
+	// Today is Hoje's purchasing entries (purchase:write).
+	Today(ctx context.Context) (TodayView, error)
+}
+
+// Repository stores supplier orders, their lines, counter lines and
+// receipts (adapter/postgres/purchasing_repo.go; the fake in fake/ holds to
+// the same contract). Every method runs inside TxManager.WithinTx (else
+// appshared.ErrNoTransaction), in the scope of tenant: a tenant other than
+// the scope's is refused, as RLS would. Every purchasing table is staff
+// only, so a scope without a staff user sees nothing and writes nothing.
+//
+// Costs are the repository's, not the app's. InsertSupplierOrder and
+// InsertCounterLine copy each line's order-time unit cost from the order's
+// sourcing in the same transaction, so a line sent by an admin, who never
+// sees a cost, keeps the owner's. Reads return Cost and Paid on every
+// line; the app strips them for anyone but the owner. Updates never change
+// Cost, and write Paid (ADR 0031).
+type Repository interface {
+	// NextNumber takes the store's next supplier order number: 1, then 2,
+	// and so on, each issued once. Two concurrent callers never get the
+	// same number. A rolled back transaction gives its number back; a
+	// committed one never does, so an undone order's number is never
+	// reused.
+	NextNumber(ctx context.Context, tenant shared.TenantID) (purchasing.Number, error)
+	// PeekNumber returns the number NextNumber would give next and takes
+	// nothing: for Preview.
+	PeekNumber(ctx context.Context, tenant shared.TenantID) (purchasing.Number, error)
+	// InsertSupplierOrder stores a new supplier order (version 1) with its
+	// lines, in the order given, and the message as it was sent: text and
+	// the wa.me url. It returns shared.ErrConflict, storing nothing, when
+	// any line's order item already has an open (sent or in transit) line,
+	// when the id or the number is taken, or when a line id is.
+	InsertSupplierOrder(ctx context.Context, o *purchasing.SupplierOrder, text, url string) error
+	// UpdateSupplierOrder stores what changes on a supplier order: its
+	// promised date, in-transit and undone marks, and for each line its
+	// status, promised date, note, cancel reason, received day and paid
+	// price. The stored version must be o.Version(), else it returns
+	// shared.ErrVersionConflict; the next version is stored. It returns
+	// purchasing.ErrSupplierOrderNotFound for an unknown id. It adds and
+	// removes no line.
+	UpdateSupplierOrder(ctx context.Context, o *purchasing.SupplierOrder) error
+	// SupplierOrder returns the supplier order with its lines in the order
+	// they were picked, or purchasing.ErrSupplierOrderNotFound.
+	SupplierOrder(ctx context.Context, tenant shared.TenantID, id shared.SupplierOrderID) (purchasing.Record, error)
+	// SupplierOrderOfLine returns the supplier order that holds the line,
+	// or purchasing.ErrLineNotFound for an unknown line and for a line
+	// received at the counter, which has none.
+	SupplierOrderOfLine(ctx context.Context, tenant shared.TenantID, line shared.PurchaseLineID) (purchasing.Record, error)
+	// Message returns the message a supplier order was sent with, or
+	// purchasing.ErrSupplierOrderNotFound.
+	Message(ctx context.Context, tenant shared.TenantID, id shared.SupplierOrderID) (SentMessage, error)
+	// SupplierOrders returns one page of the store's supplier orders, newest
+	// sent first (ties by id, newest first). With open, only the orders
+	// with a line still sent or in transit. A cursor the repository did not
+	// issue is a *shared.ValidationError on "cursor".
+	SupplierOrders(ctx context.Context, tenant shared.TenantID, open bool, p shared.PageRequest) (shared.Page[purchasing.Record], error)
+	// OpenLines returns every sent or in-transit line of the store, oldest
+	// supplier order first (sent time, then id), then in the order picked.
+	OpenLines(ctx context.Context, tenant shared.TenantID) ([]StoredLine, error)
+	// LinesOfOrder returns every line, in any status, whose order is id,
+	// counter lines included, in the order they were written (lines written
+	// together keep the order picked). A line whose item was removed from
+	// the order is still there, with a zero order item.
+	LinesOfOrder(ctx context.Context, tenant shared.TenantID, id shared.OrderID) ([]StoredLine, error)
+	// DefectiveItems reports which of items have a defective line: the map
+	// holds a true entry for each of those items, and no entry for the rest.
+	DefectiveItems(ctx context.Context, tenant shared.TenantID, items []shared.OrderItemID) (map[shared.OrderItemID]bool, error)
+	// InsertCounterLine stores a line received at the counter: received or
+	// defective, with no supplier order. It returns shared.ErrConflict when
+	// the id is taken.
+	InsertCounterLine(ctx context.Context, tenant shared.TenantID, l purchasing.Line) error
+	// InsertReceipt stores a receipt of lines already stored received or
+	// defective, with its photos. It returns purchasing.ErrLineClosed when
+	// a line is already in a receipt, and shared.ErrConflict when the id or
+	// a photo key is taken.
+	InsertReceipt(ctx context.Context, r *purchasing.Receipt) error
+	// Receipt returns a stored receipt, or ErrReceiptNotFound.
+	Receipt(ctx context.Context, tenant shared.TenantID, id shared.ReceiptID) (StoredReceipt, error)
+	// StaffNames returns the names of the staff users in ids, for those the
+	// store has; an unknown id is left out.
+	StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error)
+}
+
+// SentMessage is the message a supplier order was sent with, kept as it
+// went out (ADR 0031).
+type SentMessage struct {
+	Text string
+	URL  string // the wa.me link with Text
+}
+
+// StoredLine is a stored line with the facts of its supplier order, which
+// the repository joins. For a line received at the counter the supplier
+// order facts are all zero.
+type StoredLine struct {
+	purchasing.LineRecord
+	Number        purchasing.Number
+	SupplierName  string // as sent
+	SupplierPhone string // as sent
+	SentAt        time.Time
+	OrderPromised shared.CivilDate // the supplier order's promised date
+}
+
+// EffectivePromised returns the day the supplier promised the line: its
+// own date, or its supplier order's.
+func (l StoredLine) EffectivePromised() shared.CivilDate {
+	if !l.Promised.IsZero() {
+		return l.Promised
+	}
+	return l.OrderPromised
+}
+
+// StoredReceipt is a stored receipt: when it was saved and the lines it
+// checked, in the order of its entries. A line's status says its check.
+type StoredReceipt struct {
+	ID    shared.ReceiptID
+	At    time.Time
+	Lines []purchasing.LineRecord
 }

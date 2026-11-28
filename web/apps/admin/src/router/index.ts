@@ -73,6 +73,19 @@ export const routes: RouteRecordRaw[] = [
         meta: { permission: 'order:write' },
       },
       {
+        // `?tab=` keeps the tab: a-comprar (the default), enviadas, receber, fornecedores.
+        path: 'compras',
+        name: 'purchasing',
+        component: () => import('../features/compras/views/ComprasView.vue'),
+        meta: { permission: 'purchase:write' },
+      },
+      {
+        path: 'compras/pedidos/:supplierOrderId',
+        name: 'supplier-order',
+        component: () => import('../features/compras/views/SupplierOrderView.vue'),
+        meta: { permission: 'purchase:write' },
+      },
+      {
         path: 'catalogo',
         name: 'catalog',
         component: () => import('../features/catalogo/views/CatalogoView.vue'),
