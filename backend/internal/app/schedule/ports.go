@@ -22,11 +22,14 @@ type Store interface {
 	Location(ctx context.Context) (*time.Location, error)
 }
 
-// Orders reads the orders Recalculate works on. adapter/inproc implements
+// Orders reads and saves the orders Recalculate works on. adapter/inproc implements
 // it over app/order's repository and workflow source; this package never
 // imports app/order.
 type Orders interface {
 	// ByID returns the store's order restored with the workflow it was made
 	// with, or an error matching shared.ErrNotFound.
 	ByID(ctx context.Context, tenant shared.TenantID, id shared.OrderID) (*order.Order, error)
+	// Update stores o while the stored version is still o.Version(), or
+	// returns shared.ErrVersionConflict.
+	Update(ctx context.Context, o *order.Order) error
 }

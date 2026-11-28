@@ -297,14 +297,47 @@ func (s *Service) margins(ctx context.Context, names *customerNames, r readCtx, 
 			HandedOverOn: shared.DateOf(at, r.facts.Location), Total: total(o),
 		}
 		if identity.SeesCosts(r.by.Role()) {
-			if cost, ok := o.Cost(); ok {
+			if cost, ok := realCost(o); ok {
 				row.Cost = &cost
-			}
-			if m, ok := o.Margin(); ok {
-				row.Margin = &m
+				if m, ok := marginAfter(o, cost); ok {
+					row.Margin = &m
+				}
 			}
 		}
 		out = append(out, row)
 	}
 	return out, nil
+}
+
+// realCost is the order's cost for a margin: each item's unit cost is the
+// price actually paid (Sourcing.PaidCost) when purchasing recorded one, else
+// the cost known at order time (Sourcing.Cost), times its quantity. It
+// returns false when an item has neither, so a margin is never guessed.
+// order.Order.Cost counts the order-time cost only, which is what a quote
+// shows before anything is bought (ADR 0031).
+func realCost(o *order.Order) (shared.Money, bool) {
+	currency := o.Terms().Freight.Currency()
+	var cents int64
+	for _, it := range o.Items() {
+		unit := it.Sourcing().PaidCost
+		if unit == nil {
+			unit = it.Sourcing().Cost
+		}
+		if unit == nil {
+			return shared.Money{}, false
+		}
+		cents += unit.Cents() * int64(it.Snapshot().Quantity)
+	}
+	cost, err := shared.NewMoney(cents, currency)
+	return cost, err == nil
+}
+
+// marginAfter is what the order leaves after cost, over what was sold: the
+// total less the freight, which only passes through.
+func marginAfter(o *order.Order, cost shared.Money) (catalog.Margin, bool) {
+	sold, err := shared.NewMoney(total(o).Cents()-o.Terms().Freight.Cents(), cost.Currency())
+	if err != nil {
+		return catalog.Margin{}, false
+	}
+	return catalog.MarginOf(sold, cost)
 }

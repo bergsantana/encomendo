@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
+	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -60,28 +62,49 @@ func (s *Service) Today(ctx context.Context) (shared.CivilDate, *time.Location, 
 	return day, loc, err
 }
 
-// Recalculate is the entry point that re-derives the expected dates of one
-// order (order:write); today it only checks access, see below. It returns
-// an error matching shared.ErrNotFound when the store has no such order.
+// Recalculate re-derives the expected dates of one order (order:write) and
+// saves the order when any of them moved. It returns an error matching
+// shared.ErrNotFound when the store has no such order.
 //
-// Until milestone 5 records supplier promised dates, an item's expected
-// date is a function of the release date, its lead days and its options,
-// and every write that changes one of them (Change, Release, the deposit,
-// MoveItem, UseBackupSupplier) already re-derives the dates in the same
-// transaction. So there is nothing stale to repair yet, and the domain has
-// no operation that re-dates an order on its own: Recalculate checks the
-// caller and the order and saves nothing. Milestone 5 adds the domain
-// operation and has this method save the order with it, in the same
-// transaction (docs/plans/m4-code-design.md section 3.7).
+// Every write that changes an item's timing already redates in its own
+// transaction, so an order is usually current. What goes stale is the day
+// itself: an order not yet released counts from today, and a time zone
+// change moves today. Recalculate repairs that, taking each supplier's
+// promised date where purchasing recorded one (ADR 0031). It saves nothing
+// when no date moved, so a repeated call writes no version
+// (docs/plans/m5-code-design.md section 3.3).
 func (s *Service) Recalculate(ctx context.Context, id shared.OrderID) error {
 	by, err := authz.Require(ctx, identity.PermOrderWrite)
 	if err != nil {
 		return err
 	}
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		if _, err := s.orders.ByID(ctx, by.TenantID(), id); err != nil {
+		o, err := s.orders.ByID(ctx, by.TenantID(), id)
+		if err != nil {
 			return fmt.Errorf("load order %s: %w", id, err)
+		}
+		loc, err := s.store.Location(ctx)
+		if err != nil {
+			return fmt.Errorf("store time zone: %w", err)
+		}
+		before := expectedDates(o)
+		o.Redate(shared.DateOf(s.clock.Now(), loc))
+		if slices.Equal(before, expectedDates(o)) {
+			return nil
+		}
+		if err := s.orders.Update(ctx, o); err != nil {
+			return fmt.Errorf("save order %s: %w", id, err)
 		}
 		return nil
 	})
+}
+
+// expectedDates lists the expected date of every item, in order.
+func expectedDates(o *order.Order) []shared.CivilDate {
+	items := o.Items()
+	dates := make([]shared.CivilDate, len(items))
+	for i, it := range items {
+		dates[i] = it.Expected()
+	}
+	return dates
 }

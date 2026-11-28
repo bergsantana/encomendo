@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	"github.com/bergsantana/encomendo/backend/internal/app/order/fake"
+	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/testkit"
@@ -316,5 +318,80 @@ func TestPurchaseOrders_RemovedItemAbsent(t *testing.T) {
 	}
 	if bought != 1 || got[0].Cancelled || got[0].Closed {
 		t.Errorf("order = %+v, want one bought item, open", got[0])
+	}
+}
+
+// A bought item moves through purchasing (ADR 0031): a staff move by hand to
+// received is refused, with the domain's error unchanged, and the order is
+// left as it was. An in-house item still moves by hand.
+func TestMoveItem_BoughtRefused(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	guidao := shared.ItemID(h.ids.NewID())
+	h.catalog.AddItem(fake.CatalogItem{ID: guidao, Name: "Guidão", Mode: catalog.ModeInHouse, Price: brl(t, 80_000), LeadDays: 5})
+	v := h.released(h.staff(t), t, func(in *apporder.CreateInput) {
+		in.Lines = []apporder.LineRequest{h.bancoLine(), {Item: guidao, Quantity: 1}}
+	})
+	ok := order.CheckOK
+	_, err := h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[0].ID, To: order.ItemReceived, Check: &ok, Version: v.Version})
+	if !errors.Is(err, order.ErrItemMovedByPurchasing) {
+		t.Fatalf("staff moves a bought item: err = %v, want ErrItemMovedByPurchasing", err)
+	}
+	got, err := h.svc.Get(h.staff(t), v.ID)
+	if err != nil || got.Version != v.Version || got.Items[0].Status != order.ItemToBuy {
+		t.Fatalf("after the refusal: %s v%d, %v; want to_buy v%d", got.Items[0].Status, got.Version, err, v.Version)
+	}
+	moved, err := h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[1].ID, To: order.ItemInProduction, Version: v.Version})
+	if err != nil || moved.Items[1].Status != order.ItemInProduction {
+		t.Errorf("in-house move = %+v, %v; want in_production", moved.Items, err)
+	}
+}
+
+// A kept item keeps what purchasing recorded on it: the supplier's promised
+// date and the price paid survive a change of the order that leaves its line
+// alone, while a new line is added.
+func TestChange_KeepsPromisedDateAndPaidCost(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	v := h.released(h.staff(t), t, nil)
+	item := v.Items[0].ID
+	sent := []apporder.PurchaseMoveInput{{Order: v.ID, Move: order.PurchaseMove{Item: item, To: order.ItemSentToSupplier, Ref: "C-0001"}}}
+	if err := h.svc.MovePurchased(h.admin(t), sent); err != nil {
+		t.Fatal(err)
+	}
+	day := testkit.Date(t, "2026-12-30")
+	if err := h.svc.RecordPromisedDates(h.admin(t), []apporder.PromisedDateInput{{Order: v.ID, Item: item, Date: day, Ref: "C-0001"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.RecordPaidCosts(h.owner(t), []apporder.PaidCostInput{{Order: v.ID, Item: item, Cost: brl(t, 41_000)}}); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := h.svc.Get(h.staff(t), v.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := []apporder.LineRequest{h.bancoLine(), {Item: h.addTampa(t), Quantity: 1}}
+	if _, err := h.svc.Change(h.admin(t), apporder.ChangeInput{
+		Order: v.ID, Lines: lines, Terms: apporder.TermsInput{Handover: order.HandoverPickup}, CustomerApproved: true, Version: cur.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := h.repo.Stored(h.store, v.ID)
+	var kept *order.ItemRecord
+	for i := range stored.Lines {
+		for j := range stored.Lines[i].Items {
+			if stored.Lines[i].Items[j].ID == item {
+				kept = &stored.Lines[i].Items[j]
+			}
+		}
+	}
+	if kept == nil {
+		t.Fatalf("item %s is gone after the change", item)
+	}
+	if kept.Status != order.ItemSentToSupplier || kept.Promised != day || kept.Expected != day {
+		t.Errorf("kept item = %s promised %s expected %s, want sent_to_supplier on %s", kept.Status, kept.Promised, kept.Expected, day)
+	}
+	if c := kept.Sourcing.PaidCost; c == nil || c.Cents() != 41_000 {
+		t.Errorf("kept paid cost = %v, want R$ 410,00", c)
 	}
 }

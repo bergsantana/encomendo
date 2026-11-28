@@ -34,7 +34,7 @@ func newHarness(t *testing.T, zone string) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.order = testkit.NewOrder().Build(t)
+	h.order = testkit.NewOrder().WithItems(2).Build(t)
 	h.orders.Add(h.order)
 	return h
 }
@@ -112,15 +112,44 @@ func TestRecalculate_UnknownOrAnotherStoresOrderIsNotFound(t *testing.T) {
 	}
 }
 
-func TestRecalculate_ChangesNothingUntilMilestone5(t *testing.T) {
+// The order was made on the 1st and is not released, so its dates count from
+// today: on the 2nd in São Paulo they are stale. An item the supplier
+// promised a date for keeps counting from that date.
+func TestRecalculate_SavesRedate(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "America/Sao_Paulo")
 	ctx := h.as(t, h.order.TenantID(), shared.RoleStaff)
-	before := h.order.Record()
+	items := h.order.Items()
+	promised := testkit.Date(t, "2026-12-20")
+	owner := testkit.Staff(t, h.order.TenantID(), shared.RoleOwner)
+	today, now := testkit.Date(t, "2026-12-01"), time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
+	move := order.PurchaseMove{Item: items[0].ID(), To: order.ItemSentToSupplier}
+	if err := h.order.MovePurchased(move, today, now, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.order.RecordPromisedDate(items[0].ID(), promised, "C-0001", today, now, owner); err != nil {
+		t.Fatal(err)
+	}
+	promisedExpected := h.order.Items()[0].Expected()
+
 	if err := h.svc.Recalculate(ctx, h.order.ID()); err != nil {
 		t.Fatal(err)
 	}
-	if after := h.order.Record(); after.Version != before.Version || after.Promise != before.Promise {
-		t.Errorf("order changed: %+v -> %+v", before, after)
+	if got := h.orders.Saves(); got != 1 {
+		t.Fatalf("saves after a stale order = %d, want 1", got)
+	}
+	got := h.order.Items()
+	if got[0].Expected() != promisedExpected {
+		t.Errorf("promised item expected %s, want %s", got[0].Expected(), promisedExpected)
+	}
+	if want := testkit.Date(t, "2026-12-07"); got[1].Expected() != want {
+		t.Errorf("unpromised item expected %s, want %s (5 lead days from the 2nd)", got[1].Expected(), want)
+	}
+
+	if err := h.svc.Recalculate(ctx, h.order.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.orders.Saves(); got != 1 {
+		t.Errorf("saves after a current order = %d, want still 1", got)
 	}
 }
