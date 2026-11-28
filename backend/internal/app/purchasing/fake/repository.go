@@ -66,6 +66,7 @@ type Repository struct {
 	photos   map[string]bool
 	names    map[shared.TenantID]map[shared.UserID]string
 	costs    CostSource
+	owners   map[shared.OrderItemID]shared.TenantID // order items whose store is known
 	fail     error
 }
 
@@ -76,7 +77,7 @@ func NewRepository() *Repository {
 	return &Repository{
 		orders: map[orderKey]orderRow{}, counters: map[shared.TenantID]purchasing.Number{},
 		counter: map[lineKey]counterRow{}, seq: map[lineKey]int{}, receipts: map[shared.ReceiptID]receiptRow{},
-		received: map[lineKey]bool{}, photos: map[string]bool{}, names: map[shared.TenantID]map[shared.UserID]string{},
+		received: map[lineKey]bool{}, owners: map[shared.OrderItemID]shared.TenantID{}, photos: map[string]bool{}, names: map[shared.TenantID]map[shared.UserID]string{},
 	}
 }
 
@@ -86,6 +87,36 @@ func (r *Repository) LinkCosts(c CostSource) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.costs = c
+}
+
+// KnowItem tells the repository which store an order item belongs to, so a
+// line naming an item of another store is refused as the composite foreign
+// key of purchase_lines refuses it in Postgres. An item never told about is
+// not checked.
+func (r *Repository) KnowItem(tenant shared.TenantID, item shared.OrderItemID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.owners[item] = tenant
+}
+
+// checkOwners refuses a supplier order with a line of an item known to
+// belong to another store. The caller holds the lock.
+func (r *Repository) checkOwners(rec purchasing.Record) error {
+	for _, l := range rec.Lines {
+		if err := r.checkOwner(rec.Tenant, l.Item.OrderItem); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkOwner refuses an item known to belong to another store. The caller
+// holds the lock.
+func (r *Repository) checkOwner(tenant shared.TenantID, item shared.OrderItemID) error {
+	if owner, ok := r.owners[item]; ok && owner != tenant {
+		return fmt.Errorf("fake: order item %s is not of store %s: %w", item, tenant, shared.ErrInvalid)
+	}
+	return nil
 }
 
 // NameUser makes id a member of tenant named name, for StaffNames.
@@ -189,6 +220,9 @@ func (r *Repository) InsertSupplierOrder(ctx context.Context, o *purchasing.Supp
 // checkNew refuses a supplier order whose id, number, line id or open item
 // is taken. The caller holds the lock.
 func (r *Repository) checkNew(rec purchasing.Record) error {
+	if err := r.checkOwners(rec); err != nil {
+		return err
+	}
 	for k, row := range r.orders {
 		if k.id == rec.ID || (k.tenant == rec.Tenant && row.rec.Number == rec.Number) {
 			return fmt.Errorf("fake: supplier order %s or number %s taken: %w", rec.ID, rec.Number, shared.ErrConflict)
@@ -199,7 +233,7 @@ func (r *Repository) checkNew(rec purchasing.Record) error {
 					return fmt.Errorf("fake: line %s taken: %w", l.ID, shared.ErrConflict)
 				}
 				if k.tenant == rec.Tenant && have.Status.Open() && !l.Item.OrderItem.IsZero() && have.Item.OrderItem == l.Item.OrderItem {
-					return fmt.Errorf("fake: item %s has an open line: %w", l.Item.OrderItem, shared.ErrConflict)
+					return fmt.Errorf("fake: item %s: %w", l.Item.OrderItem, apppurchasing.ErrOpenLine)
 				}
 			}
 		}
@@ -442,6 +476,9 @@ func (r *Repository) InsertCounterLine(ctx context.Context, tenant shared.Tenant
 	rec := l.Record()
 	if !rec.SupplierOrder.IsZero() || (rec.Status != purchasing.LineReceived && rec.Status != purchasing.LineDefective) {
 		return fmt.Errorf("fake: a counter line is received or defective with no supplier order: %w", shared.ErrInvalid)
+	}
+	if err := r.checkOwner(tenant, rec.Item.OrderItem); err != nil {
+		return err
 	}
 	if r.lineTaken(rec.ID) {
 		return fmt.Errorf("fake: line %s taken: %w", rec.ID, shared.ErrConflict)

@@ -3,12 +3,14 @@ package catalog_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/supplier"
 )
 
 // costedInput is suppliedInput with the owner's costs: R$ 40 from couros
@@ -521,5 +523,75 @@ func TestItemUseCases_FailuresPassThrough(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSupplierItems_CostOwnerOnly(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.createItem(t, h.costedInput("Banco"))
+	archived := h.createItem(t, h.costedInput("Capa velha"))
+	if _, err := h.svc.ArchiveItem(h.owner(t), appcatalog.ItemVersionInput{ID: archived.ID, Version: archived.Version}); err != nil {
+		t.Fatal(err)
+	}
+	h.createItem(t, inHouseInput("Pedal", 3000, 2))
+
+	// The subtests only read the shared harness.
+	t.Run("owner sees each cost and the roles", func(t *testing.T) {
+		t.Parallel()
+		got, err := h.svc.SupplierItems(h.owner(t), h.couros)
+		if err != nil || len(got) != 1 || got[0].Name != "Banco" || got[0].Role != supplier.RoleMain || got[0].LeadDays != 7 {
+			t.Fatalf("main supplier's items = %+v, %v; want Banco as main at 7 days, the archived one left out", got, err)
+		}
+		if !sameMoney(got[0].Cost, ptr(brl(t, 4000))) {
+			t.Errorf("owner's cost = %+v, want R$ 40", got[0].Cost)
+		}
+		backup, err := h.svc.SupplierItems(h.owner(t), h.ferragens)
+		if err != nil || len(backup) != 1 || backup[0].Role != supplier.RoleBackup || !sameMoney(backup[0].Cost, ptr(brl(t, 4500))) {
+			t.Errorf("backup supplier's items = %+v, %v", backup, err)
+		}
+	})
+	for _, role := range []shared.Role{shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer} {
+		t.Run(string(role)+" sees no cost", func(t *testing.T) {
+			t.Parallel()
+			got, err := h.svc.SupplierItems(h.as(t, h.store1, role), h.couros)
+			if err != nil || len(got) != 1 || got[0].Cost != nil {
+				t.Errorf("items = %+v, %v; want one row with no cost", got, err)
+			}
+		})
+	}
+	t.Run("a supplier with no items is an empty list, not an error", func(t *testing.T) {
+		t.Parallel()
+		got, err := h.svc.SupplierItems(h.owner(t), h.tecidos)
+		if err != nil || got == nil || len(got) != 0 {
+			t.Errorf("items = %#v, %v; want an empty list", got, err)
+		}
+	})
+	t.Run("another store's supplier is not found", func(t *testing.T) {
+		t.Parallel()
+		if _, err := h.svc.SupplierItems(h.owner(t), h.alheio); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("err = %v, want ErrNotFound", err)
+		}
+	})
+	t.Run("without a session it is refused", func(t *testing.T) {
+		t.Parallel()
+		if _, err := h.svc.SupplierItems(context.Background(), h.couros); err == nil {
+			t.Error("a call with no principal succeeded")
+		}
+	})
+}
+
+// TestSupplierItems_ReadsEveryPage: a store with more items than one page
+// holds still lists all of a supplier's items (the loop over the cursor).
+func TestSupplierItems_ReadsEveryPage(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	const n = shared.MaxPageLimit + 5
+	for i := range n {
+		h.createItem(t, h.costedInput(fmt.Sprintf("Banco %03d", i)))
+	}
+	got, err := h.svc.SupplierItems(h.owner(t), h.couros)
+	if err != nil || len(got) != n {
+		t.Fatalf("items = %d, %v; want all %d across pages", len(got), err, n)
 	}
 }

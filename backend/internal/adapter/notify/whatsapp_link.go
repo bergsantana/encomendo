@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	apppurchasing "github.com/bergsantana/encomendo/backend/internal/app/purchasing"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -19,6 +21,13 @@ const maxMessageRunes = 2000
 // server, and no paid WhatsApp API is used (docs/architecture.md section 2,
 // rule 9).
 type WhatsAppLinks struct{}
+
+// The same builder serves the order messages and the supplier texts of
+// Compras (ADR 0031): both ports are Link(phone, text).
+var (
+	_ apporder.WhatsApp           = WhatsAppLinks{}
+	_ apppurchasing.SupplierLinks = WhatsAppLinks{}
+)
 
 // NewWhatsAppLinks returns the link builder.
 func NewWhatsAppLinks() WhatsAppLinks { return WhatsAppLinks{} }

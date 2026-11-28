@@ -17,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -81,6 +82,9 @@ var run = fmt.Sprintf("%d", time.Now().UnixNano())
 var client = &http.Client{Timeout: 15 * time.Second}
 
 var seq atomic.Int64
+
+// signUps keeps one sign-up at a time (see signUp).
+var signUps sync.Mutex
 
 // unique returns a name no earlier run used.
 func unique(prefix string) string {
@@ -166,10 +170,22 @@ type session struct {
 // signUp creates an account and returns its session, without a store.
 func signUp(t *testing.T, name string) *session {
 	t.Helper()
+	// Every e2e call comes from one address, and the suite makes more stores
+	// than the per-IP sign-up limit allows in an hour (ADR 0021): clear the
+	// counts first, one sign-up at a time so parallel tests cannot pile up
+	// between the clear and the call. No e2e case checks a rate limit; the
+	// unit tests do.
+	signUps.Lock()
+	if err := clearRateLimits(); err != nil {
+		signUps.Unlock()
+		t.Fatalf("clear rate limits: %v", err)
+	}
 	s := &session{email: unique("e2e") + "@teste.encomendo.local", password: "segredo-forte-1"}
-	a := must(t, call(t, "POST", "/auth/signup", map[string]any{
+	signed := call(t, "POST", "/auth/signup", map[string]any{
 		"name": name, "email": s.email, "password": s.password, "refreshTransport": "body",
-	}, ""), 201, "sign-up")
+	}, "")
+	signUps.Unlock()
+	a := must(t, signed, 201, "sign-up")
 	s.take(a)
 	user, _ := a.Body["user"].(map[string]any)
 	s.userID, _ = user["id"].(string)

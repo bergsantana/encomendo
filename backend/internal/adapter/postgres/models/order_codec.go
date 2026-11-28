@@ -310,6 +310,7 @@ type historyDetailJSON struct {
 	NewDate          string      `json:"newDate,omitempty"`
 	Reason           string      `json:"reason,omitempty"`
 	CustomerApproved bool        `json:"customerApproved,omitempty"`
+	Ref              string      `json:"ref,omitempty"` // the pedido de compra of a purchasing move
 }
 
 func marshalHistoryDetail(e order.HistoryEntry) ([]byte, error) {
@@ -318,7 +319,7 @@ func marshalHistoryDetail(e order.HistoryEntry) ([]byte, error) {
 		ItemFrom: string(e.ItemFrom), ItemTo: string(e.ItemTo), Check: string(e.Check),
 		PaymentKind: string(e.PaymentKind), PaymentMethod: string(e.PaymentMethod),
 		OldDate: e.OldDate.String(), NewDate: e.NewDate.String(), Reason: e.Reason,
-		CustomerApproved: e.CustomerApproved,
+		CustomerApproved: e.CustomerApproved, Ref: e.Ref,
 	}
 	if s := optID(e.Item); s != nil {
 		j.Item = *s
@@ -347,7 +348,7 @@ func unmarshalHistoryDetail(raw []byte, e *order.HistoryEntry) error {
 	}
 	e.Handover, e.ItemFrom, e.ItemTo = order.Handover(j.Handover), order.ItemStatus(j.ItemFrom), order.ItemStatus(j.ItemTo)
 	e.Check, e.PaymentKind, e.PaymentMethod = order.Check(j.Check), order.PaymentKind(j.PaymentKind), order.PaymentMethod(j.PaymentMethod)
-	e.Reason, e.CustomerApproved = j.Reason, j.CustomerApproved
+	e.Reason, e.CustomerApproved, e.Ref = j.Reason, j.CustomerApproved, j.Ref
 	if j.Item != "" {
 		if e.Item, err = parseID[shared.OrderItemID](j.Item); err != nil {
 			return err

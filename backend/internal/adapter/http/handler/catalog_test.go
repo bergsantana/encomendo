@@ -81,6 +81,7 @@ func ctOps() []ctOp {
 		{"POST /api/v1/admin/suppliers", `{"name":"Couros","whatsappPhone":"5511987654321"}`, 201},
 		{"GET /api/v1/admin/suppliers/{supplierId}", "", 200},
 		{"PUT /api/v1/admin/suppliers/{supplierId}", `{"name":"Couros","whatsappPhone":"5511987654321","version":1}`, 200},
+		{"GET /api/v1/admin/suppliers/{supplierId}/items", "", 200},
 	}
 }
 
@@ -88,8 +89,8 @@ func TestCatalog_ServesEveryOperation(t *testing.T) {
 	t.Parallel()
 
 	ops := ctOps()
-	if len(ops) != 33 {
-		t.Fatalf("%d operations listed, the contract has 33", len(ops))
+	if len(ops) != 34 {
+		t.Fatalf("%d operations listed, the contract has 34", len(ops))
 	}
 	for _, op := range ops {
 		t.Run(op.pattern, func(t *testing.T) {
@@ -681,7 +682,42 @@ func TestNewCatalog_NeedsItsDependencies(t *testing.T) {
 	if _, err := handler.NewCatalog(handler.CatalogDeps{UseCases: &catalogCases{}, Log: log}); err == nil {
 		t.Error("accepted no limiter")
 	}
-	if _, err := handler.NewSuppliers(handler.SuppliersDeps{Log: log}); err == nil {
+	if _, err := handler.NewSuppliers(handler.SuppliersDeps{Items: &catalogCases{}, Log: log}); err == nil {
 		t.Error("accepted no supplier use cases")
+	}
+	if _, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: &supplierCases{}, Log: log}); err == nil {
+		t.Error("accepted no supplier items reader")
+	}
+}
+
+// listSupplierItems writes a row's cost only for the owner, and leaves the
+// key out for every other role even when the use case gave one.
+func TestSupplierItems_CostOnlyForTheOwner(t *testing.T) {
+	t.Parallel()
+
+	path := "/api/v1/admin/suppliers/" + ctSupplier.String() + "/items"
+	for _, role := range []shared.Role{shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer} {
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+
+			f := newCtFixture(t)
+			rec := f.callAs(t, role, "GET", path, "")
+			if rec.Code != 200 {
+				t.Fatalf("answer %d %s", rec.Code, rec.Body.String())
+			}
+			var got struct {
+				Items []map[string]any `json:"items"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got.Items) != 2 {
+				t.Fatalf("body %s: %v", rec.Body.String(), err)
+			}
+			_, has := got.Items[0]["cost"]
+			if has != (role == shared.RoleOwner) {
+				t.Errorf("%s: cost key present = %v in %v", role, has, got.Items[0])
+			}
+			if _, has := got.Items[1]["cost"]; has {
+				t.Errorf("a row with no recorded cost has a cost key: %v", got.Items[1])
+			}
+		})
 	}
 }

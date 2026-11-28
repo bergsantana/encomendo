@@ -13,12 +13,14 @@ import (
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
 	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
 	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	apppurchasing "github.com/bergsantana/encomendo/backend/internal/app/purchasing"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
+	"github.com/bergsantana/encomendo/backend/internal/domain/purchasing"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
@@ -74,6 +76,12 @@ const (
 	CodeWorkflowNotFound      = "workflow_not_found"
 	CodeIdempotencyKeyMissing = "idempotency_key_required"
 	CodeIdempotencyKeyReused  = "idempotency_key_reused"
+
+	// The codes of Compras and Receber itens (ADR 0031). Photo refusals of a
+	// receipt reuse the catalog's codes.
+	CodeItemNotToBuy          = "item_not_to_buy"
+	CodeSupplierOrderReceived = "supplier_order_received"
+	CodeLineClosed            = "line_closed"
 )
 
 // StatusClientClosedRequest is the status logged for a request whose client
@@ -326,6 +334,12 @@ func conflictFor(err error) Problem {
 		p.References = referencesOf(err)
 	case errors.Is(err, order.ErrInvalidTransition):
 		p.Code, p.Title = CodeInvalidTransition, "Este pedido não pode ir para este status."
+	case errors.Is(err, apppurchasing.ErrItemNotToBuy):
+		p.Code, p.Title = CodeItemNotToBuy, "Algum item não está mais em A comprar para este fornecedor. Recarregue a lista."
+	case errors.Is(err, purchasing.ErrSupplierOrderReceived):
+		p.Code, p.Title = CodeSupplierOrderReceived, "Este pedido de compra já teve itens recebidos e não pode ser desfeito."
+	case errors.Is(err, purchasing.ErrLineClosed), errors.Is(err, purchasing.ErrUndone), errors.Is(err, purchasing.ErrNothingOpen):
+		p.Code, p.Title = CodeLineClosed, "Este item já foi recebido, cancelado ou não precisa mais de aviso."
 	case errors.Is(err, appshared.ErrIdempotencyKeyReused):
 		// 422, not 409: the request is understood but this key belongs to
 		// another one (ADR 0030). It comes before any generic conflict.
@@ -369,7 +383,9 @@ func invalidFor(err error) Problem {
 			// 10 MB and the three types: what ConfirmPhoto accepts (ADR 0024).
 			Title: "A foto precisa ser JPEG, PNG ou WebP, com até 10 MB.",
 		}
-	case errors.Is(err, catalog.ErrPhotoNotUploaded):
+	case errors.Is(err, catalog.ErrPhotoNotUploaded), errors.Is(err, purchasing.ErrPhotoKey):
+		// A receipt's key that is not this store's is told apart from a
+		// missing upload by no one (docs/api/openapi.yaml, PhotoRefused).
 		return Problem{
 			Status: http.StatusBadRequest, Code: CodePhotoNotUploaded,
 			Title: "A foto não foi enviada. Tente de novo.",
@@ -405,7 +421,7 @@ func orderInvalidFor(err error) (Problem, bool) {
 		return refuse(CodeApprovalRequired, "Confirme que o cliente aprovou a mudança.")
 	case errors.Is(err, order.ErrPaymentExceedsDue):
 		return refuse(CodePaymentExceedsDue, "O valor passa do que falta pagar.")
-	case errors.Is(err, apporder.ErrIdempotencyKeyRequired):
+	case errors.Is(err, apporder.ErrIdempotencyKeyRequired), errors.Is(err, apppurchasing.ErrIdempotencyKeyRequired):
 		return refuse(CodeIdempotencyKeyMissing, "Falta o cabeçalho Idempotency-Key.")
 	}
 	return Problem{}, false

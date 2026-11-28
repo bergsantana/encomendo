@@ -221,6 +221,9 @@ func orderHandlers(t *testing.T, n *int) Handlers {
 	if h.Finance, err = handler.NewFinance(handler.FinanceDeps{UseCases: orderReached{n: n}, Log: log}); err != nil {
 		t.Fatal(err)
 	}
+	if h.Purchasing, err = handler.NewPurchasing(handler.PurchasingDeps{UseCases: purchasingReached{n: n}, Limiter: &countingLimiter{}, Log: log}); err != nil {
+		t.Fatal(err)
+	}
 	return h
 }
 

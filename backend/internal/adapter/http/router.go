@@ -17,22 +17,23 @@ import (
 // Handlers are the handlers the router mounts. Each milestone adds its own.
 // A nil group is not mounted.
 type Handlers struct {
-	Health    *handler.Health
-	Auth      *handler.Auth
-	Tenancy   *handler.Tenancy
-	Catalog   *handler.Catalog
-	Suppliers *handler.Suppliers
-	Workflows *handler.Workflows
-	Customers *handler.Customers
-	Orders    *handler.Orders
-	Today     *handler.Today
-	Finance   *handler.Finance
+	Health     *handler.Health
+	Auth       *handler.Auth
+	Tenancy    *handler.Tenancy
+	Catalog    *handler.Catalog
+	Suppliers  *handler.Suppliers
+	Workflows  *handler.Workflows
+	Customers  *handler.Customers
+	Orders     *handler.Orders
+	Today      *handler.Today
+	Finance    *handler.Finance
+	Purchasing *handler.Purchasing
 }
 
 // hasAdmin reports whether any group of /api/v1/admin routes is set.
 func (h Handlers) hasAdmin() bool {
 	return h.Tenancy != nil || h.Catalog != nil || h.Suppliers != nil || h.Workflows != nil ||
-		h.Customers != nil || h.Orders != nil || h.Today != nil || h.Finance != nil
+		h.Customers != nil || h.Orders != nil || h.Today != nil || h.Finance != nil || h.Purchasing != nil
 }
 
 // RouterOptions configure the middleware stack.
@@ -152,6 +153,9 @@ func adminRoutes(h Handlers) map[string]http.HandlerFunc {
 	if h.Finance != nil {
 		routes["GET /api/v1/admin/finance/summary"] = h.Finance.Summary
 	}
+	if h.Purchasing != nil {
+		maps.Copy(routes, purchasingRoutes(h.Purchasing))
+	}
 	return routes
 }
 
@@ -206,13 +210,40 @@ func catalogRoutes(c *handler.Catalog) map[string]http.HandlerFunc {
 	}
 }
 
-// supplierRoutes are the four supplier operations of the contract.
+// supplierRoutes are the five supplier operations of the contract.
 func supplierRoutes(s *handler.Suppliers) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"GET /api/v1/admin/suppliers":              s.List,
-		"POST /api/v1/admin/suppliers":             s.Create,
-		"GET /api/v1/admin/suppliers/{supplierId}": s.Get,
-		"PUT /api/v1/admin/suppliers/{supplierId}": s.Replace,
+		"GET /api/v1/admin/suppliers":                    s.List,
+		"POST /api/v1/admin/suppliers":                   s.Create,
+		"GET /api/v1/admin/suppliers/{supplierId}":       s.Get,
+		"PUT /api/v1/admin/suppliers/{supplierId}":       s.Replace,
+		"GET /api/v1/admin/suppliers/{supplierId}/items": s.Items,
+	}
+}
+
+// purchasingRoutes are the sixteen purchasing operations of the contract.
+// POST /supplier-orders/preview is its own path: the mux prefers the
+// literal word to /supplier-orders/{supplierOrderId}, and an id is never a
+// word, as with /orders/quote.
+func purchasingRoutes(p *handler.Purchasing) map[string]http.HandlerFunc {
+	const base = "/api/v1/admin/purchasing"
+	return map[string]http.HandlerFunc{
+		"GET " + base + "/to-buy":                                          p.ToBuy,
+		"POST " + base + "/supplier-orders/preview":                        p.PreviewSupplierOrder,
+		"GET " + base + "/supplier-orders":                                 p.ListSupplierOrders,
+		"POST " + base + "/supplier-orders":                                p.SendSupplierOrder,
+		"GET " + base + "/supplier-orders/{supplierOrderId}":               p.GetSupplierOrder,
+		"PUT " + base + "/supplier-orders/{supplierOrderId}/promised-date": p.RecordPromisedDate,
+		"POST " + base + "/supplier-orders/{supplierOrderId}/in-transit":   p.MarkInTransit,
+		"POST " + base + "/supplier-orders/{supplierOrderId}/undo":         p.UndoSupplierOrder,
+		"PUT " + base + "/supplier-orders/{supplierOrderId}/paid-prices":   p.RecordPaidPrices,
+		"GET " + base + "/to-receive":                                      p.ToReceive,
+		"POST " + base + "/receipt-photo-uploads":                          p.RequestReceiptPhotoUpload,
+		"POST " + base + "/receipts":                                       p.RecordReceipt,
+		"GET " + base + "/notices":                                         p.ListNotices,
+		"POST " + base + "/notices/{lineId}/resolve":                       p.ResolveNotice,
+		"GET " + base + "/orders/{orderId}/lines":                          p.OrderPurchases,
+		"GET " + base + "/today":                                           p.Today,
 	}
 }
 

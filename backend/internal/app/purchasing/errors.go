@@ -18,6 +18,12 @@ var (
 	// Idempotency-Key. It matches shared.ErrInvalid; the API answers
 	// idempotency_key_required.
 	ErrIdempotencyKeyRequired = fmt.Errorf("purchasing: idempotency key required: %w", shared.ErrInvalid)
+	// ErrOpenLine is the repository's answer when a line would be a second
+	// open line (sent or in transit) for an order item: someone else sent
+	// it first. It matches shared.ErrConflict. Send turns it, and only it,
+	// into ErrItemNotToBuy; any other conflict (a retryable serialization
+	// failure, a taken id) stays what it is.
+	ErrOpenLine = fmt.Errorf("purchasing: the item already has an open line: %w", shared.ErrConflict)
 	// ErrReceiptNotFound means the store has no receipt with that id. It
 	// matches shared.ErrNotFound.
 	ErrReceiptNotFound = fmt.Errorf("purchasing: receipt not found: %w", shared.ErrNotFound)

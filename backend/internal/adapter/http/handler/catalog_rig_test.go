@@ -15,6 +15,7 @@ import (
 	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/supplier"
 )
 
 // ctID is a fixed id for fixtures: a UUID the contract's `uuid` format
@@ -101,7 +102,22 @@ type catalogCases struct {
 	confirmation appcatalog.PhotoConfirmation
 }
 
-var _ appcatalog.UseCases = (*catalogCases)(nil)
+var (
+	_ appcatalog.UseCases         = (*catalogCases)(nil)
+	_ handler.SupplierItemsReader = (*catalogCases)(nil)
+)
+
+// SupplierItems answers the items of a supplier, with the owner's cost the
+// way the real use case gives it to the owner only: the fake always sets
+// it, so the handler's own gate is what a test of a lesser role exercises.
+func (u *catalogCases) SupplierItems(_ context.Context, id shared.SupplierID) ([]appcatalog.SupplierItemUseView, error) {
+	u.record(id)
+	cost := ctMoney(4000)
+	return []appcatalog.SupplierItemUseView{
+		{Item: ctItem, Name: "Banco de couro", Role: supplier.RoleMain, LeadDays: 7, Cost: &cost},
+		{Item: ctItem, Name: "Capa", Role: supplier.RoleBackup, LeadDays: 9},
+	}, u.err
+}
 
 func (u *catalogCases) record(in any) { u.calls++; u.got = in }
 
@@ -327,6 +343,7 @@ func ctRoutes(c *handler.Catalog, s *handler.Suppliers) map[string]http.HandlerF
 		"GET /api/v1/admin/suppliers":                         s.List,
 		"POST /api/v1/admin/suppliers":                        s.Create,
 		"GET /api/v1/admin/suppliers/{supplierId}":            s.Get,
+		"GET /api/v1/admin/suppliers/{supplierId}/items":      s.Items,
 		"PUT /api/v1/admin/suppliers/{supplierId}":            s.Replace,
 	}
 }
@@ -369,7 +386,7 @@ func newCtFixture(t *testing.T) *ctFixture {
 	if f.c, err = handler.NewCatalog(handler.CatalogDeps{UseCases: f.catalog, Limiter: f.limiter, Log: discardLog()}); err != nil {
 		t.Fatal(err)
 	}
-	if f.s, err = handler.NewSuppliers(handler.SuppliersDeps{UseCases: f.suppliers, Log: discardLog()}); err != nil {
+	if f.s, err = handler.NewSuppliers(handler.SuppliersDeps{UseCases: f.suppliers, Items: f.catalog, Log: discardLog()}); err != nil {
 		t.Fatal(err)
 	}
 	return f

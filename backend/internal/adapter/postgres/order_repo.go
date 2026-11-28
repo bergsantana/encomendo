@@ -127,7 +127,14 @@ func (r *Orders) Update(ctx context.Context, o *order.Order) error {
 // pruneParts deletes the lines and items the order no longer has, so lines
 // and items are replaced as a set by id. An item that moved to another line
 // counts as gone and is inserted again. Deleting an item takes its sourcing
-// with it (ON DELETE CASCADE), and deleting a line takes its items.
+// with it (ON DELETE CASCADE), nulls the order item of its purchase lines
+// (0016), and deleting a line takes its items.
+//
+// app/order never moves an item to another line: a change keeps a kept
+// item's line id with its item id (keepIDs), so an item that stays is
+// upserted in place and keeps its purchase line and its promised date and
+// price paid (TestOrders_ChangeKeepsTheItemsPurchaseLine). order.Change
+// itself would accept the move, and it would lose both: callers must not.
 func pruneParts(db *gorm.DB, rows models.OrderRows) error {
 	tenant, orderID := rows.Order.TenantID, rows.Order.ID
 	pairs := make([][]any, 0, len(rows.Items))
@@ -204,7 +211,7 @@ func upsertSourcing(db *gorm.DB, rows []models.OrderItemSourcing) error {
 		DoUpdates: append(
 			clause.AssignmentColumns([]string{
 				"supplier_id", "supplier_name", "cost_cents", "backup_supplier_id", "backup_supplier_name",
-				"backup_lead_days", "backup_cost_cents",
+				"backup_lead_days", "backup_cost_cents", "promised_date", "paid_cost_cents",
 			}),
 			clause.Assignment{Column: clause.Column{Name: "updated_at"}, Value: gorm.Expr("now()")},
 		),
