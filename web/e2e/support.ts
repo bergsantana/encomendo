@@ -68,3 +68,78 @@ export async function latestEmail(request: APIRequestContext, to: string, count 
     .toBe(true)
   return text
 }
+
+/** Api is a signed-in session for seeding data through the API where the UI path is long and covered elsewhere. */
+export interface Api {
+  send(method: 'GET' | 'POST' | 'PUT', path: string, data?: unknown): Promise<unknown>
+}
+
+/**
+ * apiSession logs `email` in through the API and returns a caller for it.
+ * Node cannot resolve *.localhost the way Chromium does, so it calls the
+ * stack by address and keeps the admin Host header nginx routes on. A new
+ * login has the account's only store selected, so call it after the store
+ * exists.
+ */
+export async function apiSession(request: APIRequestContext, email: string): Promise<Api> {
+  const admin = new URL(process.env.E2E_BASE_URL ?? '')
+  const base = `http://127.0.0.1:${admin.port}`
+  const json = { 'content-type': 'application/json', host: admin.host }
+  const login = await request.post(`${base}/auth/login`, { headers: json, data: { email, password } })
+  expect(login.status(), 'API login').toBe(200)
+  const headers = { ...json, authorization: `Bearer ${((await login.json()) as { accessToken: string }).accessToken}` }
+  return {
+    async send(method, path, data) {
+      const response = await request.fetch(`${base}${path}`, { method, headers, data })
+      expect(response.status(), `${method} ${path}: ${await response.text()}`).toBeLessThan(300)
+      return response.status() === 204 ? null : response.json()
+    },
+  }
+}
+
+/** Catalog names what seedCatalog made: two items and a kit holding both. */
+export interface Catalog {
+  kit: string
+  first: string
+  second: string
+}
+
+/**
+ * seedCatalog makes a supplier, two made-to-order items with a cost each and
+ * a kit holding both, through the API. Catálogo has its own UI flow
+ * (catalogo.spec.ts); the order flows only need something to sell.
+ */
+export async function seedCatalog(api: Api): Promise<Catalog> {
+  const supplier = (await api.send('POST', '/api/v1/admin/suppliers', { name: 'Escapes do Sul', whatsappPhone: '5511987654321' })) as { id: string }
+  const item = async (name: string, priceCents: number, leadDays: number, costCents: number): Promise<string> => {
+    const created = (await api.send('POST', '/api/v1/admin/catalog/items', {
+      name,
+      description: '',
+      categoryId: null,
+      sourcingMode: 'to_order',
+      priceCents,
+      mainSupplier: { supplierId: supplier.id, leadDays, costCents },
+      attributeValueIds: [],
+      options: [],
+      published: true,
+    })) as { id: string }
+    return created.id
+  }
+  const first = await item('Escapamento esportivo', 45000, 5, 28000)
+  const second = await item('Filtro de ar', 12000, 3, 7000)
+  await api.send('POST', '/api/v1/admin/catalog/kits', {
+    name: 'Kit esportivo',
+    description: '',
+    priceCents: 52000,
+    swapDiscount: 'keep',
+    assemblyDays: null,
+    safetyMarginDays: null,
+    items: [
+      { itemId: first, quantity: 1, swappable: false, alternativeItemIds: [] },
+      { itemId: second, quantity: 1, swappable: false, alternativeItemIds: [] },
+    ],
+    attributeValueIds: [],
+    published: true,
+  })
+  return { kit: 'Kit esportivo', first: 'Escapamento esportivo', second: 'Filtro de ar' }
+}
