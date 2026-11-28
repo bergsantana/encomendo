@@ -83,11 +83,17 @@ async function onKeydown(event: KeyboardEvent, index: number): Promise<void> {
   font-weight: 600;
 }
 
-/* Phone: tall tabs that share the row, so a thumb never misses. */
+/*
+ * Phone: tall tabs that share the row, so a thumb never misses. Compras has
+ * four tabs, whose words and 14 px sides do not fit 390 px: they may shrink
+ * (min-width 0), with slimmer sides, instead of pushing the page wider.
+ */
 @media (max-width: 640px) {
   .tabs [role='tab'] {
     flex: 1;
+    min-width: 0;
     min-height: var(--enc-control-height);
+    padding-inline: 4px;
   }
 }
 </style>
