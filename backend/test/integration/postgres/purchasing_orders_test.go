@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/bergsantana/encomendo/backend/internal/adapter/postgres"
-	"github.com/bergsantana/encomendo/backend/internal/adapter/system"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/purchasing"
@@ -130,7 +129,7 @@ func TestOrders_PurchasingColumnsRoundTrip(t *testing.T) {
 // repository, in the same scope the order repository writes in.
 func (e *orderEnv) sendItem(o *order.Order) (*purchasing.SupplierOrder, *postgres.Purchasing) {
 	e.t.Helper()
-	repo := postgres.NewPurchasing(system.NewIDs())
+	repo := postgres.NewPurchasing()
 	supplier := e.seed.Supplier(e.tenant)
 	it := o.Items()[0]
 	var so *purchasing.SupplierOrder
@@ -279,7 +278,7 @@ func TestOrders_StorePageScopeCannotUpdateAnOrderWithPurchaseLines(t *testing.T)
 // as the use case does it. after runs last, inside the transaction.
 func (e *orderEnv) send(o *order.Order, stale *order.Order, after func() error) (shared.SupplierOrderID, error) {
 	e.t.Helper()
-	repo := postgres.NewPurchasing(system.NewIDs())
+	repo := postgres.NewPurchasing()
 	supplier := e.seed.Supplier(e.tenant)
 	it := o.Items()[0]
 	id := shared.SupplierOrderID(pgtest.NewID())
@@ -387,7 +386,7 @@ func (e *orderEnv) assertNothingSent(o *order.Order) {
 		e.t.Errorf("history entries with a pedido de compra after a failed send = %d, want 0", n)
 	}
 	// The number goes back with the rollback.
-	repo := postgres.NewPurchasing(system.NewIDs())
+	repo := postgres.NewPurchasing()
 	e.must(e.staff(), func(ctx context.Context) error {
 		if n, err := repo.PeekNumber(ctx, e.tenant); err != nil || n != 1 {
 			e.t.Errorf("next supplier order number after a failed send = %v, %v, want 1", n, err)

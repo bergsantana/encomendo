@@ -164,8 +164,8 @@ func oneOpenLinePerItem(t *testing.T, h RepositoryHarness) {
 		second = h.newOrder(t, w.s, w.supplier, n, epoch.Add(time.Hour), b)
 		return h.Repo.InsertSupplierOrder(ctx, second, sentText, sentURL)
 	})
-	if !errors.Is(err, shared.ErrConflict) {
-		t.Fatalf("a second open line for an item: err = %v, want shared.ErrConflict", err)
+	if !errors.Is(err, apppurchasing.ErrOpenLine) || !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("a second open line for an item: err = %v, want apppurchasing.ErrOpenLine (a conflict)", err)
 	}
 	h.in(t, w.s, func(ctx context.Context) error {
 		if _, err := h.Repo.SupplierOrder(ctx, w.s.Tenant, second.ID()); !errors.Is(err, purchasing.ErrSupplierOrderNotFound) {

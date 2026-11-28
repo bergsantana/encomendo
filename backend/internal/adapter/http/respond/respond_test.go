@@ -125,6 +125,9 @@ func TestError_MapsDomainErrors(t *testing.T) {
 		{"photo limit", catalog.ErrPhotoLimit, 409, CodePhotoLimit},
 		{"photo invalid", catalog.ErrPhotoInvalid, 400, CodePhotoInvalid},
 		{"photo not uploaded", fmt.Errorf("confirm: %w", catalog.ErrPhotoNotUploaded), 400, CodePhotoNotUploaded},
+		// A receipt photo key a first receipt already stored matches both;
+		// the conflict wins, so a replay race is a 409, not a photo error.
+		{"photo key already stored", fmt.Errorf("insert receipt photos: %w: %w", catalog.ErrPhotoNotUploaded, shared.ErrConflict), 409, CodeConflict},
 		{"cost from a role that cannot", appcatalog.ErrCostForbidden, 403, CodeForbidden},
 		{"publish archived", catalog.ErrPublishArchived, 400, CodeInvalid},
 		{"swap price", catalog.ErrSwapPriceNotPositive, 409, CodeConflict},

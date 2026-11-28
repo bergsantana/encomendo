@@ -315,7 +315,7 @@ type purchasingContexts struct {
 // their own keys (ADR 0028).
 func buildPurchasing(base basePorts, c purchasingContexts) (*apppurchasing.Service, error) {
 	return apppurchasing.NewService(apppurchasing.Deps{
-		Repo: postgres.NewPurchasing(base.ids), Orders: inproc.NewPurchasingOrders(c.orders),
+		Repo: postgres.NewPurchasing(), Orders: inproc.NewPurchasingOrders(c.orders),
 		Suppliers: inproc.NewPurchasingSuppliers(c.suppliers), Store: inproc.NewPurchasingStore(c.tenancy, base.clock),
 		Links: notify.NewWhatsAppLinks(), Photos: storage.NewReceiptStore(c.photos),
 		Idempotency: postgres.NewIdempotency(), Tx: base.tx, Clock: base.clock, IDs: base.ids,

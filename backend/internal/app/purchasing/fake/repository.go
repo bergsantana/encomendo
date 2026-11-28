@@ -233,7 +233,7 @@ func (r *Repository) checkNew(rec purchasing.Record) error {
 					return fmt.Errorf("fake: line %s taken: %w", l.ID, shared.ErrConflict)
 				}
 				if k.tenant == rec.Tenant && have.Status.Open() && !l.Item.OrderItem.IsZero() && have.Item.OrderItem == l.Item.OrderItem {
-					return fmt.Errorf("fake: item %s has an open line: %w", l.Item.OrderItem, shared.ErrConflict)
+					return fmt.Errorf("fake: item %s: %w", l.Item.OrderItem, apppurchasing.ErrOpenLine)
 				}
 			}
 		}

@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -578,4 +579,19 @@ func TestSupplierItems_CostOwnerOnly(t *testing.T) {
 			t.Error("a call with no principal succeeded")
 		}
 	})
+}
+
+// TestSupplierItems_ReadsEveryPage: a store with more items than one page
+// holds still lists all of a supplier's items (the loop over the cursor).
+func TestSupplierItems_ReadsEveryPage(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	const n = shared.MaxPageLimit + 5
+	for i := range n {
+		h.createItem(t, h.costedInput(fmt.Sprintf("Banco %03d", i)))
+	}
+	got, err := h.svc.SupplierItems(h.owner(t), h.couros)
+	if err != nil || len(got) != n {
+		t.Fatalf("items = %d, %v; want all %d across pages", len(got), err, n)
+	}
 }

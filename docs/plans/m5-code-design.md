@@ -822,3 +822,13 @@ Layers as `web/CLAUDE.md` says: `views/*.vue` → `store.ts` (Pinia) → `packag
 - `StaffNames` joins `memberships` on the scope's tenant, as the port says after the 5.6–5.8 review.
 - `pruneParts`: `app/order` never keeps an item id under a new line id (`keepIDs` takes both from the same old line), so no migration was needed. `order.Change` would accept such a move and lose the item's purchase line and sourcing; `TestOrders_ChangeKeepsTheItemsPurchaseLine` fails if one is ever introduced.
 - The contract suite is `test/contract/purchasingports/repository.go` and `repo_*.go` (not `purchasing_repository.go`), run by `repository_fake_test.go` and `test/integration/postgres/purchasing_contract_test.go`. The fake gained `KnowItem`, so it refuses a line of an item of another store as the composite foreign key does.
+
+## 7. Hand-offs
+
+- **M6/M7, the client's timeline.**
+  - The order history now holds `promised_date` entries, whose `ref` is the C-number, and receipt notes in `reason`.
+  - `order_status_history` is staff-read only today, and `TrackingOrder` carries no history.
+  - Any client projection of the history must leave these kinds out (security review of PR E).
+- **Later, Fornecedores.** `listSupplierItems` reads the store's whole catalog a page at a time and filters in memory. An `Items` port query by supplier replaces it if catalogs grow.
+- **Later, `schedule.Recalculate`.** It is not wired: it needs an inproc `Orders` (`ByID`, `Update`) over the order repository, with a contract for the version conflict.
+

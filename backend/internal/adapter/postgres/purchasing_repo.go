@@ -13,7 +13,6 @@ import (
 
 	"github.com/bergsantana/encomendo/backend/internal/adapter/postgres/models"
 	apppurchasing "github.com/bergsantana/encomendo/backend/internal/app/purchasing"
-	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/purchasing"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
@@ -47,16 +46,14 @@ const (
 // from the caller, so a line sent by an admin keeps the owner's cost. The
 // repository returns them with the line; which role may see them is the
 // use case's (identity.SeesCosts).
-type Purchasing struct {
-	ids appshared.IDGenerator
-}
+type Purchasing struct{}
 
 var _ apppurchasing.Repository = (*Purchasing)(nil)
 
-// NewPurchasing returns the purchasing repository. ids is kept for the
-// repository's own rows; a line, a supplier order and a receipt arrive with
-// the ids their use case gave them.
-func NewPurchasing(ids appshared.IDGenerator) *Purchasing { return &Purchasing{ids: ids} }
+// NewPurchasing returns the purchasing repository. It makes no ids: a
+// line, a supplier order and a receipt arrive with the ids their use case
+// gave them.
+func NewPurchasing() *Purchasing { return &Purchasing{} }
 
 // begin returns the transaction's connection, refusing a scope that has no
 // staff user.
@@ -72,7 +69,7 @@ func begin(ctx context.Context) (*gorm.DB, error) {
 }
 
 // wrapPurchasing maps the unique violations purchasing gives a name to:
-// a second open line for an item is shared.ErrConflict, a line in two
+// a second open line for an item is apppurchasing.ErrOpenLine, a line in two
 // receipts is purchasing.ErrLineClosed, and a photo key already stored
 // matches catalog.ErrPhotoNotUploaded as well as shared.ErrConflict (the
 // upload was promoted by the first receipt and is gone). Any other error is
@@ -82,7 +79,7 @@ func wrapPurchasing(doing string, err error) error {
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		switch pgErr.ConstraintName {
 		case openItemIndex:
-			return fmt.Errorf("%s: an item has an open line: %w", doing, mapError(err))
+			return fmt.Errorf("%s: %w (%w)", doing, apppurchasing.ErrOpenLine, err)
 		case receiptLineKey:
 			return fmt.Errorf("%s: %w: %w", doing, purchasing.ErrLineClosed, err)
 		case receiptPhotoKey, receiptPhotoPK:
@@ -536,11 +533,11 @@ func (*Purchasing) InsertReceipt(ctx context.Context, r *purchasing.Receipt) err
 	if err := db.Create(&rows.Receipt).Error; err != nil {
 		return wrapPurchasing("insert receipt", err)
 	}
-	// One row at a time keeps the entries' order: created_at is set, but a
-	// failure should name the line a receipt closed twice.
+	// One row at a time, so a failure names the line a receipt would close
+	// twice (the entries' order is in created_at, set by the model).
 	for i := range rows.Lines {
 		if err := db.Create(&rows.Lines[i]).Error; err != nil {
-			return wrapPurchasing("insert receipt line", err)
+			return wrapPurchasing("insert receipt line "+rows.Lines[i].LineID, err)
 		}
 	}
 	if len(rows.Photos) == 0 {

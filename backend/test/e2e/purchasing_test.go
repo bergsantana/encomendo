@@ -16,11 +16,6 @@ import (
 // comprar", the send, the promised date, a receipt with one defect that
 // brings the item back as "Reposição", a second send and a receipt that is
 // ok.
-//
-// UNVERIFIED when written: it needs the Postgres purchasing repository of
-// step 5.9, which was built on another branch. It was vetted with
-// `go vet -tags e2e` only; run it with make stack-up and the e2e job once
-// 5.9 is merged.
 func TestPurchasing_FromDepositToAssembling(t *testing.T) {
 	t.Parallel()
 

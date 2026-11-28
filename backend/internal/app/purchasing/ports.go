@@ -265,9 +265,10 @@ type Repository interface {
 	PeekNumber(ctx context.Context, tenant shared.TenantID) (purchasing.Number, error)
 	// InsertSupplierOrder stores a new supplier order (version 1) with its
 	// lines, in the order given, and the message as it was sent: text and
-	// the wa.me url. It returns shared.ErrConflict, storing nothing, when
-	// any line's order item already has an open (sent or in transit) line,
-	// when the id or the number is taken, or when a line id is.
+	// the wa.me url. It returns ErrOpenLine (a shared.ErrConflict), storing
+	// nothing, when any line's order item already has an open (sent or in
+	// transit) line, and another shared.ErrConflict when the id, the number
+	// or a line id is taken.
 	InsertSupplierOrder(ctx context.Context, o *purchasing.SupplierOrder, text, url string) error
 	// UpdateSupplierOrder stores what changes on a supplier order: its
 	// promised date, in-transit and undone marks, and for each line its
