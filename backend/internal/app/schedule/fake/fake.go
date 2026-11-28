@@ -35,8 +35,9 @@ type key struct {
 // refuses calls outside a fake transaction and shows a store only its own
 // orders.
 type Orders struct {
-	mu   sync.Mutex
-	rows map[key]*order.Order
+	mu    sync.Mutex
+	rows  map[key]*order.Order
+	saves int
 }
 
 var _ appschedule.Orders = (*Orders)(nil)
@@ -66,4 +67,29 @@ func (r *Orders) ByID(ctx context.Context, tenant shared.TenantID, id shared.Ord
 		return nil, fmt.Errorf("fake: order %s: %w", id, shared.ErrNotFound)
 	}
 	return o, nil
+}
+
+// Update implements appschedule.Orders. The order is shared by pointer, so
+// the fake only checks the transaction and the store, and counts the save.
+func (r *Orders) Update(ctx context.Context, o *order.Order) error {
+	if !sharedfake.InTx(ctx) {
+		return appshared.ErrNoTransaction
+	}
+	if appshared.ScopeFrom(ctx).TenantID != o.TenantID() {
+		return errors.New("fake: new row violates row-level security policy")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.rows[key{o.TenantID(), o.ID()}]; !ok {
+		return fmt.Errorf("fake: order %s: %w", o.ID(), shared.ErrNotFound)
+	}
+	r.saves++
+	return nil
+}
+
+// Saves returns how many times Update stored an order.
+func (r *Orders) Saves() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.saves
 }
