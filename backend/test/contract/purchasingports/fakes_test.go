@@ -74,8 +74,10 @@ func TestInprocOrderItems_Contract(t *testing.T) {
 			LeadDays: 15, Sourcing: order.Sourcing{Supplier: shared.SupplierID(ids.NewID()), SupplierName: "Couros Paulista", Cost: &cost}})
 		customer := apporder.CustomerFacts{ID: shared.CustomerID(ids.NewID()), Name: "João Pereira", Phone: "5592981234567"}
 		customers.Add(customer)
-		owner := testkit.Staff(t, tenant, shared.RoleOwner)
-		ctx := authz.WithPrincipal(context.Background(), owner)
+		as := func(t *testing.T, role shared.Role) context.Context {
+			return authz.WithPrincipal(context.Background(), testkit.Staff(t, tenant, role))
+		}
+		ctx := as(t, shared.RoleOwner)
 		key := 0
 		create := func(t *testing.T, pay bool) (shared.OrderID, shared.OrderItemID) {
 			key++
@@ -95,7 +97,7 @@ func TestInprocOrderItems_Contract(t *testing.T) {
 			return c.Order.ID, c.Order.Items[0].ID
 		}
 		return OrderItemsHarness{
-			Items: inproc.NewPurchasingOrders(svc), Ctx: ctx, Today: testkit.DateOf(start),
+			Items: inproc.NewPurchasingOrders(svc), Ctx: ctx, Today: testkit.DateOf(start), As: as,
 			Released: func(t *testing.T) (shared.OrderID, shared.OrderItemID) { return create(t, true) },
 			Draft:    func(t *testing.T) (shared.OrderID, shared.OrderItemID) { return create(t, false) },
 			Cancel: func(t *testing.T, id shared.OrderID) {

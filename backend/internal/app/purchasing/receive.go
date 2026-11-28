@@ -35,6 +35,9 @@ type receiptOutcome struct {
 // receipt it first made, whatever state the lines are in now, and touches no
 // storage. Photos are checked against storage before the transaction opens,
 // so storage never holds one, and promoted last inside it (ADR 0028).
+// CompletedOrders and BackToBuy are read after the commit, so a replay
+// shows them as the orders stand now, and a failure of that read answers an
+// error although the receipt is saved (a retry replays it).
 //
 // It returns ErrIdempotencyKeyRequired, appshared.ErrIdempotencyKeyReused,
 // ErrItemNotToBuy for a counter item no longer in "A comprar", the domain's
