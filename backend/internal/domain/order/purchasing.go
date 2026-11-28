@@ -103,8 +103,9 @@ func (o *Order) RecordPaidCost(item shared.OrderItemID, cost shared.Money) error
 	if !isBought(it.snapshot.SourcingMode) {
 		return ErrInvalidItemMove
 	}
-	if cost.Currency() != o.terms.Freight.Currency() {
-		return fmt.Errorf("paid cost of item %s in %s, order in %s: %w", item, cost.Currency(), o.terms.Freight.Currency(), shared.ErrInvalid)
+	// An order's amounts share one currency; the freight always has it.
+	if currency := o.terms.Freight.Currency(); !validAmount(cost, currency) {
+		return fmt.Errorf("paid cost of item %s (%s, order in %s): %w", item, cost, currency, shared.ErrInvalid)
 	}
 	c := cost
 	it.sourcing.PaidCost = &c

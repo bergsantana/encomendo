@@ -15,29 +15,43 @@ const (
 	maxReceiptEntries = 200
 	maxInvoicePhotos  = 4
 	maxEntryPhotos    = 2
+	// maxReceiptPhotos caps the storage calls one receipt makes, so a
+	// request cannot hold its transaction over hundreds of them.
+	maxReceiptPhotos = 20
 )
 
-// CounterLine is a line for an item received while still in "A comprar"
-// (bought at the counter): received or defective at once, on day today,
-// with no supplier order. It returns a ValidationError on "item.name",
-// "item.quantity", "cost", "check" or "note" for a bad value; a defect
-// needs a note of 1 to 500 characters.
-func CounterLine(id shared.PurchaseLineID, supplier shared.SupplierID, item Item, cost *shared.Money, check Check, note string, today shared.CivilDate) (Line, error) {
-	if supplier.IsZero() {
-		return Line{}, fmt.Errorf("counter line %v: supplier: %w", id, errMissing)
+// CounterSpec is an item received while still in "A comprar" (bought at
+// the counter), with its check. It has no cost: the repository copies it,
+// as for a sent line.
+type CounterSpec struct {
+	ID       shared.PurchaseLineID
+	Supplier shared.SupplierID
+	Item     Item
+	Check    Check
+	Note     string
+	Today    shared.CivilDate
+}
+
+// CounterLine is a line for an item received while still in "A comprar":
+// received or defective at once, on s.Today, with no supplier order. It
+// returns a ValidationError on "item.name", "item.quantity", "check" or
+// "note" for a bad value; a defect needs a note of 1 to 500 characters.
+func CounterLine(s CounterSpec) (Line, error) {
+	if s.Supplier.IsZero() {
+		return Line{}, fmt.Errorf("counter line %v: supplier: %w", s.ID, errMissing)
 	}
-	l, err := newLine(LineSpec{ID: id, Item: item, Cost: cost}, supplier, shared.SupplierOrderID{}, LineSent, "item")
+	l, err := newLine(LineSpec{ID: s.ID, Item: s.Item}, s.Supplier, shared.SupplierOrderID{}, LineSent, "item")
 	if err != nil {
 		return Line{}, err
 	}
-	if today.IsZero() {
-		return Line{}, fmt.Errorf("counter line %v: today: %w", id, errMissing)
+	if s.Today.IsZero() {
+		return Line{}, fmt.Errorf("counter line %v: today: %w", s.ID, errMissing)
 	}
-	kept, err := checkResult(check, note, "")
+	kept, err := checkResult(s.Check, s.Note, "")
 	if err != nil {
 		return Line{}, err
 	}
-	l.receive(check, kept, today)
+	l.receive(s.Check, kept, s.Today)
 	return l, nil
 }
 
@@ -82,8 +96,8 @@ type Receipt struct {
 
 // NewReceipt validates and returns a receipt. It returns ErrEmptyReceipt
 // for no entry, ErrLineTwice for a line checked twice, ErrPhotoLimit for
-// more than 4 invoice photos (field "invoicePhotoKeys") or 2 on an entry
-// ("entries[i].photoKeys"), ErrPhotoKey for a photo that is not under this
+// more than 4 invoice photos (field "invoicePhotoKeys"), 2 on an entry
+// ("entries[i].photoKeys") or 20 in all ("invoicePhotoKeys"), ErrPhotoKey for a photo that is not under this
 // store's receiving folder, and a ValidationError for a missing or too
 // long defect note ("entries[i].note"), an unknown check
 // ("entries[i].check"), more than 200 entries or a photo that is not a
@@ -99,6 +113,9 @@ func NewReceipt(spec ReceiptSpec) (*Receipt, error) {
 	}
 	if len(spec.Invoice) > maxInvoicePhotos {
 		return nil, refuse(ErrPhotoLimit, "invoicePhotoKeys", msgInvoicePhotos)
+	}
+	if photoCount(entries)+len(spec.Invoice) > maxReceiptPhotos {
+		return nil, refuse(ErrPhotoLimit, "invoicePhotoKeys", msgReceiptPhotos)
 	}
 	for i, p := range spec.Invoice {
 		if err := checkPhoto(spec.Tenant, p, seen, fmt.Sprintf("invoicePhotoKeys[%d]", i)); err != nil {
@@ -215,3 +232,12 @@ func (r *Receipt) Entries() []ReceiptEntry {
 
 // Invoice returns the invoice photos. The result is a copy.
 func (r *Receipt) Invoice() []Photo { return slices.Clone(r.invoice) }
+
+// photoCount returns the photos of entries.
+func photoCount(entries []ReceiptEntry) int {
+	n := 0
+	for _, e := range entries {
+		n += len(e.Photos)
+	}
+	return n
+}

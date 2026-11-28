@@ -51,17 +51,18 @@ type SendSpec struct {
 	Number                      Number
 	Supplier                    shared.SupplierID
 	SupplierName, SupplierPhone string
-	Lines                       []LineSpec // one per picked item, each with its id and cost
+	Lines                       []LineSpec // one per picked item, each with its id
 	By                          shared.Principal
 	Now                         time.Time
 }
 
-// LineSpec is one picked item with the id its line will have and its unit
-// cost at order time (nil when unknown).
+// LineSpec is one picked item with the id its line will have. It has no
+// cost: the repository copies the order-time cost from the order's
+// staff-only sourcing in SQL, so a line sent by an admin, who never sees
+// costs, still keeps the owner's (security review of 5.1).
 type LineSpec struct {
 	ID   shared.PurchaseLineID
 	Item Item
-	Cost *shared.Money
 }
 
 // ItemDate is an order item with the day its supplier promised it.
@@ -80,14 +81,14 @@ type ItemPrice struct {
 
 // Send makes a supplier order with every line sent. It returns
 // ErrEmptyPick for no lines, ErrItemPickedTwice for one order item twice,
-// and a ValidationError on "lines[i].name", "lines[i].quantity" or
-// "lines[i].cost" for a bad name, quantity or cost.
+// and a ValidationError on "lines[i].name" or "lines[i].quantity" for a
+// bad name or quantity, and on "supplierName" for an empty one.
 func Send(s SendSpec) (*SupplierOrder, error) {
 	if s.Tenant.IsZero() || s.ID.IsZero() || s.Supplier.IsZero() || s.By.UserID().IsZero() || s.Now.IsZero() || !s.Number.Valid() {
 		return nil, fmt.Errorf("send supplier order: %w", errMissing)
 	}
 	if strings.TrimSpace(s.SupplierName) == "" {
-		return nil, fieldError("supplierName", msgItemName)
+		return nil, fieldError("supplierName", msgSupplierName)
 	}
 	lines, err := newLines(s)
 	if err != nil {
@@ -131,14 +132,9 @@ func newLine(ls LineSpec, supplier shared.SupplierID, order shared.SupplierOrder
 	if err := ls.Item.validate(field, true); err != nil {
 		return Line{}, err
 	}
-	if ls.Cost != nil {
-		if err := validateMoney(*ls.Cost, field+".cost"); err != nil {
-			return Line{}, err
-		}
-	}
 	return Line{
 		id: ls.ID, supplierOrder: order, supplier: supplier, item: ls.Item.clone(),
-		status: status, cost: copyMoney(ls.Cost),
+		status: status,
 	}, nil
 }
 
@@ -336,6 +332,9 @@ func (o *SupplierOrder) MarkInTransit(now time.Time) ([]shared.OrderItemID, erro
 func (o *SupplierOrder) RecordPromisedDate(date shared.CivilDate, overrides map[shared.PurchaseLineID]shared.CivilDate, today shared.CivilDate) ([]ItemDate, error) {
 	if today.IsZero() {
 		return nil, fmt.Errorf("record promised date: today: %w", errMissing)
+	}
+	if o.undone() {
+		return nil, ErrUndone
 	}
 	if err := o.checkDates(date, overrides, today); err != nil {
 		return nil, err

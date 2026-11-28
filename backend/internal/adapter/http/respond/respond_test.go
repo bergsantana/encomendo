@@ -135,6 +135,7 @@ func TestError_MapsDomainErrors(t *testing.T) {
 		{"payment exceeds due", order.ErrPaymentExceedsDue, 400, CodePaymentExceedsDue},
 		{"invalid item move", order.ErrInvalidItemMove, 409, CodeInvalidItemMove},
 		{"no backup supplier", order.ErrNoBackupSupplier, 409, CodeNoBackupSupplier},
+		{"item moved by purchasing", order.ErrItemMovedByPurchasing, 409, CodeItemMovedByPurchasing},
 		{"phone taken", appcustomer.ErrPhoneTaken, 409, CodePhoneTaken},
 		{"workflow not found", tenancy.ErrWorkflowNotFound, 404, CodeWorkflowNotFound},
 		{"key required", apporder.ErrIdempotencyKeyRequired, 400, CodeIdempotencyKeyMissing},

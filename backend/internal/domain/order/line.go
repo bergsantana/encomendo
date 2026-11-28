@@ -178,6 +178,9 @@ func checkSourcing(s Sourcing, currency string) error {
 	if s.Cost != nil && !validAmount(*s.Cost, currency) {
 		return fmt.Errorf("order: item cost out of range: %w", shared.ErrInvalid)
 	}
+	if s.PaidCost != nil && !validAmount(*s.PaidCost, currency) {
+		return fmt.Errorf("order: item paid cost out of range: %w", shared.ErrInvalid)
+	}
 	if b := s.Backup; b != nil {
 		if b.Supplier.IsZero() || b.LeadDays < 0 || b.LeadDays > maxLeadDays || (b.Cost != nil && !validAmount(*b.Cost, currency)) {
 			return fmt.Errorf("order: backup supplier out of range: %w", shared.ErrInvalid)

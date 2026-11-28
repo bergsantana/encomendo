@@ -31,14 +31,6 @@ func TestSend_RefusesEmptyAndTwice(t *testing.T) {
 		{"quantity 0", func(s *purchasing.SendSpec) { s.Lines[0].Item.Quantity = 0 }, shared.ErrInvalid, "lines[0].quantity"},
 		{"quantity 100", func(s *purchasing.SendSpec) { s.Lines[0].Item.Quantity = 100 }, shared.ErrInvalid, "lines[0].quantity"},
 		{"blank name", func(s *purchasing.SendSpec) { s.Lines[0].Item.Name = "  " }, shared.ErrInvalid, "lines[0].name"},
-		{"negative cost", func(s *purchasing.SendSpec) {
-			c := brl(t, -1)
-			s.Lines[0].Cost = &c
-		}, shared.ErrInvalid, "lines[0].cost"},
-		{"huge cost", func(s *purchasing.SendSpec) {
-			c := brl(t, 100_000_000_001)
-			s.Lines[0].Cost = &c
-		}, shared.ErrInvalid, "lines[0].cost"},
 		{"blank supplier name", func(s *purchasing.SendSpec) { s.SupplierName = "" }, shared.ErrInvalid, "supplierName"},
 	}
 	for _, tc := range tests {
@@ -85,9 +77,7 @@ func TestSend_MissingArgumentsAreBugs(t *testing.T) {
 
 func TestSend_BuildsSentLines(t *testing.T) {
 	t.Parallel()
-	cost := brl(t, 12_500)
 	f := sendOf(t, item("Banco", 2, choice("Cor", "Preto")), item("Pedal", 1))
-	f.spec.Lines[0].Cost = &cost
 	o, err := purchasing.Send(f.spec)
 	if err != nil {
 		t.Fatal(err)
@@ -106,8 +96,10 @@ func TestSend_BuildsSentLines(t *testing.T) {
 			t.Errorf("line %d = %+v", i, l.Record())
 		}
 	}
-	if c := lines[0].Cost(); c == nil || *c != cost || lines[1].Cost() != nil {
-		t.Errorf("costs = %v, %v", lines[0].Cost(), lines[1].Cost())
+	// A sent line has no cost of its own: the repository copies it from the
+	// order's sourcing, whoever sends (security review of 5.1).
+	if lines[0].Cost() != nil || lines[1].Cost() != nil {
+		t.Errorf("costs = %v, %v, want none from the domain", lines[0].Cost(), lines[1].Cost())
 	}
 	// Getters hand out copies: changing them leaves the order alone.
 	got := lines[0].Item()
@@ -537,5 +529,19 @@ func TestRestore_RoundTripAndBrokenRows(t *testing.T) {
 		if _, err := purchasing.Restore(r); !errors.Is(err, purchasing.ErrInvalidRecord) || errors.Is(err, shared.ErrInvalid) {
 			t.Errorf("%s: Restore = %v, want ErrInvalidRecord and not a 400", name, err)
 		}
+	}
+}
+
+func TestRecordPromisedDate_RefusesUndone(t *testing.T) {
+	t.Parallel()
+	u := sent(t, item("C", 1))
+	if _, err := u.Undo(testkit.Staff(t, u.Tenant(), shared.RoleOwner), day1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.RecordPromisedDate(date(t, "2026-12-20"), nil, date(t, "2026-12-02")); !errors.Is(err, purchasing.ErrUndone) {
+		t.Errorf("RecordPromisedDate on undone = %v, want ErrUndone", err)
+	}
+	if !u.Promised().IsZero() {
+		t.Error("an undone order took a promised date")
 	}
 }

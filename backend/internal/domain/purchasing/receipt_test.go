@@ -157,17 +157,16 @@ func TestCounterLine(t *testing.T) {
 	t.Parallel()
 	today := date(t, "2026-12-05")
 	supplier := shared.SupplierID(testkit.NextID())
-	cost := brl(t, 4_000)
 	it := item("Retrovisor", 2)
 
 	t.Run("received at once with no supplier order", func(t *testing.T) {
 		t.Parallel()
-		l, err := purchasing.CounterLine(lineID(), supplier, it, &cost, purchasing.CheckOK, "", today)
+		l, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: supplier, Item: it, Check: purchasing.CheckOK, Note: "", Today: today})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if l.Status() != purchasing.LineReceived || !l.SupplierOrder().IsZero() || l.Supplier() != supplier ||
-			l.ReceivedOn() != today || l.Item().OrderItem != it.OrderItem || l.Cost() == nil || *l.Cost() != cost || l.Status().Open() {
+			l.ReceivedOn() != today || l.Item().OrderItem != it.OrderItem || l.Cost() != nil || l.Status().Open() {
 			t.Errorf("line = %+v", l.Record())
 		}
 		if _, err := purchasing.RestoreLine(l.Record()); err != nil {
@@ -176,14 +175,14 @@ func TestCounterLine(t *testing.T) {
 	})
 	t.Run("defective keeps the note", func(t *testing.T) {
 		t.Parallel()
-		l, err := purchasing.CounterLine(lineID(), supplier, it, nil, purchasing.CheckDefective, " quebrado ", today)
-		if err != nil || l.Status() != purchasing.LineDefective || l.CheckNote() != "quebrado" || l.Cost() != nil {
+		l, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: supplier, Item: it, Check: purchasing.CheckDefective, Note: " quebrado ", Today: today})
+		if err != nil || l.Status() != purchasing.LineDefective || l.CheckNote() != "quebrado" {
 			t.Errorf("CounterLine = %+v, %v", l.Record(), err)
 		}
 	})
 	t.Run("a defect needs a note", func(t *testing.T) {
 		t.Parallel()
-		if _, err := purchasing.CounterLine(lineID(), supplier, it, nil, purchasing.CheckDefective, "", today); !errors.Is(err, shared.ErrInvalid) || fieldOf(t, err) != "note" {
+		if _, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: supplier, Item: it, Check: purchasing.CheckDefective, Note: "", Today: today}); !errors.Is(err, shared.ErrInvalid) || fieldOf(t, err) != "note" {
 			t.Errorf("error = %v, want invalid on note", err)
 		}
 	})
@@ -191,30 +190,26 @@ func TestCounterLine(t *testing.T) {
 		t.Parallel()
 		bad := it
 		bad.Quantity = 100
-		if _, err := purchasing.CounterLine(lineID(), supplier, bad, nil, purchasing.CheckOK, "", today); !errors.Is(err, shared.ErrInvalid) || fieldOf(t, err) != "item.quantity" {
+		if _, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: supplier, Item: bad, Check: purchasing.CheckOK, Note: "", Today: today}); !errors.Is(err, shared.ErrInvalid) || fieldOf(t, err) != "item.quantity" {
 			t.Errorf("quantity: %v", err)
 		}
-		if _, err := purchasing.CounterLine(lineID(), supplier, it, nil, "meh", "", today); !errors.Is(err, shared.ErrInvalid) || fieldOf(t, err) != "check" {
+		if _, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: supplier, Item: it, Check: "meh", Note: "", Today: today}); !errors.Is(err, shared.ErrInvalid) || fieldOf(t, err) != "check" {
 			t.Errorf("check: %v", err)
-		}
-		neg := brl(t, -1)
-		if _, err := purchasing.CounterLine(lineID(), supplier, it, &neg, purchasing.CheckOK, "", today); !errors.Is(err, shared.ErrInvalid) {
-			t.Errorf("cost: %v", err)
 		}
 	})
 	t.Run("caller bugs", func(t *testing.T) {
 		t.Parallel()
 		for name, f := range map[string]func() error{
 			"supplier": func() error {
-				_, err := purchasing.CounterLine(lineID(), shared.SupplierID{}, it, nil, purchasing.CheckOK, "", today)
+				_, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: shared.SupplierID{}, Item: it, Check: purchasing.CheckOK, Note: "", Today: today})
 				return err
 			},
 			"today": func() error {
-				_, err := purchasing.CounterLine(lineID(), supplier, it, nil, purchasing.CheckOK, "", shared.CivilDate{})
+				_, err := purchasing.CounterLine(purchasing.CounterSpec{ID: lineID(), Supplier: supplier, Item: it, Check: purchasing.CheckOK, Note: "", Today: shared.CivilDate{}})
 				return err
 			},
 			"id": func() error {
-				_, err := purchasing.CounterLine(shared.PurchaseLineID{}, supplier, it, nil, purchasing.CheckOK, "", today)
+				_, err := purchasing.CounterLine(purchasing.CounterSpec{ID: shared.PurchaseLineID{}, Supplier: supplier, Item: it, Check: purchasing.CheckOK, Note: "", Today: today})
 				return err
 			},
 		} {
@@ -253,5 +248,25 @@ func TestPhotoKey_RoundTrip(t *testing.T) {
 	}
 	if _, err := purchasing.ParsePhotoKey(shared.TenantID{}, key); !errors.Is(err, purchasing.ErrPhotoKey) {
 		t.Errorf("zero tenant: %v", err)
+	}
+}
+
+func TestNewReceipt_AtMostTwentyPhotosInAll(t *testing.T) {
+	t.Parallel()
+	var entries []purchasing.ReceiptEntry
+	for range 9 {
+		entries = append(entries, entry(purchasing.CheckOK))
+	}
+	s := receiptSpec(t, entries...)
+	for i := range s.Entries {
+		s.Entries[i].Photos = photos(s.Tenant, 2) // 18 item photos
+	}
+	s.Invoice = photos(s.Tenant, 2) // 20 in all
+	if _, err := purchasing.NewReceipt(s); err != nil {
+		t.Fatalf("20 photos: %v", err)
+	}
+	s.Invoice = photos(s.Tenant, 3) // 21
+	if _, err := purchasing.NewReceipt(s); !errors.Is(err, purchasing.ErrPhotoLimit) || fieldOf(t, err) != "invoicePhotoKeys" {
+		t.Errorf("21 photos: err = %v, want ErrPhotoLimit on invoicePhotoKeys", err)
 	}
 }

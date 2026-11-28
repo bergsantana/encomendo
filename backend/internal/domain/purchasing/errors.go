@@ -90,6 +90,8 @@ const (
 	msgPickedTwice   = "Este item já está na lista."
 	msgQuantity      = "Use uma quantidade de 1 a 99."
 	msgItemName      = "Informe o nome do item."
+	msgSupplierName  = "Informe o nome do fornecedor."
+	msgReceiptPhotos = "Use até 20 fotos por recebimento."
 	msgNegative      = "Use um valor de zero ou mais."
 	msgAmountTooHigh = "Use um valor de até R$ 1.000.000.000,00."
 	msgDateFromToday = "Escolha uma data a partir de hoje."

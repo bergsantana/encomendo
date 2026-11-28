@@ -35,6 +35,7 @@ type Orders struct {
 	history  map[orderKey][]order.HistoryEntry
 	messages []apporder.Message
 	fail     error
+	raceNext bool // see ConcurrentWriteBeforeNextUpdate
 
 	workflows apporder.Workflows // set by Link
 	customers apporder.Customers
@@ -46,6 +47,15 @@ var _ apporder.Repository = (*Orders)(nil)
 // NewOrders returns an empty repository.
 func NewOrders() *Orders {
 	return &Orders{rows: map[orderKey]order.Record{}, numbers: map[shared.TenantID]order.Number{}, history: map[orderKey][]order.HistoryEntry{}}
+}
+
+// ConcurrentWriteBeforeNextUpdate makes the next Update find that someone
+// else saved the order first: its stored version moves on just before the
+// check, as a concurrent write would leave it.
+func (r *Orders) ConcurrentWriteBeforeNextUpdate() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.raceNext = true
 }
 
 // Fail makes every later call return err; nil heals it.
@@ -140,6 +150,11 @@ func (r *Orders) Update(ctx context.Context, o *order.Order) error {
 	stored, ok := r.rows[k]
 	if !ok {
 		return apporder.ErrNotFound
+	}
+	if r.raceNext {
+		r.raceNext = false
+		stored.Version++
+		r.rows[k] = stored
 	}
 	if stored.Version != o.Version() {
 		return shared.ErrVersionConflict
