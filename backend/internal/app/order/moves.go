@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
@@ -28,25 +29,22 @@ func (s *Service) RecordPayment(ctx context.Context, in PaymentInput) (View, err
 	}
 	var out View
 	err = s.d.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		f, err := s.d.Store.Facts(ctx)
+		w, err := s.writeCtx(ctx, by)
 		if err != nil {
-			return fmt.Errorf("store facts: %w", err)
+			return err
 		}
-		_, today := s.now(f)
 		o, err := s.load(ctx, by.TenantID(), in.Order)
 		if err != nil {
 			return err
 		}
-		if _, replay, err := s.d.Idempotency.Recall(ctx, in.Idempotency); err != nil || replay {
-			if err == nil {
-				out, err = s.view(ctx, o, by, today)
-			}
+		if replayed, ok, err := s.replayPayment(ctx, o, in, w); err != nil || ok {
+			out = replayed
 			return err
 		}
 		if err := o.CheckVersion(in.Version); err != nil {
 			return err
 		}
-		id, events, err := s.pay(o, in, by, f)
+		id, events, err := s.pay(o, in, w)
 		if err != nil {
 			return err
 		}
@@ -56,14 +54,31 @@ func (s *Service) RecordPayment(ctx context.Context, in PaymentInput) (View, err
 		if err := s.d.Idempotency.Remember(ctx, in.Idempotency, id.String(), idempotencyTTL); err != nil {
 			return fmt.Errorf("remember idempotency key: %w", err)
 		}
-		out, err = s.savedView(ctx, o, by, today)
+		out, err = s.savedView(ctx, o, by, w.today)
 		return err
 	})
 	return out, err
 }
 
-func (s *Service) pay(o *order.Order, in PaymentInput, by shared.Principal, f StoreFacts) (shared.PaymentID, []appshared.Event, error) {
-	now, today := s.now(f)
+// replayPayment answers a key already used: the order, as it is now, when
+// the key recorded one of its payments. A key that made anything else
+// (another order's payment, an order) was reused for another request
+// (security review of 4.10).
+func (s *Service) replayPayment(ctx context.Context, o *order.Order, in PaymentInput, w writeCtx) (View, bool, error) {
+	resource, ok, err := s.d.Idempotency.Recall(ctx, in.Idempotency)
+	if err != nil || !ok {
+		return View{}, false, err
+	}
+	id, err := shared.ParsePaymentID(resource)
+	if err != nil || !slices.ContainsFunc(o.Payments(), func(p order.Payment) bool { return p.ID() == id }) {
+		return View{}, false, appshared.ErrIdempotencyKeyReused
+	}
+	v, err := s.view(ctx, o, w.by, w.today)
+	return v, true, err
+}
+
+func (s *Service) pay(o *order.Order, in PaymentInput, w writeCtx) (shared.PaymentID, []appshared.Event, error) {
+	by, now, today := w.by, w.now, w.today
 	amount, err := shared.NewMoney(in.AmountCents, o.Terms().Freight.Currency())
 	if err != nil {
 		return shared.PaymentID{}, nil, err
@@ -77,7 +92,7 @@ func (s *Service) pay(o *order.Order, in PaymentInput, by shared.Principal, f St
 	}
 	events := []appshared.Event{order.PaymentRecorded{Order: o.ID(), Payment: id, Kind: in.Kind}}
 	if confirmed {
-		release, _ := o.ReleaseDate()
+		release, _ := o.ReleaseDate() // a confirmed deposit releases the order
 		events = append(events, order.DepositConfirmed{Order: o.ID(), ReleaseDate: release})
 	}
 	return id, events, nil
@@ -102,7 +117,7 @@ func (s *Service) Release(ctx context.Context, in VersionInput) (View, error) {
 			if err := o.Release(w.by, w.today, w.now); err != nil {
 				return nil, err
 			}
-			release, _ := o.ReleaseDate()
+			release, _ := o.ReleaseDate() // Release just set it
 			return []appshared.Event{order.Released{Order: o.ID(), ReleaseDate: release}}, nil
 		}})
 }
@@ -170,7 +185,7 @@ func (s *Service) ChangeDeliveryDate(ctx context.Context, in DateInput) (Message
 			if err != nil {
 				return nil, err
 			}
-			c, err := s.d.Customers.Get(ctx, o.Customer())
+			c, err := s.customerOf(ctx, o)
 			if err != nil {
 				return nil, err
 			}

@@ -135,7 +135,6 @@ type View struct {
 // of View: costs and margins follow identity.SeesCosts(by.Role()).
 func toView(o *order.Order, c CustomerFacts, by shared.Principal, today shared.CivilDate) View {
 	owner := identity.SeesCosts(by.Role())
-	total, _ := o.Total() // New and Change refuse totals that overflow
 	terms := o.Terms()
 	v := View{
 		ID: o.ID(), Number: o.Number().String(), Customer: CustomerRef{ID: c.ID, Name: c.Name, Phone: c.Phone},
@@ -144,7 +143,7 @@ func toView(o *order.Order, c CustomerFacts, by shared.Principal, today shared.C
 			Handover: terms.Handover, Address: terms.Address, DepositPercent: terms.DepositPercent,
 			AssemblyDays: o.AssemblyDaysCounted(), SafetyMarginDays: terms.SafetyMarginDays,
 		},
-		Subtotal: o.Subtotal(), Freight: terms.Freight, Discount: terms.Discount, Total: total,
+		Subtotal: o.Subtotal(), Freight: terms.Freight, Discount: terms.Discount, Total: total(o),
 		DepositDue: o.DepositDue(), Paid: o.Paid(), BalanceDue: o.BalanceDue(), RefundDue: o.RefundDue(),
 		DepositPaid: o.DepositPaid(), DeliveryDate: o.Promise(), DateByHand: o.PromiseChangedByHand(),
 		ArrivalLimit: o.ArrivalLimit(), Editable: o.Editable(), CreatedAt: o.CreatedAt(), Version: o.Version(),

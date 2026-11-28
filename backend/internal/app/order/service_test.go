@@ -250,13 +250,15 @@ func TestCreate_Refusals(t *testing.T) {
 		}, shared.ErrInvalid},
 	}
 	for name, tt := range tests {
-		in := base
-		in.Lines = []apporder.LineRequest{h.bancoLine()}
-		in.Idempotency = h.key()
-		tt.edit(&in)
-		if _, err := h.svc.Create(h.staff(t), in); !errors.Is(err, tt.want) {
-			t.Errorf("%s: err = %v, want %v", name, err, tt.want)
-		}
+		t.Run(name, func(t *testing.T) {
+			in := base
+			in.Lines = []apporder.LineRequest{h.bancoLine()}
+			in.Idempotency = h.key()
+			tt.edit(&in)
+			if _, err := h.svc.Create(h.staff(t), in); !errors.Is(err, tt.want) {
+				t.Errorf("err = %v, want %v", err, tt.want)
+			}
+		})
 	}
 	if _, err := h.svc.Create(h.viewer(t), base); !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("viewer: err = %v", err)
@@ -377,19 +379,46 @@ func TestVoidPayment_TheOwnersOnly(t *testing.T) {
 	}
 }
 
-func TestChange_StaffOmittingTermsKeepsThem(t *testing.T) {
+func TestChange_OmittedTermsKeepTheirValues(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	v := h.create(h.admin(t), t, func(in *apporder.CreateInput) {
 		in.Terms.DiscountCents, in.Terms.DepositPercent = ptr[int64](10_000), ptr(80)
 	}).Order
-	got, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
+	got, err := h.svc.Change(h.admin(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
 		Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 2}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Order.Discount.Cents() != 10_000 || got.Order.Terms.DepositPercent != 80 || got.Order.Subtotal.Cents() != 200_000 {
-		t.Errorf("after staff's change: discount %v deposit %d subtotal %v", got.Order.Discount, got.Order.Terms.DepositPercent, got.Order.Subtotal)
+		t.Errorf("after the change: discount %v deposit %d subtotal %v", got.Order.Discount, got.Order.Terms.DepositPercent, got.Order.Subtotal)
+	}
+}
+
+// Staff may not change the lines of an order whose terms an owner or admin
+// set, so a discount or a 0% deposit cannot be carried over to another
+// basket (security review of 4.10; ADR 0030, Amendments).
+func TestChange_StaffChangingLinesUnderManagedTermsIsForbidden(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	for name, edit := range map[string]func(*apporder.CreateInput){
+		"discount":   func(in *apporder.CreateInput) { in.Terms.DiscountCents = ptr[int64](10_000) },
+		"0% deposit": func(in *apporder.CreateInput) { in.Terms.DepositPercent = ptr(0) },
+		"days":       func(in *apporder.CreateInput) { in.Terms.SafetyMarginDays = ptr(9) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := h.create(h.admin(t), t, edit).Order
+			_, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
+				Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 5}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}})
+			if !errors.Is(err, shared.ErrForbidden) {
+				t.Errorf("err = %v, want ErrForbidden", err)
+			}
+		})
+	}
+	plain := h.create(h.staff(t), t, nil).Order
+	if _, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: plain.ID, Version: plain.Version,
+		Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 5}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}}); err != nil {
+		t.Errorf("staff changing an order with default terms: %v", err)
 	}
 }
 

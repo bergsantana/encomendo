@@ -143,6 +143,9 @@ func (r *Orders) AddMessage(ctx context.Context, m apporder.Message) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.fail != nil {
+		return r.fail
+	}
 	before := len(r.messages)
 	sharedfake.OnRollback(ctx, func() {
 		r.mu.Lock()
@@ -249,11 +252,7 @@ func (c *Catalog) line(r apporder.LineRequest) (order.LineSpec, error) {
 		if err != nil {
 			return order.LineSpec{}, err
 		}
-		cents := it.Snapshot.UnitPrice.Cents()
-		for _, o := range it.Snapshot.Options {
-			cents += o.ExtraPrice.Cents()
-		}
-		price, err := shared.NewMoney(cents*int64(r.Quantity), it.Snapshot.UnitPrice.Currency())
+		price, err := catalog.PriceWithOptions(it.Snapshot.UnitPrice, extras(it.Snapshot.Options), r.Quantity)
 		return order.LineSpec{Price: price, Items: []order.ItemSpec{it}}, err
 	}
 	k, ok := c.kits[r.Kit]
@@ -266,9 +265,20 @@ func (c *Catalog) line(r apporder.LineRequest) (order.LineSpec, error) {
 		if err != nil {
 			return order.LineSpec{}, err
 		}
+		if l.Price, err = catalog.AddOptionExtras(l.Price, extras(it.Snapshot.Options), k.Items[id]); err != nil {
+			return order.LineSpec{}, err
+		}
 		l.Items = append(l.Items, it)
 	}
 	return l, nil
+}
+
+func extras(options []order.ChosenOption) []shared.Money {
+	out := make([]shared.Money, len(options))
+	for i, o := range options {
+		out[i] = o.ExtraPrice
+	}
+	return out
 }
 
 func (c *Catalog) item(id shared.ItemID, qty int, choices []apporder.OptionChoice) (order.ItemSpec, error) {
@@ -322,8 +332,9 @@ func (f *Customers) Get(_ context.Context, id shared.CustomerID) (apporder.Custo
 	return c, nil
 }
 
-// FindOrCreate implements apporder.Customers.
-func (f *Customers) FindOrCreate(_ context.Context, name, phone string) (apporder.CustomerFacts, error) {
+// FindOrCreate implements apporder.Customers. A customer it creates goes
+// away when the caller's transaction fails, as in Postgres.
+func (f *Customers) FindOrCreate(ctx context.Context, name, phone string) (apporder.CustomerFacts, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, c := range f.byID {
@@ -332,8 +343,16 @@ func (f *Customers) FindOrCreate(_ context.Context, name, phone string) (apporde
 		}
 	}
 	c := apporder.CustomerFacts{ID: shared.CustomerID(f.next()), Name: name, Phone: phone}
+	sharedfake.KeepOnRollback(ctx, &f.mu, f.byID, c.ID)
 	f.byID[c.ID] = c
 	return c, nil
+}
+
+// Count returns how many customers the store has.
+func (f *Customers) Count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.byID)
 }
 
 // Workflows is an apporder.Workflows: a current workflow and every version

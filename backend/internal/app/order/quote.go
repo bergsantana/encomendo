@@ -40,10 +40,6 @@ type QuoteItem struct {
 	Expected     shared.CivilDate
 }
 
-// quoteTracking stands in for a tracking hash on an order that is never
-// saved.
-var quoteTracking = shared.SecretHash{0x9}
-
 // Quote answers what Create would make of in (order:write; terms other than
 // the defaults need order:manage), or, with in.Order set, what Change would
 // make of that order. Nothing is written. It returns the refusals Create or
@@ -55,15 +51,15 @@ func (s *Service) Quote(ctx context.Context, in QuoteInput) (QuoteView, error) {
 	}
 	var out QuoteView
 	err = s.d.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		f, err := s.d.Store.Facts(ctx)
+		w, err := s.writeCtx(ctx, by)
 		if err != nil {
-			return fmt.Errorf("store facts: %w", err)
+			return err
 		}
 		var o *order.Order
 		if in.Order.IsZero() {
-			o, err = s.quoteNew(ctx, in, by, f)
+			o, err = s.quoteNew(ctx, in, w)
 		} else {
-			o, err = s.quoteChange(ctx, in, by, f)
+			o, err = s.quoteChange(ctx, in, w)
 		}
 		if err != nil {
 			return err
@@ -74,8 +70,7 @@ func (s *Service) Quote(ctx context.Context, in QuoteInput) (QuoteView, error) {
 	return out, err
 }
 
-func (s *Service) quoteNew(ctx context.Context, in QuoteInput, by shared.Principal, f StoreFacts) (*order.Order, error) {
-	now, today := s.now(f)
+func (s *Service) quoteNew(ctx context.Context, in QuoteInput, w writeCtx) (*order.Order, error) {
 	wf, err := s.d.Workflows.Current(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current workflow: %w", err)
@@ -89,32 +84,32 @@ func (s *Service) quoteNew(ctx context.Context, in QuoteInput, by shared.Princip
 	if !in.Terms.Address.IsZero() {
 		c.Addresses = []order.DeliveryAddress{{ID: in.Terms.Address}}
 	}
-	terms, err := s.newTerms(by, f, lines, in.Terms, c)
+	terms, err := s.newTerms(w.by, w.facts, lines, in.Terms, c)
 	if err != nil {
 		return nil, err
 	}
 	return order.New(order.NewSpec{
-		Tenant: by.TenantID(), ID: shared.OrderID(s.d.IDs.NewID()), Number: 1, Customer: c.ID,
-		Workflow: wf, Lines: lines, Terms: terms, Tracking: quoteTracking, By: by, Now: now, Today: today,
+		Tenant: w.by.TenantID(), ID: shared.OrderID(s.d.IDs.NewID()), Number: 1, Customer: c.ID,
+		Workflow: wf, Lines: lines, Terms: terms, Tracking: shared.SecretHash{0x9}, // never saved
+		By: w.by, Now: w.now, Today: w.today,
 	})
 }
 
-func (s *Service) quoteChange(ctx context.Context, in QuoteInput, by shared.Principal, f StoreFacts) (*order.Order, error) {
-	o, err := s.load(ctx, by.TenantID(), in.Order)
+func (s *Service) quoteChange(ctx context.Context, in QuoteInput, w writeCtx) (*order.Order, error) {
+	o, err := s.load(ctx, w.by.TenantID(), in.Order)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.applyChange(ctx, o, ChangeInput{Lines: in.Lines, Terms: in.Terms, CustomerApproved: true}, by, f); err != nil {
+	if _, err := s.applyChange(ctx, o, ChangeInput{Lines: in.Lines, Terms: in.Terms, CustomerApproved: true}, w); err != nil {
 		return nil, err
 	}
 	return o, nil
 }
 
 func quoteView(o *order.Order) QuoteView {
-	total, _ := o.Total() // New and Change refuse totals that overflow
 	t := o.Terms()
 	v := QuoteView{
-		Subtotal: o.Subtotal(), Freight: t.Freight, Discount: t.Discount, Total: total, DepositDue: o.DepositDue(),
+		Subtotal: o.Subtotal(), Freight: t.Freight, Discount: t.Discount, Total: total(o), DepositDue: o.DepositDue(),
 		DepositPercent: t.DepositPercent, AssemblyDays: o.AssemblyDaysCounted(), SafetyMarginDays: t.SafetyMarginDays,
 		DeliveryDate: o.Promise(), ArrivalLimit: o.ArrivalLimit(),
 	}

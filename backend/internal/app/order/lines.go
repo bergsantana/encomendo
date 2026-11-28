@@ -13,6 +13,9 @@ import (
 // newLines resolves reqs against the catalog and gives every line and item
 // a fresh id.
 func (s *Service) newLines(ctx context.Context, reqs []LineRequest) ([]order.LineSpec, error) {
+	if err := checkRequests(reqs); err != nil {
+		return nil, err
+	}
 	specs, err := s.d.Catalog.OrderLines(ctx, reqs)
 	if err != nil {
 		return nil, err
@@ -42,6 +45,9 @@ func (s *Service) freshIDs(l *order.LineSpec) {
 //     so their status, check and arrival survive (order.Change), and keep
 //     their sourcing and lead days, so a backup-supplier switch survives.
 func (s *Service) changeLines(ctx context.Context, o *order.Order, reqs []LineRequest) ([]order.LineSpec, error) {
+	if err := checkRequests(reqs); err != nil {
+		return nil, err
+	}
 	old := o.Lines()
 	used := make([]bool, len(old))
 	out := make([]order.LineSpec, len(reqs))
@@ -72,6 +78,28 @@ func (s *Service) changeLines(ctx context.Context, o *order.Order, reqs []LineRe
 	}
 	return out, nil
 }
+
+// checkRequests refuses a line that is not exactly a kit or a loose item,
+// before any line is matched: a kit line with an item or a quantity would
+// otherwise compare equal to an unchanged kit line and skip the catalog.
+func checkRequests(reqs []LineRequest) error {
+	if len(reqs) == 0 {
+		return shared.NewValidationError(shared.FieldError{Field: "lines", Message: msgNoLines})
+	}
+	for i, r := range reqs {
+		kit := !r.Kit.IsZero()
+		if kit == !r.Item.IsZero() || (kit && r.Quantity != 0) {
+			return shared.NewValidationError(shared.FieldError{Field: fmt.Sprintf("lines[%d]", i), Message: msgKitOrItem})
+		}
+	}
+	return nil
+}
+
+// pt-BR messages, from docs/product/design-document.md (Novo pedido).
+const (
+	msgNoLines   = "Adicione ao menos um item ou kit."
+	msgKitOrItem = "Escolha um kit ou um item."
+)
 
 // match returns the first unused old line for which ok holds, marking it
 // used, or -1.

@@ -59,9 +59,11 @@ func TestUseCases_ReturnTheRepositorysFailure(t *testing.T) {
 		},
 	}
 	for name, call := range calls {
-		if err := call(); !errors.Is(err, errDown) {
-			t.Errorf("%s: err = %v, want the repository's failure", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			if err := call(); !errors.Is(err, errDown) {
+				t.Errorf("err = %v, want the repository's failure", err)
+			}
+		})
 	}
 	if n := len(h.events.Names()); n != 1 {
 		t.Errorf("%d events after failures, want only the first order's", n)

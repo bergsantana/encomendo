@@ -24,12 +24,12 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
-| 4 | Customers, orders and deadlines | 6 | 17 | In progress: the contract (#78), the domain (#79) and the migrations with their RLS are built |
+| 4 | Customers, orders and deadlines | 9 | 17 | In progress: the contract (#78), the domain (#79), the migrations (#80) and the application layer are built |
 | 5 | Purchasing and receiving | 0 | 9 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **71** | **127** | **about 56%** (55.9%) |
+|   | **All milestones** | **74** | **127** | **about 58%** (58.3%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -196,17 +196,17 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 ### Backend
 
 - [x] `domain/workflow`: phases, status workflow, `validate.go`, four launch presets, each with its own test (step 4.2)
-- [ ] Migration `0003_workflows` with the preset seed
+- [x] Migration `0003_workflows` with the preset seed (shipped in M2, ADR 0006; step 4.8 loads every seeded preset through `workflow.New` and checks it against `testkit.PresetSpecs`)
 - [x] `domain/customer`; customers migration (steps 4.4 and 4.7: `0012_customers`)
 - [x] `domain/order`: aggregate, items, item status per sourcing mode, customization snapshot, payments (deposit and balance), `Advance` with phase guards, tracking token, events (steps 4.5 and 4.6)
 - [x] `domain/schedule`: delivery date, arrival limit, `at_risk` and `late` alerts (pure functions, fuzz or table tests) (step 4.3)
 - [x] Orders migration, with RLS and the client read policy (a client account reads only its own linked orders) (step 4.7: `0013_orders`, `0014_idempotency`, `0015_settings_time_zone`; staff-only sourcing and messages)
-- [ ] `app/workflow`, `app/customer`, `app/order` (create, confirm deposit, release without deposit, advance, record balance, hand over, change delivery date → `wa.me` link, cancel), `app/schedule`
+- [x] `app/workflow`, `app/customer`, `app/order` (create, confirm deposit, release without deposit, advance, record balance, hand over, change delivery date → `wa.me` link, cancel), `app/schedule` (steps 4.8 to 4.11; `schedule.Recalculate` waits for M5's promised dates to redate)
 - [ ] Outbox (`outbox_repo`) in the same transaction as order writes
 - [ ] Tracking tokens (`adapter/auth/tracking.go`); `adapter/notify/whatsapp_link.go`
 - [ ] Idempotency-Key storage for POST endpoints
 - [ ] HTTP handlers and OpenAPI: orders, customers, status workflows, payments, Hoje queries
-- [ ] "New orders take the store's current workflow and keep it" use case test; client-visibility test on tracking responses
+- [x] "New orders take the store's current workflow and keep it" use case test; client-visibility test on tracking responses (step 4.10: `TestCreate_TakesTheCurrentWorkflowAndKeepsItAfterTheOwnerPicksAnother`, `TestTrackingView_HasNoInternalField`; the HTTP half joins in 4.14)
 
 ### Web
 

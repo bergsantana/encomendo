@@ -25,10 +25,12 @@ type OptionChoice struct {
 	Choice shared.ChoiceID
 }
 
-// TermsInput is how the order is handed over and paid. On a new order a
-// nil field takes the default (store, kit); on a change it keeps the
-// order's current value. A discount, deposit percent or days different from
-// that baseline need order:manage (ADR 0030, Amendments).
+// TermsInput is how the order is handed over and paid. Handover and
+// FreightCents are always sent: a freight left out is zero, also on a
+// change. The pointer fields, when nil, take the default (store, kit) on a
+// new order and keep the order's current value on a change. A discount,
+// deposit percent or days different from that baseline need order:manage
+// (ADR 0030, Amendments).
 type TermsInput struct {
 	Handover         order.Handover
 	Address          shared.AddressID // one of the customer's; required for delivery

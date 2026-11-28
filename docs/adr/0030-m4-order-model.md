@@ -127,3 +127,10 @@ Two new permissions join `order:read` and `order:write`, so the apps can hide th
 - **The client sees the promise.** The tracking view's date is `deliveryDate`, the promise, never an item's expected date.
 - **Store page orders (M7).** An order matched to a customer only by phone answers no customer facts and uses no stored address.
 
+### 2026-11-27, from the reviews of steps 4.8 to 4.11
+
+- **Terms an owner or admin set travel with the lines.** On an order whose discount, deposit percent or days differ from the defaults (the store's deposit, the kits' or the store's days, no discount), any change needs `order:manage`, even before a payment. Otherwise staff could shrink a discounted basket to almost nothing, or grow an order released by a 0% deposit. Without such terms, staff change lines freely before any payment, as before. This was decided without asking, as the stricter and reversible option, and the user may relax it.
+- **Replays are tied to what they made.** A payment replay answers only when the key recorded a payment of the same order. A create replay answers only when the key made an order. Anything else is `idempotency_key_reused`. A second call that stores a key while the first is still running gets `ErrIdempotencyKeyInFlight`, which the API answers `409 conflict`.
+- **Days on a change are the order's own.** A change keeps the order's assembly and safety margin days, and does not derive them again from the kits the new lines hold, so swapping a 6-day kit for a loose item keeps 6 days. Only someone with `order:manage` changes them. Product to confirm.
+- **Option prices are a domain rule.** `catalog.PriceWithOptions` gives (price + extras) × quantity, and `AddOptionExtras` adds the extras chosen for a kit's item. Both sit next to the kit swap pricing.
+

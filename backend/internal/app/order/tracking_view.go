@@ -44,10 +44,9 @@ type TrackingItem struct {
 // The steps are the client labels of the order's own workflow version; a
 // cancelled order shows one step.
 func NewTrackingView(o *order.Order, store string) TrackingView {
-	total, _ := o.Total() // New and Change refuse totals that overflow
 	v := TrackingView{
 		Store: store, Number: o.Number().String(), DeliveryDate: o.Promise(),
-		Total: total, Paid: o.Paid(), BalanceDue: o.BalanceDue(), Handover: o.Terms().Handover,
+		Total: total(o), Paid: o.Paid(), BalanceDue: o.BalanceDue(), Handover: o.Terms().Handover,
 	}
 	if o.Phase() == workflow.PhaseCancelled {
 		v.Cancelled = true

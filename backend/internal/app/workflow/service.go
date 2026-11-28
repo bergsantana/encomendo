@@ -107,6 +107,8 @@ func (s *Service) Get(ctx context.Context, id shared.WorkflowID, version int) (w
 	if err != nil {
 		return workflow.Workflow{}, err
 	}
+	// A cache write that fails only costs a read next time: Redis never
+	// fails a request (backend/CLAUDE.md, Redis).
 	_ = s.cache.Set(ctx, key, viewOf(w), presetsTTL)
 	return w, nil
 }

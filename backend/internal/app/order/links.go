@@ -69,10 +69,9 @@ func (s *Service) message(ctx context.Context, m outgoing) (string, error) {
 // messageFacts is what the WhatsApp texts may say of o: no supplier, cost
 // or alert, since MessageFacts has no field for them.
 func messageFacts(f StoreFacts, c CustomerFacts, o *order.Order) order.MessageFacts {
-	total, _ := o.Total() // New and Change refuse totals that overflow
 	return order.MessageFacts{
 		Store: f.Name, CustomerFirstName: customer.FirstName(c.Name), Number: o.Number().String(),
-		Total: total, Deposit: o.DepositDue(), Refund: o.RefundDue(), NewDate: o.Promise(),
+		Total: total(o), Deposit: o.DepositDue(), Refund: o.RefundDue(), NewDate: o.Promise(),
 	}
 }
 
@@ -93,7 +92,7 @@ func (s *Service) SendTrackingLink(ctx context.Context, id shared.OrderID) (Link
 			if err != nil {
 				return nil, fmt.Errorf("tracking url: %w", err)
 			}
-			c, err := s.d.Customers.Get(ctx, o.Customer())
+			c, err := s.customerOf(ctx, o)
 			if err != nil {
 				return nil, err
 			}

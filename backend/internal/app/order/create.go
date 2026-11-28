@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
@@ -9,6 +10,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/workflow"
 )
 
 // CreatedView is a new order, with its tracking link this once (the server
@@ -44,45 +46,49 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (CreatedView, erro
 	}
 	var out CreatedView
 	err = s.d.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		facts, err := s.d.Store.Facts(ctx)
+		w, err := s.writeCtx(ctx, by)
 		if err != nil {
-			return fmt.Errorf("store facts: %w", err)
+			return err
 		}
-		if replayed, ok, err := s.replayCreate(ctx, in.Idempotency, by, facts); err != nil || ok {
+		if replayed, ok, err := s.replayCreate(ctx, in.Idempotency, w); err != nil || ok {
 			out = replayed
 			return err
 		}
-		out, err = s.create(ctx, in, by, facts)
+		out, err = s.create(ctx, in, w)
 		return err
 	})
 	return out, err
 }
 
-func (s *Service) replayCreate(ctx context.Context, k appshared.IdempotencyKey, by shared.Principal, f StoreFacts) (CreatedView, bool, error) {
+// replayCreate answers a key already used: the order it made, as it is
+// now. A key that made something else (a payment) was reused for another
+// request (security review of 4.10).
+func (s *Service) replayCreate(ctx context.Context, k appshared.IdempotencyKey, w writeCtx) (CreatedView, bool, error) {
 	resource, ok, err := s.d.Idempotency.Recall(ctx, k)
 	if err != nil || !ok {
 		return CreatedView{}, false, err
 	}
 	id, err := shared.ParseOrderID(resource)
 	if err != nil {
-		return CreatedView{}, false, fmt.Errorf("remembered order %q: %w", resource, err)
+		return CreatedView{}, false, appshared.ErrIdempotencyKeyReused
 	}
-	o, err := s.load(ctx, by.TenantID(), id)
+	o, err := s.load(ctx, w.by.TenantID(), id)
+	if errors.Is(err, shared.ErrNotFound) {
+		return CreatedView{}, false, appshared.ErrIdempotencyKeyReused
+	}
 	if err != nil {
 		return CreatedView{}, false, err
 	}
-	_, today := s.now(f)
-	v, err := s.view(ctx, o, by, today)
+	v, err := s.view(ctx, o, w.by, w.today)
 	return CreatedView{Order: v}, true, err
 }
 
-func (s *Service) create(ctx context.Context, in CreateInput, by shared.Principal, f StoreFacts) (CreatedView, error) {
-	now, today := s.now(f)
+func (s *Service) create(ctx context.Context, in CreateInput, w writeCtx) (CreatedView, error) {
 	c, err := s.customerFor(ctx, in)
 	if err != nil {
 		return CreatedView{}, err
 	}
-	o, token, events, err := s.build(ctx, in, c, by, f)
+	o, token, events, err := s.build(ctx, in, c, w)
 	if err != nil {
 		return CreatedView{}, err
 	}
@@ -95,22 +101,22 @@ func (s *Service) create(ctx context.Context, in CreateInput, by shared.Principa
 	if err := s.publish(ctx, events); err != nil {
 		return CreatedView{}, err
 	}
-	link, err := s.d.Tracking.URL(f.Slug, token)
+	link, err := s.d.Tracking.URL(w.facts.Slug, token)
 	if err != nil {
 		return CreatedView{}, fmt.Errorf("tracking url: %w", err)
 	}
-	out := CreatedView{Order: toView(o, c, by, today), TrackingURL: link}
+	out := CreatedView{Order: toView(o, c, w.by, w.today), TrackingURL: link}
 	if in.SendToCustomer {
-		text := order.CreatedMessage(messageFacts(f, c, o), link)
-		out.WhatsAppURL, err = s.message(ctx, outgoing{order: o, to: c, kind: MessageCreated, text: text, link: link, by: by.UserID(), at: now})
+		text := order.CreatedMessage(messageFacts(w.facts, c, o), link)
+		out.WhatsAppURL, err = s.message(ctx, outgoing{order: o, to: c, kind: MessageCreated, text: text, link: link, by: w.by.UserID(), at: w.now})
 	}
 	return out, err
 }
 
 // build makes the order in memory: its lines from the catalog, its terms,
 // the store's next number, a tracking token and the current workflow.
-func (s *Service) build(ctx context.Context, in CreateInput, c CustomerFacts, by shared.Principal, f StoreFacts) (*order.Order, shared.Secret, []appshared.Event, error) {
-	now, today := s.now(f)
+func (s *Service) build(ctx context.Context, in CreateInput, c CustomerFacts, w writeCtx) (*order.Order, shared.Secret, []appshared.Event, error) {
+	by, now, today := w.by, w.now, w.today
 	wf, err := s.d.Workflows.Current(ctx)
 	if err != nil {
 		return nil, shared.Secret{}, nil, fmt.Errorf("current workflow: %w", err)
@@ -119,7 +125,7 @@ func (s *Service) build(ctx context.Context, in CreateInput, c CustomerFacts, by
 	if err != nil {
 		return nil, shared.Secret{}, nil, err
 	}
-	terms, err := s.newTerms(by, f, lines, in.Terms, c)
+	terms, err := s.newTerms(by, w.facts, lines, in.Terms, c)
 	if err != nil {
 		return nil, shared.Secret{}, nil, err
 	}
@@ -140,7 +146,11 @@ func (s *Service) build(ctx context.Context, in CreateInput, c CustomerFacts, by
 	}
 	events := []appshared.Event{order.Created{Order: o.ID(), Number: o.Number(), Workflow: wf.ID(), Version: wf.Version()}}
 	if in.SendToCustomer {
-		next := wf.Statuses()[1] // every workflow's second status is awaiting_deposit: no guard applies
+		next, ok := firstOf(wf, workflow.PhaseAwaitingDeposit)
+		if !ok {
+			return nil, shared.Secret{}, nil, fmt.Errorf("workflow %s has no awaiting_deposit status: %w", wf.Key(), shared.ErrInvalid)
+		}
+		// No guard applies on the way to awaiting_deposit.
 		if err := o.Advance(next.Key, nil, by, today, now); err != nil {
 			return nil, shared.Secret{}, nil, err
 		}
@@ -155,6 +165,17 @@ func (s *Service) newTerms(by shared.Principal, f StoreFacts, lines []order.Line
 		return order.Terms{}, err
 	}
 	return resolveTerms(by, base, in, c)
+}
+
+// firstOf returns wf's first status in phase p. Rules hang on phases, never
+// on a status's place in the list (ADR 0004).
+func firstOf(wf workflow.Workflow, p workflow.Phase) (workflow.Status, bool) {
+	for _, s := range wf.Statuses() {
+		if s.Phase == p {
+			return s, true
+		}
+	}
+	return workflow.Status{}, false
 }
 
 // customerFor finds the order's customer: by id, or by the new customer's

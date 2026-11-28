@@ -3,7 +3,6 @@ package order
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
@@ -11,17 +10,6 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
-)
-
-// Errors of the order use cases.
-var (
-	// ErrNotFound means the store has no order with that id. It matches
-	// shared.ErrNotFound.
-	ErrNotFound = fmt.Errorf("order not found: %w", shared.ErrNotFound)
-	// ErrIdempotencyKeyRequired means a creating call came without an
-	// Idempotency-Key. It matches shared.ErrInvalid; the API answers
-	// idempotency_key_required.
-	ErrIdempotencyKeyRequired = fmt.Errorf("idempotency key required: %w", shared.ErrInvalid)
 )
 
 // idempotencyTTL is how long a key is remembered (ADR 0030).
@@ -50,10 +38,17 @@ type Service struct{ d Deps }
 // NewService returns a Service over d, or an error naming the first
 // dependency that is missing.
 func NewService(d Deps) (*Service, error) {
-	v := reflect.ValueOf(d)
-	for i := range v.NumField() {
-		if v.Field(i).IsNil() {
-			return nil, fmt.Errorf("order service: %s is required", v.Type().Field(i).Name)
+	for _, dep := range []struct {
+		name    string
+		missing bool
+	}{
+		{"Repo", d.Repo == nil}, {"Catalog", d.Catalog == nil}, {"Customers", d.Customers == nil},
+		{"Workflows", d.Workflows == nil}, {"Store", d.Store == nil}, {"Tracking", d.Tracking == nil},
+		{"WhatsApp", d.WhatsApp == nil}, {"Idempotency", d.Idempotency == nil}, {"Secrets", d.Secrets == nil},
+		{"Tx", d.Tx == nil}, {"Events", d.Events == nil}, {"Clock", d.Clock == nil}, {"IDs", d.IDs == nil},
+	} {
+		if dep.missing {
+			return nil, fmt.Errorf("order service: %s is required", dep.name)
 		}
 	}
 	return &Service{d: d}, nil
@@ -85,11 +80,31 @@ func (s *Service) load(ctx context.Context, tenant shared.TenantID, id shared.Or
 
 // view builds the staff view of o for by, with its customer.
 func (s *Service) view(ctx context.Context, o *order.Order, by shared.Principal, today shared.CivilDate) (View, error) {
-	c, err := s.d.Customers.Get(ctx, o.Customer())
+	c, err := s.customerOf(ctx, o)
 	if err != nil {
-		return View{}, fmt.Errorf("customer of order %s: %w", o.ID(), err)
+		return View{}, err
 	}
 	return toView(o, c, by, today), nil
+}
+
+// customerOf reads the order's customer.
+func (s *Service) customerOf(ctx context.Context, o *order.Order) (CustomerFacts, error) {
+	c, err := s.d.Customers.Get(ctx, o.Customer())
+	if err != nil {
+		return CustomerFacts{}, fmt.Errorf("customer of order %s: %w", o.ID(), err)
+	}
+	return c, nil
+}
+
+// total is o's total. New, Restore's callers and Change keep every amount
+// within the catalog's bound, so the sum cannot overflow; the zero amount
+// stands in for that impossible case.
+func total(o *order.Order) shared.Money {
+	t, err := o.Total()
+	if err != nil {
+		return shared.Money{}
+	}
+	return t
 }
 
 // write is the shape of most order writes: authorize, then in one
@@ -111,6 +126,17 @@ type writeCtx struct {
 	facts StoreFacts
 	now   time.Time
 	today shared.CivilDate
+}
+
+// writeCtx reads the store's facts and the clock once for a call, so every
+// date it computes falls on the same store day.
+func (s *Service) writeCtx(ctx context.Context, by shared.Principal) (writeCtx, error) {
+	facts, err := s.d.Store.Facts(ctx)
+	if err != nil {
+		return writeCtx{}, fmt.Errorf("store facts: %w", err)
+	}
+	now, today := s.now(facts)
+	return writeCtx{by: by, facts: facts, now: now, today: today}, nil
 }
 
 func (s *Service) write(ctx context.Context, w write) (View, error) {
