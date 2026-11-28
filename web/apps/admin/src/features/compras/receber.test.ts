@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { button, closeApps, field, link, openApp } from '../../testing/app'
 import { authSession, gate, problem } from '../../testing/fixtures'
 import { todayHandler } from '../../testing/today'
+import { useComprasStore } from './store'
 import { couros, newReceiving, orderIds, type Receiving, receiveLine, savedReceipt, serve, serveReceiving, supplierOrderId, toReceiveAnswer } from './testkit'
 
 const server = setupServer()
@@ -99,6 +100,16 @@ describe('the route and the menu entry', () => {
     const entries = wrapper.findAll('nav a.menu-link').map((a) => a.text())
     expect(entries).toContain('Compras')
     expect(entries).not.toContain('Receber itens')
+  })
+
+  it('keeps "Compras" marked on the Receber itens screen, for a role that buys', async () => {
+    signedInAs('admin', buyer)
+    use()
+
+    const { wrapper } = await openApp('/compras/receber')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('C-0012'))
+
+    expect(link(wrapper, 'Compras').classes()).toContain('menu-link--active')
   })
 
   it('sends a role that cannot receive to Hoje', async () => {
@@ -295,10 +306,21 @@ describe('Tudo certo and Com defeito', () => {
     expect(line.findAll('label')).toHaveLength(0)
 
     await button(line, 'Tudo certo').trigger('click')
-    expect(line.findAll('label').map((l) => l.text())).toEqual(['Foto do item'])
+    expect(line.findAll('label').map((l) => l.text())).toEqual([`Foto do item: ${banco}`])
 
     await button(line, 'Com defeito').trigger('click')
-    expect(line.findAll('label').map((l) => l.text())).toEqual(['O que houve?', 'Foto do item'])
+    expect(line.findAll('label').map((l) => l.text())).toEqual(['O que houve?', `Foto do item: ${banco}`])
+  })
+
+  it('names each photo button by its item, and leaves the invoice one as it is', async () => {
+    use()
+    const { wrapper } = await openReceber()
+    await button(row(wrapper, banco), 'Tudo certo').trigger('click')
+    await button(row(wrapper, capa), 'Tudo certo').trigger('click')
+
+    const names = wrapper.findAll('label').map((l) => l.text()).filter((text) => text.startsWith('Foto'))
+    expect(names).toEqual([`Foto do item: ${banco}`, `Foto do item: ${capa}`, 'Foto da nota fiscal'])
+    expect(row(wrapper, banco).get('label.add span').classes()).toContain('enc-visually-hidden')
   })
 
   it('names each button by its item for a screen reader', async () => {
@@ -543,7 +565,7 @@ describe('photos', () => {
     const { line, wrapper } = await checkedLine()
 
     expect(line.get('input[type=file]').attributes('accept')).toBe('image/*')
-    expect(field(line, 'Foto do item').element).toBe(line.get('input[type=file]').element)
+    expect(field(line, `Foto do item: ${banco}`).element).toBe(line.get('input[type=file]').element)
     expect(field(wrapper, 'Foto da nota fiscal').attributes('accept')).toBe('image/*')
   })
 
@@ -680,6 +702,122 @@ describe('photos', () => {
   })
 })
 
+describe('photo limits with overlapping picks', () => {
+  const lineKey = receiveLine(1).lineId ?? ''
+  const files = (n: number) => Array.from({ length: n }, (_, i) => png(`${i}.png`))
+
+  async function openStore() {
+    const state = use()
+    const app = await openReceber()
+    return { ...app, state, store: useComprasStore() }
+  }
+
+  it('counts every photo of a pick at once, so a second pick during the first cannot pass 2 for an item', async () => {
+    const { store, state } = await openStore()
+    store.check(lineKey, 'ok')
+
+    await Promise.all([store.addPhotos(lineKey, files(2)), store.addPhotos(lineKey, files(1))])
+    await flushPromises()
+
+    expect(store.marks[lineKey]?.photos).toHaveLength(2)
+    expect(state.uploads).toHaveLength(2)
+    expect(store.photoErrors[lineKey]).toBe('Cada item pode ter até 2 fotos.')
+  })
+
+  it('does the same for the 4 photos of the invoice', async () => {
+    const { store, state } = await openStore()
+
+    await Promise.all([store.addPhotos('invoice', files(3)), store.addPhotos('invoice', files(3))])
+    await flushPromises()
+
+    expect(store.invoicePhotos).toHaveLength(4)
+    expect(state.uploads).toHaveLength(4)
+    expect(store.photoErrors.invoice).toBe('Cada recebimento pode ter até 4 fotos da nota.')
+  })
+
+  it('does the same for the 20 of a whole receipt', async () => {
+    const lines = Array.from({ length: 10 }, (_, n) => receiveLine(n + 1, { name: `Item ${n + 1}` }))
+    const state = use(newReceiving({ toReceive: { groups: [{ supplierOrderId, number: 'C-0012', supplierName: couros.name, lines }], toBuy: [], truncated: false } }))
+    await openReceber()
+    const store = useComprasStore()
+    for (const line of lines) store.check(line.lineId ?? '', 'ok')
+
+    // 20 photos on the items and 2 more for the invoice, all picked before any upload ends.
+    await Promise.all([...lines.map((line) => store.addPhotos(line.lineId ?? '', files(2))), store.addPhotos('invoice', files(2))])
+    await flushPromises()
+
+    expect(state.uploads).toHaveLength(20)
+    expect(store.invoicePhotos).toHaveLength(0)
+    expect(store.photoErrors.invoice).toBe('Cada recebimento pode ter até 20 fotos no total.')
+  })
+})
+
+describe('a save in flight', () => {
+  async function savingStore() {
+    const state = use()
+    const release = gate()
+    state.answers.receipt = async () => {
+      await release.opened
+      return HttpResponse.json(state.receipt, { status: 201 })
+    }
+    const app = await openReceber()
+    const store = useComprasStore()
+    await button(row(app.wrapper, banco), 'Tudo certo').trigger('click')
+    await choose(invoice(app.wrapper).get('input[type=file]'), png('nota.png'))
+    await save(app.wrapper).trigger('click')
+    await flushPromises()
+    return { ...app, state, release, store }
+  }
+
+  it('holds the lines and the pickers still until the answer', async () => {
+    const { wrapper, release } = await savingStore()
+
+    const line = row(wrapper, banco)
+    expect(line.findAll('button').every((b) => b.attributes('disabled') !== undefined)).toBe(true)
+    expect(line.get('input[type=file]').attributes('disabled')).toBeDefined()
+    expect(invoice(wrapper).get('input[type=file]').attributes('disabled')).toBeDefined()
+    expect(button(row(wrapper, capa), 'Tudo certo').attributes('disabled')).toBeDefined()
+    release.open()
+    await flushPromises()
+    expect(button(row(wrapper, capa), 'Tudo certo').attributes('disabled')).toBeUndefined()
+  })
+
+  it('clears only what the receipt carried, keeping what was checked or uploaded meanwhile', async () => {
+    const { store, release, state } = await savingStore()
+    const capaKey = receiveLine(2).lineId ?? ''
+
+    // The screen holds the buttons, but the store must not depend on it.
+    store.check(capaKey, 'ok')
+    await store.addPhotos('invoice', [png('nova.png')])
+    release.open()
+    await flushPromises()
+
+    expect(Object.keys(store.marks)).toEqual([capaKey])
+    expect(store.invoicePhotos).toHaveLength(1)
+    expect(state.receipts[0]?.body.entries).toHaveLength(1)
+    expect(state.receipts[0]?.body.invoicePhotoKeys).toHaveLength(1)
+  })
+})
+
+describe('a key the server says was used for another receipt', () => {
+  it('makes a new key for "Tentar de novo"', async () => {
+    const state = use()
+    state.answers.receipt = () => problem(422, 'idempotency_key_reused', 'Chave repetida')
+    const { wrapper } = await openReceber()
+    await button(row(wrapper, banco), 'Tudo certo').trigger('click')
+    await save(wrapper).trigger('click')
+    await flushPromises()
+    state.answers.receipt = undefined
+
+    await button(wrapper, 'Tentar de novo').trigger('click')
+    await flushPromises()
+
+    expect(state.receipts).toHaveLength(2)
+    expect(state.receipts[1]?.key).not.toBe(state.receipts[0]?.key)
+    expect(wrapper.text()).toContain('Recebimento salvo.')
+  })
+})
+
 describe('workshop sizes', () => {
   // The sizes themselves are CSS (tokens.test.ts in packages/ui, and the Playwright phone project at 390 × 844);
   // these are the structures they rely on: the tier on the root, big real buttons, one primary.
@@ -710,7 +848,7 @@ describe('workshop sizes', () => {
     const line = row(wrapper, banco)
     expect(line.findAll('button').map((b) => b.text())).toEqual(['Tudo certo', 'Com defeito'])
     expect(field(line, 'O que houve?').element.tagName).toBe('TEXTAREA')
-    expect(field(line, 'Foto do item').attributes('type')).toBe('file')
+    expect(field(line, `Foto do item: ${banco}`).attributes('type')).toBe('file')
     expect(field(wrapper, 'Foto da nota fiscal').attributes('type')).toBe('file')
     expect(wrapper.findAll('table')).toHaveLength(0)
   })

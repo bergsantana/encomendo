@@ -170,7 +170,7 @@ const sentStatuses: readonly ItemStatus[] = ['sent_to_supplier', 'in_transit']
             <RouterLink
               v-if="isBought(item) && sentStatuses.includes(item.status) && canReceive"
               class="link-button"
-              :to="{ name: 'receive' }"
+              :to="{ name: 'receive', query: lines[item.id]?.supplierOrderId ? { pedido: lines[item.id]?.supplierOrderId } : {} }"
               :aria-label="`Receber itens: ${item.name}`"
             >
               Receber itens

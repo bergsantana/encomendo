@@ -22,6 +22,8 @@ defineProps<{
   /** noteError asks for the defect's note ("Conte o que houve com {item}."), or is null. */
   noteError: string | null
   photoError: string | null
+  /** locked holds the line still, while a receipt is being saved: what is typed or checked now would not be in it. */
+  locked: boolean
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +55,7 @@ const noteId = useId()
       <BaseButton
         class="check"
         :class="{ chosen: mark?.check === 'ok' }"
+        :disabled="locked"
         :aria-pressed="mark?.check === 'ok'"
         :aria-label="`Tudo certo: ${line.name}`"
         @click="emit('check', 'ok')"
@@ -67,6 +70,7 @@ const noteId = useId()
       <BaseButton
         class="check"
         :class="{ chosen: mark?.check === 'defective' }"
+        :disabled="locked"
         :aria-pressed="mark?.check === 'defective'"
         :aria-label="`Com defeito: ${line.name}`"
         @click="emit('check', 'defective')"
@@ -91,6 +95,7 @@ const noteId = useId()
           rows="3"
           maxlength="500"
           :value="mark.note"
+          :disabled="locked"
           :aria-invalid="noteError ? 'true' : undefined"
           :aria-describedby="noteError ? `${noteId}-error` : undefined"
           @input="emit('note', ($event.target as HTMLTextAreaElement).value)"
@@ -109,6 +114,8 @@ const noteId = useId()
         :photos="mark.photos"
         :subject="line.name"
         :error="photoError"
+        named
+        :disabled="locked"
         @add="emit('addPhotos', $event)"
         @remove="emit('removePhoto', $event)"
       />

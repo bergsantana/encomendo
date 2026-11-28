@@ -176,6 +176,7 @@ const sections = computed<Section[]>(() => {
               :mark="marks[entryKey(line)] ?? null"
               :note-error="store.missingNoteText(entryKey(line))"
               :photo-error="photoErrors[entryKey(line)] ?? null"
+              :locked="saving"
               @check="store.check(entryKey(line), $event)"
               @note="store.setNote(entryKey(line), $event)"
               @add-photos="store.addPhotos(entryKey(line), $event)"
@@ -190,6 +191,7 @@ const sections = computed<Section[]>(() => {
           subject="nota fiscal"
           :photos="invoicePhotos"
           :error="photoErrors[invoiceTarget] ?? null"
+          :disabled="saving"
           @add="store.addPhotos(invoiceTarget, $event)"
           @remove="store.removePhoto(invoiceTarget, $event)"
         />

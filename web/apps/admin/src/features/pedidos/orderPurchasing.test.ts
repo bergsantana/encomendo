@@ -120,7 +120,7 @@ describe('a bought item on the order screen', () => {
       state.purchases = [purchased({ status: status === 'in_transit' ? 'in_transit' : 'sent' })]
       const { wrapper } = await openOrder(state)
 
-      expect(actions(wrapper)).toEqual([['Receber itens', '/compras/receber']])
+      expect(actions(wrapper)).toEqual([['Receber itens', `/compras/receber?pedido=${supplierOrderId}`]])
     })
 
     it('gives staff "Receber itens" but no "Ver em Compras"', async () => {
@@ -130,7 +130,7 @@ describe('a bought item on the order screen', () => {
 
       const sent = withItem({ status: 'sent_to_supplier' })
       sent.purchases = [purchased()]
-      expect(actions((await openOrder(sent, 'staff')).wrapper)).toEqual([['Receber itens', '/compras/receber']])
+      expect(actions((await openOrder(sent, 'staff')).wrapper)).toEqual([['Receber itens', `/compras/receber?pedido=${supplierOrderId}`]])
     })
 
     it('gives a viewer neither', async () => {

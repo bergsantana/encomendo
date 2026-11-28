@@ -26,6 +26,7 @@ export const useHojeStore = defineStore('hoje', () => {
 
   /** readPurchasing reads Compras' part of Hoje; Hoje works without it, so a failed read leaves it out and says nothing. */
   async function readPurchasing(): Promise<PurchasingToday | null> {
+    // The endpoint is purchase:write only: skipping the call spares every other role a 403 on each load of Hoje. The API still decides.
     if (!session.can('purchase:write')) return null
     try {
       return await purchasingToday(api)

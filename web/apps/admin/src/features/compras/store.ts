@@ -769,10 +769,7 @@ export const useComprasStore = defineStore('compras', () => {
     return { room: Math.max(0, totalLeft), refusal: totalPhotoLimitMessage }
   }
 
-  async function uploadOne(target: string, file: File): Promise<void> {
-    photoSeq += 1
-    const id = photoSeq
-    setPhotos(target, [...photosOf(target), { id, key: null }])
+  async function uploadOne(target: string, file: File, id: number): Promise<void> {
     try {
       const key = await uploadReceiptPhoto(api, { file })
       // The line may have been unchecked, or the photo removed, while it went up.
@@ -788,7 +785,9 @@ export const useComprasStore = defineStore('compras', () => {
    * addPhotos sends the chosen files up for an item or for the invoice, as
    * many as the limits leave room for (2 per item, 4 for the invoice, 20 in
    * all); the rest are refused with the limit's message. A file that fails
-   * says why and is not kept.
+   * says why and is not kept. Every photo taken is counted at once, before
+   * the first upload, so a second pick made while the first is still going
+   * up cannot pass a limit.
    */
   async function addPhotos(target: string, files: readonly File[]): Promise<void> {
     setPhotoError(target, null)
@@ -796,8 +795,10 @@ export const useComprasStore = defineStore('compras', () => {
     const { room, refusal } = roomFor(target)
     const taken = files.slice(0, room)
     if (taken.length < files.length) setPhotoError(target, refusal)
+    const placeholders = taken.map((file) => ({ file, id: ++photoSeq }))
+    setPhotos(target, [...photosOf(target), ...placeholders.map(({ id }) => ({ id, key: null }))])
     // One at a time: each photo's request, storage and key stay in order, and a flaky connection is not hammered.
-    for (const file of taken) await uploadOne(target, file)
+    for (const { file, id } of placeholders) await uploadOne(target, file, id)
   }
 
   /** removePhoto takes a photo off an item or the invoice. */
@@ -831,6 +832,9 @@ export const useComprasStore = defineStore('compras', () => {
       receiptKey = newIdempotencyKey()
       receiptBody = text
     }
+    // What this save carries, so a success clears exactly that and not what was checked or uploaded while it was on its way.
+    const sentKeys = new Set(Object.keys(marks.value))
+    const sentInvoice = new Set(invoicePhotos.value.map((photo) => photo.id))
     saving.value = true
     saveError.value = null
     receipt.value = null
@@ -838,14 +842,19 @@ export const useComprasStore = defineStore('compras', () => {
       receipt.value = await recordReceipt(api, built.body, receiptKey)
       receiptKey = null
       receiptBody = ''
-      marks.value = {}
-      invoicePhotos.value = []
-      photoErrors.value = {}
+      marks.value = Object.fromEntries(Object.entries(marks.value).filter(([key]) => !sentKeys.has(key)))
+      invoicePhotos.value = invoicePhotos.value.filter((photo) => !sentInvoice.has(photo.id))
+      photoErrors.value = Object.fromEntries(Object.entries(photoErrors.value).filter(([target]) => target !== invoiceTarget && !sentKeys.has(target)))
       void readReceivable()
       return true
     } catch (failure) {
       const refused = failureOf(failure)
       saveError.value = receiveRefusal(refused)
+      // The key was spent on another receipt: a retry needs its own.
+      if (refused.code === 'idempotency_key_reused') {
+        receiptKey = null
+        receiptBody = ''
+      }
       // The checks are stale: the list is read again, and the lines that left it lose their check.
       if (refused.code === 'line_closed' || refused.code === 'order_closed') void readReceivable()
       return false

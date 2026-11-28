@@ -11,14 +11,18 @@ import { computed, useId } from 'vue'
 
 import type { ReceiptPhoto } from '../receipt'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** label is the words of the button: "Foto do item" or "Foto da nota fiscal". */
   label: string
   photos: readonly ReceiptPhoto[]
   /** subject is what the photos are of, so a "Remover foto" button names its photo for a screen reader. */
   subject: string
   error: string | null
-}>()
+  /** named adds the subject to the button's accessible name ("Foto do item: Banco"), so several pickers on a screen can be told apart. The visible words stay. */
+  named?: boolean
+  /** disabled holds the picker still, while a receipt is being saved. */
+  disabled?: boolean
+}>(), { named: false, disabled: false })
 
 const emit = defineEmits<{
   add: [files: File[]]
@@ -46,6 +50,7 @@ function chosen(event: Event): void {
       type="file"
       multiple
       accept="image/*"
+      :disabled="disabled"
       @change="chosen"
     >
     <label
@@ -56,7 +61,10 @@ function chosen(event: Event): void {
         :size="24"
         aria-hidden="true"
       />
-      {{ label }}
+      {{ label }}<span
+        v-if="named"
+        class="enc-visually-hidden"
+      >: {{ subject }}</span>
     </label>
     <ul
       v-if="photos.length > 0"
@@ -68,6 +76,7 @@ function chosen(event: Event): void {
       >
         <span>Foto {{ index + 1 }}</span>
         <BaseButton
+          :disabled="disabled"
           :aria-label="`Remover foto ${index + 1}: ${subject}`"
           @click="emit('remove', photo.id)"
         >
@@ -112,6 +121,10 @@ function chosen(event: Event): void {
   color: var(--enc-ink);
   font-weight: 600;
   cursor: pointer;
+}
+input:disabled + .add {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 input:focus-visible + .add {
   outline: 2px solid var(--enc-accent);
