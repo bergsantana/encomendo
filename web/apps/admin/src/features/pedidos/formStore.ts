@@ -36,7 +36,7 @@ import { customerChecks, emptyDraft } from '../clientes/customerForm'
 import { searchTerm } from '../clientes/store'
 import { niche } from '../../niche'
 import { whatsappDigits } from '../../phone'
-import { openWhatsapp } from './openLink'
+import { openWhatsapp } from '../../openLink'
 import {
   type CatalogOption,
   effectiveItems,
