@@ -1547,6 +1547,7 @@ Rules that the reviewers will check:
   - **An address id from another store** sent to the customer repository's upsert fails with an RLS error (a 500) instead of `ErrInvalid`. `app/customer` never sends one; a cross-store contract case should pin it.
   - **`schedule.Recalculate`** checks access and the order's store but redates nothing yet, because the domain has no public redate. M5 adds one (for example `Order.Redate`) when it records promised dates, and `Recalculate` then saves.
   - **Hoje and Financeiro** read at most 500 active orders and 2000 hand-overs. Past that they set `truncated` and the screen says so; M8 load-tests and pages them. Financeiro carries `marginsTotal`, so clients never add money up.
+  - **`GET /orders?customerId=` needs a newest-first sort** (or a `createdAt` on `OrderSummary`) so the customer drawer can read one page. Today it lists by delivery date, so the drawer reads up to 5 pages of 100, sorts by order number and says "Mostrando os 500 pedidos com entrega mais próxima." past that (4.18).
   - **A time zone change** leaves the dates already computed as they were: nothing calls `schedule.Recalculate` from settings. M5 (or the owner's change of zone, if it matters before then) adds the call once `Recalculate` redates.
   - **Customer names** in lists, Hoje and Financeiro are read one customer at a time (cached per call). A batch read on the `Customers` port is the fix if the queries show it slow.
   - **Product to confirm:** "A receber" includes drafts (active orders), and "há mais de 3 dias" means strictly more than 3.

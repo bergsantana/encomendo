@@ -36,9 +36,18 @@ export const useSettingsStore = defineStore('settings', () => {
   const defaultsNotice = ref<string | null>(null)
   const defaultsConflict = ref(false)
 
-  /** open reads the settings and the presets, and resolves whether both came. */
+  /**
+   * open reads the settings and the presets. It also forgets the messages of
+   * an earlier visit, so a notice never greets the owner on returning.
+   */
   async function open(): Promise<void> {
     loadError.value = null
+    workflowNotice.value = null
+    workflowError.value = null
+    workflowConflict.value = false
+    defaults.clear()
+    defaultsNotice.value = null
+    defaultsConflict.value = false
     try {
       const [read, presets] = await Promise.all([getSettings(api), listStatusWorkflows(api)])
       settings.value = read
@@ -52,12 +61,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /** reload reads everything again ("Recarregar"), dropping the edits that lost the race. */
   async function reload(): Promise<void> {
-    workflowNotice.value = null
-    workflowError.value = null
-    workflowConflict.value = false
-    defaults.clear()
-    defaultsNotice.value = null
-    defaultsConflict.value = false
     await open()
   }
 

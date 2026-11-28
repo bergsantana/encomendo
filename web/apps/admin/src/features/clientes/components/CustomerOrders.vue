@@ -14,6 +14,8 @@ defineProps<{
   orders: readonly OrderSummary[]
   loading: boolean
   error: string | null
+  /** capped says the customer has more orders than were read, so the list is the nearest deliveries only. */
+  capped: boolean
 }>()
 </script>
 
@@ -22,9 +24,9 @@ defineProps<{
     class="orders"
     aria-labelledby="customer-orders"
   >
-    <h3 id="customer-orders">
+    <h2 id="customer-orders">
       Pedidos deste cliente
-    </h3>
+    </h2>
     <p
       v-if="error"
       role="alert"
@@ -60,6 +62,12 @@ defineProps<{
         <span class="delivery">Entrega prevista: {{ formatCivilDate(order.deliveryDate) }}</span>
       </li>
     </ul>
+    <p
+      v-if="capped"
+      class="muted"
+    >
+      Mostrando os 500 pedidos com entrega mais próxima.
+    </p>
   </section>
 </template>
 
@@ -69,11 +77,11 @@ defineProps<{
   flex-direction: column;
   gap: 8px;
 }
-h3,
+h2,
 p {
   margin: 0;
 }
-h3 {
+h2 {
   font-size: 15px;
 }
 .muted {

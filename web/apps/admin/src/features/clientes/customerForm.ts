@@ -82,13 +82,25 @@ export function addressField(index: number, field: keyof AddressInput): string {
 
 const emailShape = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/** within passes text of at most `max` characters; an empty one is for the required check to judge. */
+function within(max: number): (text: string) => boolean {
+  return (text) => text.length <= max
+}
+
 function addressChecks(address: AddressDraft, index: number): FieldCheck[] {
   const at = (field: keyof AddressInput) => addressField(index, field)
+  // Limits are those of AddressInput in docs/api/openapi.yaml.
   return [
     [at('label'), address.label.trim(), 'Informe o nome do endereço.'],
+    [at('label'), address.label.trim(), 'Use um nome de endereço de até 40 caracteres.', within(40)],
     [at('cep'), address.cep, 'Confira o CEP: use 8 dígitos.', (cep) => cep.replace(/\D/g, '').length === 8],
     [at('street'), address.street.trim(), 'Informe a rua.'],
+    [at('street'), address.street.trim(), 'Use uma rua de até 200 caracteres.', within(200)],
+    [at('number'), address.number.trim(), 'Use um número de até 20 caracteres.', within(20)],
+    [at('complement'), address.complement.trim(), 'Use um complemento de até 100 caracteres.', within(100)],
+    [at('district'), address.district.trim(), 'Use um bairro de até 100 caracteres.', within(100)],
     [at('city'), address.city.trim(), 'Informe a cidade.'],
+    [at('city'), address.city.trim(), 'Use uma cidade de até 100 caracteres.', within(100)],
     [at('state'), address.state, 'Escolha a UF.'],
   ]
 }

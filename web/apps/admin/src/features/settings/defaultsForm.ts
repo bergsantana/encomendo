@@ -37,8 +37,7 @@ export function draftFromSettings(settings: TenantSettings): DefaultsDraft {
     stockEnabled: settings.stockEnabled,
     productionEnabled: settings.productionEnabled,
     whatsapp: settings.whatsappPhone === null ? '' : formatWhatsapp(settings.whatsappPhone),
-    // A store always has one; the contract only leaves it optional on an update.
-    timeZone: settings.timeZone ?? 'America/Sao_Paulo',
+    timeZone: settings.timeZone,
   }
 }
 

@@ -29,6 +29,9 @@ const emit = defineEmits<{
 
 const draft = reactive<DefaultsDraft>(draftFromSettings(props.settings))
 const zoneName = useId()
+const purchaseHintId = useId()
+const sourcingHintId = useId()
+const zoneHintId = useId()
 </script>
 
 <template>
@@ -81,10 +84,14 @@ const zoneName = useId()
         <input
           v-model="draft.purchaseBeforeDeposit"
           type="checkbox"
+          :aria-describedby="purchaseHintId"
         >
         Liberar compras antes do sinal
       </label>
-      <p class="hint">
+      <p
+        :id="purchaseHintId"
+        class="hint"
+      >
         Desligado: nada é comprado antes de o cliente pagar o sinal.
       </p>
     </fieldset>
@@ -95,6 +102,7 @@ const zoneName = useId()
         <input
           v-model="draft.stockEnabled"
           type="checkbox"
+          :aria-describedby="sourcingHintId"
         >
         Usar Estoque
       </label>
@@ -102,16 +110,19 @@ const zoneName = useId()
         <input
           v-model="draft.productionEnabled"
           type="checkbox"
+          :aria-describedby="sourcingHintId"
         >
         Usar Produção própria
       </label>
-      <p class="hint">
+      <p
+        :id="sourcingHintId"
+        class="hint"
+      >
         Desligados, os menus e as origens ficam escondidos.
       </p>
     </fieldset>
 
-    <fieldset class="group">
-      <legend>WhatsApp da loja</legend>
+    <div class="group">
       <BaseInput
         v-model="draft.whatsapp"
         label="WhatsApp da loja"
@@ -120,11 +131,14 @@ const zoneName = useId()
         autocomplete="tel"
         :error="fieldErrors.whatsappPhone ?? null"
       />
-    </fieldset>
+    </div>
 
     <fieldset class="group">
       <legend>Fuso horário</legend>
-      <p class="hint">
+      <p
+        :id="zoneHintId"
+        class="hint"
+      >
         Decide quando um dia começa para os prazos e alertas.
       </p>
       <label
@@ -137,6 +151,7 @@ const zoneName = useId()
           type="radio"
           :name="zoneName"
           :value="zone.value"
+          :aria-describedby="zoneHintId"
         >
         {{ zone.label }}
       </label>

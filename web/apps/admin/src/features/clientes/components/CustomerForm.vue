@@ -28,6 +28,7 @@ const props = defineProps<{
   orders: readonly OrderSummary[]
   ordersLoading: boolean
   ordersError: string | null
+  ordersCapped: boolean
 }>()
 
 const emit = defineEmits<{
@@ -141,6 +142,7 @@ function removeAddress(index: number): void {
         :orders="orders"
         :loading="ordersLoading"
         :error="ordersError"
+        :capped="ordersCapped"
       />
 
       <div class="buttons enc-sheet-actions">
@@ -166,6 +168,7 @@ function removeAddress(index: number): void {
         :orders="orders"
         :loading="ordersLoading"
         :error="ordersError"
+        :capped="ordersCapped"
       />
       <div class="buttons enc-sheet-actions">
         <BaseButton @click="emit('cancel')">

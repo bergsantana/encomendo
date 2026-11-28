@@ -434,10 +434,10 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 
 ### Configurações
 
-- Title "Configurações". Sections "Lista de status", "Prazos e sinal", "Compras", "Estoque e Produção", "WhatsApp da loja", "Fuso horário".
+- Title "Configurações". While loading: "Carregando as configurações…". Sections "Lista de status", "Prazos e sinal", "Compras", "Estoque e Produção", "WhatsApp da loja", "Fuso horário".
 - **Lista de status:** hint "Os status que você e seus clientes veem em cada pedido. Vale para os pedidos novos; os pedidos que já existem continuam com a lista em que foram criados."
   - One choice per preset, with its name (such as "Encomenda com montagem") and its steps in order. Each step shows the staff name with its status badge and, under it, "O cliente vê: {client label}".
-  - The current one is marked "Em uso". Button "Usar esta lista". After it: "Lista de status alterada. Os próximos pedidos usam {nome}."
+  - The current one is marked "Em uso". Button "Usar esta lista". After it: "Lista de status alterada. Os próximos pedidos usam {nome}." If the list no longer exists: "Esta lista de status não está mais disponível. Recarregue para ver as listas atuais."
 - **Prazos e sinal:** "Sinal (%)", hint "Quanto o cliente paga para confirmar o pedido."; "Dias de {Montagem}"; "Margem de segurança (dias)", hint "Folga somada ao prazo para não prometer em cima da hora."
 - **Compras:** box "Liberar compras antes do sinal", hint "Desligado: nada é comprado antes de o cliente pagar o sinal."
 - **Estoque e Produção:** boxes "Usar Estoque" and "Usar Produção própria", hint "Desligados, os menus e as origens ficam escondidos."
@@ -452,9 +452,10 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 - **Customer form** (drawer; full screen on the phone), title "Novo cliente" or "Cliente":
   - "Nome", "WhatsApp" (hint "Com DDD, como (92) 99123-4567."), "E-mail" (optional), "Observações".
   - "Endereços": "Adicionar endereço"; each has "Nome do endereço" (such as "Casa"), "CEP", "Rua", "Número", "Complemento", "Bairro", "Cidade", "UF", and "Remover endereço".
-  - "Pedidos deste cliente": the orders, newest first, with number, status and "Entrega prevista".
+  - "Pedidos deste cliente": the orders, newest first (the highest number first), with number, status and "Entrega prevista". The drawer reads up to 500 orders; with more, it shows the 500 with the nearest delivery and says "Mostrando os 500 pedidos com entrega mais próxima."
   - Buttons "Salvar", "Cancelar". Read-only roles: title "Cliente", the details in labelled lines, and "Fechar".
-- Errors: "Informe o nome do cliente.", "Informe o WhatsApp do cliente.", "Confira o número: use DDD e 8 ou 9 dígitos.", "Já existe um cliente com este WhatsApp.", "Confira o e-mail.", "Confira o CEP: use 8 dígitos.", "Escolha a UF.", "Use até 10 endereços.", "Use um nome de até 120 caracteres.", "Use observações de até 2000 caracteres.", "Outra pessoa alterou este cliente. Recarregue para ver a versão atual."
+- A customer that is not there (a wrong address): "Cliente não encontrado."
+- Errors: "Informe o nome do cliente.", "Informe o WhatsApp do cliente.", "Confira o número: use DDD e 8 ou 9 dígitos.", "Já existe um cliente com este WhatsApp.", "Confira o e-mail.", "Confira o CEP: use 8 dígitos.", "Escolha a UF.", "Use até 10 endereços.", "Use um nome de até 120 caracteres.", "Use observações de até 2000 caracteres.", and for each address "Informe o nome do endereço.", "Use um nome de endereço de até 40 caracteres.", "Informe a rua.", "Use uma rua de até 200 caracteres.", "Use um número de até 20 caracteres.", "Use um complemento de até 100 caracteres.", "Use um bairro de até 100 caracteres.", "Informe a cidade.", "Use uma cidade de até 100 caracteres.", "Outra pessoa alterou este cliente. Recarregue para ver a versão atual."
 - After saving: "Cliente salvo."
 
 ### Pedidos

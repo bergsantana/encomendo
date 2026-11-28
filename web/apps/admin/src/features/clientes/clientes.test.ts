@@ -1,4 +1,4 @@
-import type { Customer, CustomerSummary, OrderSummary, Permission } from '@encomendo/api'
+import type { Customer, CustomerSummary, OrderSummary, Permission, TimeZone } from '@encomendo/api'
 import { enableAutoUnmount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadPage } from '../../pageLoad'
 import { button, closeApps, field, link, openApp } from '../../testing/app'
 import { authSession, gate } from '../../testing/fixtures'
-import { encomendaMontagem, joao, maria, orderProblem, orderSummary, prontaEntrega, summaryOf } from '../../testing/orders'
+import { encomendaMontagem, joao, maria, orderProblem, orderSummary, prontaEntrega, settingsUsing, summaryOf } from '../../testing/orders'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
 
@@ -29,7 +29,7 @@ const signedInAs = (role: 'owner' | 'admin' | 'staff' | 'viewer', permissions: P
 const joaoRow = summaryOf(joao, { orders: 2, lastOrderAt: '2026-11-25T15:00:00Z' })
 const mariaRow = summaryOf(maria)
 
-// P-0198 is the earlier delivery, so the API lists it first; the drawer shows the latest first.
+// P-0198 delivers earlier, so the API lists it first; the drawer shows the newest order (the highest number) first.
 const earlier: OrderSummary = orderSummary(prontaEntrega, 'separado', { id: '0190f3c4-5e1a-7b2c-8d3e-000000000202', number: 'P-0198', deliveryDate: '2026-11-20' })
 const later: OrderSummary = orderSummary(encomendaMontagem, 'em_montagem', { number: 'P-0231', deliveryDate: '2026-12-12' })
 
@@ -37,6 +37,7 @@ interface Backend {
   rows?: CustomerSummary[]
   customer?: Customer
   orders?: OrderSummary[]
+  timeZone?: TimeZone
 }
 
 /** serve answers the reads of the screen; `seen` records the list and order queries. */
@@ -44,6 +45,7 @@ function serve(backend: Backend = {}) {
   const seen = { lists: [] as URL[], orders: [] as URL[] }
   server.use(
     http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })),
+    http.get('*/api/v1/admin/settings', () => HttpResponse.json(settingsUsing(encomendaMontagem, { timeZone: backend.timeZone ?? 'America/Sao_Paulo' }))),
     http.get('*/api/v1/admin/customers', ({ request }) => {
       const url = new URL(request.url)
       seen.lists.push(url)
@@ -119,6 +121,27 @@ describe('the customer list', () => {
     expect(rows[0]).toContain('25/11/2026')
     expect(rows[1]).toContain('Maria Souza')
     expect(rows[1]).toContain('—')
+  })
+
+  it("shows the day of the last order in the store's time zone", async () => {
+    // 03:30 UTC is still the 25th in Manaus (UTC-4) and already the 26th in Brasília (UTC-3).
+    const late = summaryOf(joao, { orders: 1, lastOrderAt: '2026-11-26T03:30:00Z' })
+    serve({ rows: [late], timeZone: 'America/Manaus' })
+    const manaus = await openClientes()
+    expect(plain(manaus.wrapper.get('tbody tr').text())).toContain('25/11/2026')
+
+    serve({ rows: [late], timeZone: 'America/Sao_Paulo' })
+    const brasilia = await openClientes()
+    expect(plain(brasilia.wrapper.get('tbody tr').text())).toContain('26/11/2026')
+  })
+
+  it('still lists customers when the settings cannot be read', async () => {
+    server.use(http.get('*/api/v1/admin/settings', () => new HttpResponse(null, { status: 500 })))
+
+    const { wrapper } = await openClientes()
+
+    expect(wrapper.get('tbody tr').text()).toContain('João Pereira')
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
   })
 
   it('says it is loading, then that there are no customers yet', async () => {
@@ -467,6 +490,41 @@ describe('editing a customer', () => {
     expect(dialog.findAll('fieldset').find((group) => group.find('legend')?.text() === 'Casa')?.text()).not.toContain('Informe')
   })
 
+  it('checks the length of an address field before calling the API', async () => {
+    let called = false
+    server.use(http.put(`*/api/v1/admin/customers/${joao.id}`, () => {
+      called = true
+      return HttpResponse.json(joao)
+    }))
+    const { wrapper } = await openClientes()
+    const dialog = await openCustomer(wrapper)
+    await field(dialog, 'Nome do endereço').setValue('x'.repeat(41))
+    await field(dialog, 'Rua').setValue('y'.repeat(201))
+    await field(dialog, 'Cidade').setValue('z'.repeat(101))
+
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(called).toBe(false)
+    const text = dialog.text()
+    expect(text).toContain('Use um nome de endereço de até 40 caracteres.')
+    expect(text).toContain('Use uma rua de até 200 caracteres.')
+    expect(text).toContain('Use uma cidade de até 100 caracteres.')
+  })
+
+  it('does not bring the drawer back when the screen is left open and visited again', async () => {
+    const { wrapper, router } = await openClientes()
+    await openCustomer(wrapper)
+
+    await router.push({ name: 'hoje' })
+    await flushPromises()
+    await router.push({ name: 'customers' })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('João Pereira'))
+    await flushPromises()
+
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false)
+  })
+
   it('shows an address error the API names by position', async () => {
     server.use(
       http.put(`*/api/v1/admin/customers/${joao.id}`, () =>
@@ -539,7 +597,7 @@ describe('editing a customer', () => {
 })
 
 describe("the customer's orders", () => {
-  it('asks for this customer\'s orders of every kind, and lists them latest delivery first with number, status and date', async () => {
+  it("asks for this customer's orders of every kind, and lists them newest first with number, status and date", async () => {
     const seen = serve()
     const { wrapper } = await openClientes()
 
@@ -549,7 +607,7 @@ describe("the customer's orders", () => {
     expect(query?.get('customerId')).toBe(joao.id)
     expect(query?.get('scope')).toBe('all')
     const section = dialog.get('section[aria-labelledby=customer-orders]')
-    expect(section.get('h3').text()).toBe('Pedidos deste cliente')
+    expect(section.get('h2').text()).toBe('Pedidos deste cliente')
     expect(section.findAll('li').map((li) => plain(li.text()))).toEqual([
       'P-0231Em montagemEntrega prevista: 12/12/2026',
       'P-0198SeparadoEntrega prevista: 20/11/2026',
@@ -566,6 +624,42 @@ describe("the customer's orders", () => {
       ['Em montagem', 'assembly'],
       ['Separado', 'ready'],
     ])
+  })
+
+  it('sorts by order number, not by the order the API sent', async () => {
+    const middle = orderSummary(encomendaMontagem, 'confirmado', { id: '0190f3c4-5e1a-7b2c-8d3e-000000000203', number: 'P-0210', deliveryDate: '2026-12-01' })
+    serve({ orders: [earlier, middle, later] })
+    const { wrapper } = await openClientes()
+
+    const dialog = await openCustomer(wrapper)
+
+    expect(dialog.findAll('section li .number').map((n) => n.text())).toEqual(['P-0231', 'P-0210', 'P-0198'])
+  })
+
+  it('stops at 500 orders and says the list is the nearest deliveries', async () => {
+    const cursors: (string | null)[] = []
+    server.use(
+      http.get('*/api/v1/admin/orders', ({ request }) => {
+        const cursor = new URL(request.url).searchParams.get('cursor')
+        cursors.push(cursor)
+        // Every page says there is another one.
+        return HttpResponse.json({ items: [orderSummary(encomendaMontagem, 'confirmado', { id: `0190f3c4-5e1a-7b2c-8d3e-0000000009${cursors.length}`, number: `P-${String(cursors.length).padStart(4, '0')}` })], nextCursor: `o${cursors.length + 1}` })
+      }),
+    )
+    const { wrapper } = await openClientes()
+
+    const dialog = await openCustomer(wrapper)
+
+    expect(cursors).toEqual([null, 'o2', 'o3', 'o4', 'o5'])
+    expect(dialog.text()).toContain('Mostrando os 500 pedidos com entrega mais próxima.')
+  })
+
+  it('does not say it when every order was read', async () => {
+    const { wrapper } = await openClientes()
+
+    const dialog = await openCustomer(wrapper)
+
+    expect(dialog.text()).not.toContain('Mostrando os 500 pedidos')
   })
 
   it('reads every page of the orders', async () => {

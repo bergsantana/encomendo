@@ -8,7 +8,7 @@
  */
 import { BaseButton } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
-import { nextTick, onMounted, useTemplateRef, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { usePermission } from '../../../composables/usePermission'
@@ -38,6 +38,8 @@ const {
   orders,
   ordersLoading,
   ordersError,
+  ordersCapped,
+  timeZone,
 } = storeToRefs(store)
 const canWrite = usePermission('customer:write')
 const route = useRoute()
@@ -65,6 +67,9 @@ onMounted(async () => {
   // A customer that is not there leaves the list with its message.
   if (customerId !== null && !drawerOpen.value) await router.replace({ name: 'customers' })
 })
+
+// Leaving the screen with the drawer open must not bring it back on return.
+onBeforeUnmount(() => store.closeDrawer())
 
 /** close shuts the drawer; a customer's own address goes back to the list. */
 function close(): void {
@@ -118,6 +123,7 @@ const noSearch = (): boolean => query.value.trim() === ''
     <CustomerTable
       v-if="items.length > 0"
       :items="items"
+      :time-zone="timeZone"
     />
     <p
       v-else-if="(loading || !loaded) && !error"
@@ -151,6 +157,7 @@ const noSearch = (): boolean => query.value.trim() === ''
       :orders="orders"
       :orders-loading="ordersLoading"
       :orders-error="ordersError"
+      :orders-capped="ordersCapped"
       @save="save"
       @cancel="close"
       @reload="store.reloadCustomer()"

@@ -3,8 +3,13 @@ import type { components } from './types/schema'
 
 type Schemas = components['schemas']
 
-/** TenantSettings is the selected store's settings: what is turned on, the deposit, the days, the time zone, the currency and the status workflow in use. */
-export type TenantSettings = Schemas['TenantSettings']
+/**
+ * TenantSettings is the selected store's settings: what is turned on, the
+ * deposit, the days, the time zone, the currency and the status workflow in
+ * use. The contract leaves `timeZone` optional only because an update may omit
+ * it; every answer carries it, so it is required here.
+ */
+export type TenantSettings = Schemas['TenantSettings'] & { timeZone: TimeZone }
 /** EditableSettings are the settings the owner may change by hand. */
 export type EditableSettings = Schemas['EditableSettings']
 /** UpdateSettingsRequest is the body of PUT /api/v1/admin/settings: every editable field plus the `version` read. */

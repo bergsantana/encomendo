@@ -187,6 +187,31 @@ describe('Lista de status', () => {
     expect(wrapper.find('[role=alert]').exists()).toBe(false)
   })
 
+  it('does not greet the owner with the notice of an earlier visit', async () => {
+    server.use(
+      http.put('*/api/v1/admin/settings/status-workflow', () => HttpResponse.json(settingsUsing(prontaEntrega, { version: 8 }))),
+      http.put('*/api/v1/admin/settings', () => HttpResponse.json(settingsUsing(prontaEntrega, { version: 9 }))),
+    )
+    const { wrapper, router } = await openSettings()
+    await button(preset(wrapper, 'Pronta entrega'), 'Usar esta lista').trigger('click')
+    await flushPromises()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.findAll('[role=status]').map((status) => status.text())).toEqual([
+      'Lista de status alterada. Os próximos pedidos usam Pronta entrega.',
+      'Configurações salvas.',
+    ])
+
+    await router.push({ name: 'hoje' })
+    await flushPromises()
+    await router.push({ name: 'settings' })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Lista de status'))
+    await flushPromises()
+
+    expect(wrapper.find('[role=status]').exists()).toBe(false)
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+  })
+
   it('says the preset is gone when the API no longer has it', async () => {
     server.use(http.put('*/api/v1/admin/settings/status-workflow', () => HttpResponse.json({ status: 404, code: 'workflow_not_found', title: 'x' }, { status: 404 })))
     const { wrapper } = await openSettings()
@@ -217,6 +242,28 @@ describe('the store defaults', () => {
     expect(wrapper.text()).toContain('Desligados, os menus e as origens ficam escondidos.')
     expect(wrapper.text()).toContain('Com DDD, como (92) 99123-4567.')
     expect(wrapper.text()).toContain('Decide quando um dia começa para os prazos e alertas.')
+  })
+
+  it('ties each hint to the controls it explains', async () => {
+    const { wrapper } = await openSettings()
+
+    const describedBy = (label: string) => {
+      const id = field(wrapper, label).attributes('aria-describedby')
+      return id === undefined ? undefined : wrapper.get(`#${CSS.escape(id)}`).text()
+    }
+    expect(describedBy('Liberar compras antes do sinal')).toBe('Desligado: nada é comprado antes de o cliente pagar o sinal.')
+    expect(describedBy('Usar Estoque')).toBe('Desligados, os menus e as origens ficam escondidos.')
+    expect(describedBy('Usar Produção própria')).toBe('Desligados, os menus e as origens ficam escondidos.')
+    for (const zone of ['Horário de Brasília', 'Horário de Fernando de Noronha']) {
+      expect(describedBy(zone)).toBe('Decide quando um dia começa para os prazos e alertas.')
+    }
+  })
+
+  it('names the store number once: a field, not a group with the same name', async () => {
+    const { wrapper } = await openSettings()
+
+    expect(wrapper.findAll('legend').map((legend) => legend.text())).not.toContain('WhatsApp da loja')
+    expect(wrapper.findAll('label').filter((label) => label.text() === 'WhatsApp da loja')).toHaveLength(1)
   })
 
   it('offers the four time zones with their names', async () => {

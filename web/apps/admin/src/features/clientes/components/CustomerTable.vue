@@ -12,6 +12,8 @@ import { formatWhatsapp } from '../../../phone'
 
 defineProps<{
   items: readonly CustomerSummary[]
+  /** timeZone is the store's, so "Último pedido" shows the day the store lived it. */
+  timeZone?: string
 }>()
 </script>
 
@@ -62,7 +64,7 @@ defineProps<{
           {{ customer.orders }}
         </td>
         <td data-label="Último pedido">
-          {{ customer.lastOrderAt === undefined ? '—' : formatDate(customer.lastOrderAt) }}
+          {{ customer.lastOrderAt === undefined ? '—' : formatDate(customer.lastOrderAt, timeZone) }}
         </td>
       </tr>
     </tbody>

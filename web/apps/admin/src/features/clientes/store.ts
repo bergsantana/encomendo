@@ -1,4 +1,4 @@
-import { ApiError, createCustomer, type Customer, type CustomerSummary, getCustomer, listCustomers, listOrders, type OrderSummary, updateCustomer } from '@encomendo/api'
+import { ApiError, createCustomer, type Customer, type CustomerSummary, getCustomer, getSettings, listCustomers, listOrders, type OrderSummary, updateCustomer } from '@encomendo/api'
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 
@@ -13,6 +13,16 @@ const conflictMessage = 'Outra pessoa alterou este cliente. Recarregue para ver 
 const phoneTakenMessage = 'Já existe um cliente com este WhatsApp.'
 /** orderPages caps how many pages of a customer's orders the drawer reads; a customer has few orders. */
 const orderPages = 5
+const orderPageSize = 100
+
+/**
+ * orderSequence reads the running number out of an order number such as
+ * "P-0231". Numbers are handed out in the order orders are created, so
+ * comparing them sorts by creation; it is an ordering, never arithmetic.
+ */
+function orderSequence(order: OrderSummary): number {
+  return Number(order.number.replace(/\D/g, ''))
+}
 
 /**
  * searchTerm turns what was typed in "Buscar por nome ou WhatsApp" into what
@@ -43,6 +53,8 @@ export const useCustomersStore = defineStore('customers', () => {
   const query = ref('')
   const notice = ref<string | null>(null)
   const error = ref<string | null>(null)
+  /** timeZone is the store's, for the day of "Último pedido"; undefined until read, then the viewer's zone stands in. */
+  const timeZone = ref<string | undefined>(undefined)
   let listRead = 0
 
   /** editing is the customer in the drawer, or null for a new one; `drawerOpen` says whether the drawer is there at all. */
@@ -57,6 +69,8 @@ export const useCustomersStore = defineStore('customers', () => {
   const orders = shallowRef<OrderSummary[]>([])
   const ordersLoading = ref(false)
   const ordersError = ref<string | null>(null)
+  /** ordersCapped is true when the customer has more orders than the drawer reads. */
+  const ordersCapped = ref(false)
   let orderRead = 0
 
   async function readList(cursor: string | undefined): Promise<void> {
@@ -86,13 +100,28 @@ export const useCustomersStore = defineStore('customers', () => {
     }
   }
 
-  /** open reads the first page of the list. */
+  /**
+   * readTimeZone reads the store's time zone so a date shows the day the
+   * store lived it. Failing is harmless: dates then show in the viewer's zone.
+   */
+  async function readTimeZone(): Promise<void> {
+    try {
+      timeZone.value = (await getSettings(api)).timeZone
+    } catch (failure) {
+      if (!(failure instanceof ApiError)) throw failure
+    }
+  }
+
+  /** open reads the first page of the list, and the store's time zone. */
   async function open(): Promise<void> {
     notice.value = null
-    const read = await guard(async () => {
-      await readList(undefined)
-      return true
-    })
+    const [read] = await Promise.all([
+      guard(async () => {
+        await readList(undefined)
+        return true
+      }),
+      readTimeZone(),
+    ])
     loadFailed.value = read === undefined
   }
 
@@ -107,25 +136,29 @@ export const useCustomersStore = defineStore('customers', () => {
   }
 
   /**
-   * readOrders reads the customer's orders for "Pedidos deste cliente",
-   * latest delivery first. The API lists by delivery date, oldest first, so
-   * the pages are read in full (a customer has few orders) and shown in
-   * reverse; the client adds nothing up and computes no date.
+   * readOrders reads the customer's orders for "Pedidos deste cliente", newest
+   * first. The API lists by delivery date, earliest first, and has no creation
+   * date, so up to `orderPages` pages are read and sorted by order number,
+   * which follows creation. When the cap is hit with pages left,
+   * `ordersCapped` makes the drawer say it shows the nearest deliveries only.
    */
   async function readOrders(customerId: string): Promise<void> {
     const read = ++orderRead
     ordersLoading.value = true
     ordersError.value = null
+    ordersCapped.value = false
     try {
       const all: OrderSummary[] = []
       let cursor: string | undefined
       for (let page = 0; page < orderPages; page += 1) {
-        const answer = await listOrders(api, { customerId, scope: 'all', limit: 100, cursor })
+        const answer = await listOrders(api, { customerId, scope: 'all', limit: orderPageSize, cursor })
         all.push(...answer.items)
         cursor = answer.nextCursor
         if (cursor === undefined) break
       }
-      if (read === orderRead) orders.value = all.reverse()
+      if (read !== orderRead) return
+      orders.value = all.sort((a, b) => orderSequence(b) - orderSequence(a))
+      ordersCapped.value = cursor !== undefined
     } catch (failure) {
       if (!(failure instanceof ApiError)) throw failure
       if (read === orderRead) ordersError.value = errorMessage(failure)
@@ -138,6 +171,7 @@ export const useCustomersStore = defineStore('customers', () => {
     editing.value = customer
     orders.value = []
     ordersError.value = null
+    ordersCapped.value = false
     drawerKey.value += 1
     form.clear()
     conflict.value = false
@@ -169,6 +203,8 @@ export const useCustomersStore = defineStore('customers', () => {
     drawerOpen.value = false
     editing.value = null
     orders.value = []
+    ordersLoading.value = false
+    ordersCapped.value = false
     form.clear()
     conflict.value = false
   }
@@ -222,6 +258,7 @@ export const useCustomersStore = defineStore('customers', () => {
     query,
     notice,
     error,
+    timeZone,
     editing,
     drawerOpen,
     drawerLoading,
@@ -233,6 +270,7 @@ export const useCustomersStore = defineStore('customers', () => {
     orders,
     ordersLoading,
     ordersError,
+    ordersCapped,
     open,
     search,
     loadMore,
