@@ -14,6 +14,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	appworkflow "github.com/bergsantana/encomendo/backend/internal/app/workflow"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
+	"github.com/bergsantana/encomendo/backend/internal/domain/customer"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/schedule"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
@@ -66,7 +67,7 @@ func orView(costs bool) apporder.View {
 	cost, perUnit := ctMoney(80000), ctMoney(40000)
 	statuses := orStatuses()
 	v := apporder.View{
-		ID: orOrder, Number: "P-0231", Customer: apporder.CustomerRef{ID: orCustomer, Name: "João Pereira", Phone: "5592981234567"},
+		ID: orOrder, Number: "P-0231", Customer: apporder.CustomerRef{ID: orCustomer, Name: "João Pereira", Phone: "5592981234567", WhatsAppURL: "https://wa.me/5592981234567"},
 		Status:   statuses[0],
 		Workflow: apporder.WorkflowView{ID: orWorkflow, Version: 1, Key: "encomenda_montagem", Name: "Encomenda com montagem", Statuses: statuses},
 		Moves:    statuses[1:2],
@@ -99,7 +100,7 @@ func orView(costs bool) apporder.View {
 			Address: &order.DeliveryAddress{ID: orAddress, Label: "Casa", CEP: "69057000", Street: "Rua A", Number: "10", City: "Manaus", State: "AM"},
 		},
 		Subtotal: ctMoney(125000), Freight: ctMoney(2000), Discount: ctMoney(0), Total: ctMoney(127000),
-		DepositDue: ctMoney(63500), Paid: ctMoney(63500), BalanceDue: ctMoney(63500), RefundDue: ctMoney(0),
+		DepositDue: ctMoney(63500), DepositOwed: ctMoney(0), Paid: ctMoney(63500), BalanceDue: ctMoney(63500), RefundDue: ctMoney(0),
 		DepositPaid: true, Released: true, ReleaseDate: dayPtr(orDate(1)), DeliveryDate: orDate(28), DateByHand: true,
 		ArrivalLimit: orDate(25), Editable: order.EditApproval, CancelReason: "",
 		Payments: []apporder.PaymentView{{
@@ -167,11 +168,17 @@ func (u *orderCases) Quote(_ context.Context, in apporder.QuoteInput) (apporder.
 		Options:  []order.ChosenOption{{Option: ctOption, Choice: ctChoice, Name: "Cor", Label: "Vermelha", ExtraPrice: ctMoney(0)}},
 		Expected: orDate(20),
 	}
-	return apporder.QuoteView{
+	q := apporder.QuoteView{
 		Lines:    []apporder.QuoteLine{{Price: ctMoney(100000), Items: []apporder.QuoteItem{item}}, {Kit: orView(false).Lines[1].Kit, Price: ctMoney(25000)}},
 		Subtotal: ctMoney(125000), Freight: ctMoney(0), Discount: ctMoney(0), Total: ctMoney(125000), DepositDue: ctMoney(62500),
-		DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, DeliveryDate: orDate(28), ArrivalLimit: orDate(25),
-	}, u.err
+		RefundDue: ctMoney(0), DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, DeliveryDate: orDate(28),
+		DaysAfterDeposit: 27, ArrivalLimit: orDate(25),
+	}
+	if u.costs {
+		cost := ctMoney(80000)
+		q.Cost, q.Margin = &cost, &catalog.Margin{Cents: 45000, BasisPoints: 3600}
+	}
+	return q, u.err
 }
 
 func (u *orderCases) Create(_ context.Context, in apporder.CreateInput) (apporder.CreatedView, error) {
@@ -332,6 +339,12 @@ func (u *customerCases) Create(_ context.Context, in appcustomer.CreateInput) (a
 	u.calls++
 	u.got = in
 	return orCustomerView(), u.err
+}
+
+func (u *customerCases) AddAddress(_ context.Context, id shared.CustomerID, a customer.AddressSpec) (appcustomer.AddressView, error) {
+	u.calls++
+	u.got = []any{id, a}
+	return appcustomer.AddressView{}, u.err
 }
 
 func (u *customerCases) Update(_ context.Context, in appcustomer.UpdateInput) (appcustomer.View, error) {

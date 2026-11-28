@@ -13,6 +13,7 @@ import (
 	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
 	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
 	appworkflow "github.com/bergsantana/encomendo/backend/internal/app/workflow"
+	"github.com/bergsantana/encomendo/backend/internal/domain/customer"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
@@ -177,6 +178,10 @@ func (u customersReached) ByPhone(context.Context, string) (appcustomer.View, er
 
 func (u customersReached) Create(context.Context, appcustomer.CreateInput) (appcustomer.View, error) {
 	return appcustomer.View{}, u.hit()
+}
+
+func (u customersReached) AddAddress(context.Context, shared.CustomerID, customer.AddressSpec) (appcustomer.AddressView, error) {
+	return appcustomer.AddressView{}, u.hit()
 }
 
 func (u customersReached) Update(context.Context, appcustomer.UpdateInput) (appcustomer.View, error) {

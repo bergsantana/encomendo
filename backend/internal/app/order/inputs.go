@@ -31,9 +31,15 @@ type OptionChoice struct {
 // a pickup always has no freight. A discount,
 // deposit percent or days different from that baseline need order:manage
 // (ADR 0030, Amendments).
+//
+// A delivery names its address with Address or NewAddress, never both.
+// NewAddress ("Novo endereço") is added to the customer in the same
+// transaction (order:write is enough) and used as the delivery address; a
+// quote uses it without saving it. Its ID is ignored.
 type TermsInput struct {
 	Handover         order.Handover
-	Address          shared.AddressID // one of the customer's; required for delivery
+	Address          shared.AddressID // one of the customer's; delivery needs this or NewAddress
+	NewAddress       *order.DeliveryAddress
 	FreightCents     *int64
 	DiscountCents    *int64
 	DepositPercent   *int

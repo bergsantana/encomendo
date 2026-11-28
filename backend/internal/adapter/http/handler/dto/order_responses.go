@@ -156,9 +156,10 @@ func newPayments(in []apporder.PaymentView) []Payment {
 
 // OrderCustomer is the customer of an order, as the order screen shows it.
 type OrderCustomer struct {
-	ID    shared.CustomerID `json:"id"`
-	Name  string            `json:"name"`
-	Phone string            `json:"phone"`
+	ID          shared.CustomerID `json:"id"`
+	Name        string            `json:"name"`
+	Phone       string            `json:"phone"`
+	WhatsAppURL string            `json:"whatsappUrl"`
 }
 
 // Order is the Order schema: an order as staff see it.
@@ -179,6 +180,7 @@ type Order struct {
 	Total               shared.Money         `json:"total"`
 	DepositPercent      int                  `json:"depositPercent"`
 	DepositDue          shared.Money         `json:"depositDue"`
+	DepositOwed         shared.Money         `json:"depositOwed"`
 	DepositPaid         bool                 `json:"depositPaid"`
 	Paid                shared.Money         `json:"paid"`
 	BalanceDue          shared.Money         `json:"balanceDue"`
@@ -203,12 +205,13 @@ type Order struct {
 // owner, the only role that sees costs and margins.
 func NewOrder(v apporder.View, sees bool) Order {
 	out := Order{
-		ID: v.ID, Number: v.Number, Customer: OrderCustomer{ID: v.Customer.ID, Name: v.Customer.Name, Phone: v.Customer.Phone},
+		ID: v.ID, Number: v.Number,
+		Customer: OrderCustomer{ID: v.Customer.ID, Name: v.Customer.Name, Phone: v.Customer.Phone, WhatsAppURL: v.Customer.WhatsAppURL},
 		Status:   orderStatus(v.Status.Key, v.Status.Label, v.Status.ClientLabel, v.Status.Phase),
 		Workflow: newOrderWorkflow(v.Workflow), Moves: newStatusViews(v.Moves),
 		Handover: v.Terms.Handover, Address: newOrderAddress(v.Terms.Address),
 		Subtotal: v.Subtotal, Freight: v.Freight, Discount: v.Discount, Total: v.Total,
-		DepositPercent: v.Terms.DepositPercent, DepositDue: v.DepositDue, DepositPaid: v.DepositPaid,
+		DepositPercent: v.Terms.DepositPercent, DepositDue: v.DepositDue, DepositOwed: v.DepositOwed, DepositPaid: v.DepositPaid,
 		Paid: v.Paid, BalanceDue: v.BalanceDue, RefundDue: v.RefundDue, Released: v.Released,
 		Payments: newPayments(v.Payments), ReleaseDate: v.ReleaseDate, DeliveryDate: v.DeliveryDate,
 		DeliveryDateChanged: v.DateByHand, ArrivalLimit: v.ArrivalLimit,
@@ -309,17 +312,21 @@ func NewTrackingLink(v apporder.LinkView) TrackingLink {
 // Quote is the Quote schema: prices, deposit and dates, computed by the
 // server.
 type Quote struct {
-	Lines            []QuoteLine      `json:"lines"`
-	Subtotal         shared.Money     `json:"subtotal"`
-	Freight          shared.Money     `json:"freight"`
-	Discount         shared.Money     `json:"discount"`
-	Total            shared.Money     `json:"total"`
-	DepositPercent   int              `json:"depositPercent"`
-	DepositDue       shared.Money     `json:"depositDue"`
-	AssemblyDays     int              `json:"assemblyDays"`
-	SafetyMarginDays int              `json:"safetyMarginDays"`
-	DeliveryDate     shared.CivilDate `json:"deliveryDate"`
-	ArrivalLimit     shared.CivilDate `json:"arrivalLimit"`
+	Lines            []QuoteLine          `json:"lines"`
+	Subtotal         shared.Money         `json:"subtotal"`
+	Freight          shared.Money         `json:"freight"`
+	Discount         shared.Money         `json:"discount"`
+	Total            shared.Money         `json:"total"`
+	RefundDue        shared.Money         `json:"refundDue"`
+	DepositPercent   int                  `json:"depositPercent"`
+	DepositDue       shared.Money         `json:"depositDue"`
+	AssemblyDays     int                  `json:"assemblyDays"`
+	SafetyMarginDays int                  `json:"safetyMarginDays"`
+	DeliveryDate     shared.CivilDate     `json:"deliveryDate"`
+	DaysAfterDeposit int                  `json:"daysAfterDeposit"`
+	ArrivalLimit     shared.CivilDate     `json:"arrivalLimit"`
+	Cost             *Owned[shared.Money] `json:"cost,omitempty"`
+	Margin           *Owned[Margin]       `json:"margin,omitempty"`
 }
 
 // QuoteLine is one line of a quote.
@@ -340,12 +347,18 @@ type QuoteItem struct {
 	ExpectedDate  shared.CivilDate     `json:"expectedDate"`
 }
 
-// NewQuote maps a quote.
-func NewQuote(v apporder.QuoteView) Quote {
+// NewQuote maps a quote for a caller; sees is whether the caller is the
+// owner, the only role that gets cost and margin.
+func NewQuote(v apporder.QuoteView, sees bool) Quote {
 	out := Quote{
 		Lines: make([]QuoteLine, 0, len(v.Lines)), Subtotal: v.Subtotal, Freight: v.Freight, Discount: v.Discount,
-		Total: v.Total, DepositPercent: v.DepositPercent, DepositDue: v.DepositDue, AssemblyDays: v.AssemblyDays,
-		SafetyMarginDays: v.SafetyMarginDays, DeliveryDate: v.DeliveryDate, ArrivalLimit: v.ArrivalLimit,
+		Total: v.Total, RefundDue: v.RefundDue, DepositPercent: v.DepositPercent, DepositDue: v.DepositDue,
+		AssemblyDays: v.AssemblyDays, SafetyMarginDays: v.SafetyMarginDays, DeliveryDate: v.DeliveryDate,
+		DaysAfterDeposit: v.DaysAfterDeposit, ArrivalLimit: v.ArrivalLimit,
+	}
+	if sees {
+		out.Cost = Own(v.Cost)
+		out.Margin = ownedMargin(v.Margin)
 	}
 	for _, l := range v.Lines {
 		ql := QuoteLine{Kit: newKitRef(l.Kit), Price: l.Price, Items: make([]QuoteItem, 0, len(l.Items))}

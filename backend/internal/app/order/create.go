@@ -89,6 +89,9 @@ func (s *Service) create(ctx context.Context, in CreateInput, w writeCtx) (Creat
 	if err != nil {
 		return CreatedView{}, err
 	}
+	if in.Terms, c, err = s.withNewAddress(ctx, in.Terms, c, w); err != nil {
+		return CreatedView{}, err
+	}
 	o, token, events, err := s.build(ctx, in, c, w)
 	if err != nil {
 		return CreatedView{}, err

@@ -27,9 +27,12 @@ type WorkflowView struct {
 }
 
 // CustomerRef is the order's customer as the order screen shows it.
+// WhatsAppURL is a wa.me link that opens the chat with no text, for "Abrir
+// conversa no WhatsApp"; clients never build wa.me links themselves.
 type CustomerRef struct {
 	ID          shared.CustomerID
 	Name, Phone string
+	WhatsAppURL string
 }
 
 // SupplierView is an item's supplier: staff data, never in a client view.
@@ -112,7 +115,8 @@ type View struct {
 	Freight      shared.Money
 	Discount     shared.Money
 	Total        shared.Money
-	DepositDue   shared.Money
+	DepositDue   shared.Money // the full deposit, whatever was paid
+	DepositOwed  shared.Money // the deposit still to pay: what Registrar pagamento prefills for Sinal
 	Paid         shared.Money
 	BalanceDue   shared.Money
 	RefundDue    shared.Money
@@ -144,7 +148,7 @@ func toView(o *order.Order, c CustomerFacts, staff map[shared.UserID]string, by 
 			AssemblyDays: o.AssemblyDaysCounted(), SafetyMarginDays: terms.SafetyMarginDays,
 		},
 		Subtotal: o.Subtotal(), Freight: terms.Freight, Discount: terms.Discount, Total: total(o),
-		DepositDue: o.DepositDue(), Paid: o.Paid(), BalanceDue: o.BalanceDue(), RefundDue: o.RefundDue(),
+		DepositDue: o.DepositDue(), DepositOwed: o.DepositOwed(), Paid: o.Paid(), BalanceDue: o.BalanceDue(), RefundDue: o.RefundDue(),
 		DepositPaid: o.DepositPaid(), DeliveryDate: o.Promise(), DateByHand: o.PromiseChangedByHand(),
 		ArrivalLimit: o.ArrivalLimit(), Editable: o.Editable(), CreatedAt: o.CreatedAt(), Version: o.Version(),
 	}

@@ -77,13 +77,14 @@ func linesInput(f *fields, lines []LineRequest) []apporder.LineRequest {
 // TermsRequest is the TermsInput schema. The handover is required; a
 // freight left out is zero, also on a change (apporder.TermsInput).
 type TermsRequest struct {
-	Handover         *string `json:"handover"`
-	AddressID        *string `json:"addressId"`
-	FreightCents     *int64  `json:"freightCents"`
-	DiscountCents    *int64  `json:"discountCents"`
-	DepositPercent   *int    `json:"depositPercent"`
-	AssemblyDays     *int    `json:"assemblyDays"`
-	SafetyMarginDays *int    `json:"safetyMarginDays"`
+	Handover         *string         `json:"handover"`
+	AddressID        *string         `json:"addressId"`
+	NewAddress       *AddressRequest `json:"newAddress"`
+	FreightCents     *int64          `json:"freightCents"`
+	DiscountCents    *int64          `json:"discountCents"`
+	DepositPercent   *int            `json:"depositPercent"`
+	AssemblyDays     *int            `json:"assemblyDays"`
+	SafetyMarginDays *int            `json:"safetyMarginDays"`
 }
 
 func termsInput(f *fields, r *TermsRequest) apporder.TermsInput {
@@ -98,6 +99,14 @@ func termsInput(f *fields, r *TermsRequest) apporder.TermsInput {
 	}
 	if r.AddressID != nil {
 		t.Address = parseID[shared.AddressID](f, *r.AddressID, "terms.addressId")
+	}
+	if a := r.NewAddress; a != nil {
+		// Its id is ignored: the customer gives the address a new one.
+		t.NewAddress = &order.DeliveryAddress{
+			Label: need(f, a.Label, "terms.newAddress.label"), CEP: need(f, a.CEP, "terms.newAddress.cep"),
+			Street: need(f, a.Street, "terms.newAddress.street"), Number: a.Number, Complement: a.Complement,
+			District: a.District, City: need(f, a.City, "terms.newAddress.city"), State: need(f, a.State, "terms.newAddress.state"),
+		}
 	}
 	return t
 }

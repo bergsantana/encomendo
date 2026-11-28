@@ -471,7 +471,7 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 - **Cliente:** "Buscar cliente" (name or WhatsApp), or "Novo cliente" with "Nome" and "WhatsApp". "Informe o cliente do pedido."
 - **Itens:** "Adicionar kit" and "Adicionar item".
   - A kit shows its items; a swappable one has "Trocar" with the kit's alternatives. A swap shows "{item} no lugar de {item}".
-  - Each item or kit has "Quantidade", its client options ("Escolha uma opção" for a required one: "Escolha {opção}."), and "Remover".
+  - Each item has "Quantidade" (1 to 99); a kit line is one kit (add the kit again for another). Each item or kit has its client options ("Escolha uma opção" for a required one: "Escolha {opção}."), and "Remover".
   - "Adicione ao menos um item ou kit." "{item} está arquivado e não pode entrar no pedido."
 - **Entrega:** a choice of "Retirada na loja" and "Entrega". "Entrega" shows "Endereço" (the customer's, or "Novo endereço") and "Frete". "Escolha o endereço de entrega."
 - **Valores** (Dono and Admin only change these): "Desconto", "Sinal (%)" with the hint "Padrão da loja: {n}%", "Dias de {Montagem}" and "Margem de segurança (dias)", each "Padrão da loja: {n} dias".

@@ -90,6 +90,7 @@ func (r *visRig) do(role shared.Role, method, path string, body any, key string)
 	mux := http.NewServeMux()
 	for pattern, h := range map[string]http.HandlerFunc{
 		"POST " + visBase:                                                   r.o.Create,
+		"POST " + visBase + "/quote":                                        r.o.Quote,
 		"GET " + visBase:                                                    r.o.List,
 		"GET " + visBase + "/{orderId}":                                     r.o.Get,
 		"PUT " + visBase + "/{orderId}":                                     r.o.Change,
@@ -194,6 +195,31 @@ func assertVisibility(t *testing.T, role shared.Role, what string, order map[str
 	}
 }
 
+// assertQuoteVisibility checks a quote's answer: the owner gets `cost` and
+// `margin`, every other role neither, and a refused role gets a problem.
+func assertQuoteVisibility(t *testing.T, role shared.Role, wantStatus, status int, out map[string]any) {
+	t.Helper()
+	if status != wantStatus {
+		t.Fatalf("quote as %s answered %d %v, want %d", role, status, out, wantStatus)
+	}
+	_, hasCost := out["cost"]
+	_, hasMargin := out["margin"]
+	switch {
+	case status >= 400:
+		walk(out, "quote problem", func(path, key string, _ any) {
+			if ownerKeys[key] {
+				t.Errorf("quote problem as %s carries %s", role, key)
+			}
+		})
+	case role == shared.RoleOwner:
+		if !hasCost || !hasMargin {
+			t.Errorf("quote as owner: cost %v margin %v, want both: %v", hasCost, hasMargin, out)
+		}
+	case hasCost || hasMargin:
+		t.Errorf("quote as %s carries cost %v margin %v, which only the owner sees", role, hasCost, hasMargin)
+	}
+}
+
 // orderOf is the Order inside an answer: the body itself, or its "order".
 func orderOf(out map[string]any) map[string]any {
 	if o, ok := out["order"].(map[string]any); ok {
@@ -271,6 +297,11 @@ func TestOrders_CostsAreTheOwnersOnly(t *testing.T) {
 					t.Errorf("a replay carries the tracking link again")
 				}
 			}
+
+			// The quote has the owner's cost and margin too, and no one else's.
+			quoteBody := map[string]any{"lines": r.createBody()["lines"], "terms": r.createBody()["terms"]}
+			status, out = r.do(role, "POST", visBase+"/quote", quoteBody, "")
+			assertQuoteVisibility(t, role, write, status, out)
 
 			// Change, advance, item moves, payment and its replay.
 			change := map[string]any{"lines": r.createBody()["lines"], "terms": r.createBody()["terms"], "customerApproved": false, "version": version}
@@ -387,5 +418,36 @@ func TestOrders_MissingKeyIsRefusedAfterThePermission(t *testing.T) {
 	other["sendToCustomer"] = true
 	if status, out := r.do(shared.RoleOwner, "POST", visBase, other, key); status != 422 || out["code"] != respond.CodeIdempotencyKeyReused {
 		t.Errorf("the key with another body answered %d %v, want 422 idempotency_key_reused", status, out)
+	}
+}
+
+// TestOrders_HandlerDropsCostsForEveryoneButTheOwner proves the handler's own
+// gate: the fake use case answers costs whoever asks, and only the owner's
+// answer may carry them (backend/CLAUDE.md, costs are the owner's).
+func TestOrders_HandlerDropsCostsForEveryoneButTheOwner(t *testing.T) {
+	t.Parallel()
+
+	quote := fmt.Sprintf(`{"lines":%s,"terms":%s}`, orLines, orTerms)
+	for _, role := range []shared.Role{shared.RoleOwner, shared.RoleAdmin, shared.RoleStaff} {
+		t.Run(string(role), func(t *testing.T) {
+			t.Parallel()
+
+			h := newOrHandlers(t)
+			h.orders.costs = true
+			for _, q := range []orRequest{
+				{method: "POST", path: "/api/v1/admin/orders/quote", body: quote},
+				{method: "GET", path: "/api/v1/admin/orders/" + orOrder.String()},
+			} {
+				q.caller = staffIn(t, role)
+				rec := h.serve(t, q)
+				if rec.Code != 200 {
+					t.Fatalf("%s %s as %s: %d %s", q.method, q.path, role, rec.Code, rec.Body.String())
+				}
+				_, hasCost := body(t, rec)["cost"]
+				if hasCost != (role == shared.RoleOwner) {
+					t.Errorf("%s %s as %s: cost present %v", q.method, q.path, role, hasCost)
+				}
+			}
+		})
 	}
 }

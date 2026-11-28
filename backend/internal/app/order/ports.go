@@ -144,6 +144,14 @@ type Customers interface {
 	// FindOrCreate returns the store's customer with phone, unchanged, or
 	// creates one with name and phone.
 	FindOrCreate(ctx context.Context, name, phone string) (CustomerFacts, error)
+	// AddAddress adds a to the customer's addresses, in the caller's
+	// transaction, and returns it as stored, with its new id (a's own id is
+	// ignored). It needs only order:write, like FindOrCreate, and never edits
+	// or removes an address (ADR 0030, Amendments). It returns a
+	// *shared.ValidationError naming the address's bare fields ("cep"), or
+	// "addresses" past 10 addresses, and an error matching shared.ErrNotFound
+	// for an unknown customer.
+	AddAddress(ctx context.Context, id shared.CustomerID, a order.DeliveryAddress) (order.DeliveryAddress, error)
 }
 
 // CustomerFacts is what an order needs of its customer.
