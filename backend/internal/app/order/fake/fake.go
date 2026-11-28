@@ -34,6 +34,10 @@ type Orders struct {
 	history  map[orderKey][]order.HistoryEntry
 	messages []apporder.Message
 	fail     error
+
+	workflows apporder.Workflows // set by Link
+	customers apporder.Customers
+	userNames map[shared.UserID]string
 }
 
 var _ apporder.Repository = (*Orders)(nil)
@@ -157,8 +161,9 @@ func (r *Orders) Stored(tenant shared.TenantID, id shared.OrderID) (order.Record
 	return rec, ok
 }
 
-// History returns the history written for an order, oldest first.
-func (r *Orders) History(tenant shared.TenantID, id shared.OrderID) []order.HistoryEntry {
+// Written returns the history written for an order, oldest first, for
+// assertions; History is the repository query.
+func (r *Orders) Written(tenant shared.TenantID, id shared.OrderID) []order.HistoryEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.history[orderKey{tenant, id}])

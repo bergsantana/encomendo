@@ -25,6 +25,10 @@ type UseCases interface {
 	SendTrackingLink(ctx context.Context, id shared.OrderID) (LinkView, error)
 	Cancel(ctx context.Context, in CancelInput) (View, error)
 	Get(ctx context.Context, id shared.OrderID) (View, error)
+	List(ctx context.Context, f ListFilter, p shared.PageRequest) (shared.Page[SummaryView], error)
+	History(ctx context.Context, id shared.OrderID, p shared.PageRequest) (shared.Page[HistoryView], error)
+	Today(ctx context.Context) (TodayView, error)
+	Finance(ctx context.Context, from, to shared.CivilDate) (FinanceView, error)
 }
 
 // Repository stores orders. Every method runs in the caller's transaction.
@@ -46,6 +50,56 @@ type Repository interface {
 	// AddMessage records a wa.me message made for an order. Its text never
 	// holds a tracking link (ADR 0030, Amendments).
 	AddMessage(ctx context.Context, m Message) error
+
+	// List returns one page of the store's orders that match f, by
+	// (delivery date, id) ascending. The cursor is the repository's own and
+	// opaque; p.Limit() is at most shared.MaxPageLimit. f arrives validated
+	// (List normalizes it): Scope is set, Phase is a phase, Query is
+	// trimmed. Query is read with NumberQuery: a number matches the order's
+	// number, anything else matches the start of the customer's name,
+	// ignoring case, with LIKE wildcards in it taken literally. f.Alert is
+	// not the repository's: List applies it.
+	List(ctx context.Context, tenant shared.TenantID, f ListFilter, p shared.PageRequest) (shared.Page[order.Record], error)
+	// Active returns up to limit orders neither handed over nor cancelled,
+	// by (delivery date, id) ascending, each with when it entered its
+	// current status.
+	Active(ctx context.Context, tenant shared.TenantID, limit int) ([]ActiveOrder, error)
+	// History returns one page of an order's history, newest first, by
+	// (at, id) descending, or ErrNotFound when the store has no such order.
+	History(ctx context.Context, tenant shared.TenantID, id shared.OrderID, p shared.PageRequest) (shared.Page[HistoryRow], error)
+	// Payments returns the payments recorded in [from, to), voided ones
+	// included and marked, oldest first.
+	Payments(ctx context.Context, tenant shared.TenantID, from, to time.Time) ([]PaymentRow, error)
+	// HandedOver returns the orders handed over in [from, to), by hand-over
+	// time ascending, up to HandedOverCap of them.
+	HandedOver(ctx context.Context, tenant shared.TenantID, from, to time.Time) ([]order.Record, error)
+}
+
+// ActiveOrder is a stored order that is neither handed over nor cancelled,
+// with the moment it entered its current status: the time of the latest
+// status move into it, or the order's creation when it never moved.
+// Hoje counts days from it ("Aguardando o sinal há 4 dias").
+type ActiveOrder struct {
+	Record      order.Record
+	StatusSince time.Time
+}
+
+// HistoryRow is one stored history entry with the name of whoever made it.
+// ByName is empty for an entry with no user (an order placed on the store
+// page) and for a user who no longer exists.
+type HistoryRow struct {
+	Entry  order.HistoryEntry
+	ByName string
+}
+
+// PaymentRow is one stored payment, for the finance summary.
+type PaymentRow struct {
+	Order  shared.OrderID
+	Kind   order.PaymentKind
+	Method order.PaymentMethod
+	Amount shared.Money
+	At     time.Time
+	Voided bool
 }
 
 // Message is one wa.me message made for an order, as order_messages keeps
