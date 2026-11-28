@@ -1,4 +1,4 @@
-import { ApiError, getSettings, listOrders, type OrderListFilter, type OrderStatus, type OrderSummary } from '@encomendo/api'
+import { ApiError, getSettings, listOrders, type OrderListFilter, type OrderPhase, type OrderStatus, type OrderSummary } from '@encomendo/api'
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 
@@ -52,6 +52,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const tab = ref(activeTab)
   const query = ref('')
   const alertOnly = ref(false)
+  /** phase narrows the list to one phase, as a link from Hoje does ("Aguardando sinal"); choosing a tab drops it. */
+  const phase = ref<OrderPhase | undefined>(undefined)
   let listRead = 0
 
   /**
@@ -76,6 +78,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
       const text = query.value.trim()
       const page = await listOrders(api, {
         ...filterForTab(tab.value),
+        phase: phase.value,
         cursor,
         limit: pageSize,
         q: text === '' ? undefined : text,
@@ -115,9 +118,10 @@ export const usePedidosStore = defineStore('pedidos', () => {
     }
   }
 
-  /** Filters are what a link into Pedidos can preset: a tab, and "Só com alerta". */
+  /** Filters are what a link into Pedidos can preset: a tab, a phase, and "Só com alerta". */
   interface Filters {
     tab?: string
+    phase?: OrderPhase
     alertOnly?: boolean
   }
 
@@ -125,6 +129,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
   async function open(filters: Filters = {}): Promise<void> {
     tab.value = filters.tab ?? activeTab
     alertOnly.value = filters.alertOnly ?? false
+    phase.value = filters.phase
     query.value = ''
     loaded.value = false
     items.value = []
@@ -140,6 +145,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
   /** select opens a tab. */
   async function select(id: string): Promise<void> {
     tab.value = id
+    phase.value = undefined
     await reload()
   }
 
@@ -159,6 +165,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     tab,
     query,
     alertOnly,
+    phase,
     open,
     reload,
     select,

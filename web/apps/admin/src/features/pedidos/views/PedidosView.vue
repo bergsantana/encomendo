@@ -4,10 +4,10 @@
  * and "Novo pedido". Every role that reads orders (`order:read`) opens it;
  * "Novo pedido" needs `order:write`. A link can preset the list (Hoje's
  * cards do): `?status={key}`, `?scope=handed_over` or `cancelled`, and
- * `?alert=1`; the address follows the tab and the alert filter, so a reload
+ * `?phase={phase}` and `?alert=true`; the address follows the tab and the alert filter, so a reload
  * lands on the same list.
  */
-import { BaseButton } from '@encomendo/ui'
+import { BaseButton, isPhase } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -19,7 +19,7 @@ import StatusTabs from '../components/StatusTabs.vue'
 import { activeTab, cancelledTab, handedOverTab, statusTabId, usePedidosStore } from '../store'
 
 const store = usePedidosStore()
-const { items, tabs, hasMore, loading, loaded, loadFailed, error, tab, query, alertOnly } = storeToRefs(store)
+const { items, tabs, hasMore, loading, loaded, loadFailed, error, tab, query, alertOnly, phase } = storeToRefs(store)
 const canWrite = usePermission('order:write')
 const route = useRoute()
 const router = useRouter()
@@ -33,17 +33,24 @@ function tabFromQuery(): string {
   return activeTab
 }
 
+/** phaseFromQuery reads `?phase=` when it names a known phase. */
+function phaseFromQuery() {
+  const { phase: asked } = route.query
+  return typeof asked === 'string' && isPhase(asked) ? asked : undefined
+}
+
 /** queryForState is the address of the list as it stands. */
 function queryForState(): Record<string, string> {
   const query: Record<string, string> = {}
   if (tab.value.startsWith('status:')) query.status = tab.value.slice('status:'.length)
   else if (tab.value === handedOverTab || tab.value === cancelledTab) query.scope = tab.value
-  if (alertOnly.value) query.alert = '1'
+  if (phase.value !== undefined) query.phase = phase.value
+  if (alertOnly.value) query.alert = 'true'
   return query
 }
 
 async function openFromAddress(): Promise<void> {
-  await store.open({ tab: tabFromQuery(), alertOnly: route.query.alert === '1' })
+  await store.open({ tab: tabFromQuery(), phase: phaseFromQuery(), alertOnly: route.query.alert === 'true' || route.query.alert === '1' })
 }
 
 onMounted(openFromAddress)
@@ -67,6 +74,7 @@ const selectedTab = computed({
   get: () => tab.value,
   set: (id: string) => {
     tab.value = id
+    phase.value = undefined
     void refresh()
   },
 })

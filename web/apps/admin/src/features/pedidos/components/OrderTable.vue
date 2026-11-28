@@ -11,8 +11,8 @@ import { StatusBadge } from '@encomendo/ui'
 import { RouterLink } from 'vue-router'
 
 import { formatCivilDate, formatMoney } from '../../../format'
+import AlertBadge from '../../../components/AlertBadge.vue'
 import { worstAlert } from '../labels'
-import AlertBadge from './AlertBadge.vue'
 
 defineProps<{
   items: readonly OrderSummary[]

@@ -65,11 +65,6 @@ export function sourcingLabel(mode: SourcingMode): string {
   return words[mode]
 }
 
-/** alertLabel is the word of an alert badge. */
-export function alertLabel(kind: AlertKind): string {
-  return kind === 'late' ? 'Atrasada' : 'Pode atrasar'
-}
-
 /** worstAlert is the alert an order shows on its status: "Atrasada" over "Pode atrasar", or null. */
 export function worstAlert(alerts: readonly Alert[]): AlertKind | null {
   if (alerts.some((alert) => alert.kind === 'late')) return 'late'

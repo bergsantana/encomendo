@@ -184,7 +184,7 @@ describe('the tabs', () => {
 
   it('open from a link: a status, "Só com alerta" and a scope', async () => {
     const seen = serve()
-    const { wrapper } = await openPedidos('/pedidos?status=comprando&alert=1')
+    const { wrapper } = await openPedidos('/pedidos?status=comprando&alert=true')
 
     expect(wrapper.get('[role=tab][aria-selected=true]').text()).toBe('Comprando peças')
     expect((field(wrapper, 'Só com alerta').element as HTMLInputElement).checked).toBe(true)
@@ -195,11 +195,61 @@ describe('the tabs', () => {
     expect(entregues.wrapper.get('[role=tab][aria-selected=true]').text()).toBe('Entregues')
   })
 
+  it('open on a phase from a link, as Hoje\'s "Aguardando sinal" card does', async () => {
+    const seen = serve()
+    const { wrapper, router } = await openPedidos('/pedidos?phase=awaiting_deposit')
+
+    expect(seen.at(-1)?.searchParams.get('phase')).toBe('awaiting_deposit')
+    expect(wrapper.get('[role=tab][aria-selected=true]').text()).toBe('Ativos')
+
+    // A tab chosen after that drops the phase, in the request and in the address.
+    await button(wrapper, 'Confirmado').trigger('click')
+    await flushPromises()
+    expect(seen.at(-1)?.searchParams.get('phase')).toBeNull()
+    expect(seen.at(-1)?.searchParams.get('status')).toBe('confirmado')
+    expect(router.currentRoute.value.query).toEqual({ status: 'confirmado' })
+  })
+
+  it('ignore a phase it does not know', async () => {
+    const seen = serve()
+
+    await openPedidos('/pedidos?phase=nothing')
+
+    expect(seen.at(-1)?.searchParams.get('phase')).toBeNull()
+  })
+
+  it('open with "Só com alerta" on from ?alert=true, and write it back to the address', async () => {
+    const seen = serve()
+    const { wrapper, router } = await openPedidos('/pedidos?alert=true')
+
+    expect(seen.at(-1)?.searchParams.get('alert')).toBe('true')
+    expect((field(wrapper, 'Só com alerta').element as HTMLInputElement).checked).toBe(true)
+
+    await field(wrapper, 'Só com alerta').setValue(false)
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
+
+    await field(wrapper, 'Só com alerta').setValue(true)
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ alert: 'true' })
+  })
+
+  it('keep the phase of the address while "Só com alerta" is toggled', async () => {
+    const seen = serve()
+    const { wrapper, router } = await openPedidos('/pedidos?phase=awaiting_deposit')
+
+    await field(wrapper, 'Só com alerta').setValue(true)
+    await flushPromises()
+
+    expect(seen.at(-1)?.searchParams.get('phase')).toBe('awaiting_deposit')
+    expect(router.currentRoute.value.query).toEqual({ phase: 'awaiting_deposit', alert: 'true' })
+  })
+
   it('open again when a link into Pedidos is followed from Pedidos itself', async () => {
     const seen = serve()
     const { wrapper, router } = await openPedidos()
 
-    await router.push('/pedidos?alert=1')
+    await router.push('/pedidos?alert=true')
     await flushPromises()
 
     expect(seen.at(-1)?.searchParams.get('alert')).toBe('true')

@@ -4,12 +4,12 @@
  * colors, shown on top of the order's status (never instead of it). The API
  * decides which alert an order has; this only draws it.
  */
+import type { Alert } from '@encomendo/api'
 import { IconAlertTriangle, IconClockExclamation } from '@encomendo/ui'
 
-import { type AlertKind, alertLabel } from '../labels'
-
 defineProps<{
-  kind: AlertKind
+  /** kind is `late` ("Atrasada") or `at_risk` ("Pode atrasar"). */
+  kind: Alert['kind']
 }>()
 </script>
 
@@ -24,7 +24,7 @@ defineProps<{
       stroke-width="2"
       aria-hidden="true"
     />
-    <span>{{ alertLabel(kind) }}</span>
+    <span>{{ kind === 'late' ? 'Atrasada' : 'Pode atrasar' }}</span>
   </span>
 </template>
 
