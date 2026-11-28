@@ -24,7 +24,7 @@ import { errorMessage } from '../../errorMessage'
 import { formatCivilDate, formatMoney } from '../../format'
 import type { PaymentKind, PaymentMethod } from '../../paymentLabels'
 import { type Handover, type ItemCheck, type ItemStatus, itemStatusLabel } from './labels'
-import { openWhatsapp } from './openLink'
+import { openWhatsapp } from '../../openLink'
 
 const conflictMessage = 'Outra pessoa alterou este pedido. Recarregue para ver a versão atual.'
 const historySize = 50
