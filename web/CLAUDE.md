@@ -14,7 +14,7 @@ pnpm lint                    # eslint, whole workspace
 pnpm -r typecheck            # vue-tsc --noEmit
 pnpm -r test                 # vitest
 pnpm --filter admin dev      # one app
-pnpm api:types               # regenerate packages/api/types from docs/api/openapi.yaml
+pnpm api:types               # regenerate packages/api/src/types from docs/api/openapi.yaml
 pnpm e2e                     # playwright against docker compose
 ```
 
@@ -28,7 +28,7 @@ The skeleton (milestone 1) defines these scripts in the root `package.json`. Kee
 - **Components** take props and emit events. They never call `fetch` or the API package.
 - **Stores** hold feature state and call the API package. Totals, deposits, ready-by dates and alerts come from the API; the client only displays them, so web and Android can never disagree.
 - **`packages/api`** is the only code that talks HTTP. `http.ts` handles the base URL, JSON, problem+json → `ApiError`, and one refresh on a 401.
-- DTO types come only from `packages/api/types/`, which is generated from the OpenAPI spec. Never edit it by hand; change the spec and regenerate.
+- DTO types come only from `packages/api/src/types/`, which is generated from the OpenAPI spec. Never edit it by hand; change the spec and regenerate.
 - Feature folders follow the menu (`hoje`, `pedidos`, `compras`, `producao`, `estoque`, `catalogo`, `clientes`, `financeiro` …). Code inside them is English.
 
 ## TypeScript and Vue style

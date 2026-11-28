@@ -564,7 +564,7 @@ Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · C
 
 - Title "Compras". Tabs "A comprar", "Enviadas", "Receber itens", "Fornecedores". While loading: "Carregando as compras…".
 - **A comprar:** one card per supplier, with its name, its WhatsApp and "{n} itens" ("1 item").
-  - Each line has a box (all checked at first), "{qtd}× {item}" with its choices ("Cor: Preto"), "Pedido P-0231" (opens the order) and "Precisa chegar até {data}". A replacement shows the badge "Reposição". For the Dono: "Custo {valor}".
+  - Each line has a box (all checked at first), "{qtd}× {item}" with its choices ("Cor: Preto"), "Pedido P-0231" (opens the order) and "Precisa chegar até {data}". A replacement shows the badge "Reposição". For the Dono: "Custo (por unidade) {valor}".
   - "Ver mensagem" shows the text the API built for the checked lines, with "Copiar mensagem".
   - Button "Enviar pelo WhatsApp", with the hint "Os itens marcados ficam como Enviada ao fornecedor." "Marque ao menos um item."
   - After it: "Pedido de compra C-0012 criado." with "Abrir o WhatsApp" (it stays until the next action, in case the browser blocked the automatic opening), "Copiar mensagem" and "Ver pedido de compra".
@@ -580,7 +580,7 @@ Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · C
 - Title "Pedido de compra C-0012", the supplier's name with "Abrir conversa no WhatsApp", "Enviado em {data} por {quem}". A pedido de compra that is not there: "Pedido de compra não encontrado."
 - **Itens:** table "Item", "Qtd", "Pedido", "Precisa chegar até", "Previsto", "Situação".
   - "Situação" names: "Enviada ao fornecedor", "Em trânsito", "Recebida", "Com defeito (reposição em Compras)", "Cancelada", "Avisar o fornecedor".
-  - For the Dono, "Custo" and "Preço pago" too.
+  - For the Dono, "Custo (por unidade)" and "Preço pago (por unidade)" too.
   - A line whose "Previsto" is after "Precisa chegar até" shows "Pode atrasar" with its icon.
 - **Prazo do fornecedor:** "Informar prazo" opens "Data prometida pelo fornecedor" (for every item), then "Prazo diferente para um item" (one date per line), and "Salvar prazo".
   - "Escolha uma data a partir de hoje."
@@ -616,7 +616,7 @@ Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 
 ### Fornecedores (tab of Compras)
 
-- Table "Fornecedor", "WhatsApp", "Itens", "Pedidos de compra abertos". Search "Buscar fornecedor". Button "Novo fornecedor".
+- Table "Fornecedor", "WhatsApp" (cards on the phone). Search "Buscar fornecedor". Button "Novo fornecedor". While loading: "Carregando os fornecedores…".
 - Empty: "Nenhum fornecedor ainda. Você também pode criar um fornecedor no cadastro do item."
 - **Form** (drawer; full screen on the phone), title "Novo fornecedor" or "Fornecedor":
   - "Nome" and "WhatsApp" (hint "Com DDD, como (92) 99123-4567."), with the errors already used in Catálogo;

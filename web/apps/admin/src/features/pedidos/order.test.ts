@@ -1067,6 +1067,7 @@ describe('"Histórico"', () => {
   const entries: HistoryEntry[] = [
     { kind: 'cancelled', at: '2026-11-27T20:00:00Z', by, reason: 'Cliente desistiu' },
     { kind: 'tracking_link', at: '2026-11-27T19:00:00Z', by },
+    { kind: 'promised_date', at: '2026-11-27T18:30:00Z', by, itemId: boughtItem.id, itemName: 'Banco de couro Scrambler', newDate: '2026-12-09', ref: 'C-0012' },
     { kind: 'changed', at: '2026-11-27T18:00:00Z', by, customerApproved: true },
     { kind: 'date', at: '2026-11-27T17:00:00Z', by, oldDate: '2026-12-12', newDate: '2026-12-20' },
     { kind: 'payment', at: '2026-11-27T16:00:00Z', by, paymentKind: 'deposit', paymentMethod: 'pix', amount: brl(30000) },
@@ -1088,6 +1089,7 @@ describe('"Histórico"', () => {
     expect(lines).toEqual([
       'Ana cancelou: Cliente desistiu',
       'Ana enviou o link de acompanhamento',
+      'Ana informou o prazo do fornecedor de Banco de couro Scrambler: 09/12/2026',
       'Ana alterou o pedido (cliente aprovou)',
       'Ana alterou a entrega de 12/12/2026 para 20/12/2026',
       'Ana registrou o sinal de R$ 300,00 (Pix)',

@@ -160,6 +160,8 @@ tags:
     description: Hoje — what needs the team today.
   - name: finance
     description: Financeiro — money received, to receive and to refund, and margins (owner).
+  - name: purchasing
+    description: Compras — items to buy by supplier, pedidos de compra sent through `wa.me`, promised dates, receiving and notices (ADR 0031).
 
 paths:
   /healthz:
@@ -2784,6 +2786,571 @@ paths:
         "5XX":
           $ref: "#/components/responses/ServerFailure"
 
+  /api/v1/admin/purchasing/to-buy:
+    get:
+      tags: [purchasing]
+      operationId: getToBuy
+      summary: Compras, "A comprar" — the bought items still to buy, by supplier.
+      description: |
+        Needs `purchase:write` (owner, admin). An item shows here while it is
+        bought (`to_order`, or `stock` until milestone 6), still `to_buy`, and
+        its order is purchasable: not cancelled or handed over, and released
+        (deposit paid or released by the owner) or, with "Liberar compras
+        antes do sinal" on, past draft (ADR 0031). Nothing is stored for
+        these items until they are sent. The supplier is the order's, as the
+        order item was sold (or switched to the backup), never the catalog's
+        current one. `cost` is the owner's only. Reads at most 500 active
+        orders; past that `truncated` is true.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The items to buy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToBuy"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders/preview:
+    post:
+      tags: [purchasing]
+      operationId: previewSupplierOrder
+      summary: The message a pedido de compra would send, for picked items.
+      description: |
+        Needs `purchase:write`. Writes nothing. The text sums the same
+        catalog item with the same choices into one line and never carries
+        the client's name, phone, address or order number (ADR 0031;
+        docs/product/design-document.md, System rules). The number shown is
+        the store's next one; it is taken only when the order is sent.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierOrderRequest"
+      responses:
+        "200":
+          description: The text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierMessagePreview"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders:
+    get:
+      tags: [purchasing]
+      operationId: listSupplierOrders
+      summary: Compras, "Enviadas" — the store's pedidos de compra, newest first.
+      description: Needs `purchase:write`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierOrderStateFilter"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierOrderPage"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+    post:
+      tags: [purchasing]
+      operationId: sendSupplierOrder
+      summary: Send picked items to their supplier ("Enviar pelo WhatsApp").
+      description: |
+        Needs `purchase:write`. Takes the store's next number (`C-0001`),
+        writes one line per item, moves each item to `sent_to_supplier`, and
+        answers the `wa.me` link with the message, which the app opens.
+        Nothing is sent by the server (CLAUDE.md, rule 8). Every item must be
+        in "A comprar" for this supplier now: otherwise `409
+        item_not_to_buy` and nothing changes. A replay with the same
+        `Idempotency-Key` answers the same pedido de compra.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierOrderRequest"
+      responses:
+        "201":
+          description: The pedido de compra and its link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SentSupplierOrder"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders/{supplierOrderId}:
+    get:
+      tags: [purchasing]
+      operationId: getSupplierOrder
+      summary: One pedido de compra with its lines.
+      description: Needs `purchase:write`. `cost` and `paidCost` are the owner's only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierOrderId"
+      responses:
+        "200":
+          description: The pedido de compra.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierOrder"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/promised-date:
+    put:
+      tags: [purchasing]
+      operationId: recordPromisedDate
+      summary: Record the supplier's promised date ("Prazo do fornecedor").
+      description: |
+        Needs `purchase:write`. `date` applies to every open line, and each
+        entry of `lines` overrides it for one line. Each item's expected
+        date (the forecast) becomes the promised date plus its options'
+        extra days, and alerts follow; the delivery date promised to the
+        client never moves (ADR 0030, ADR 0031). A day before today in the
+        store's time zone is `400 invalid`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierOrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromisedDateRequest"
+      responses:
+        "200":
+          description: The pedido de compra with its lines redated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierOrder"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/in-transit:
+    post:
+      tags: [purchasing]
+      operationId: markSupplierOrderInTransit
+      summary: Mark every sent line as in transit ("Marcar como em trânsito").
+      description: Needs `purchase:write`. Lines already in transit, received or cancelled stay as they are.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierOrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The pedido de compra.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierOrder"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/undo:
+    post:
+      tags: [purchasing]
+      operationId: undoSupplierOrder
+      summary: Undo a send ("Desfazer envio").
+      description: |
+        Needs `purchase:write`. Only while no line was received or found
+        defective: otherwise `409 supplier_order_received`. Its lines are
+        cancelled, its items go back to `to_buy` (and show again in "A
+        comprar"), and its number is never used again.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierOrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          description: The pedido de compra, undone.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierOrder"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/supplier-orders/{supplierOrderId}/paid-prices:
+    put:
+      tags: [purchasing]
+      operationId: recordPaidPrices
+      summary: Record the unit price actually paid per line ("Informar preço pago").
+      description: |
+        Owner only (`purchase:write` and the cost policy, ADR 0025):
+        `403` for anyone else. Financeiro's margins use the paid price when
+        there is one, and the cost at order time otherwise (ADR 0031). A
+        cancelled line is `409 line_closed`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierOrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaidPricesRequest"
+      responses:
+        "200":
+          description: The pedido de compra.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierOrder"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/to-receive:
+    get:
+      tags: [purchasing]
+      operationId: getToReceive
+      summary: Receber itens — what can be received, by pedido de compra.
+      description: |
+        Needs `receiving:write` (owner, admin, staff). Open lines (`sent`,
+        `in_transit`) grouped by pedido de compra, then the items still in
+        "A comprar", which can be received as bought at the counter. Carries
+        no cost.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: What can be received.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToReceive"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/receipt-photo-uploads:
+    post:
+      tags: [purchasing]
+      operationId: requestReceiptPhotoUpload
+      summary: Get a short-lived URL to upload one receiving photo (item or invoice).
+      description: |
+        Needs `receiving:write`. As catalog photo uploads (ADR 0024, ADR
+        0028): the server picks the key, the app uploads with `method` to
+        `uploadUrl` sending exactly `headers`, then names the key in the
+        receipt. An upload never named in a receipt is removed after a day.
+        Limited like catalog uploads (ADR 0021).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptPhotoUploadRequest"
+      responses:
+        "201":
+          description: Where and how to upload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoUpload"
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/receipts:
+    post:
+      tags: [purchasing]
+      operationId: recordReceipt
+      summary: Save a receipt ("Salvar recebimento").
+      description: |
+        Needs `receiving:write`. Each entry names an open line (`lineId`) or
+        an item still in "A comprar" bought at the counter (`orderItemId`),
+        with its check. A line is received whole (ADR 0031). `defective`
+        needs `note`. Photos are optional: up to 2 per entry and 4 invoice
+        photos, each a key from `receipt-photo-uploads`. `ok` moves the item
+        to `received`; `defective` moves it back to `to_buy`, where it shows
+        again in "A comprar" as "Reposição". A replay with the same
+        `Idempotency-Key` answers the same receipt.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptRequest"
+      responses:
+        "201":
+          description: The receipt and what it completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+        "400":
+          $ref: "#/components/responses/PhotoRefused"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/notices:
+    get:
+      tags: [purchasing]
+      operationId: listPurchaseNotices
+      summary: '"Avisar o fornecedor" — sent lines no longer needed.'
+      description: |
+        Needs `purchase:write`. An open line whose order was cancelled,
+        whose item was removed from the order, or whose item's quantity or
+        choices changed after it was sent (ADR 0031). Each carries a `wa.me`
+        link asking the supplier to cancel; its text never names the client.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The notices, oldest send first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoticeList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/notices/{lineId}/resolve:
+    post:
+      tags: [purchasing]
+      operationId: resolvePurchaseNotice
+      summary: Mark a notice as resolved ("Marcar como resolvido").
+      description: |
+        Needs `purchase:write`. Cancels the line. A line that is no longer a
+        notice is `409 line_closed`. An item whose quantity or choices
+        changed goes back to `to_buy`, so it is bought again as it is now.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PurchaseLineId"
+      responses:
+        "204":
+          description: Resolved.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PurchaseConflict"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/orders/{orderId}/lines:
+    get:
+      tags: [purchasing]
+      operationId: getOrderPurchases
+      summary: What purchasing knows of one order's bought items.
+      description: |
+        Needs `order:read`. One entry per bought item of the order: its
+        open or last line, pedido de compra and promised date.
+        `supplierChatUrl` ("Falar com o fornecedor") is only for
+        `purchase:write`, and its text names the pedido de compra and the
+        item, never the client (ADR 0031).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The order's purchases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPurchases"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/purchasing/today:
+    get:
+      tags: [purchasing, today]
+      operationId: getPurchasingToday
+      summary: Hoje's purchasing entries.
+      description: |
+        Needs `purchase:write`; the admin calls it beside `getToday` only
+        for roles that have it. Items to send per supplier, pedidos de
+        compra sent more than 2 days ago with no promised date, and notices.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchasingToday"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
+  /api/v1/admin/suppliers/{supplierId}/items:
+    get:
+      tags: [suppliers]
+      operationId: listSupplierItems
+      summary: The catalog items a supplier supplies, as main or backup.
+      description: |
+        Needs `catalog:read`. For the Fornecedores tab of Compras. Archived
+        items are left out. `cost` is the owner's only (ADR 0025).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          description: The items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierItemUseList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "5XX":
+          $ref: "#/components/responses/ServerFailure"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2922,6 +3489,28 @@ components:
       description: An item of the order (`Order.items[].id`), not a catalog item.
       schema:
         $ref: "#/components/schemas/Uuid"
+    SupplierOrderId:
+      name: supplierOrderId
+      in: path
+      required: true
+      description: A pedido de compra.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    PurchaseLineId:
+      name: lineId
+      in: path
+      required: true
+      description: A purchase line (`PurchaseLine.id`).
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    SupplierOrderStateFilter:
+      name: state
+      in: query
+      description: "`open` (the default): sent or in transit. `all`: every pedido de compra."
+      schema:
+        type: string
+        enum: [open, all]
+        default: open
     PaymentId:
       name: paymentId
       in: path
@@ -3150,6 +3739,25 @@ components:
           already bought.
         - `item_unavailable`: an item or kit of the order is archived;
           `references` names it.
+        - `item_moved_by_purchasing`: a bought item moves through Compras and
+          Receber itens; on the order only `received → installed` (ADR 0031).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PurchaseConflict:
+      description: |
+        The purchase's state refuses the call:
+
+        - `version_conflict`: someone saved first; reload.
+        - `conflict`: the same `Idempotency-Key` is still being handled; try
+          again.
+        - `item_not_to_buy`: an item is no longer in "A comprar" for this
+          supplier (sent by someone else, removed, or its order cancelled).
+        - `supplier_order_received`: something on it was already received.
+        - `line_closed`: the line was already received, found defective or
+          cancelled, or is no longer a notice.
+        - `order_closed`: an order of the call was handed over or cancelled.
       content:
         application/problem+json:
           schema:
@@ -3229,6 +3837,10 @@ components:
             - workflow_not_found
             - idempotency_key_required
             - idempotency_key_reused
+            - item_moved_by_purchasing
+            - item_not_to_buy
+            - supplier_order_received
+            - line_closed
         detail:
           type: string
         instance:
@@ -5421,7 +6033,10 @@ components:
             $ref: "#/components/schemas/AlertKind"
         nextMoves:
           type: array
-          description: What `POST …/move` accepts now.
+          description: |
+            What `POST …/move` accepts now. For a bought item only
+            `installed`, once received: Compras and Receber itens move the
+            rest (ADR 0031).
           items:
             $ref: "#/components/schemas/ItemStatus"
         supplier:
@@ -5688,11 +6303,22 @@ components:
           description: Absent on the last page.
     HistoryKind:
       type: string
-      enum: [created, status, item, backup_supplier, payment, payment_voided, released, date, changed, tracking_link, cancelled]
+      enum: [created, status, item, backup_supplier, payment, payment_voided, released, date, changed, tracking_link, cancelled, promised_date]
     HistoryEntry:
       type: object
       required: [kind, at]
-      description: One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them.
+      description: |
+        One event of the order. Fields beyond `kind`, `at` and `by` appear
+        when the kind has them. The purchasing entries (ADR 0031):
+
+        - an item move made by purchasing is `item` with `itemId`,
+          `itemName`, `itemFrom`, `itemTo` and `ref` (the pedido de compra;
+          absent for an item received at the counter). A receipt has
+          `check`; a defect lands on `itemTo: to_buy` and carries its note
+          in `reason`. An undone send is a move back to `to_buy` with `ref`
+          and no `check`.
+        - `promised_date` has `itemId`, `itemName`, `newDate` (the supplier's
+          date) and `ref`.
       properties:
         kind:
           $ref: "#/components/schemas/HistoryKind"
@@ -5738,6 +6364,9 @@ components:
           type: string
         customerApproved:
           type: boolean
+        ref:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+          description: With an item move made by purchasing, or a promised date, the pedido de compra.
     HistoryPage:
       type: object
       required: [items]
@@ -5979,3 +6608,664 @@ components:
           $ref: "#/components/schemas/Money"
         handover:
           $ref: "#/components/schemas/Handover"
+
+    SupplierOrderNumber:
+      type: string
+      pattern: "^C-[0-9]{4,}$"
+      example: C-0012
+      description: A pedido de compra's number, counted per store from 1 (ADR 0031).
+    PurchaseChoice:
+      type: object
+      required: [name, label]
+      description: An option choice of a bought item, as the order item was sold.
+      properties:
+        name:
+          type: string
+          example: Cor
+        label:
+          type: string
+          example: Preto
+    ToBuyItem:
+      type: object
+      required: [orderId, orderNumber, orderItemId, catalogItemId, name, quantity, choices, arrivalLimit, replacement]
+      properties:
+        orderId:
+          $ref: "#/components/schemas/Uuid"
+        orderNumber:
+          type: string
+          example: P-0231
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+        catalogItemId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseChoice"
+        arrivalLimit:
+          $ref: "#/components/schemas/CivilDate"
+        replacement:
+          type: boolean
+          description: '"Reposição": the item was received defective and is bought again.'
+        cost:
+          $ref: "#/components/schemas/Money"
+          description: Unit cost at order time. The owner's only; absent for every other role.
+    ToBuySupplier:
+      type: object
+      required: [supplierId, supplierName, items]
+      properties:
+        supplierId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        whatsappPhone:
+          $ref: "#/components/schemas/SupplierPhone"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToBuyItem"
+    ToBuy:
+      type: object
+      required: [suppliers, truncated]
+      properties:
+        suppliers:
+          type: array
+          description: By supplier name.
+          items:
+            $ref: "#/components/schemas/ToBuySupplier"
+        truncated:
+          type: boolean
+          description: True when the store has more active orders than one read covers (500).
+    SupplierOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [supplierId, orderItemIds]
+      properties:
+        supplierId:
+          $ref: "#/components/schemas/Uuid"
+        orderItemIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Uuid"
+    SupplierMessagePreview:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: The message as the supplier gets it; never with client data.
+    PurchaseLineStatus:
+      type: string
+      enum: [sent, in_transit, received, defective, cancelled]
+    NoticeReason:
+      type: string
+      enum: [order_cancelled, item_removed, item_changed]
+      description: Why a sent line is no longer needed ("Avisar o fornecedor").
+    PurchaseLine:
+      type: object
+      required: [id, orderId, orderNumber, orderItemId, catalogItemId, name, quantity, choices, status, promisedDate, expectedDate, arrivalLimit, alerts, notice, checkNote]
+      description: Staff data; never in a client view.
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        orderId:
+          $ref: "#/components/schemas/Uuid"
+        orderNumber:
+          type: string
+        orderItemId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+          description: Null once the item was removed from the order.
+        catalogItemId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseChoice"
+        status:
+          $ref: "#/components/schemas/PurchaseLineStatus"
+        promisedDate:
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+          description: The supplier's promised date for this line ("Prazo do fornecedor").
+        expectedDate:
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+          description: The order item's forecast ("Previsto"); null once removed.
+        arrivalLimit:
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+          description: The order's "Precisa chegar até"; null once removed.
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertKind"
+        notice:
+          oneOf:
+            - $ref: "#/components/schemas/NoticeReason"
+            - type: "null"
+        checkNote:
+          type: string
+          description: The note of a defective check; empty otherwise.
+        cost:
+          $ref: "#/components/schemas/Money"
+          description: Unit cost at order time. The owner's only.
+        paidCost:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+          description: Unit price actually paid. The owner's only; absent for every other role.
+    SupplierOrderState:
+      type: string
+      enum: [sent, in_transit, received, undone]
+      description: |
+        `sent` while a line is still sent; `in_transit` once every open line
+        is in transit; `received` when no line is open; `undone` after
+        "Desfazer envio".
+    SupplierOrderSummary:
+      type: object
+      required: [id, number, supplierId, supplierName, sentAt, promisedDate, received, total, state]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        promisedDate:
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+        received:
+          type: integer
+          minimum: 0
+          description: Lines received or found defective.
+        total:
+          type: integer
+          minimum: 0
+          description: Lines not cancelled; 0 once undone.
+        state:
+          $ref: "#/components/schemas/SupplierOrderState"
+    SupplierOrderPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupplierOrderSummary"
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+    SupplierOrder:
+      allOf:
+        - $ref: "#/components/schemas/SupplierOrderSummary"
+        - type: object
+          required: [sentBy, whatsappUrl, lines, canUndo, version]
+          properties:
+            sentBy:
+              $ref: "#/components/schemas/Actor"
+            whatsappUrl:
+              type: string
+              format: uri
+              description: A `wa.me` link with no text, to open the chat with the supplier.
+            lines:
+              type: array
+              items:
+                $ref: "#/components/schemas/PurchaseLine"
+            canUndo:
+              type: boolean
+              description: True while nothing on it was received or found defective.
+            version:
+              type: integer
+              minimum: 1
+    SentSupplierOrder:
+      type: object
+      required: [supplierOrder, whatsappUrl, text]
+      properties:
+        supplierOrder:
+          $ref: "#/components/schemas/SupplierOrder"
+        whatsappUrl:
+          type: string
+          format: uri
+          description: The `wa.me` link with the message; the app opens it. Nothing was sent by the server.
+        text:
+          type: string
+          description: The message, for "Copiar mensagem".
+    PromisedDateRequest:
+      type: object
+      additionalProperties: false
+      required: [version, date]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        date:
+          $ref: "#/components/schemas/CivilDate"
+        lines:
+          type: array
+          maxItems: 200
+          description: A different date for some lines.
+          items:
+            type: object
+            additionalProperties: false
+            required: [lineId, date]
+            properties:
+              lineId:
+                $ref: "#/components/schemas/Uuid"
+              date:
+                $ref: "#/components/schemas/CivilDate"
+    PaidPricesRequest:
+      type: object
+      additionalProperties: false
+      required: [version, prices]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        prices:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [lineId, cents]
+            properties:
+              lineId:
+                $ref: "#/components/schemas/Uuid"
+              cents:
+                $ref: "#/components/schemas/Cents"
+    ToReceiveLine:
+      type: object
+      required: [orderId, orderNumber, orderItemId, name, quantity, choices]
+      properties:
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+          description: Present in a group's lines; absent in `toBuy` (items bought at the counter, received by `orderItemId`).
+        orderId:
+          $ref: "#/components/schemas/Uuid"
+        orderNumber:
+          type: string
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseChoice"
+    ToReceiveGroup:
+      type: object
+      required: [supplierOrderId, number, supplierName, lines]
+      properties:
+        supplierOrderId:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierName:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToReceiveLine"
+    ToReceive:
+      type: object
+      required: [groups, toBuy, truncated]
+      properties:
+        groups:
+          type: array
+          description: Open pedidos de compra, oldest send first.
+          items:
+            $ref: "#/components/schemas/ToReceiveGroup"
+        toBuy:
+          type: array
+          description: '"Comprados sem pedido de compra": items still in "A comprar".'
+          items:
+            $ref: "#/components/schemas/ToReceiveLine"
+        truncated:
+          type: boolean
+    ReceiptPhotoUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [contentType]
+      properties:
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+    ReceiptEntry:
+      description: One entry of a receipt, for an open line or for an item bought at the counter.
+      oneOf:
+        - $ref: "#/components/schemas/ReceiptLineEntry"
+        - $ref: "#/components/schemas/ReceiptCounterEntry"
+    ReceiptLineEntry:
+      type: object
+      additionalProperties: false
+      required: [lineId, check]
+      properties:
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+        check:
+          $ref: "#/components/schemas/Check"
+        note:
+          $ref: "#/components/schemas/DefectNote"
+        photoKeys:
+          $ref: "#/components/schemas/EntryPhotoKeys"
+    ReceiptCounterEntry:
+      type: object
+      additionalProperties: false
+      required: [orderItemId, check]
+      properties:
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+          description: An item still in "A comprar", bought at the counter.
+        check:
+          $ref: "#/components/schemas/Check"
+        note:
+          $ref: "#/components/schemas/DefectNote"
+        photoKeys:
+          $ref: "#/components/schemas/EntryPhotoKeys"
+    DefectNote:
+      type: string
+      maxLength: 500
+      description: Required for `defective` ("O que houve?"); dropped for `ok`.
+    EntryPhotoKeys:
+      type: array
+      maxItems: 2
+      uniqueItems: true
+      items:
+        type: string
+        maxLength: 256
+    ReceiptRequest:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      description: At most 20 photos in all, invoice photos included; more is `400 invalid` on `invoicePhotoKeys`.
+      properties:
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/ReceiptEntry"
+        invoicePhotoKeys:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 256
+    OrderRef:
+      type: object
+      required: [orderId, orderNumber]
+      properties:
+        orderId:
+          $ref: "#/components/schemas/Uuid"
+        orderNumber:
+          type: string
+    Receipt:
+      type: object
+      required: [id, receivedAt, entries, completedOrders, backToBuy]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        receivedAt:
+          type: string
+          format: date-time
+        entries:
+          type: array
+          items:
+            type: object
+            required: [lineId, orderId, orderNumber, orderItemId, name, check]
+            properties:
+              lineId:
+                $ref: "#/components/schemas/Uuid"
+              orderId:
+                $ref: "#/components/schemas/Uuid"
+              orderNumber:
+                type: string
+              orderItemId:
+                $ref: "#/components/schemas/Uuid"
+              name:
+                type: string
+              check:
+                $ref: "#/components/schemas/Check"
+        completedOrders:
+          type: array
+          description: Orders whose every item has now arrived and been checked.
+          items:
+            $ref: "#/components/schemas/OrderRef"
+        backToBuy:
+          type: array
+          description: Items found defective, back in "A comprar".
+          items:
+            type: object
+            required: [orderItemId, name]
+            properties:
+              orderItemId:
+                $ref: "#/components/schemas/Uuid"
+              name:
+                type: string
+    Notice:
+      type: object
+      required: [lineId, supplierOrderId, number, supplierName, orderId, orderNumber, name, quantity, reason, whatsappUrl]
+      properties:
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+        supplierOrderId:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierName:
+          type: string
+        orderId:
+          $ref: "#/components/schemas/Uuid"
+        orderNumber:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        reason:
+          $ref: "#/components/schemas/NoticeReason"
+        whatsappUrl:
+          type: string
+          format: uri
+          description: '"Avisar pelo WhatsApp": asks the supplier to cancel; never names the client.'
+    NoticeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notice"
+    OrderPurchase:
+      description: What purchasing knows of one bought item of the order; its fields follow `status`.
+      oneOf:
+        - $ref: "#/components/schemas/OrderPurchaseToBuy"
+        - $ref: "#/components/schemas/OrderPurchaseLine"
+    OrderPurchaseToBuy:
+      type: object
+      required: [orderItemId, supplierName, status]
+      description: The item is in "A comprar".
+      properties:
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum: [to_buy]
+        supplierChatUrl:
+          $ref: "#/components/schemas/SupplierChatUrl"
+    OrderPurchaseLine:
+      type: object
+      required: [orderItemId, supplierName, status, lineId, number]
+      description: The item's open line, or else its latest one.
+      properties:
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum: [sent, in_transit, received, defective]
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+        supplierOrderId:
+          $ref: "#/components/schemas/Uuid"
+          description: Absent for an item received at the counter.
+        number:
+          oneOf:
+            - $ref: "#/components/schemas/SupplierOrderNumber"
+            - type: "null"
+          description: Null for an item received at the counter.
+        promisedDate:
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
+        supplierChatUrl:
+          $ref: "#/components/schemas/SupplierChatUrl"
+    SupplierChatUrl:
+      type: string
+      format: uri
+      description: '"Falar com o fornecedor", a `wa.me` link with a text that never names the client. Only for `purchase:write`.'
+    OrderPurchases:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderPurchase"
+    PurchasingNeedKind:
+      type: string
+      enum: [to_send, no_promised_date, notify_supplier]
+    PurchasingNeed:
+      description: One purchasing entry of "Precisa de você"; its fields follow `kind`.
+      oneOf:
+        - $ref: "#/components/schemas/ToSendNeed"
+        - $ref: "#/components/schemas/NoPromisedDateNeed"
+        - $ref: "#/components/schemas/NotifySupplierNeed"
+      discriminator:
+        propertyName: kind
+        mapping:
+          to_send: "#/components/schemas/ToSendNeed"
+          no_promised_date: "#/components/schemas/NoPromisedDateNeed"
+          notify_supplier: "#/components/schemas/NotifySupplierNeed"
+    ToSendNeed:
+      type: object
+      required: [kind, supplierId, supplierName, count]
+      description: '"{n} itens para comprar de {fornecedor}."'
+      properties:
+        kind:
+          type: string
+          enum: [to_send]
+        supplierId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        count:
+          type: integer
+          minimum: 1
+          description: Entries in "A comprar" for the supplier (lines, not summed quantities).
+    NoPromisedDateNeed:
+      type: object
+      required: [kind, supplierOrderId, number, supplierName, days]
+      description: '"Pedido de compra C-0012 sem prazo do fornecedor há {n} dias."'
+      properties:
+        kind:
+          type: string
+          enum: [no_promised_date]
+        supplierOrderId:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierName:
+          type: string
+        days:
+          type: integer
+          minimum: 3
+          description: Days since it was sent, in the store's time zone.
+    NotifySupplierNeed:
+      type: object
+      required: [kind, lineId, supplierOrderId, number, supplierName, itemName]
+      description: '"Avise {fornecedor}: {item} não é mais necessário (C-0012)."'
+      properties:
+        kind:
+          type: string
+          enum: [notify_supplier]
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+        supplierOrderId:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierName:
+          type: string
+        itemName:
+          type: string
+    PurchasingToday:
+      type: object
+      required: [toSend, needs]
+      properties:
+        toSend:
+          type: integer
+          minimum: 0
+          description: Items in "A comprar" ("Compras a enviar").
+        needs:
+          type: array
+          description: Notices first, then pedidos de compra with no promised date, then items to send.
+          items:
+            $ref: "#/components/schemas/PurchasingNeed"
+    SupplierItemUse:
+      type: object
+      required: [itemId, itemName, role, leadDays]
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        itemName:
+          type: string
+        role:
+          type: string
+          enum: [main, backup]
+        leadDays:
+          $ref: "#/components/schemas/Days"
+        cost:
+          $ref: "#/components/schemas/Money"
+          description: The owner's only.
+    SupplierItemUseList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupplierItemUse"

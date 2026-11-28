@@ -99,4 +99,6 @@ Receiving needs a connection, like every admin screen (ADR 0029). A tap or an up
 - Orders never wait on purchasing: a deposit, a change or a cancel writes nothing in purchasing. Compras reads the order context each time it is opened, which is cheap at a small shop's volume and is load-tested in milestone 8.
 - The M4 hand-offs that assumed handlers (`GeneratePurchases` idempotent per item, `Cancel` calling purchasing) are met by the read instead. `Cancel`'s comment is replaced.
 - `stock` items show in "A comprar" until milestone 6 adds reservation (ADR 0030, Q2). Milestone 6 decides what happens to their sent lines when Estoque is turned on.
+- A line's `order_item_id` is null once its item was removed from the order; its `order_id` stays. Architecture section 7 reads "`order_item_id` null" as a stock restock, but in M5 a null means "removed". Milestone 6's restock lines get their own column, with a CHECK that a line has an order or a restock.
+- Referential actions bypass RLS: the `ON DELETE SET NULL` on a line runs as the table owner. The guard is the order repository's refusal of any write without a staff scope (security review of 5.1).
 - Partial deliveries wait for the whole quantity. Counting what arrived can be added later as a received quantity on the line.
