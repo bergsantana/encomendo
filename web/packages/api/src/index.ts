@@ -91,8 +91,57 @@ export type {
   UpdateCategoryRequest,
   VersionRequest,
 } from './catalog'
-export { createSupplier, getSupplier, listSuppliers, replaceSupplier } from './suppliers'
-export type { ReplaceSupplierRequest, Supplier, SupplierInput, SupplierListRequest, SupplierPage } from './suppliers'
+export { createSupplier, getSupplier, listSuppliers, replaceSupplier, supplierItems } from './suppliers'
+export type {
+  ReplaceSupplierRequest,
+  Supplier,
+  SupplierInput,
+  SupplierItemUse,
+  SupplierItemUseList,
+  SupplierListRequest,
+  SupplierPage,
+} from './suppliers'
+export {
+  markInTransit,
+  notices,
+  orderPurchases,
+  previewSupplierOrder,
+  purchasingToday,
+  recordPaidPrices,
+  recordPromisedDate,
+  resolveNotice,
+  sendSupplierOrder,
+  supplierOrder,
+  supplierOrders,
+  toBuy,
+  undoSupplierOrder,
+} from './purchasing'
+export type {
+  Notice,
+  NoticeList,
+  NoticeReason,
+  OrderPurchase,
+  OrderPurchases,
+  PaidPricesRequest,
+  PromisedDateRequest,
+  PurchaseChoice,
+  PurchaseLine,
+  PurchaseLineStatus,
+  PurchasingNeed,
+  PurchasingToday,
+  SentSupplierOrder,
+  SupplierMessagePreview,
+  SupplierOrder,
+  SupplierOrderFilter,
+  SupplierOrderPage,
+  SupplierOrderRequest,
+  SupplierOrderState,
+  SupplierOrderSummary,
+  SupplierOrderVersionRequest,
+  ToBuy,
+  ToBuyItem,
+  ToBuySupplier,
+} from './purchasing'
 export { createTenant } from './tenancy'
 export type { CreateTenantRequest, Tenant } from './tenancy'
 export { chooseStatusWorkflow, getSettings, updateSettings } from './settings'
