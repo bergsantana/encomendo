@@ -24,8 +24,9 @@ import { useSessionStore } from '../../stores/session'
 import { formField, type ItemDraft, itemChecks, toItemInput } from './itemForm'
 import { useKits } from './kits'
 import { usePhotos } from './photos'
-import { isWhatsappNumber, whatsappDigits } from '../../phone'
+import { whatsappDigits } from '../../phone'
 import { useStoreSettings } from './storeSettings'
+import { supplierChecks } from './supplierChecks'
 import { useTaxonomy } from './taxonomy'
 
 /** ItemFilters are the search box, the category filter and "Mostrar arquivados". */
@@ -308,11 +309,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function addSupplier(name: string, whatsapp: string): Promise<Supplier | null> {
     let created: Supplier | null = null
     await supplierForm.attempt(
-      [
-        ['name', name.trim(), 'Informe o nome do fornecedor.'],
-        ['whatsappPhone', whatsapp.trim(), 'Informe o WhatsApp do fornecedor.'],
-        ['whatsappPhone', isWhatsappNumber(whatsapp) || whatsapp.trim() === '' ? 'ok' : '', 'Confira o número: use DDD e 8 ou 9 dígitos.'],
-      ],
+      supplierChecks(name, whatsapp),
       { byCode: { invalid: fixTheFields } },
       async () => {
         created = await createSupplier(api, { name: name.trim(), whatsappPhone: whatsappDigits(whatsapp) })

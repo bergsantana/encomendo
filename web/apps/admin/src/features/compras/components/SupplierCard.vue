@@ -25,6 +25,10 @@ const props = defineProps<{
   preview: Preview | null
   /** sending is true while a send is on its way; every card waits. */
   sending: boolean
+  /** error is the refusal of the send or preview done on this card. */
+  error: string | null
+  /** status is what "Copiar mensagem" did on this card. */
+  status: string | null
 }>()
 
 const emit = defineEmits<{
@@ -120,6 +124,19 @@ const pickedCount = computed(() => props.supplier.items.filter((item) => !props.
       </BaseButton>
     </div>
     <p
+      v-if="error"
+      role="alert"
+    >
+      {{ error }}
+    </p>
+    <p
+      v-if="status"
+      role="status"
+      class="strong"
+    >
+      {{ status }}
+    </p>
+    <p
       class="hint"
       :role="pickedCount === 0 ? 'alert' : undefined"
     >
@@ -138,12 +155,12 @@ const pickedCount = computed(() => props.supplier.items.filter((item) => !props.
         {{ preview.error }}
       </p>
       <p
-        v-else-if="preview.text === null"
+        v-else-if="preview.loading && preview.text === null"
         class="muted"
       >
         Carregando a mensagem…
       </p>
-      <template v-else>
+      <template v-else-if="preview.text !== null">
         <pre>{{ preview.text }}</pre>
         <BaseButton @click="emit('copy', preview.text)">
           Copiar mensagem
@@ -205,6 +222,9 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.strong {
+  font-weight: 600;
 }
 .hint {
   color: var(--enc-ink-secondary);

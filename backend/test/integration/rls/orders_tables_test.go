@@ -330,7 +330,7 @@ func TestClientRead_InternalTablesEmpty(t *testing.T) {
 	c := seedClients(t)
 	app := env.Open(t, pgtest.App)
 	err := inScope(t, app, asClient(c.first), func(ctx context.Context, tx *sql.Tx) error {
-		for _, tt := range orderTables {
+		for _, tt := range slices.Concat(orderTables, purchasingTables) {
 			if slices.Contains(clientReadTables, tt.name) || !tt.can("s") {
 				continue
 			}

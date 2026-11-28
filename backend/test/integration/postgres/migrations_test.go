@@ -153,3 +153,47 @@ func TestOpen_FailsFastOnBadCredentials(t *testing.T) {
 		t.Fatal("Open succeeded with a wrong password")
 	}
 }
+
+// TestMigration0016_DownDropsPromisedDateHistory: stepping 0016 down with a
+// supplier's promised date in an order's history works, so the old kind
+// CHECK can come back. The owner is bound by FORCE RLS, so Down lifts it
+// for its delete (security review of 5.5).
+func TestMigration0016_DownDropsPromisedDateHistory(t *testing.T) {
+	fresh := pgtest.StartForTest(t)
+	provider := fresh.Provider(t)
+	ctx := t.Context()
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := fresh.Open(t, pgtest.Superuser)
+	_, err := db.ExecContext(ctx, `WITH t AS (INSERT INTO tenants (id, slug, name) VALUES (gen_random_uuid(), 'loja-down', 'Loja') RETURNING id),
+		c AS (INSERT INTO customers (tenant_id, id, name, whatsapp_phone) SELECT id, gen_random_uuid(), 'João', '5592981234567' FROM t RETURNING tenant_id, id),
+		o AS (INSERT INTO orders (tenant_id, id, number, customer_id, workflow_id, workflow_version, status_key, delivery_date,
+				assembly_days, safety_margin_days, deposit_percent, currency, subtotal_cents, handover, tracking_token_hash)
+			SELECT c.tenant_id, gen_random_uuid(), 1, c.id, w.id, w.version,
+				(SELECT key FROM workflow_statuses s WHERE s.workflow_id = w.id AND s.workflow_version = w.version AND s.position = 1),
+				current_date + 20, 3, 2, 50, 'BRL', 100000, 'pickup', gen_random_bytes(32)
+			FROM c, status_workflows w WHERE w.is_default RETURNING tenant_id, id)
+		INSERT INTO order_status_history (tenant_id, id, order_id, kind, at, detail)
+		SELECT tenant_id, gen_random_uuid(), id, 'promised_date', now(), '{"ref": "C-0001"}' FROM o`)
+	if err != nil {
+		t.Fatalf("seed a promised_date entry: %v", err)
+	}
+	if _, err := provider.DownTo(ctx, 15); err != nil {
+		t.Fatalf("down to 15 with a promised_date entry: %v", err)
+	}
+	var left int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM order_status_history WHERE kind = 'promised_date'`).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	var forced bool
+	if err := db.QueryRowContext(ctx, `SELECT relforcerowsecurity FROM pg_class WHERE relname = 'order_status_history'`).Scan(&forced); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 || !forced {
+		t.Errorf("after down: %d promised_date entries, FORCE RLS %v; want none, forced", left, forced)
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+}

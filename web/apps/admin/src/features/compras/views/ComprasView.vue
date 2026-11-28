@@ -33,6 +33,8 @@ const {
   sending,
   sent,
   copyStatus,
+  cardError,
+  truncated,
   orders,
   ordersFilter,
   ordersLoaded,
@@ -128,11 +130,13 @@ function openSupplier(supplier: Supplier | null): void {
         :sending="sending"
         :sent="sent"
         :copy-status="copyStatus"
+        :card-error="cardError"
+        :truncated="truncated"
         :purchase-before-deposit="purchaseBeforeDeposit"
         @pick="(orderItemId, picked, supplierId) => store.setPicked(supplierId, orderItemId, picked)"
         @toggle-preview="store.togglePreview($event)"
         @send="store.send($event)"
-        @copy="store.copyMessage($event)"
+        @copy="(text, supplierId) => store.copyMessage(text, supplierId)"
         @open-link="store.openSentLink()"
         @retry="store.loadToBuy()"
       />

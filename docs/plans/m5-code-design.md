@@ -300,7 +300,8 @@ ALTER TABLE order_item_sourcing
     ADD COLUMN paid_cost_cents bigint CHECK (paid_cost_cents BETWEEN 0 AND 100000000000);
 -- The promised date is the supplier's: staff-only, so it lives in sourcing,
 -- never in order_items, which has a client read policy (0013).
-ALTER TABLE order_status_history ADD COLUMN ref text CHECK (ref ~ '^C-[0-9]{4,}$');
+-- The C-number rides in order_status_history.detail (jsonb), as every
+-- other HistoryEntry field; no column.
 -- 0013's CHECK on order_status_history.kind lists the M4 kinds: drop and
 -- re-add it with 'promised_date' (Down restores the old list).
 -- 0013 grants UPDATE on order_item_sourcing by column: add the new ones.
@@ -429,10 +430,10 @@ CREATE INDEX receipt_photos_tenant_receipt_idx ON receipt_photos (tenant_id, rec
   ```
 
   `order_item_id` needs no grant: the set-null action runs as the table owner.
-- Audit triggers (`audit_row`, 0005) on `supplier_orders`, `purchase_lines`, `receipts`, `receipt_lines` and `receipt_photos`. **Not** on `purchase_line_costs` or `purchase_counters`. `order_item_sourcing` stays unaudited.
+- **No audit triggers** (as built in 5.5): `audit_log` is read by every staff role, viewers included, and these rows name suppliers and their WhatsApp. No staff-only table is audited (0009, 0013; the `/new-migration` skill; `TestAuditTriggers_OnlyOnTheListedTables`).
 - **The `ON DELETE SET NULL (order_item_id)` trap:** Postgres runs a referential action as the table owner and **ignores RLS**, so `staff_only` does not guard it (the tenancy review saw a store page scope's `DELETE FROM order_items` null a line it cannot read). The guard is `hasStaff` in the order repository, which refuses an update without a staff scope before any delete. The audit trigger runs after the statement as `encomendo_app` and records `app.user_id`. 5.5 tests:
-  - `TestPurchaseLine_KeepsRowWhenOrderItemRemoved`, where a staff-scope delete leaves an audit row for the line with the user as actor;
-  - `TestOrders_UpdateWithoutStaffRefusedBeforeDelete`, in the repository;
+  - `TestPurchaseLine_KeepsRowWhenOrderItemRemoved`, where a staff-scope delete keeps the line with a null item;
+  - the order repository's existing case "those scopes write nothing through the repository" (`test/integration/postgres/order_repo_test.go`), which refuses a store page's `Update` before any write;
   - and the M7 allow-list gains the trap "a store page scope must never delete `order_items`".
 - Down: drop the tables in reverse, then the three columns.
 
@@ -689,6 +690,7 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
 - **The repository refuses a scope without a staff user** before any write, as the order repository does (`hasStaff`), since referential actions bypass RLS.
 - **Costs are copied, not passed:** `InsertSupplierOrder` and `InsertCounterLine` write `purchase_line_costs` with `INSERT … SELECT cost_cents FROM order_item_sourcing WHERE tenant_id = ? AND order_item_id = ?`, so a line sent by an admin keeps the owner's cost.
 - Order repository changes: `ItemRecord.Promised`, `Sourcing.PaidCost` and `HistoryEntry.Ref`.
+- **`pruneParts` must not delete and re-insert a kept item** (security review of 5.5). An item whose line id changed is deleted and inserted again under the same id. With 0016, that delete nulls the item's open purchase line, so Compras flags a false "Avisar o fornecedor" and the item can be sent twice. It also cascades `order_item_sourcing`, which loses `promised_date` and `paid_cost_cents`. 5.9 first confirms whether `app/order` ever keeps an item id under a new line id. If it does, either the domain refuses that for an item past `to_buy`, or the repository moves the item in place, which needs `UPDATE (line_id)` on `order_items` in a new migration. Test: `TestOrders_ChangeKeepsTheItemsPurchaseLine` (integration).
 
 **Contract suite:** `test/contract/purchasing_repository.go`, run against `fake` and Postgres. It covers:
 

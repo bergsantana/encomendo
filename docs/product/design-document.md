@@ -570,6 +570,7 @@ Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · C
   - Button "Enviar pelo WhatsApp", with the hint "Os itens marcados ficam como Enviada ao fornecedor." "Marque ao menos um item."
   - After it: "Pedido de compra C-0012 criado." with "Abrir o WhatsApp" (it stays until the next action, in case the browser blocked the automatic opening), "Copiar mensagem" and "Ver pedido de compra".
   - Empty: "Nada para comprar agora." with the hint "Os itens aparecem aqui quando o cliente paga o sinal." (with "Liberar compras antes do sinal" on: "… quando o pedido sai do rascunho.").
+  - With more active orders than one read covers: "Mostrando só os itens dos 500 pedidos ativos com entrega mais próxima. A lista pode não ter tudo."
 - **Enviadas:** filter "Abertos" / "Todos".
   - Table "Pedido de compra", "Fornecedor", "Enviado em", "Prazo do fornecedor" ("Sem prazo" when there is none), "Recebidos" ("{a} de {b}"), "Situação" ("Enviado", "Em trânsito", "Recebido", "Desfeito").
   - On the phone each is a card with the same lines. Empty: "Nenhum pedido de compra ainda." "Carregar mais".
