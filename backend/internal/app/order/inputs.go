@@ -132,3 +132,41 @@ type CancelInput struct {
 	Reason  string
 	Version int
 }
+
+// ListScope says which orders List returns by how far along they are.
+type ListScope string
+
+// The scopes of the order list. An unset scope means ScopeActive.
+const (
+	// ScopeActive is orders neither handed over nor cancelled.
+	ScopeActive ListScope = "active"
+	// ScopeHandedOver is orders in the handed over phase.
+	ScopeHandedOver ListScope = "handed_over"
+	// ScopeCancelled is cancelled orders.
+	ScopeCancelled ListScope = "cancelled"
+	// ScopeAll is every order.
+	ScopeAll ListScope = "all"
+)
+
+// ListFilter narrows List. Every set field must hold for an order to
+// appear. The repository reads the same filter List validated, so an
+// adapter never sees an unknown scope or phase.
+type ListFilter struct {
+	// Status keeps orders whose current status has this key. A cancelled
+	// order's status is the workflow's "cancelled" one.
+	Status workflow.StatusKey
+	// Phase keeps orders whose current status is in this phase.
+	Phase workflow.Phase
+	// Scope defaults to ScopeActive.
+	Scope ListScope
+	// Customer keeps one customer's orders.
+	Customer shared.CustomerID
+	// Query is an order number ("231", "P-0231", see NumberQuery) or the
+	// start of the customer's name, ignoring case and surrounding spaces.
+	Query string
+	// Alert keeps active orders with an alert today. Alerts are computed
+	// from each item's dates, so List applies it after the repository
+	// reads a page: a page may come back shorter than asked, or empty,
+	// with a next cursor.
+	Alert bool
+}

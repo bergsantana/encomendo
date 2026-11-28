@@ -46,6 +46,12 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessIn(t, "America/Sao_Paulo")
+}
+
+// newHarnessIn is newHarness for a store in the named time zone.
+func newHarnessIn(t *testing.T, zone string) *harness {
+	t.Helper()
 	clock := sharedfake.NewClock(start)
 	ids := sharedfake.NewIDs(clock)
 	h := &harness{
@@ -54,7 +60,7 @@ func newHarness(t *testing.T) *harness {
 		events:    sharedfake.NewEvents(), tx: sharedfake.NewTxManager(), clock: clock, ids: ids,
 		store: shared.TenantID(ids.NewID()),
 	}
-	loc, err := time.LoadLocation("America/Sao_Paulo")
+	loc, err := time.LoadLocation(zone)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +78,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h.svc = svc
+	h.repo.Link(h.workflows, h.customers)
 	h.seedCatalog(t)
 	return h
 }
@@ -526,7 +533,7 @@ func TestMovesAndCancel_PermissionsEventsAndVersion(t *testing.T) {
 	if names := h.events.Names(); !slices.Equal(names, want) {
 		t.Errorf("events = %v, want %v", names, want)
 	}
-	if hist := h.repo.History(h.store, v.ID); len(hist) != 3 || hist[2].Kind != order.HistoryCancelled {
+	if hist := h.repo.Written(h.store, v.ID); len(hist) != 3 || hist[2].Kind != order.HistoryCancelled {
 		t.Errorf("history = %+v", hist)
 	}
 }
