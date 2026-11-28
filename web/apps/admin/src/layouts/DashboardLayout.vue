@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * DashboardLayout is the management shell: menu on the left, page on the
- * right. Menu order follows the product: Hoje · Pedidos · Compras · Produção ·
+ * right. Menu order follows the product: Hoje · Pedidos · Compras (or Receber
+ * itens, for a role that receives but does not buy) · Produção ·
  * Estoque · Catálogo · Clientes · Financeiro. Each feature adds its entry
  * when it ships; Produção and Estoque show only when the tenant turns them on.
  * Equipe comes after them, for the roles that manage the team, then
@@ -31,12 +32,15 @@ interface MenuItem {
   alsoOn?: string[]
   /** permission hides the entry from roles without it; the route and the API check it again. */
   permission?: Permission
+  /** unless hides the entry from roles that have this permission, whose own entry covers it: "Receber itens" stands in for "Compras". */
+  unless?: Permission
 }
 
 const items: MenuItem[] = [
   { label: 'Hoje', to: { name: 'hoje' } },
   { label: 'Pedidos', to: { name: 'orders' }, alsoOn: ['order', 'new-order', 'change-order'], permission: 'order:read' },
   { label: 'Compras', to: { name: 'purchasing' }, alsoOn: ['supplier-order'], permission: 'purchase:write' },
+  { label: 'Receber itens', to: { name: 'receive' }, permission: 'receiving:write', unless: 'purchase:write' },
   { label: 'Catálogo', to: { name: 'catalog' }, permission: 'catalog:read' },
   { label: 'Clientes', to: { name: 'customers' }, alsoOn: ['customer'], permission: 'order:read' },
   { label: 'Financeiro', to: { name: 'finance' }, permission: 'finance:read' },
@@ -46,7 +50,7 @@ const items: MenuItem[] = [
 
 const session = useSessionStore()
 const { user, tenant, memberships } = storeToRefs(session)
-const menu = computed(() => items.filter((item) => item.permission === undefined || session.can(item.permission)))
+const menu = computed(() => items.filter((item) => (item.permission === undefined || session.can(item.permission)) && (item.unless === undefined || !session.can(item.unless))))
 const auth = useAuthStore()
 const { loggingOut, logOutError } = storeToRefs(auth)
 

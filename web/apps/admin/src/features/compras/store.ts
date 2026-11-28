@@ -9,8 +9,11 @@ import {
   type Notice,
   notices as readNotices,
   previewSupplierOrder,
+  type Receipt,
+  type ReceiptCheck,
   recordPaidPrices,
   recordPromisedDate,
+  recordReceipt,
   replaceSupplier,
   resolveNotice,
   sendSupplierOrder,
@@ -24,7 +27,11 @@ import {
   supplierOrders,
   toBuy,
   type ToBuySupplier,
+  type ToReceive,
+  toReceive as readToReceive,
+  type ToReceiveLine,
   undoSupplierOrder,
+  uploadReceiptPhoto,
 } from '@encomendo/api'
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
@@ -36,7 +43,31 @@ import { errorMessage } from '../../errorMessage'
 import { openWhatsapp } from '../../openLink'
 import { isWhatsappNumber, whatsappDigits } from '../../phone'
 import { useSessionStore } from '../../stores/session'
-import { conflictMessage, lineClosedMessage, notToBuyMessage, orderClosedMessage, receivedMessage } from './labels'
+import {
+  conflictMessage,
+  invoicePhotoLimitMessage,
+  itemPhotoLimitMessage,
+  lineClosedMessage,
+  missingNoteMessage,
+  notToBuyMessage,
+  orderClosedMessage,
+  receiptPhotoMessage,
+  receivedMessage,
+  receiveClosedMessage,
+  totalPhotoLimitMessage,
+} from './labels'
+import {
+  buildReceipt,
+  type EntryMark,
+  entryKey,
+  invoiceTarget,
+  invoicePhotoLimit,
+  itemPhotoLimit,
+  photoCount,
+  receivableLines,
+  type ReceiptPhoto,
+  totalPhotoLimit,
+} from './receipt'
 
 const pageSize = 30
 const supplierPageSize = 50
@@ -605,9 +636,203 @@ export const useComprasStore = defineStore('compras', () => {
     return true
   }
 
+  // ---- Receber itens ----
+
+  const receivable = shallowRef<ToReceive | null>(null)
+  const receiveLoading = ref(false)
+  const receiveError = ref<string | null>(null)
+  /** marks is what the person said per line, by entry key; it survives a read of the list and a visit to another screen. */
+  const marks = shallowRef<Readonly<Record<string, EntryMark>>>({})
+  const invoicePhotos = shallowRef<readonly ReceiptPhoto[]>([])
+  /** missingNotes holds the entry keys of "Com defeito" lines asked for their "O que houve?". */
+  const missingNotes = shallowRef<ReadonlySet<string>>(new Set())
+  /** photoErrors is the last refusal of a photo, by target: an entry key or `invoiceTarget`. */
+  const photoErrors = shallowRef<Readonly<Record<string, string>>>({})
+  const saving = ref(false)
+  const saveError = ref<string | null>(null)
+  /** receipt is what the last "Salvar recebimento" answered, shown until the next action. */
+  const receipt = shallowRef<Receipt | null>(null)
+  let receiptKey: string | null = null
+  let receiptBody = ''
+  let photoSeq = 0
+  let receiveRead = 0
+
+  const uploading = computed(() => Object.values(marks.value).some((mark) => mark.photos.some((photo) => photo.key === null)) || invoicePhotos.value.some((photo) => photo.key === null))
+  const checked = computed(() => Object.keys(marks.value).length)
+
+  /** readReceivable reads Receber itens and forgets the checks of lines that left the list (received, cancelled or undone elsewhere). */
+  async function readReceivable(): Promise<void> {
+    const read = ++receiveRead
+    receiveLoading.value = true
+    receiveError.value = null
+    try {
+      const answer = await readToReceive(api)
+      if (read !== receiveRead) return
+      receivable.value = answer
+      const here = new Set(receivableLines(answer).map(entryKey))
+      marks.value = Object.fromEntries(Object.entries(marks.value).filter(([key]) => here.has(key)))
+    } catch (failure) {
+      if (read === receiveRead) receiveError.value = errorMessage(failureOf(failure))
+    } finally {
+      if (read === receiveRead) receiveLoading.value = false
+    }
+  }
+
+  /** openReceive reads what can be received, every time the screen is shown: another device may have received meanwhile. */
+  function openReceive(): Promise<void> {
+    receipt.value = null
+    return readReceivable()
+  }
+
+  function findLine(key: string): ToReceiveLine | undefined {
+    return receivableLines(receivable.value).find((line) => entryKey(line) === key)
+  }
+
+  function setMark(key: string, mark: EntryMark | null): void {
+    const rest = Object.fromEntries(Object.entries(marks.value).filter(([candidate]) => candidate !== key))
+    marks.value = mark === null ? rest : { ...rest, [key]: mark }
+  }
+
+  /** check says "Tudo certo" or "Com defeito" for a line; the same check again takes it back, with its note and photos. */
+  function check(key: string, value: ReceiptCheck): void {
+    receipt.value = null
+    saveError.value = null
+    const mark = marks.value[key]
+    if (mark?.check === value) {
+      setMark(key, null)
+      return
+    }
+    setMark(key, { check: value, note: mark?.note ?? '', photos: mark?.photos ?? [] })
+  }
+
+  /** setNote writes "O que houve?" for a defective line. */
+  function setNote(key: string, note: string): void {
+    const mark = marks.value[key]
+    if (mark === undefined) return
+    setMark(key, { ...mark, note })
+    if (missingNotes.value.has(key) && note.trim() !== '') missingNotes.value = new Set([...missingNotes.value].filter((candidate) => candidate !== key))
+  }
+
+  function photosOf(target: string): readonly ReceiptPhoto[] {
+    return target === invoiceTarget ? invoicePhotos.value : (marks.value[target]?.photos ?? [])
+  }
+
+  function setPhotos(target: string, photos: ReceiptPhoto[]): void {
+    if (target === invoiceTarget) {
+      invoicePhotos.value = photos
+      return
+    }
+    const mark = marks.value[target]
+    if (mark !== undefined) setMark(target, { ...mark, photos })
+  }
+
+  function setPhotoError(target: string, message: string | null): void {
+    const rest = Object.fromEntries(Object.entries(photoErrors.value).filter(([candidate]) => candidate !== target))
+    photoErrors.value = message === null ? rest : { ...rest, [target]: message }
+  }
+
+  /** roomFor says how many more photos a target takes and, when it takes fewer than asked, which limit refuses the rest. */
+  function roomFor(target: string): { room: number; refusal: string } {
+    const ownLeft = (target === invoiceTarget ? invoicePhotoLimit : itemPhotoLimit) - photosOf(target).length
+    const totalLeft = totalPhotoLimit - photoCount(marks.value, invoicePhotos.value)
+    if (ownLeft <= totalLeft) return { room: Math.max(0, ownLeft), refusal: target === invoiceTarget ? invoicePhotoLimitMessage : itemPhotoLimitMessage }
+    return { room: Math.max(0, totalLeft), refusal: totalPhotoLimitMessage }
+  }
+
+  async function uploadOne(target: string, file: File): Promise<void> {
+    photoSeq += 1
+    const id = photoSeq
+    setPhotos(target, [...photosOf(target), { id, key: null }])
+    try {
+      const key = await uploadReceiptPhoto(api, { file })
+      // The line may have been unchecked, or the photo removed, while it went up.
+      if (photosOf(target).some((photo) => photo.id === id)) setPhotos(target, photosOf(target).map((photo) => (photo.id === id ? { id, key } : photo)))
+    } catch (failure) {
+      setPhotos(target, photosOf(target).filter((photo) => photo.id !== id))
+      const message = receiptPhotoMessage(failure)
+      if (message !== null) setPhotoError(target, message)
+    }
+  }
+
+  /**
+   * addPhotos sends the chosen files up for an item or for the invoice, as
+   * many as the limits leave room for (2 per item, 4 for the invoice, 20 in
+   * all); the rest are refused with the limit's message. A file that fails
+   * says why and is not kept.
+   */
+  async function addPhotos(target: string, files: readonly File[]): Promise<void> {
+    setPhotoError(target, null)
+    saveError.value = null
+    const { room, refusal } = roomFor(target)
+    const taken = files.slice(0, room)
+    if (taken.length < files.length) setPhotoError(target, refusal)
+    // One at a time: each photo's request, storage and key stay in order, and a flaky connection is not hammered.
+    for (const file of taken) await uploadOne(target, file)
+  }
+
+  /** removePhoto takes a photo off an item or the invoice. */
+  function removePhoto(target: string, photoId: number): void {
+    setPhotoError(target, null)
+    setPhotos(
+      target,
+      photosOf(target).filter((photo) => photo.id !== photoId),
+    )
+  }
+
+  function receiveRefusal(refused: ApiError): string {
+    return errorMessage(refused, { line_closed: receiveClosedMessage, order_closed: receiveClosedMessage })
+  }
+
+  /**
+   * saveReceipt sends "Salvar recebimento". A defect without its note is
+   * refused here, before any call. The `Idempotency-Key` is made when the
+   * save starts and kept while the receipt stays the same, so "Tentar de
+   * novo" after a lost answer sends the same save and never receives twice;
+   * a receipt that changed gets a new key. A failed save keeps every check
+   * and photo. Resolves whether it was saved.
+   */
+  async function saveReceipt(): Promise<boolean> {
+    if (saving.value || uploading.value) return false
+    const built = buildReceipt(receivableLines(receivable.value), marks.value, invoicePhotos.value)
+    missingNotes.value = new Set(built.missingNote)
+    if (built.body === null) return false
+    const text = JSON.stringify(built.body)
+    if (receiptKey === null || text !== receiptBody) {
+      receiptKey = newIdempotencyKey()
+      receiptBody = text
+    }
+    saving.value = true
+    saveError.value = null
+    receipt.value = null
+    try {
+      receipt.value = await recordReceipt(api, built.body, receiptKey)
+      receiptKey = null
+      receiptBody = ''
+      marks.value = {}
+      invoicePhotos.value = []
+      photoErrors.value = {}
+      void readReceivable()
+      return true
+    } catch (failure) {
+      const refused = failureOf(failure)
+      saveError.value = receiveRefusal(refused)
+      // The checks are stale: the list is read again, and the lines that left it lose their check.
+      if (refused.code === 'line_closed' || refused.code === 'order_closed') void readReceivable()
+      return false
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** missingNoteText is the "O que houve?" refusal of a line, or null when its note is fine. */
+  function missingNoteText(key: string): string | null {
+    const line = findLine(key)
+    return missingNotes.value.has(key) && line !== undefined ? missingNoteMessage(line.name) : null
+  }
+
   // ---- Tabs ----
 
-  /** openTab reads what a tab shows, every time it is shown: Compras reads the orders afresh, so a send from another device is seen. */
+  /** openTab reads what a tab shows, every time it is shown: Compras reads the orders afresh, so a send from another device is seen. "Receber itens" reads itself, as its own screen does. */
   async function openTab(tab: ComprasTab): Promise<void> {
     if (tab === 'a-comprar') await loadToBuy()
     else if (tab === 'enviadas') await loadOrders()
@@ -690,5 +915,23 @@ export const useComprasStore = defineStore('compras', () => {
     reloadSupplier,
     saveSupplier,
     openTab,
+    receivable,
+    receiveLoading,
+    receiveError,
+    marks,
+    invoicePhotos,
+    photoErrors,
+    uploading,
+    checked,
+    saving,
+    saveError,
+    receipt,
+    openReceive,
+    check,
+    setNote,
+    addPhotos,
+    removePhoto,
+    saveReceipt,
+    missingNoteText,
   }
 })
