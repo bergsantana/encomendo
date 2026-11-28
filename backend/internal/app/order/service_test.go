@@ -395,30 +395,75 @@ func TestChange_OmittedTermsKeepTheirValues(t *testing.T) {
 	}
 }
 
-// Staff may not change the lines of an order whose terms an owner or admin
-// set, so a discount or a 0% deposit cannot be carried over to another
-// basket (security review of 4.10; ADR 0030, Amendments).
-func TestChange_StaffChangingLinesUnderManagedTermsIsForbidden(t *testing.T) {
+// Staff may not change the lines of a discounted order, so an owner's or
+// admin's discount cannot be carried over to another basket. A deposit or
+// days other than the store's do not lock the lines: staff keep them, and
+// still cannot change them (ADR 0030, Amendments; go-reviewer N1).
+func TestChange_StaffChangingLinesOfADiscountedOrderIsForbidden(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
+	five := []apporder.LineRequest{{Item: h.banco, Quantity: 5}}
+	pickup := apporder.TermsInput{Handover: order.HandoverPickup}
+	v := h.create(h.admin(t), t, func(in *apporder.CreateInput) { in.Terms.DiscountCents = ptr[int64](10_000) }).Order
+	if _, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version, Lines: five, Terms: pickup}); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("discounted order: err = %v, want ErrForbidden", err)
+	}
 	for name, edit := range map[string]func(*apporder.CreateInput){
-		"discount":   func(in *apporder.CreateInput) { in.Terms.DiscountCents = ptr[int64](10_000) },
 		"0% deposit": func(in *apporder.CreateInput) { in.Terms.DepositPercent = ptr(0) },
 		"days":       func(in *apporder.CreateInput) { in.Terms.SafetyMarginDays = ptr(9) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			v := h.create(h.admin(t), t, edit).Order
-			_, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
-				Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 5}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}})
-			if !errors.Is(err, shared.ErrForbidden) {
-				t.Errorf("err = %v, want ErrForbidden", err)
+			got, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version, Lines: five, Terms: pickup})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Order.Terms.DepositPercent != v.Terms.DepositPercent || got.Order.Terms.SafetyMarginDays != v.Terms.SafetyMarginDays {
+				t.Errorf("terms changed: %+v, want %+v", got.Order.Terms, v.Terms)
 			}
 		})
 	}
-	plain := h.create(h.staff(t), t, nil).Order
-	if _, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: plain.ID, Version: plain.Version,
-		Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 5}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}}); err != nil {
-		t.Errorf("staff changing an order with default terms: %v", err)
+}
+
+// A staff-made kit order changed to a loose item keeps the kit's days, and
+// staff may change it again (go-reviewer N1).
+func TestChange_KitToLooseKeepsTheDaysAndStaysEditable(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	kit := h.kit(t)
+	v := h.create(h.staff(t), t, func(in *apporder.CreateInput) { in.Lines = []apporder.LineRequest{{Kit: kit}} }).Order
+	pickup := apporder.TermsInput{Handover: order.HandoverPickup}
+	loose, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version, Lines: []apporder.LineRequest{h.bancoLine()}, Terms: pickup})
+	if err != nil || loose.Order.Terms.AssemblyDays != 6 {
+		t.Fatalf("kit to loose: %v, days %d", err, loose.Order.Terms.AssemblyDays)
+	}
+	if _, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: loose.Order.Version,
+		Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 2}}, Terms: pickup}); err != nil {
+		t.Errorf("staff's next change: %v", err)
+	}
+}
+
+func TestChangeLines_IdenticalLinesOptionsAndRemoval(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	withRed := apporder.LineRequest{Item: h.banco, Quantity: 1, Options: []apporder.OptionChoice{h.red}}
+	v := h.create(h.staff(t), t, func(in *apporder.CreateInput) {
+		in.Lines = []apporder.LineRequest{withRed, withRed, h.bancoLine()}
+	}).Order
+	h.catalog.AddItem(fake.CatalogItem{ID: h.banco, Name: "Mais caro", Mode: v.Items[0].SourcingMode, Price: brl(t, 900_000), LeadDays: 1})
+	got, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
+		Lines: []apporder.LineRequest{withRed, withRed}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := got.Order
+	// Both lines with the option match their own old line and keep their
+	// prices; the third is removed.
+	if len(o.Lines) != 2 || o.Lines[0].ID != v.Lines[0].ID || o.Lines[1].ID != v.Lines[1].ID || o.Subtotal.Cents() != 210_000 {
+		t.Errorf("lines = %+v subtotal %v", o.Lines, o.Subtotal)
+	}
+	if len(got.Summary.Removed) != 1 || got.Summary.Removed[0] != v.Items[2].ID || len(got.Summary.Added) != 0 {
+		t.Errorf("summary = %+v", got.Summary)
 	}
 }
 

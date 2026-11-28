@@ -162,8 +162,9 @@ func (n *customerNames) summary(ctx context.Context, o *order.Order, today share
 
 // List returns one page of the store's orders that match f (order:read),
 // by delivery date. Summaries carry no cost or margin for any role. The
-// alert filter keeps active orders with an alert today; it runs after the
-// repository's page, which may therefore come back short.
+// alert filter keeps active orders with an alert today: it reads further
+// pages, up to alertPagesMax, until the page is full, so "Com alerta" is not
+// an empty page with a cursor.
 func (s *Service) List(ctx context.Context, f ListFilter, p shared.PageRequest) (shared.Page[SummaryView], error) {
 	var out shared.Page[SummaryView]
 	err := s.read(ctx, identity.PermOrderRead, func(ctx context.Context, r readCtx) error {
@@ -171,29 +172,49 @@ func (s *Service) List(ctx context.Context, f ListFilter, p shared.PageRequest) 
 		if err != nil {
 			return err
 		}
-		page, err := s.d.Repo.List(ctx, r.by.TenantID(), f, p)
-		if err != nil {
-			return fmt.Errorf("list orders: %w", err)
-		}
-		orders, err := s.restoreAll(ctx, page.Items)
-		if err != nil {
-			return err
-		}
 		names := newCustomerNames(s.d.Customers)
-		for _, o := range orders {
-			if f.Alert && len(o.Alerts(r.today)) == 0 {
-				continue
-			}
-			v, err := names.summary(ctx, o, r.today)
+		for read := 0; read < alertPagesMax; read++ {
+			page, err := s.d.Repo.List(ctx, r.by.TenantID(), f, p)
 			if err != nil {
+				return fmt.Errorf("list orders: %w", err)
+			}
+			if err := s.appendSummaries(ctx, &out, page.Items, f, names, r); err != nil {
 				return err
 			}
-			out.Items = append(out.Items, v)
+			out.NextCursor = page.NextCursor
+			if !f.Alert || len(out.Items) >= p.Limit() || !page.HasMore() {
+				return nil
+			}
+			if p, err = shared.NewPageRequest(page.NextCursor, p.Limit()); err != nil {
+				return err
+			}
 		}
-		out.NextCursor = page.NextCursor
 		return nil
 	})
 	return out, err
+}
+
+// alertPagesMax bounds how many repository pages one alert-filtered List
+// reads to fill its page.
+const alertPagesMax = 5
+
+// appendSummaries adds the summaries of recs that pass the alert filter.
+func (s *Service) appendSummaries(ctx context.Context, out *shared.Page[SummaryView], recs []order.Record, f ListFilter, names *customerNames, r readCtx) error {
+	orders, err := s.restoreAll(ctx, recs)
+	if err != nil {
+		return err
+	}
+	for _, o := range orders {
+		if f.Alert && len(o.Alerts(r.today)) == 0 {
+			continue
+		}
+		v, err := names.summary(ctx, o, r.today)
+		if err != nil {
+			return err
+		}
+		out.Items = append(out.Items, v)
+	}
+	return nil
 }
 
 // History returns one page of the order's history, newest first

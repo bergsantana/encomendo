@@ -28,12 +28,13 @@ const msgCustomer = "Informe o cliente do pedido."
 // Create makes an order ("Novo pedido", order:write; a discount, deposit or
 // days other than the defaults need order:manage). The order takes the
 // store's current status workflow and keeps that version for life (ADR
-// 0004). With SendToCustomer it moves to the status after the first and
-// answers the wa.me message with the tracking link. The Idempotency-Key is
+// 0004). With SendToCustomer it moves to the workflow's awaiting_deposit
+// status and answers the wa.me message with the tracking link. The Idempotency-Key is
 // checked after the permission, so a replay never answers a role that may
 // not create; a replay answers the order as it is now.
 //
 // It returns ErrIdempotencyKeyRequired, appshared.ErrIdempotencyKeyReused,
+// appshared.ErrIdempotencyKeyInFlight,
 // shared.ErrForbidden, a *shared.ValidationError, and the catalog's
 // refusals (archived items, swap rules).
 func (s *Service) Create(ctx context.Context, in CreateInput) (CreatedView, error) {

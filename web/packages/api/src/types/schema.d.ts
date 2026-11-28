@@ -2716,6 +2716,8 @@ export interface components {
             amount?: components["schemas"]["Money"];
         };
         Today: {
+            /** @description The store has more active orders than Hoje reads (500, earliest deliveries first); counts and needs cover only those. The screen says so. */
+            truncated: boolean;
             today: components["schemas"]["CivilDate"];
             counts: {
                 active: number;
@@ -2734,6 +2736,14 @@ export interface components {
         };
         /** @description Owner only. */
         FinanceSummary: {
+            /** @description A list hit its read cap (500 active orders, 2000 hand-overs), so "A receber", "A devolver" or the margins cover only part of the store. The screen says so. */
+            truncated: boolean;
+            /** @description The period's total of the margins, computed by the server. `cost` and `margin` count only orders whose every cost was known. */
+            marginsTotal: {
+                total: components["schemas"]["Money"];
+                cost: components["schemas"]["Money"];
+                margin: components["schemas"]["Margin"] | null;
+            };
             from: components["schemas"]["CivilDate"];
             to: components["schemas"]["CivilDate"];
             /** @description Payments recorded in the period, voids excluded. */

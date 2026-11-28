@@ -62,11 +62,55 @@ type MarginRow struct {
 
 // FinanceView is Financeiro for one period. Owner only.
 type FinanceView struct {
-	From, To  shared.CivilDate
-	Received  ReceivedView
-	ToReceive ToReceiveView
-	ToRefund  []RefundView
-	Margins   []MarginRow
+	From, To     shared.CivilDate
+	Received     ReceivedView
+	ToReceive    ToReceiveView
+	ToRefund     []RefundView
+	Margins      []MarginRow
+	MarginsTotal MarginsTotal
+	// Truncated says a list hit its read cap (activeCap active orders,
+	// HandedOverCap hand-overs): "A receber", "A devolver" or the margins
+	// cover only part of the store, and the screen says so.
+	Truncated bool
+}
+
+// MarginsTotal is the period's total of "Margem dos pedidos entregues",
+// computed here so clients never add money up. Cost and Margin count only
+// the orders whose every cost was known; Margin is nil when none was.
+type MarginsTotal struct {
+	Total  shared.Money // every order handed over in the period
+	Cost   shared.Money // orders with a known cost
+	Margin *catalog.Margin
+}
+
+// marginsTotal sums rows. The margin's basis points are over what those
+// orders sold (cost + margin), as each row's are.
+func marginsTotal(rows []MarginRow, currency string) (MarginsTotal, error) {
+	zero, err := shared.ZeroMoney(currency)
+	if err != nil {
+		return MarginsTotal{}, err
+	}
+	out := MarginsTotal{Total: zero, Cost: zero}
+	var margin, sold int64
+	known := false
+	for _, r := range rows {
+		if out.Total, err = out.Total.Add(r.Total); err != nil {
+			return MarginsTotal{}, err
+		}
+		if r.Cost == nil || r.Margin == nil {
+			continue
+		}
+		if out.Cost, err = out.Cost.Add(*r.Cost); err != nil {
+			return MarginsTotal{}, err
+		}
+		known = true
+		margin += r.Margin.Cents
+		sold += r.Cost.Cents() + r.Margin.Cents
+	}
+	if known && sold > 0 {
+		out.Margin = &catalog.Margin{Cents: margin, BasisPoints: margin * 10000 / sold}
+	}
+	return out, nil
 }
 
 // checkPeriod returns a ValidationError unless from..to is a period of at
@@ -128,7 +172,11 @@ func (s *Service) Finance(ctx context.Context, from, to shared.CivilDate) (Finan
 		if err = s.owed(ctx, &out, names, r); err != nil {
 			return err
 		}
-		out.Margins, err = s.margins(ctx, names, r, start, end)
+		if out.Margins, err = s.margins(ctx, names, r, start, end); err != nil {
+			return err
+		}
+		out.Truncated = out.Truncated || len(out.Margins) >= HandedOverCap
+		out.MarginsTotal, err = marginsTotal(out.Margins, r.facts.Currency)
 		return err
 	})
 	return out, err
@@ -188,10 +236,11 @@ func sortedMoney(m map[string]shared.Money) []MoneyByKey {
 
 // owed fills what is still to receive and to refund from the active orders.
 func (s *Service) owed(ctx context.Context, out *FinanceView, names *customerNames, r readCtx) error {
-	rows, err := s.d.Repo.Active(ctx, r.by.TenantID(), activeCap)
+	rows, truncated, err := s.active(ctx, r)
 	if err != nil {
-		return fmt.Errorf("active orders: %w", err)
+		return err
 	}
+	out.Truncated = truncated
 	recs := make([]order.Record, len(rows))
 	for i, row := range rows {
 		recs[i] = row.Record
@@ -242,11 +291,10 @@ func (s *Service) margins(ctx context.Context, names *customerNames, r readCtx, 
 		if err != nil {
 			return nil, err
 		}
-		total, _ := o.Total() // New and Change refuse totals that overflow
-		_, at, _ := o.HandedOver()
+		_, at, _ := o.HandedOver() // HandedOver lists only orders handed over
 		row := MarginRow{
 			Order: o.ID(), Number: o.Number().String(), CustomerName: name,
-			HandedOverOn: shared.DateOf(at, r.facts.Location), Total: total,
+			HandedOverOn: shared.DateOf(at, r.facts.Location), Total: total(o),
 		}
 		if identity.SeesCosts(r.by.Role()) {
 			if cost, ok := o.Cost(); ok {

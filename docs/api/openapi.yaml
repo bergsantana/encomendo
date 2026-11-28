@@ -5735,8 +5735,11 @@ components:
           description: With `refund_due`, the amount to give back.
     Today:
       type: object
-      required: [today, counts, needsYou, upcoming]
+      required: [today, counts, needsYou, upcoming, truncated]
       properties:
+        truncated:
+          type: boolean
+          description: The store has more active orders than Hoje reads (500, earliest deliveries first); counts and needs cover only those. The screen says so.
         today:
           $ref: "#/components/schemas/CivilDate"
         counts:
@@ -5776,9 +5779,25 @@ components:
           $ref: "#/components/schemas/Money"
     FinanceSummary:
       type: object
-      required: [from, to, received, toReceive, toRefund, margins]
+      required: [from, to, received, toReceive, toRefund, margins, marginsTotal, truncated]
       description: Owner only.
       properties:
+        truncated:
+          type: boolean
+          description: A list hit its read cap (500 active orders, 2000 hand-overs), so "A receber", "A devolver" or the margins cover only part of the store. The screen says so.
+        marginsTotal:
+          type: object
+          required: [total, cost, margin]
+          description: The period's total of the margins, computed by the server. `cost` and `margin` count only orders whose every cost was known.
+          properties:
+            total:
+              $ref: "#/components/schemas/Money"
+            cost:
+              $ref: "#/components/schemas/Money"
+            margin:
+              oneOf:
+                - $ref: "#/components/schemas/Margin"
+                - type: "null"
         from:
           $ref: "#/components/schemas/CivilDate"
         to:

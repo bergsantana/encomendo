@@ -20,10 +20,9 @@ type ChangedView struct {
 // Change replaces an order's lines and terms (ADR 0030 and its
 // Amendments):
 //
-//   - before any payment it needs order:write, unless the order carries terms
-//     only order:manage may set (a discount, a deposit or days other than the
-//     defaults): then any change needs order:manage, so staff can neither
-//     shrink a discounted basket nor grow a 0% deposit order;
+//   - before any payment it needs order:write, unless the order has a
+//     discount: then any change needs order:manage, so staff cannot carry
+//     an owner's or admin's discount over to another basket;
 //   - once paid it needs order:manage and the seller's confirmation that the
 //     customer agreed (order.ErrApprovalRequired), and answers the wa.me
 //     summary;
@@ -108,23 +107,19 @@ func (s *Service) applyChange(ctx context.Context, o *order.Order, in ChangeInpu
 	})
 }
 
-// mayChange refuses a change of a paid order, or of one with terms only
-// order:manage may set, to a role without order:manage (security review of
-// 4.10; ADR 0030, Amendments).
+// mayChange refuses a change of a paid order, or of a discounted one, to a
+// role without order:manage (ADR 0030, Amendments). Only the discount
+// locks the lines: it is never a default, so it always means an owner or
+// admin set it. A deposit or days other than the store's are not enough:
+// they drift from the defaults on their own (a kit order changed to loose
+// items keeps its kit's days; the owner edits the store's defaults), and
+// staff still cannot change them (resolveTerms).
 func (s *Service) mayChange(o *order.Order, w writeCtx) error {
 	if o.Editable() == order.EditApproval {
 		return requireManage(w.by, "change a paid order")
 	}
-	var current []order.LineSpec
-	for _, l := range o.Lines() {
-		current = append(current, specOf(l))
-	}
-	base, err := newBaseline(w.facts, current)
-	if err != nil {
-		return err
-	}
-	if managed(o.Terms(), base) {
-		return requireManage(w.by, "change an order with terms an owner or admin set")
+	if !o.Terms().Discount.IsZero() {
+		return requireManage(w.by, "change a discounted order")
 	}
 	return nil
 }

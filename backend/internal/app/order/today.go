@@ -73,6 +73,9 @@ type TodayView struct {
 	Counts   TodayCounts
 	NeedsYou []NeedView
 	Upcoming []SummaryView // by delivery date, at most upcomingLimit
+	// Truncated says the store has more active orders than Hoje reads
+	// (activeCap): counts and needs cover only the earliest deliveries.
+	Truncated bool
 }
 
 // need is an entry of "Precisa de você" before its order is summarized.
@@ -89,9 +92,9 @@ type need struct {
 func (s *Service) Today(ctx context.Context) (TodayView, error) {
 	var out TodayView
 	err := s.read(ctx, identity.PermOrderRead, func(ctx context.Context, r readCtx) error {
-		rows, err := s.d.Repo.Active(ctx, r.by.TenantID(), activeCap)
+		rows, truncated, err := s.active(ctx, r)
 		if err != nil {
-			return fmt.Errorf("active orders: %w", err)
+			return err
 		}
 		recs := make([]order.Record, len(rows))
 		for i, row := range rows {
@@ -101,7 +104,7 @@ func (s *Service) Today(ctx context.Context) (TodayView, error) {
 		if err != nil {
 			return err
 		}
-		out = TodayView{Today: r.today}
+		out = TodayView{Today: r.today, Truncated: truncated}
 		var needs []need
 		for i, o := range orders {
 			needs = append(needs, countAndNeeds(&out.Counts, o, rows[i].StatusSince, r)...)
@@ -109,6 +112,19 @@ func (s *Service) Today(ctx context.Context) (TodayView, error) {
 		return s.summarizeToday(ctx, &out, orders, needs, r.today)
 	})
 	return out, err
+}
+
+// active reads up to activeCap active orders, earliest delivery first, and
+// reports whether the store has more: one row past the cap is read to know.
+func (s *Service) active(ctx context.Context, r readCtx) ([]ActiveOrder, bool, error) {
+	rows, err := s.d.Repo.Active(ctx, r.by.TenantID(), activeCap+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("active orders: %w", err)
+	}
+	if len(rows) > activeCap {
+		return rows[:activeCap], true, nil
+	}
+	return rows, false, nil
 }
 
 // countAndNeeds adds o to the counts and returns what it needs from the team.

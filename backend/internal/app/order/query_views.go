@@ -39,10 +39,9 @@ type SummaryView struct {
 
 // toSummary builds o's list line. customerName is the customer's name.
 func toSummary(o *order.Order, customerName string, today shared.CivilDate) SummaryView {
-	total, _ := o.Total() // New and Change refuse totals that overflow
 	v := SummaryView{
 		ID: o.ID(), Number: o.Number().String(), Customer: CustomerBrief{ID: o.Customer(), Name: customerName},
-		Status: statusView(o.Status()), DeliveryDate: o.Promise(), Total: total, BalanceDue: o.BalanceDue(),
+		Status: statusView(o.Status()), DeliveryDate: o.Promise(), Total: total(o), BalanceDue: o.BalanceDue(),
 	}
 	alerts := o.Alerts(today)
 	for _, i := range o.Items() {

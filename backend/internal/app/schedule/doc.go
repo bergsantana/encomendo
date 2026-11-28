@@ -1,7 +1,10 @@
 // Package schedule holds the store's calendar and the recalculation of an
 // order's dates: which day it is in the store's time zone, and the
-// per-order re-derivation that milestone 5 (promised dates) and a time zone
-// change call.
+// per-order re-derivation milestone 5 calls when it records a supplier's
+// promised date. Until then Recalculate only checks access, because the
+// domain has no public redate yet. Nothing calls it when the store's time
+// zone changes: dates already computed stay as they were
+// (docs/plans/m4-code-design.md section 8).
 //
 // Rules it enforces:
 //   - Dates count in the store's time zone, never the server's or UTC
