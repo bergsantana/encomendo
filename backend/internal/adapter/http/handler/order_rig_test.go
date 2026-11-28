@@ -14,6 +14,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	appworkflow "github.com/bergsantana/encomendo/backend/internal/app/workflow"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
+	"github.com/bergsantana/encomendo/backend/internal/domain/customer"
 	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/schedule"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
@@ -332,6 +333,12 @@ func (u *customerCases) Create(_ context.Context, in appcustomer.CreateInput) (a
 	u.calls++
 	u.got = in
 	return orCustomerView(), u.err
+}
+
+func (u *customerCases) AddAddress(_ context.Context, id shared.CustomerID, a customer.AddressSpec) (appcustomer.AddressView, error) {
+	u.calls++
+	u.got = []any{id, a}
+	return appcustomer.AddressView{}, u.err
 }
 
 func (u *customerCases) Update(_ context.Context, in appcustomer.UpdateInput) (appcustomer.View, error) {

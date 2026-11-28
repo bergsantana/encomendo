@@ -235,6 +235,26 @@ func (c *Customer) Replace(s Spec, expectedVersion int) error {
 	return nil
 }
 
+// AddAddress adds one address to the customer, after the ones it has, and
+// returns it as stored (trimmed). Unlike Replace it never edits or removes
+// an address: staff with order:write may add one from an order, never change
+// the rest (ADR 0030, Amendments). It returns a ValidationError naming the
+// bare field ("cep"), or "addresses" for the limit of 10, and
+// ErrInvalidCustomer for a zero id or one the customer already has, which
+// are bugs. Nothing changes when it fails. The version is raised by the
+// repository's update, as for Replace.
+func (c *Customer) AddAddress(s AddressSpec) (Address, error) {
+	a, err := CheckNewAddress(len(c.addresses), s)
+	if err != nil {
+		return Address{}, err
+	}
+	if _, dup := c.Address(a.ID); dup {
+		return Address{}, fmt.Errorf("address %v already belongs to customer %v: %w", a.ID, c.id, ErrInvalidCustomer)
+	}
+	c.addresses = append(c.addresses, a)
+	return a, nil
+}
+
 // TenantID returns the store the customer belongs to.
 func (c *Customer) TenantID() shared.TenantID { return c.tenant }
 

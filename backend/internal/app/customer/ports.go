@@ -18,6 +18,10 @@ type UseCases interface {
 	ByPhone(ctx context.Context, phone string) (View, error)
 	// Create adds a customer (order:write); ErrPhoneTaken for a number in use.
 	Create(ctx context.Context, in CreateInput) (View, error)
+	// AddAddress adds one address to a customer (order:write: "Novo
+	// endereço" in Novo pedido) and returns it with its new id. It never
+	// edits or removes an address; that stays customer:write (Update).
+	AddAddress(ctx context.Context, id shared.CustomerID, spec customer.AddressSpec) (AddressView, error)
 	// Update replaces a customer (customer:write); ErrPhoneTaken for a
 	// number another customer uses.
 	Update(ctx context.Context, in UpdateInput) (View, error)
