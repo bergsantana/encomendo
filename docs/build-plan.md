@@ -25,11 +25,11 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
 | 4 | Customers, orders and deadlines | 17 | 17 | Done: the backend is built and served (#77 to #82, #84, #85), every web screen is built (#83, #86), and the order flow runs against the real stack at desktop and phone size; only the Android shell walkthrough is pending, on a physical phone |
-| 5 | Purchasing and receiving | 1 | 9 | In progress: the purchasing domain is built, and bought items move only through purchasing (5.2–5.4) |
+| 5 | Purchasing and receiving | 2 | 9 | In progress: the purchasing domain and migration are built, and bought items move only through purchasing (5.2–5.5) |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **83** | **127** | **about 65%** (65.4%) |
+|   | **All milestones** | **84** | **127** | **about 66%** (66.1%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -236,7 +236,7 @@ Plan: `docs/plans/m5-purchasing-receiving.md` (steps 5.1–5.16). Decisions: ADR
 ### Backend
 
 - [x] `domain/purchasing`: purchase line, supplier order, supplier message (never carries client name or phone, with test), receipt (`ok` / `defective`) (steps 5.2 and 5.3: `TestOrderMessage_NeverCarriesClientData`, `FuzzOrderMessage_Names`; 5.4 makes purchasing the only path for bought items in `domain/order`)
-- [ ] Purchasing migration, with RLS and tests
+- [x] Purchasing migration, with RLS and tests (step 5.5: `0016_purchasing`, every table staff-only with no client policy and no audit; `test/integration/rls/purchasing_tables_test.go`)
 - [ ] `app/purchasing`: `GeneratePurchases` (after deposit unless `purchase_before_deposit`), `SendSupplierOrder` → `wa.me` link, `RecordPromisedDate`, `Receive`
 - [ ] Postgres repository (grouping by supplier with `Raw` where clearer); receipt photo upload through storage
 - [ ] HTTP handlers and OpenAPI
