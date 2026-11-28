@@ -25,11 +25,11 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
 | 4 | Customers, orders and deadlines | 17 | 17 | Done: the backend is built and served (#77 to #82, #84, #85), every web screen is built (#83, #86), and the order flow runs against the real stack at desktop and phone size; only the Android shell walkthrough is pending, on a physical phone |
-| 5 | Purchasing and receiving | 3 | 9 | In progress: domain, migration and use cases built (5.2–5.8); the Compras screens built against the contract (5.12–5.13) |
+| 5 | Purchasing and receiving | 5 | 9 | In progress: the backend is built and served (5.1–5.10); Compras and Receber itens built against the contract (5.12–5.15); the real-stack and phone close (5.16) remains |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **85** | **127** | **about 67%** (66.9%) |
+|   | **All milestones** | **87** | **127** | **about 69%** (68.5%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -238,8 +238,8 @@ Plan: `docs/plans/m5-purchasing-receiving.md` (steps 5.1–5.16). Decisions: ADR
 - [x] `domain/purchasing`: purchase line, supplier order, supplier message (never carries client name or phone, with test), receipt (`ok` / `defective`) (steps 5.2 and 5.3: `TestOrderMessage_NeverCarriesClientData`, `FuzzOrderMessage_Names`; 5.4 makes purchasing the only path for bought items in `domain/order`)
 - [x] Purchasing migration, with RLS and tests (step 5.5: `0016_purchasing`, every table staff-only with no client policy and no audit; `test/integration/rls/purchasing_tables_test.go`)
 - [x] `app/purchasing`: `GeneratePurchases` (after deposit unless `purchase_before_deposit`), `SendSupplierOrder` → `wa.me` link, `RecordPromisedDate`, `Receive` (steps 5.6–5.8: "A comprar" is read through `app/order`'s `ForPurchasing`, so nothing is generated; ADR 0031)
-- [ ] Postgres repository (grouping by supplier with `Raw` where clearer); receipt photo upload through storage
-- [ ] HTTP handlers and OpenAPI
+- [x] Postgres repository (grouping by supplier with `Raw` where clearer); receipt photo upload through storage (step 5.9: `purchasing_repo.go`, the repository contract against the fake and Postgres, `storage.ReceiptStore` tested on Silo)
+- [x] HTTP handlers and OpenAPI (steps 5.1 and 5.10: the `purchasing` tag served, the `x-unserved` marks gone, and the API e2e `TestPurchasing_*` from the deposit to Montagem)
 
 ### Web
 

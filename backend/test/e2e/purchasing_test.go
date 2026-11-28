@@ -42,7 +42,7 @@ func TestPurchasing_FromDepositToAssembling(t *testing.T) {
 	// the owner's cost.
 	deposit := map[string]any{"kind": "deposit", "amountCents": cents(created, "depositDue"), "method": "pix", "version": version(created)}
 	o := must(t, callWith(t, "POST", "/api/v1/admin/orders/"+id+"/payments", deposit, token, map[string]string{"Idempotency-Key": unique("deposit")}), 201, "record deposit").Body
-	o = must(t, call(t, "POST", "/api/v1/admin/orders/"+id+"/advance", map[string]any{"to": "purchasing", "version": version(o)}, token), 200, "advance to purchasing").Body
+	must(t, call(t, "POST", "/api/v1/admin/orders/"+id+"/advance", map[string]any{"to": "purchasing", "version": version(o)}, token), 200, "advance to purchasing")
 	group := toBuyOf(t, s, supplier)
 	row := group["items"].([]any)[0].(map[string]any)
 	if row["orderItemId"] != itemID || row["replacement"] != false || cents(row, "cost") != 40000 {
