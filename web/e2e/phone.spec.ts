@@ -24,6 +24,15 @@ async function expectThumbSized(...controls: Locator[]): Promise<void> {
   }
 }
 
+// emptyToday is GET /today for a store with nothing active.
+const emptyToday = {
+  today: '2026-11-27',
+  counts: { active: 0, awaitingDeposit: 0, withAlert: 0, dueIn7Days: 0 },
+  needsYou: [],
+  upcoming: [],
+  truncated: false,
+}
+
 test.describe('without an API', () => {
   test.skip(realStack, 'runs only against `vite preview`, which has no API')
 
@@ -48,6 +57,7 @@ test.describe('without an API', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/auth/refresh', (route) => route.fulfill({ status: 401, contentType: 'application/problem+json', body: JSON.stringify(refused) }))
     await page.route('**/auth/login', (route) => route.fulfill({ json: session(['order:read', 'order:write']) }))
+    await page.route('**/api/v1/admin/today', (route) => route.fulfill({ json: emptyToday }))
   })
 
   // Signed in from the start, with a team and invitations the API would send, so CI
@@ -131,7 +141,7 @@ test.describe('without an API', () => {
     const menu = page.getByRole('navigation', { name: 'Menu principal' })
     const opener = page.getByRole('button', { name: 'Menu', exact: true })
     await expect(menu).toBeHidden()
-    await expect(page.getByRole('status')).toBeVisible()
+    await expect(page.getByText('Nenhuma entrega prevista.')).toBeVisible()
 
     await opener.click()
     await expect(menu).toBeVisible()
