@@ -87,7 +87,7 @@ func TestPurchasingRepository_Contract(t *testing.T) {
 		seed: s, tx: tx, orders: postgres.NewOrders(system.NewIDs()), wf: defaultWorkflow(t, tx),
 		staff: map[shared.TenantID]shared.UserID{}, customers: map[shared.TenantID]shared.CustomerID{},
 	}
-	repo := postgres.NewPurchasing(system.NewIDs())
+	repo := postgres.NewPurchasing()
 	purchasingports.RunRepositoryContract(t, func(*testing.T) purchasingports.RepositoryHarness {
 		return purchasingports.RepositoryHarness{
 			Repo: repo, Tx: tx, NewID: pgtest.NewID, NewStore: w.newStore, NewItem: w.newItem,

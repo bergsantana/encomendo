@@ -169,7 +169,7 @@ func (s *Service) send(ctx context.Context, c call, in SendInput) (SentView, err
 	// The repository copies each line's cost in SQL, so an admin's send
 	// keeps the owner's cost (docs/plans/m5-code-design.md, section 4.1).
 	if err := s.d.Repo.InsertSupplierOrder(ctx, so, text, url); err != nil {
-		if errors.Is(err, shared.ErrConflict) {
+		if errors.Is(err, ErrOpenLine) {
 			// The unique open-line index: another send took an item first.
 			return SentView{}, fmt.Errorf("save supplier order %s: %w", so.ID(), ErrItemNotToBuy)
 		}
