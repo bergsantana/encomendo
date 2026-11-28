@@ -75,7 +75,7 @@ func (tt tenantTable) can(op string) bool { return strings.Contains(tt.grants, o
 // tenantTables lists every tenant-scoped table, tenants first.
 // TestEveryTenantTableIsListed fails when a migration adds one that is
 // missing here.
-var tenantTables = slices.Concat(platformTables, catalogTables, orderTables)
+var tenantTables = slices.Concat(platformTables, catalogTables, orderTables, purchasingTables)
 
 // platformTables are the tables of milestone 2.
 var platformTables = []tenantTable{

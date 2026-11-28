@@ -60,6 +60,8 @@ Goal (build plan): the core of the product. An order moves through its store's s
     - `orders.assembly_days`, `safety_margin_days`, and `order_lines.assembly_days` and `safety_margin_days`: with `delivery_date` they give the arrival limit;
     - `orders.promise_changed_by_hand`, `customer_id`, `tracking_token_hash`, `cancel_reason`, `deposit_confirmed_cents`, `deposit_percent`, `delivery_address` and `delivery_address_id`;
     - every row of `order_status_history`, `order_messages` and `order_item_sourcing` (no client policy at all).
+    - every purchasing table of `0016_purchasing` (staff-only, no client policy), and `order_item_sourcing.promised_date` and `paid_cost_cents` (milestone 5).
+  - **A store page scope must never delete `order_items`** (milestone 5): the `ON DELETE SET NULL` on `purchase_lines` runs as the table owner, past RLS, so only the order repository's staff guard keeps a store page from nulling a line it cannot read.
   - **A store-page scope (a tenant, no user) reads every row of `customers` and `customer_addresses`, and `orders.delivery_address`,** under `tenant_isolation`: names, phones, emails, notes and addresses of every customer of the store. Store-page repositories must never read them, except the one lookup of a customer by phone that checkout needs (below), and the app layer is the only guard there.
   - idempotency keys per caller before the store page uses them, and deletes limited to expired keys;
   - deleting a client account (it fails while an order or customer links to it) and `PlaceOrder` on a customer matched only by phone (no customer facts, no stored addresses);
