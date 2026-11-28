@@ -9,10 +9,12 @@ import { createStore, latestEmail, logOut, mailpitUrl, password, signUp, unique 
 // E2E_BASE_URL the suite runs against `vite preview`, which has no API, so only
 // the smoke tests at the top run and the real-stack tests skip.
 //
-// One run of the whole suite signs up five accounts from one address (three
-// here, two in catalogo.spec.ts), and the API allows 10 sign-ups an hour per
-// IP (ADR 0021). To run more than twice in an hour against the same stack,
-// clear the counts first:
+// One run of the whole suite signs up ten accounts from one address (three
+// here, two in catalogo.spec.ts, two in phone.spec.ts and one each in
+// phone-catalogo.spec.ts, pedidos.spec.ts and phone-pedidos.spec.ts), and the
+// API allows 10 sign-ups an hour per IP (ADR 0021). That is the whole limit:
+// clear the counts before every full run, and before any second run in the
+// hour. A new spec that signs up must reuse an account or the limit must rise.
 //   docker exec <redis container> sh -c "redis-cli --scan --pattern 'g:rl:*' | xargs -r redis-cli del"
 // With E2E_BASE_URL set and E2E_MAILPIT_URL missing, the real-stack tests
 // fail on purpose rather than skip.

@@ -216,12 +216,12 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 
 ### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
-- [x] Hoje, Pedidos, Clientes, Financeiro and the workflow setting work at phone size (step 4.23: `web/e2e/phone-pedidos.spec.ts` runs the order flow against `make stack-up` at 390 × 844, checking no side scroll and 48 px controls on Pedidos, Novo pedido, Pedido, Hoje, Clientes, Financeiro and Configurações, with every dialog as a full-screen sheet. The Android shell walkthrough of these screens is pending, with the rest of 3.5's: see the plan's Result)
+- [x] Hoje, Pedidos, Clientes, Financeiro and the workflow setting work at phone size (step 4.23: `web/e2e/phone-pedidos.spec.ts` runs the order flow against `make stack-up` at 390 × 844 and checks no side scroll and 48 px controls on Pedidos, Novo pedido, Pedido, Hoje, Clientes, Financeiro and Configurações. It also opens the customer form, the kit and item pickers, Registrar pagamento, Anular, Liberar sem sinal, Cancelar pedido, Alterar data and the handover question, and checks that each is a full-screen sheet; Com defeito and "Enviar link de acompanhamento" are page buttons, checked for thumb size only. Financeiro's "A receber" is checked with a row. The Android shell walkthrough of these screens is pending, with the rest of 3.5's: see the plan's Result)
 
 ### Done when
 
 - [x] Every preset workflow has tests for each allowed and forbidden move and each phase guard (`domain/workflow` `TestPresets_Moves`, `domain/order` `TestAdvance_<Preset>_EveryMove_WithGuardHeldAndBroken`)
-- [x] Changing a delivery date returns a `wa.me` link and nothing is sent automatically (steps 4.10, 4.14 and 4.23: the use case and handler tests check the link and that nothing is sent; `web/e2e/pedidos.spec.ts` changes a date on the real stack, checks that the app opens only an `https://wa.me/` link with a text that names no supplier, cost or alert, and records that the browser made no request to WhatsApp)
+- [x] Changing a delivery date returns a `wa.me` link and nothing is sent automatically (steps 4.10, 4.14 and 4.23: no outbound sender exists, because the API only returns the link; `TestChangeDeliveryDate_AnswersTheLinkAndRecordsTheMessage` checks the link and the stored message; `web/e2e/pedidos.spec.ts` changes a date on the real stack, checks that the app opens exactly the `https://wa.me/` link the API answered, with a text that names no supplier, cost or alert, and records that the browser made no request to a WhatsApp host)
 
 **Answered (ADR 0023):** the owner records payments by hand, with no PIX in v1. Stores pick one of the four presets and cannot rename statuses. The deposit is 50% by default, assembly 3 days and safety margin 2 days.
 

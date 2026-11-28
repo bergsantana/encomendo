@@ -8,9 +8,14 @@ import { apiSession, createStore, mailpitUrl, openMenu, seedCatalog, signUp, uni
 // E2E_MAILPIT_URL): choose the status list, make a customer, sell a kit, record
 // the deposit, change the delivery date and receive the items, then visit
 // Hoje, Pedidos, Clientes, Financeiro and Configurações. Every screen must fit
-// the width and every control a thumb hits must be 48 px tall. The run signs
-// up one account, which counts against the 10-an-hour-per-IP sign-up limit;
-// clear the Redis `g:rl:*` keys between full runs (see admin.spec.ts).
+// the width and every control a thumb hits must be 48 px tall. The dialogs the
+// flow opens are checked as full-screen sheets: the customer form, the kit and
+// item pickers, Registrar pagamento, Anular, Liberar sem sinal, Cancelar
+// pedido, Alterar data and the handover question. Com defeito and "Enviar link
+// de acompanhamento" are buttons on the page, not dialogs, so they are checked
+// for thumb size only. The run signs up one account. A full run of the suite
+// signs up ten from one address, and the API allows 10 sign-ups an hour per IP
+// (ADR 0021), so clear the counts before every full run (see admin.spec.ts).
 const realStack = process.env.E2E_BASE_URL !== undefined && process.env.E2E_BASE_URL !== ''
 
 /** expectNoSideScroll fails when the page is wider than the screen: a phone must never scroll sideways. */
@@ -35,8 +40,8 @@ async function expectThumbSized(...controls: Locator[]): Promise<void> {
 }
 
 /** expectSheetFits checks the open sheet fills the 390 x 844 screen and nothing in it spills sideways. */
-async function expectSheetFits(page: Page, name: string): Promise<Locator> {
-  const sheet = page.getByRole('dialog', { name, exact: true })
+async function expectSheetFits(page: Page, name: string | RegExp): Promise<Locator> {
+  const sheet = page.getByRole('dialog', typeof name === 'string' ? { name, exact: true } : { name })
   await expect(sheet).toBeVisible()
   const box = await sheet.boundingBox()
   expect([box?.x, box?.y, box?.width, box?.height]).toEqual([0, 0, 390, 844])
@@ -58,6 +63,9 @@ test.describe('against the real stack', () => {
 
   test.setTimeout(180_000)
 
+  // A status shows as a badge whose whole text is its name; the moves are "Mover para {status}" and the history is a sentence.
+  const status = (page: Page, label: string) => page.getByText(label, { exact: true })
+
   /** goTo opens a menu entry through the drawer and checks the drawer closed. */
   async function goTo(page: Page, entry: string, heading: string): Promise<void> {
     await openMenu(page)
@@ -68,6 +76,15 @@ test.describe('against the real stack', () => {
 
   test('an owner sells a kit and moves the order along, on every M4 screen', async ({ page, request }) => {
     const owner = unique('fonepedidos')
+    // window.open is stubbed before any page script runs, so a wa.me tab never really opens; it lives on the document, so the flow stays SPA-only.
+    await page.addInitScript(() => {
+      const opened: string[] = []
+      Object.assign(window, { __opened: opened })
+      window.open = (url?: string | URL) => {
+        opened.push(String(url))
+        return null
+      }
+    })
 
     await signUp(page, 'Elisa Prado', owner.email)
     await createStore(page, 'Pedidos Fone', owner.slug)
@@ -86,7 +103,8 @@ test.describe('against the real stack', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Lista de status alterada. Os próximos pedidos usam Orçamento primeiro.' })).toBeVisible()
     await expectNoSideScroll(page)
 
-    const catalog = await seedCatalog(await apiSession(request, owner.email))
+    const api = await apiSession(request, owner.email)
+    const catalog = await seedCatalog(api)
 
     // Clientes: the empty state, then the customer sheet.
     await goTo(page, 'Clientes', 'Clientes')
@@ -120,6 +138,11 @@ test.describe('against the real stack', () => {
     const picker = await expectSheetFits(page, 'Adicionar kit')
     await expectThumbSized(picker.getByRole('button', { name: new RegExp(catalog.kit) }), picker.getByRole('button', { name: 'Fechar' }))
     await picker.getByRole('button', { name: new RegExp(catalog.kit) }).click()
+    await page.getByRole('button', { name: 'Adicionar item' }).click()
+    const itemPicker = await expectSheetFits(page, 'Adicionar item')
+    await expectThumbSized(itemPicker.getByLabel('Buscar item'), itemPicker.getByRole('button', { name: new RegExp(catalog.first) }), itemPicker.getByRole('button', { name: 'Fechar' }))
+    await itemPicker.getByRole('button', { name: 'Fechar' }).click()
+    await expect(itemPicker).toBeHidden()
     const summary = page.getByRole('region', { name: 'Resumo' })
     await expect(summary.getByRole('definition').filter({ hasText: '(7 dias depois do sinal)' })).toBeVisible()
     await expect(summary.getByRole('term').filter({ hasText: /^Margem$/ })).toBeVisible()
@@ -142,9 +165,29 @@ test.describe('against the real stack', () => {
       page.getByRole('button', { name: 'Registrar pagamento' }),
       page.getByRole('button', { name: `Marcar como enviada ao fornecedor: ${catalog.first}` }),
       page.getByRole('button', { name: `Tudo certo: ${catalog.first}` }),
+      page.getByRole('button', { name: `Com defeito: ${catalog.first}` }),
     )
     await page.getByRole('button', { name: 'Mover para Aguardando sinal' }).click()
-    await expect(page.getByRole('heading', { name: 'Pedido P-0001' }).locator('xpath=..').getByText('Aguardando sinal')).toBeVisible()
+    await expect(status(page, 'Aguardando sinal')).toBeVisible()
+
+    // The owner's release and the cancel question are sheets with a thumb-sized "Voltar".
+    await expectThumbSized(page.getByRole('button', { name: 'Liberar sem sinal' }))
+    await page.getByRole('button', { name: 'Liberar sem sinal' }).click()
+    const release = await expectSheetFits(page, 'Liberar o pedido sem o sinal?')
+    await expectThumbSized(release.getByRole('button', { name: 'Liberar pedido' }), release.getByRole('button', { name: 'Voltar' }))
+    await release.getByRole('button', { name: 'Voltar' }).click()
+    await expect(release).toBeHidden()
+    await page.getByRole('button', { name: 'Cancelar pedido' }).click()
+    const cancel = await expectSheetFits(page, 'Cancelar o pedido P-0001?')
+    await expectThumbSized(cancel.getByLabel('Motivo'), cancel.getByRole('button', { name: 'Cancelar pedido' }), cancel.getByRole('button', { name: 'Voltar' }))
+    await cancel.getByRole('button', { name: 'Voltar' }).click()
+    await expect(cancel).toBeHidden()
+
+    // "Enviar link de acompanhamento" is not a dialog: it asks for a new link and opens it, which the stub records.
+    await page.getByRole('button', { name: 'Enviar link de acompanhamento' }).click()
+    await expect(page.getByText('Link de acompanhamento criado.')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual([expect.stringMatching(/^https:\/\/wa\.me\//)])
+    await expectNoSideScroll(page)
 
     await page.getByRole('button', { name: 'Registrar pagamento' }).click()
     const payment = await expectSheetFits(page, 'Registrar pagamento')
@@ -154,6 +197,14 @@ test.describe('against the real stack', () => {
     await payment.getByRole('button', { name: 'Registrar', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Pagamento registrado.' })).toBeVisible()
     await expectNoSideScroll(page)
+    await expect(page.getByRole('region', { name: 'Pagamentos' })).toContainText(/Pago\s*R\$\s*260,00/)
+
+    // Anular (the owner's) opens a sheet; it is left unanswered, so the deposit stays.
+    await page.getByRole('button', { name: /^Anular o pagamento de/ }).click()
+    const voiding = await expectSheetFits(page, /^Anular o pagamento de/)
+    await expectThumbSized(voiding.getByLabel('Motivo'), voiding.getByRole('button', { name: 'Anular pagamento' }), voiding.getByRole('button', { name: 'Voltar' }))
+    await voiding.getByRole('button', { name: 'Voltar' }).click()
+    await expect(voiding).toBeHidden()
 
     await page.getByRole('button', { name: 'Alterar data' }).click()
     const dateSheet = await expectSheetFits(page, 'Alterar data')
@@ -180,7 +231,7 @@ test.describe('against the real stack', () => {
     await expect(page.getByRole('row', { name: new RegExp(`${catalog.second}.*Recebida`) })).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Em preparação' }).click()
     await page.getByRole('button', { name: 'Mover para Pronto' }).click()
-    await expect(page.getByRole('heading', { name: 'Pedido P-0001' }).locator('xpath=..').getByText('Pronto')).toBeVisible()
+    await expect(status(page, 'Pronto')).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Entregue' }).click()
     const handover = await expectSheetFits(page, 'Como o pedido foi entregue?')
     await expectThumbSized(handover.getByLabel('Entrega', { exact: true }), handover.getByLabel('Retirada na loja'), handover.getByRole('button', { name: 'Mover para Entregue' }), handover.getByRole('button', { name: 'Voltar' }))
@@ -197,7 +248,7 @@ test.describe('against the real stack', () => {
     await page.getByRole('button', { name: 'Mover para Entregue' }).click()
     await handover.getByLabel('Retirada na loja').check()
     await handover.getByRole('button', { name: 'Mover para Entregue' }).click()
-    await expect(page.getByRole('heading', { name: 'Pedido P-0001' }).locator('xpath=..').getByText('Entregue')).toBeVisible()
+    await expect(status(page, 'Entregue')).toBeVisible()
     await expectNoSideScroll(page)
 
     // Pedidos with a delivered order: the card, the status tabs and the search fit.
@@ -216,10 +267,18 @@ test.describe('against the real stack', () => {
     await expectNoSideScroll(page)
     await expectThumbSized(page.getByLabel('Buscar por nome ou WhatsApp'))
 
+    // A second order, made through the API and left unpaid, so Financeiro has a balance owed to list.
+    await api.send('POST', '/api/v1/admin/orders', { newCustomer: { name: 'Marina Alves', phone: '5592991234568' }, lines: [{ kitId: catalog.kitId }], terms: { handover: 'pickup', freightCents: 0 } }, { 'idempotency-key': `${owner.slug}-saldo` })
+
     // Financeiro: the owner's period, what was received and what is owed.
     await goTo(page, 'Financeiro', 'Financeiro')
     await expect(page.getByText('Recebido no período')).toBeVisible()
     await expect(page.getByText('A receber', { exact: true })).toBeVisible()
+    // "A receber" lists the unpaid order at phone size, with its balance and its delivery date.
+    const owed = page.getByRole('row', { name: /P-0002/ })
+    await expect(owed).toContainText('Marina Alves')
+    await expect(owed.locator('td[data-label="Saldo"]')).toContainText('520,00')
+    await expect(owed.locator('td[data-label="Entrega prevista"]')).toBeVisible()
     await expect(page.getByRole('row', { name: /P-0001/ })).toContainText('170,00')
     await expectNoSideScroll(page)
     await expectThumbSized(page.getByLabel('Período', { exact: true }))

@@ -9,6 +9,11 @@ import { apiSession, createStore, latestEmail, mailpitUrl, password, seedCatalog
 // delivery date answers a wa.me link that the app only opens in a tab: the
 // run records every request the browser makes and asserts that none went to
 // WhatsApp ("nothing is sent automatically", ADR 0030).
+//
+// This spec signs up one account. A full run of the suite signs up ten from
+// one address, and the API allows 10 sign-ups an hour per IP (ADR 0021), so
+// clear the counts before every full run (see admin.spec.ts):
+//   docker exec <redis container> sh -c "redis-cli --scan --pattern 'g:rl:*' | xargs -r redis-cli del"
 const realStack = process.env.E2E_BASE_URL !== undefined && process.env.E2E_BASE_URL !== ''
 
 /**
@@ -45,7 +50,8 @@ test.describe('Pedidos against the real stack', () => {
 
   test.setTimeout(180_000)
 
-  const header = (page: Page) => page.getByRole('heading', { name: 'Pedido P-0001' }).locator('xpath=..')
+  // A status shows as a badge whose whole text is its name; the moves are "Mover para {status}" and the history is a sentence.
+  const status = (page: Page, label: string) => page.getByText(label, { exact: true })
   const menu = (page: Page) => page.getByRole('navigation', { name: 'Menu principal' })
 
   test('an owner sells a kit from first contact to handover; an admin sees no costs; a new date opens only a wa.me link', async ({ page, request, browser }) => {
@@ -95,7 +101,7 @@ test.describe('Pedidos against the real stack', () => {
     await expect(page.getByRole('heading', { name: 'Pedido P-0001' })).toBeVisible()
     // The order screen: moves come from the API, in the store's own words.
     await page.getByRole('button', { name: 'Mover para Aguardando sinal' }).click()
-    await expect(header(page).getByText('Aguardando sinal')).toBeVisible()
+    await expect(status(page, 'Aguardando sinal')).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Aprovado' }).click()
     await expect(page.getByRole('alert').filter({ hasText: 'O sinal ainda não foi pago. Registre o sinal ou libere o pedido sem ele.' })).toBeVisible()
 
@@ -106,9 +112,13 @@ test.describe('Pedidos against the real stack', () => {
     await payment.getByLabel('Forma').selectOption({ label: 'Pix' })
     await payment.getByRole('button', { name: 'Registrar', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Pagamento registrado.' })).toBeVisible()
-    await expect(page.getByText('Pago', { exact: true }).locator('xpath=following-sibling::dd[1]')).toContainText('260,00')
+    await expect(page.getByRole('region', { name: 'Pagamentos' })).toContainText(/Pago\s*R\$\s*260,00/)
 
     // A new delivery date: the API answers a wa.me link, the app opens it in a tab and sends nothing.
+    const delivery = page.getByRole('region', { name: 'Entrega' })
+    // The promised date is the API's, so read it from the screen instead of assuming a day.
+    const before = /\d{2}\/\d{2}\/\d{4}/.exec(await delivery.getByText(/^Entrega prevista:/).innerText())?.[0]
+    expect(before, 'the promised date on the order screen').toBeDefined()
     await page.getByRole('button', { name: 'Alterar data' }).click()
     const dateDialog = page.getByRole('dialog', { name: 'Alterar data' })
     // The date is picked in the browser's clock, which decides "from today" (the plan's browser-clock rule).
@@ -117,23 +127,31 @@ test.describe('Pedidos against the real stack', () => {
       day.setDate(day.getDate() + 14)
       return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
     })
+    const [year, month, day] = later.split('-')
     await dateDialog.getByLabel('Nova data de entrega').fill(later)
     await dateDialog.getByLabel('Motivo').fill('Atraso na transportadora')
+    const changed = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().endsWith('/delivery-date'))
     await dateDialog.getByRole('button', { name: 'Salvar e avisar o cliente' }).click()
+    const answer = (await (await changed).json()) as { whatsappUrl: string }
     await expect(page.getByText('Data alterada. Envie a mensagem para avisar o cliente.')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Abrir o WhatsApp' })).toBeVisible()
+    // __opened lives on this document (the init script runs on every load and
+    // resets it), so the flow must stay inside the SPA: no reload or full navigation until it is read.
     await expect.poll(async () => (await whatsapp.opened()).length).toBe(1)
     const [dateLink] = await whatsapp.opened()
     expect(dateLink.startsWith('https://wa.me/')).toBe(true)
+    expect(dateLink, 'the app opens exactly the link the API answered').toBe(answer.whatsappUrl)
     const dateMessage = new URL(dateLink).searchParams.get('text') ?? ''
     expect(dateMessage).toContain('P-0001')
     expect(dateMessage).toContain('Atraso na transportadora')
+    expect(dateMessage).toContain(`${day}/${month}/${year}`)
     expect(dateMessage).not.toMatch(/fornecedor|custo|margem|Escapes do Sul|Pode atrasar/i)
-    await expect(page.getByText('Elisa Prado alterou a entrega de 05/12/2026')).toBeVisible()
+    await expect(delivery.getByText(/^Entrega prevista:/)).toContainText(`${day}/${month}/${year}`)
+    await expect(page.getByText(`Elisa Prado alterou a entrega de ${before} para ${day}/${month}/${year}`)).toBeVisible()
 
     // The status moves; the items have not arrived, so the guard says so.
     await page.getByRole('button', { name: 'Mover para Aprovado' }).click()
-    await expect(header(page).getByText('Aprovado')).toBeVisible()
+    await expect(status(page, 'Aprovado')).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Pronto' }).click()
     await expect(page.getByRole('alert').filter({ hasText: 'Nem todos os itens chegaram e foram conferidos.' })).toBeVisible()
 
@@ -146,9 +164,9 @@ test.describe('Pedidos against the real stack', () => {
     await expect(page.getByRole('row', { name: new RegExp(`${catalog.second}.*Recebida`) })).toBeVisible()
 
     await page.getByRole('button', { name: 'Mover para Em preparação' }).click()
-    await expect(header(page).getByText('Em preparação')).toBeVisible()
+    await expect(status(page, 'Em preparação')).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Pronto' }).click()
-    await expect(header(page).getByText('Pronto')).toBeVisible()
+    await expect(status(page, 'Pronto')).toBeVisible()
 
     // Handing over needs the balance first.
     await page.getByRole('button', { name: 'Mover para Entregue' }).click()
@@ -165,11 +183,16 @@ test.describe('Pedidos against the real stack', () => {
     await page.getByRole('button', { name: 'Mover para Entregue' }).click()
     await page.getByRole('dialog').getByLabel('Retirada na loja').check()
     await page.getByRole('dialog').getByRole('button', { name: 'Mover para Entregue' }).click()
-    await expect(header(page).getByText('Entregue')).toBeVisible()
+    await expect(status(page, 'Entregue')).toBeVisible()
 
-    // The delivered order leaves the active tab and sits under Entregues; Hoje and Financeiro read it.
+    // The delivered order leaves Hoje and the active tab, and sits under Entregues; Financeiro reads it.
+    await menu(page).getByRole('link', { name: 'Hoje' }).click()
+    await expect(page.getByText('Nada precisa de você agora.')).toBeVisible()
+    await expect(page.getByText('Nenhuma entrega prevista.')).toBeVisible()
     await menu(page).getByRole('link', { name: 'Pedidos' }).click()
     await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toBeVisible()
+    // The empty message proves the list was read before "no P-0001" means anything.
+    await expect(page.getByText(/^Nenhum pedido (ainda|encontrado)\.$/)).toBeVisible()
     await expect(page.getByText('P-0001')).toHaveCount(0)
     await page.getByRole('tab', { name: 'Entregues' }).click()
     await expect(page.getByRole('row', { name: /P-0001/ })).toContainText('Rafael Lima')
