@@ -48,6 +48,10 @@ type Sourcing struct {
 	SupplierName string
 	Cost         *shared.Money // per unit; nil when unknown
 	Backup       *BackupSource // nil when the item has none, or after switching to it
+	// PaidCost is the unit price actually paid, recorded by the owner from
+	// purchasing; Financeiro's margin prefers it to Cost (ADR 0031). Nil
+	// until recorded.
+	PaidCost *shared.Money
 }
 
 // BackupSource is an item's backup supplier at order time, the first way to

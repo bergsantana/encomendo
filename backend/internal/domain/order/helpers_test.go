@@ -83,3 +83,15 @@ func fieldsOf(err error) map[string]string {
 	}
 	return out
 }
+
+// move moves item id the way the app does since milestone 5: a bought item
+// through MovePurchased (purchasing's path), an in-house one by hand
+// (ADR 0031).
+func move(o *order.Order, id shared.OrderItemID, to order.ItemStatus, check *order.Check, today shared.CivilDate, by shared.Principal) error {
+	for _, it := range o.Items() {
+		if it.ID() == id && it.Bought() {
+			return o.MovePurchased(order.PurchaseMove{Item: id, To: to, Check: check}, today, day1, by)
+		}
+	}
+	return o.MoveItem(id, to, check, today, day1, by)
+}

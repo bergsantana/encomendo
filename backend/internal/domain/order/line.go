@@ -178,6 +178,9 @@ func checkSourcing(s Sourcing, currency string) error {
 	if s.Cost != nil && !validAmount(*s.Cost, currency) {
 		return fmt.Errorf("order: item cost out of range: %w", shared.ErrInvalid)
 	}
+	if s.PaidCost != nil && !validAmount(*s.PaidCost, currency) {
+		return fmt.Errorf("order: item paid cost out of range: %w", shared.ErrInvalid)
+	}
 	if b := s.Backup; b != nil {
 		if b.Supplier.IsZero() || b.LeadDays < 0 || b.LeadDays > maxLeadDays || (b.Cost != nil && !validAmount(*b.Cost, currency)) {
 			return fmt.Errorf("order: backup supplier out of range: %w", shared.ErrInvalid)
@@ -198,6 +201,7 @@ func cloneSnapshot(s ItemSnapshot) ItemSnapshot {
 
 func cloneSourcing(s Sourcing) Sourcing {
 	s.Cost = clonePtr(s.Cost)
+	s.PaidCost = clonePtr(s.PaidCost)
 	if s.Backup != nil {
 		b := *s.Backup
 		b.Cost = clonePtr(b.Cost)

@@ -13,6 +13,7 @@ type Item struct {
 	check     *Check
 	expected  shared.CivilDate
 	arrivedOn shared.CivilDate
+	promised  shared.CivilDate // the supplier's promised date; staff-only
 }
 
 // ID returns the item's id.
@@ -48,12 +49,27 @@ func (i Item) ArrivedOn() (shared.CivilDate, bool) {
 	return i.arrivedOn, !i.arrivedOn.IsZero()
 }
 
+// Promised returns the date the supplier promised for a bought item, and
+// false while none is recorded. It is staff data: it lives in the
+// staff-only sourcing table and no client view carries it (ADR 0031).
+func (i Item) Promised() (shared.CivilDate, bool) { return i.promised, !i.promised.IsZero() }
+
 // Arrived reports whether the item is ready to be assembled: received or
 // made and checked ok, or installed.
 func (i Item) Arrived() bool { return arrived(i.status) }
 
-// NextMoves returns the statuses MoveItem accepts for the item now.
-func (i Item) NextMoves() []ItemStatus { return NextItemMoves(i.snapshot.SourcingMode, i.status) }
+// NextMoves returns the statuses MoveItem accepts for the item now: for a
+// bought item only installed, once received, since purchasing makes every
+// other move (ADR 0031).
+func (i Item) NextMoves() []ItemStatus {
+	if isBought(i.snapshot.SourcingMode) {
+		if i.status == ItemReceived {
+			return []ItemStatus{ItemInstalled}
+		}
+		return nil
+	}
+	return NextItemMoves(i.snapshot.SourcingMode, i.status)
+}
 
 // keepState returns i with the status, check, arrival and expected date of
 // prev when prev is the same item (same id and sourcing mode) before a
@@ -64,7 +80,7 @@ func (i Item) keepState(prev Item) Item {
 	if prev.id != i.id || prev.snapshot.SourcingMode != i.snapshot.SourcingMode {
 		return i
 	}
-	i.status, i.check, i.arrivedOn = prev.status, clonePtr(prev.check), prev.arrivedOn
+	i.status, i.check, i.arrivedOn, i.promised = prev.status, clonePtr(prev.check), prev.arrivedOn, prev.promised
 	if timing(prev) == timing(i) {
 		i.expected = prev.expected
 	}

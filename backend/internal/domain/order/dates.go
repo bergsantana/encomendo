@@ -31,11 +31,12 @@ func (o *Order) base(today shared.CivilDate) shared.CivilDate {
 	return today
 }
 
-// timing returns what an item's readiness depends on. Until milestone 5
-// records supplier promised dates, Promised stays unset; until milestone 6,
-// stock items count their supplier's lead time (ADR 0030).
+// timing returns what an item's readiness depends on: the supplier's
+// promised date replaces the lead time once purchasing records one (ADR
+// 0031); until milestone 6, stock items count their supplier's lead time
+// (ADR 0030).
 func timing(i Item) schedule.Timing {
-	return schedule.Timing{LeadDays: i.snapshot.LeadDays, ExtraDays: i.snapshot.extraDays()}
+	return schedule.Timing{LeadDays: i.snapshot.LeadDays, ExtraDays: i.snapshot.extraDays(), Promised: i.promised}
 }
 
 // redate recomputes every item's expected date from the base day. Items

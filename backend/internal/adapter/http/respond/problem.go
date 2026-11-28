@@ -58,14 +58,17 @@ const (
 	CodePhotoNotUploaded = "photo_not_uploaded"
 
 	// The codes of customers, orders and status workflows (ADR 0030).
-	CodeInvalidTransition     = "invalid_transition"
-	CodeGuardFailed           = "guard_failed"
-	CodeOrderNotEditable      = "order_not_editable"
-	CodeOrderClosed           = "order_closed"
-	CodeApprovalRequired      = "approval_required"
-	CodePaymentExceedsDue     = "payment_exceeds_due"
-	CodeInvalidItemMove       = "invalid_item_move"
-	CodeNoBackupSupplier      = "no_backup_supplier"
+	CodeInvalidTransition = "invalid_transition"
+	CodeGuardFailed       = "guard_failed"
+	CodeOrderNotEditable  = "order_not_editable"
+	CodeOrderClosed       = "order_closed"
+	CodeApprovalRequired  = "approval_required"
+	CodePaymentExceedsDue = "payment_exceeds_due"
+	CodeInvalidItemMove   = "invalid_item_move"
+	CodeNoBackupSupplier  = "no_backup_supplier"
+	// CodeItemMovedByPurchasing: a bought item moves through Compras and
+	// Receber itens, not the order screen (ADR 0031).
+	CodeItemMovedByPurchasing = "item_moved_by_purchasing"
 	CodeItemUnavailable       = "item_unavailable"
 	CodePhoneTaken            = "phone_taken"
 	CodeWorkflowNotFound      = "workflow_not_found"
@@ -272,6 +275,8 @@ func orderRefusalFor(err error) (Problem, bool) {
 		return refuse(CodeOrderNotEditable, "Este pedido já está em montagem e não pode mais ser alterado.")
 	case errors.Is(err, order.ErrOrderClosed):
 		return refuse(CodeOrderClosed, "Este pedido já foi entregue ou cancelado.")
+	case errors.Is(err, order.ErrItemMovedByPurchasing):
+		return refuse(CodeItemMovedByPurchasing, "Este item é movido por Compras. Use Compras ou Receber itens.")
 	case errors.Is(err, order.ErrInvalidItemMove):
 		return refuse(CodeInvalidItemMove, "Este item não pode ir para esta situação.")
 	case errors.Is(err, order.ErrNoBackupSupplier):

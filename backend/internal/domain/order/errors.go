@@ -34,6 +34,10 @@ var (
 	// ErrInvalidItemMove means the item cannot go to that state from where
 	// it is, or the check given does not fit the move.
 	ErrInvalidItemMove = errors.New("order: invalid item move")
+	// ErrItemMovedByPurchasing means a bought item was moved by hand: only
+	// purchasing moves it from to_buy to received, and by hand it may only
+	// go from received to installed (ADR 0031).
+	ErrItemMovedByPurchasing = errors.New("order: bought items move through purchasing")
 	// ErrNoBackupSupplier means the item has no backup supplier in its
 	// snapshot, is made in-house, or is no longer to be bought.
 	ErrNoBackupSupplier = errors.New("order: no backup supplier to switch to")

@@ -68,7 +68,11 @@ func TestViews_EveryAnswerHidesCostsFromNonOwners(t *testing.T) {
 			return h.svc.Advance(h.staff(t), apporder.AdvanceInput{Order: v.ID, To: "purchasing", Version: ver})
 		}},
 		{"move item", func(ver int) (apporder.View, error) {
-			return h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[0].ID, To: order.ItemSentToSupplier, Version: ver})
+			sent := order.PurchaseMove{Item: v.Items[0].ID, To: order.ItemSentToSupplier, Ref: "C-0001"}
+			if err := h.svc.MovePurchased(h.admin(t), []apporder.PurchaseMoveInput{{Order: v.ID, Move: sent}}); err != nil {
+				return apporder.View{}, err
+			}
+			return h.svc.Get(h.staff(t), v.ID)
 		}},
 		{"date", func(ver int) (apporder.View, error) {
 			m, err := h.svc.ChangeDeliveryDate(h.admin(t), apporder.DateInput{Order: v.ID, Date: testkit.Date(t, "2027-01-10"), Version: ver})
