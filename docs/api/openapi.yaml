@@ -87,10 +87,10 @@ info:
     An operation marked `x-unserved` is written ahead of the server so the
     apps can build against it; the server answers it `404` until the plan
     step named there serves it and removes the mark. The end-to-end suite
-    checks both halves. The milestone 4 operations (status workflows,
-    customers, orders, Hoje and Financeiro) are marked `4.14`. Until then,
-    `timeZone` in the settings and `statuses` in the settings' workflow are
-    absent too.
+    checks both halves. No operation is marked today: the milestone 4
+    operations (status workflows, customers, orders, Hoje and Financeiro)
+    have been served since step 4.14, and `timeZone` and `statuses` are in
+    every settings answer.
 
     ## Costs and margins (ADR 0025)
 
@@ -1936,7 +1936,6 @@ paths:
     get:
       tags: [workflows]
       operationId: listStatusWorkflows
-      x-unserved: "4.14"
       summary: The status workflow presets a store can choose, with their statuses.
       description: |
         Needs `settings:read`. The four launch presets (ADR 0004, ADR 0023),
@@ -1962,7 +1961,6 @@ paths:
     put:
       tags: [workflows]
       operationId: chooseStatusWorkflow
-      x-unserved: "4.14"
       summary: Choose the store's status workflow for new orders.
       description: |
         Needs `settings:write` (owner). New orders take the chosen workflow
@@ -2001,7 +1999,6 @@ paths:
     get:
       tags: [customers]
       operationId: listCustomers
-      x-unserved: "4.14"
       summary: The store's customers, by name.
       description: Needs `order:read`. `q` matches the start of a name, ignoring case, or digits of the WhatsApp number.
       security:
@@ -2028,7 +2025,6 @@ paths:
     post:
       tags: [customers]
       operationId: createCustomer
-      x-unserved: "4.14"
       summary: Add a customer.
       description: |
         Needs `order:write`, so whoever takes an order can add its customer.
@@ -2063,7 +2059,6 @@ paths:
     get:
       tags: [customers]
       operationId: getCustomer
-      x-unserved: "4.14"
       summary: One customer with their addresses.
       description: Needs `order:read`.
       security:
@@ -2088,7 +2083,6 @@ paths:
     put:
       tags: [customers]
       operationId: replaceCustomer
-      x-unserved: "4.14"
       summary: Replace a customer's details and addresses.
       description: |
         Needs `customer:write` (owner, admin). Send every field with the
@@ -2129,7 +2123,6 @@ paths:
     post:
       tags: [orders]
       operationId: quoteOrder
-      x-unserved: "4.14"
       summary: Price and date an order without saving it.
       description: |
         Needs `order:write`; a discount, deposit percent or days other than
@@ -2170,7 +2163,6 @@ paths:
     get:
       tags: [orders]
       operationId: listOrders
-      x-unserved: "4.14"
       summary: The store's orders, by delivery date.
       description: |
         Needs `order:read`. Active orders (neither handed over nor
@@ -2205,7 +2197,6 @@ paths:
     post:
       tags: [orders]
       operationId: createOrder
-      x-unserved: "4.14"
       summary: Create an order ("Novo pedido").
       description: |
         Needs `order:write`; a discount, deposit percent or days other than
@@ -2262,7 +2253,6 @@ paths:
     get:
       tags: [orders]
       operationId: getOrder
-      x-unserved: "4.14"
       summary: One order with its items, dates, alerts, payments and the moves it allows.
       description: Needs `order:read`. `cost` and `margin` follow the cost rule (see the top of this document).
       security:
@@ -2287,7 +2277,6 @@ paths:
     put:
       tags: [orders]
       operationId: changeOrder
-      x-unserved: "4.14"
       summary: Change an order's items and terms.
       description: |
         Send every line and term with the `version` you read. Items sent
@@ -2340,7 +2329,6 @@ paths:
     post:
       tags: [orders]
       operationId: advanceOrder
-      x-unserved: "4.14"
       summary: Move the order to another status of its workflow.
       description: |
         Needs `order:write`. `to` is one of the order's `moves`: any later
@@ -2390,7 +2378,6 @@ paths:
     post:
       tags: [orders]
       operationId: releaseOrder
-      x-unserved: "4.14"
       summary: Release the order without the deposit.
       description: |
         Needs `order:override` (owner). Only before the deposit is paid, in
@@ -2431,7 +2418,6 @@ paths:
     post:
       tags: [orders]
       operationId: moveOrderItem
-      x-unserved: "4.14"
       summary: Move one item along its sourcing mode's lifecycle.
       description: |
         Needs `order:write`. `to` is one of the item's `nextMoves` (ADR
@@ -2474,7 +2460,6 @@ paths:
     post:
       tags: [orders]
       operationId: useBackupSupplier
-      x-unserved: "4.14"
       summary: Switch an item to its backup supplier ("Usar o fornecedor reserva").
       description: |
         Needs `order:manage` (owner, admin). Only a bought item still to be
@@ -2517,7 +2502,6 @@ paths:
     post:
       tags: [orders]
       operationId: recordPayment
-      x-unserved: "4.14"
       summary: Record a payment received by hand (Sinal or Saldo).
       description: |
         Needs `order:write`. Requires `Idempotency-Key`. No payment provider
@@ -2565,7 +2549,6 @@ paths:
     post:
       tags: [orders]
       operationId: voidPayment
-      x-unserved: "4.14"
       summary: Void a wrong payment.
       description: |
         Needs `order:override` (owner). The payment stays in the history,
@@ -2606,7 +2589,6 @@ paths:
     put:
       tags: [orders]
       operationId: changeDeliveryDate
-      x-unserved: "4.14"
       summary: Change the date promised to the client.
       description: |
         Needs `order:manage` (owner, admin). Not before today in the store's
@@ -2647,7 +2629,6 @@ paths:
     post:
       tags: [orders]
       operationId: sendTrackingLink
-      x-unserved: "4.14"
       summary: Issue a new tracking link and a WhatsApp message carrying it.
       description: |
         Needs `order:write`. Every call issues a new link and the previous
@@ -2680,7 +2661,6 @@ paths:
     post:
       tags: [orders]
       operationId: cancelOrder
-      x-unserved: "4.14"
       summary: Cancel the order.
       description: |
         Needs `order:manage` (owner, admin). Any time before it is handed
@@ -2720,7 +2700,6 @@ paths:
     get:
       tags: [orders]
       operationId: orderHistory
-      x-unserved: "4.14"
       summary: What happened to the order, newest first.
       description: Needs `order:read`.
       security:
@@ -2751,7 +2730,6 @@ paths:
     get:
       tags: [today]
       operationId: getToday
-      x-unserved: "4.14"
       summary: Hoje — counts, what needs the team and the next deliveries.
       description: |
         Needs `order:read`. Built from active orders, for today in the
@@ -2776,7 +2754,6 @@ paths:
     get:
       tags: [finance]
       operationId: getFinanceSummary
-      x-unserved: "4.14"
       summary: Financeiro — money received, to receive and to refund, and margins.
       description: |
         Needs `finance:read` (owner). `from` and `to` are days in the
@@ -5424,7 +5401,8 @@ components:
         method:
           $ref: "#/components/schemas/PaymentMethod"
         recordedBy:
-          $ref: "#/components/schemas/Actor"
+          $ref: "#/components/schemas/Uuid"
+          description: The id of the staff member who recorded it. The order answer carries no names; the history entry of the payment does.
         recordedAt:
           type: string
           format: date-time
@@ -5434,7 +5412,8 @@ components:
           description: Present when the owner voided it.
           properties:
             by:
-              $ref: "#/components/schemas/Actor"
+              $ref: "#/components/schemas/Uuid"
+              description: The id of the owner who voided it.
             at:
               type: string
               format: date-time

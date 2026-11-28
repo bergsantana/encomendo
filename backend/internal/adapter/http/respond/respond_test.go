@@ -17,10 +17,14 @@ import (
 	"time"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
+	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
+	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
+	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
@@ -123,6 +127,25 @@ func TestError_MapsDomainErrors(t *testing.T) {
 		{"publish archived", catalog.ErrPublishArchived, 400, CodeInvalid},
 		{"swap price", catalog.ErrSwapPriceNotPositive, 409, CodeConflict},
 		{"storage down", fmt.Errorf("storage: %w", shared.ErrUnavailable), 503, CodeNotReady},
+		{"invalid transition", fmt.Errorf("advance: %w", order.ErrInvalidTransition), 409, CodeInvalidTransition},
+		{"guard failed", fmt.Errorf("advance: %w", &order.GuardError{Guard: order.GuardBalanceUnpaid}), 409, CodeGuardFailed},
+		{"not editable", order.ErrNotEditable, 409, CodeOrderNotEditable},
+		{"closed", order.ErrOrderClosed, 409, CodeOrderClosed},
+		{"approval required", order.ErrApprovalRequired, 400, CodeApprovalRequired},
+		{"payment exceeds due", order.ErrPaymentExceedsDue, 400, CodePaymentExceedsDue},
+		{"invalid item move", order.ErrInvalidItemMove, 409, CodeInvalidItemMove},
+		{"no backup supplier", order.ErrNoBackupSupplier, 409, CodeNoBackupSupplier},
+		{"phone taken", appcustomer.ErrPhoneTaken, 409, CodePhoneTaken},
+		{"workflow not found", tenancy.ErrWorkflowNotFound, 404, CodeWorkflowNotFound},
+		{"key required", apporder.ErrIdempotencyKeyRequired, 400, CodeIdempotencyKeyMissing},
+		// Before the generic conflict: 422, and 409 conflict for the key
+		// still in flight.
+		{"key reused", appshared.ErrIdempotencyKeyReused, 422, CodeIdempotencyKeyReused},
+		{"key in flight", appshared.ErrIdempotencyKeyInFlight, 409, CodeConflict},
+		{"archived item on an order route", ItemUnavailable(&appcatalog.RefusalError{Err: catalog.ErrItemArchived}), 409, CodeItemUnavailable},
+		{"archived kit on an order route", ItemUnavailable(fmt.Errorf("kit: %w", catalog.ErrItemArchived)), 409, CodeItemUnavailable},
+		{"handover required", fmt.Errorf("advance: %w", shared.NewValidationError(shared.FieldError{Field: "handover", Message: "x"})), 400, CodeInvalid},
+		{"payment not found", order.ErrPaymentNotFound, 404, CodeNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -391,6 +414,9 @@ func TestCodes_AreInTheContract(t *testing.T) {
 		CodeUnauthenticated, CodeInvalidCredentials, CodeTenantRequired, CodeVersionConflict, CodeRateLimited,
 		CodeEmailTaken, CodeSlugTaken, CodeAlreadyMember, CodeInvalidCode, CodeEmailUnavailable, CodeTenantSuspended,
 		CodeNameTaken, CodeCategoryInUse, CodeItemInKit, CodeItemArchived, CodePhotoLimit, CodePhotoInvalid, CodePhotoNotUploaded,
+		CodeInvalidTransition, CodeGuardFailed, CodeOrderNotEditable, CodeOrderClosed, CodeApprovalRequired, CodePaymentExceedsDue,
+		CodeInvalidItemMove, CodeNoBackupSupplier, CodeItemUnavailable, CodePhoneTaken, CodeWorkflowNotFound,
+		CodeIdempotencyKeyMissing, CodeIdempotencyKeyReused,
 	}
 	for _, code := range codes {
 		if !listed[code] {

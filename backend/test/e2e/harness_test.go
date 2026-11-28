@@ -103,6 +103,12 @@ func (a answer) str(key string) string {
 // none), as a native client: no Origin, no Sec-Fetch-Site.
 func call(t *testing.T, method, path string, body any, token string) answer {
 	t.Helper()
+	return callWith(t, method, path, body, token, nil)
+}
+
+// callWith is call with more request headers, such as an Idempotency-Key.
+func callWith(t *testing.T, method, path string, body any, token string, headers map[string]string) answer {
+	t.Helper()
 	var buf io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -120,6 +126,9 @@ func call(t *testing.T, method, path string, body any, token string) answer {
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	res, err := client.Do(req)
 	if err != nil {

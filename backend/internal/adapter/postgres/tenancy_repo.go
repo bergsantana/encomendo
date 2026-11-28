@@ -378,49 +378,6 @@ func (*Invitations) RevokeInvitationsBy(ctx context.Context, tenant shared.Tenan
 	return out, nil
 }
 
-// WorkflowPresets implements apptenancy.WorkflowPresets straight on the
-// status workflow repository, uncached. It is the M2 wiring kept alive until
-// step 4.14 switches cmd/api to inproc.TenancyWorkflows, which reads through
-// the cached app/workflow service; delete it then.
-type WorkflowPresets struct{ repo *Workflows }
-
-var _ apptenancy.WorkflowPresets = (*WorkflowPresets)(nil)
-
-// NewWorkflowPresets returns the preset reader.
-func NewWorkflowPresets() *WorkflowPresets { return &WorkflowPresets{repo: NewWorkflows()} }
-
-// DefaultWorkflow returns the preset new stores start with (ADR 0006).
-func (p *WorkflowPresets) DefaultWorkflow(ctx context.Context) (tenancy.WorkflowRef, error) {
-	w, err := p.repo.Default(ctx)
-	if err != nil {
-		return tenancy.WorkflowRef{}, err
-	}
-	return tenancy.WorkflowRef{ID: w.ID(), Version: w.Version(), Name: w.Name()}, nil
-}
-
-// Exists returns the reference of one published version.
-func (p *WorkflowPresets) Exists(ctx context.Context, id shared.WorkflowID, version int) (tenancy.WorkflowRef, error) {
-	w, err := p.repo.ByVersion(ctx, id, version)
-	if err != nil {
-		return tenancy.WorkflowRef{}, err
-	}
-	return tenancy.WorkflowRef{ID: w.ID(), Version: w.Version(), Name: w.Name()}, nil
-}
-
-// Statuses returns the statuses of one published version in order.
-func (p *WorkflowPresets) Statuses(ctx context.Context, id shared.WorkflowID, version int) ([]apptenancy.WorkflowStatus, error) {
-	w, err := p.repo.ByVersion(ctx, id, version)
-	if err != nil {
-		return nil, err
-	}
-	statuses := w.Statuses()
-	out := make([]apptenancy.WorkflowStatus, 0, len(statuses))
-	for _, s := range statuses {
-		out = append(out, apptenancy.WorkflowStatus{Key: s.Key, Label: s.Label, ClientLabel: s.ClientLabel, Phase: s.Phase})
-	}
-	return out, nil
-}
-
 // pageOf turns a keyset query's rows, fetched with limit+1, into a page:
 // the cursor is the position of the last row kept.
 func pageOf[R, T any](rows []R, page shared.PageRequest, pos func(R) position, restore func(R) (T, error)) (shared.Page[T], error) {

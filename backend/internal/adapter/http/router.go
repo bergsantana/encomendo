@@ -22,11 +22,17 @@ type Handlers struct {
 	Tenancy   *handler.Tenancy
 	Catalog   *handler.Catalog
 	Suppliers *handler.Suppliers
+	Workflows *handler.Workflows
+	Customers *handler.Customers
+	Orders    *handler.Orders
+	Today     *handler.Today
+	Finance   *handler.Finance
 }
 
 // hasAdmin reports whether any group of /api/v1/admin routes is set.
 func (h Handlers) hasAdmin() bool {
-	return h.Tenancy != nil || h.Catalog != nil || h.Suppliers != nil
+	return h.Tenancy != nil || h.Catalog != nil || h.Suppliers != nil || h.Workflows != nil ||
+		h.Customers != nil || h.Orders != nil || h.Today != nil || h.Finance != nil
 }
 
 // RouterOptions configure the middleware stack.
@@ -131,6 +137,21 @@ func adminRoutes(h Handlers) map[string]http.HandlerFunc {
 	if h.Suppliers != nil {
 		maps.Copy(routes, supplierRoutes(h.Suppliers))
 	}
+	if h.Workflows != nil {
+		routes["GET /api/v1/admin/status-workflows"] = h.Workflows.List
+	}
+	if h.Customers != nil {
+		maps.Copy(routes, customerRoutes(h.Customers))
+	}
+	if h.Orders != nil {
+		maps.Copy(routes, orderRoutes(h.Orders))
+	}
+	if h.Today != nil {
+		routes["GET /api/v1/admin/today"] = h.Today.Get
+	}
+	if h.Finance != nil {
+		routes["GET /api/v1/admin/finance/summary"] = h.Finance.Summary
+	}
 	return routes
 }
 
@@ -139,6 +160,7 @@ func tenancyRoutes(t *handler.Tenancy) map[string]http.HandlerFunc {
 		"POST /api/v1/admin/tenants":                      t.CreateTenant,
 		"GET /api/v1/admin/settings":                      t.Settings,
 		"PUT /api/v1/admin/settings":                      t.UpdateSettings,
+		"PUT /api/v1/admin/settings/status-workflow":      t.ChooseWorkflow,
 		"GET /api/v1/admin/members":                       t.Members,
 		"DELETE /api/v1/admin/members/{userId}":           t.RemoveMember,
 		"PUT /api/v1/admin/members/{userId}/role":         t.ChangeRole,
@@ -191,6 +213,40 @@ func supplierRoutes(s *handler.Suppliers) map[string]http.HandlerFunc {
 		"POST /api/v1/admin/suppliers":             s.Create,
 		"GET /api/v1/admin/suppliers/{supplierId}": s.Get,
 		"PUT /api/v1/admin/suppliers/{supplierId}": s.Replace,
+	}
+}
+
+// customerRoutes are the four customer operations of the contract.
+func customerRoutes(c *handler.Customers) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"GET /api/v1/admin/customers":              c.List,
+		"POST /api/v1/admin/customers":             c.Create,
+		"GET /api/v1/admin/customers/{customerId}": c.Get,
+		"PUT /api/v1/admin/customers/{customerId}": c.Update,
+	}
+}
+
+// orderRoutes are the fifteen order operations of the contract. POST
+// /orders/quote is its own path: the mux prefers the literal word to
+// /orders/{orderId}, and an order id is never a word.
+func orderRoutes(o *handler.Orders) map[string]http.HandlerFunc {
+	const base = "/api/v1/admin/orders"
+	return map[string]http.HandlerFunc{
+		"POST " + base + "/quote":                                        o.Quote,
+		"GET " + base:                                                    o.List,
+		"POST " + base:                                                   o.Create,
+		"GET " + base + "/{orderId}":                                     o.Get,
+		"PUT " + base + "/{orderId}":                                     o.Change,
+		"POST " + base + "/{orderId}/advance":                            o.Advance,
+		"POST " + base + "/{orderId}/release":                            o.Release,
+		"POST " + base + "/{orderId}/items/{itemId}/move":                o.MoveItem,
+		"POST " + base + "/{orderId}/items/{itemId}/use-backup-supplier": o.UseBackupSupplier,
+		"POST " + base + "/{orderId}/payments":                           o.RecordPayment,
+		"POST " + base + "/{orderId}/payments/{paymentId}/void":          o.VoidPayment,
+		"PUT " + base + "/{orderId}/delivery-date":                       o.ChangeDeliveryDate,
+		"POST " + base + "/{orderId}/tracking-link":                      o.SendTrackingLink,
+		"POST " + base + "/{orderId}/cancel":                             o.Cancel,
+		"GET " + base + "/{orderId}/history":                             o.History,
 	}
 }
 

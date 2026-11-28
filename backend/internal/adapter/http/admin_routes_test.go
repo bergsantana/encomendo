@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,8 +21,8 @@ import (
 )
 
 // adminPaths are every admin operation of the contract: the nine store and
-// team ones, then the catalog and supplier ones.
-var adminPaths = append(append(tenancyAdminPaths, catalogAdminPaths...), supplierAdminPaths...)
+// team ones, then the catalog, supplier and milestone 4 ones.
+var adminPaths = slices.Concat(tenancyAdminPaths, catalogAdminPaths, supplierAdminPaths, orderAdminPaths)
 
 var tenancyAdminPaths = []struct{ method, path string }{
 	{"POST", "/api/v1/admin/tenants"},
@@ -140,7 +141,9 @@ func adminRouterWith(t *testing.T, uc *tenancyReached, stores middleware.StoreCh
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, err := NewRouter(log, Handlers{Health: handler.NewHealth(log, time.Second), Tenancy: ten, Catalog: cat, Suppliers: sup},
+	h := orderHandlers(t, &uc.calls)
+	h.Health, h.Tenancy, h.Catalog, h.Suppliers = handler.NewHealth(log, time.Second), ten, cat, sup
+	router, err := NewRouter(log, h,
 		RouterOptions{Authn: middleware.NewAuthn(tokens{}, openDenylist{}, log), Stores: stores})
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +164,9 @@ func adminRequest(method, path, token string) *http.Request {
 	case method == "PUT" && strings.HasSuffix(path, "/role"):
 		body = `{"role":"staff"}`
 	default:
-		body, _ = newCatalogBody(method, path)
+		if body = newOrderBody(method, path); body == "" {
+			body, _ = newCatalogBody(method, path)
+		}
 	}
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
@@ -198,8 +203,11 @@ func TestRouter_AdminRoutesNeedAStaffToken(t *testing.T) {
 func TestRouter_AdminPathsListEveryRoute(t *testing.T) {
 	t.Parallel()
 
-	all := Handlers{Tenancy: &handler.Tenancy{}, Catalog: &handler.Catalog{}, Suppliers: &handler.Suppliers{}}
-	if n := len(adminRoutes(all)); len(adminPaths) != n || n != 9+29+4 {
+	all := Handlers{
+		Tenancy: &handler.Tenancy{}, Catalog: &handler.Catalog{}, Suppliers: &handler.Suppliers{}, Workflows: &handler.Workflows{},
+		Customers: &handler.Customers{}, Orders: &handler.Orders{}, Today: &handler.Today{}, Finance: &handler.Finance{},
+	}
+	if n := len(adminRoutes(all)); len(adminPaths) != n || n != 9+29+4+23 {
 		t.Fatalf("adminPaths lists %d routes, the router mounts %d", len(adminPaths), n)
 	}
 }
