@@ -68,3 +68,80 @@ export async function latestEmail(request: APIRequestContext, to: string, count 
     .toBe(true)
   return text
 }
+
+/** Api is a signed-in session for seeding data through the API where the UI path is long and covered elsewhere. */
+export interface Api {
+  /** send calls the API and returns the JSON answer as T, which the caller states; a status of 300 or more fails the test. */
+  send<T = unknown>(method: 'GET' | 'POST', path: string, data?: unknown, headers?: Record<string, string>): Promise<T>
+}
+
+/**
+ * apiSession logs `email` in through the API and returns a caller for it.
+ * Node cannot resolve *.localhost the way Chromium does, so it calls the
+ * stack by address and keeps the admin Host header nginx routes on. A new
+ * login has the account's only store selected, so call it after the store
+ * exists.
+ */
+export async function apiSession(request: APIRequestContext, email: string): Promise<Api> {
+  const admin = new URL(process.env.E2E_BASE_URL ?? '')
+  const base = `http://127.0.0.1:${admin.port}`
+  const json = { 'content-type': 'application/json', host: admin.host }
+  const login = await request.post(`${base}/auth/login`, { headers: json, data: { email, password } })
+  expect(login.status(), 'API login').toBe(200)
+  const headers = { ...json, authorization: `Bearer ${((await login.json()) as { accessToken: string }).accessToken}` }
+  return {
+    async send<T>(method: 'GET' | 'POST', path: string, data?: unknown, extra?: Record<string, string>): Promise<T> {
+      const response = await request.fetch(`${base}${path}`, { method, headers: { ...headers, ...extra }, data })
+      expect(response.status(), `${method} ${path}: ${await response.text()}`).toBeLessThan(300)
+      return (await response.json()) as T
+    },
+  }
+}
+
+/** Catalog names and identifies what seedCatalog made: two items and a kit holding both. */
+export interface Catalog {
+  kit: string
+  kitId: string
+  first: string
+  second: string
+}
+
+/**
+ * seedCatalog makes a supplier, two made-to-order items with a cost each and
+ * a kit holding both, through the API. Catálogo has its own UI flow
+ * (catalogo.spec.ts); the order flows only need something to sell.
+ */
+export async function seedCatalog(api: Api): Promise<Catalog> {
+  const supplier = await api.send<{ id: string }>('POST', '/api/v1/admin/suppliers', { name: 'Escapes do Sul', whatsappPhone: '5511987654321' })
+  const item = async (name: string, priceCents: number, leadDays: number, costCents: number): Promise<string> => {
+    const created = await api.send<{ id: string }>('POST', '/api/v1/admin/catalog/items', {
+      name,
+      description: '',
+      categoryId: null,
+      sourcingMode: 'to_order',
+      priceCents,
+      mainSupplier: { supplierId: supplier.id, leadDays, costCents },
+      attributeValueIds: [],
+      options: [],
+      published: true,
+    })
+    return created.id
+  }
+  const first = await item('Escapamento esportivo', 45000, 5, 28000)
+  const second = await item('Filtro de ar', 12000, 3, 7000)
+  const kit = await api.send<{ id: string }>('POST', '/api/v1/admin/catalog/kits', {
+    name: 'Kit esportivo',
+    description: '',
+    priceCents: 52000,
+    swapDiscount: 'keep',
+    assemblyDays: null,
+    safetyMarginDays: null,
+    items: [
+      { itemId: first, quantity: 1, swappable: false, alternativeItemIds: [] },
+      { itemId: second, quantity: 1, swappable: false, alternativeItemIds: [] },
+    ],
+    attributeValueIds: [],
+    published: true,
+  })
+  return { kit: 'Kit esportivo', kitId: kit.id, first: 'Escapamento esportivo', second: 'Filtro de ar' }
+}

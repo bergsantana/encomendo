@@ -15,10 +15,16 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/testkit"
 )
 
-// refuseList is every key a client may never be sent (docs/product/
-// design-document.md, System rules; backend/CLAUDE.md).
+// refuseList is every word a key of the client's view may never contain,
+// matched as a case-insensitive substring so costCents, supplierId and
+// safetyMarginDays fail too (docs/product/design-document.md, System rules;
+// backend/CLAUDE.md). The legitimate keys (store, number, steps, label,
+// current, cancelled, deliveryDate, items, name, quantity, options, arrived,
+// total, paid, balanceDue, handover, cents, currency) contain none of them;
+// if a new one does, rename it or this list is the place to argue.
 var refuseList = []string{
-	"cost", "margin", "supplier", "supplierName", "leadDays", "atRisk", "alerts", "recordedBy", "history", "expected",
+	"cost", "margin", "supplier", "lead", "atrisk", "alert", "recordedby", "history", "expected", "token", "phone", "reason",
+	"by", "actor", "user", "staff", "sourcing", "check", "defective", "safety", "assembly",
 }
 
 // trackingOrder is an order with a supplier, a cost, an alert-worthy date
@@ -57,7 +63,7 @@ func TestTrackingOrder_HasNoInternalField(t *testing.T) {
 	walk(decoded, "tracking", func(path, key string, _ any) {
 		keys++
 		for _, refused := range refuseList {
-			if strings.EqualFold(key, refused) {
+			if strings.Contains(strings.ToLower(key), refused) {
 				t.Errorf("TrackingOrder has %q at %s", key, path)
 			}
 		}

@@ -873,7 +873,7 @@ What step 4.7 changed after the security review:
 ```go
 type IdempotencyKey struct {
 	Key         string   // the header, 1..128 printable ASCII
-	RequestHash [32]byte // SHA-256 of method, path and body, from the HTTP adapter
+	RequestHash [32]byte // SHA-256 of user id, method, path and body, from the HTTP adapter
 }
 
 func (k IdempotencyKey) IsZero() bool
@@ -1557,7 +1557,22 @@ Rules that the reviewers will check:
 - From the security review of 4.7, for M7:
   - **Deleting a client account fails** while an order or customer links to it. The `ON DELETE SET NULL` fires the audit trigger with no tenant set, and `audit_write` refuses it. Unlink in each store's own scope first, or delete through the platform role. Never loosen `audit_write`.
   - **Idempotency keys are per store.** Before the store page uses them, add who made the call (staff user, client account, or a store-page marker) to the key, so an anonymous caller can neither replay nor probe another's key.
-  - **Some columns clients must never see sit on rows they can read:** `order_items.expected_date`, `orders.cancel_reason`, `released_by` and `tracking_token_hash`, and `payments.recorded_by`, `voided_by` and `void_reason`. They are readable under `client_read`, and under `tenant_isolation` by a store-page scope. Client-area and tracking repositories therefore name their columns and never load the admin models. Consider a `security_invoker` view with only the client columns. Customers' phones and emails are readable by a store-page scope too; M7 needs that to match a customer by phone, so the app layer is the only guard there.
+  - **An explicit allow-list for client-area and tracking repositories (M7).** The client policy and a store-page scope can read whole rows, so a repository selects only the columns below, by name, and never loads the admin models. Anything not listed is refused until a test and a review add it. `TrackingView` (`app/order/tracking_view.go`) needs exactly these, and the client area adds nothing else without a new view type:
+    - `tenants.name`, for the store's name;
+    - `orders`: `number`, `delivery_date` (the promise), `handover`, `currency`, `subtotal_cents`, `freight_cents`, `discount_cents`, and `cancelled_at` read only as "is it cancelled" (never `cancel_reason`);
+    - the order's steps: `orders.workflow_id`, `workflow_version` and `status_key`, joined to `workflow_statuses.client_label` and `position` (never the staff `label`);
+    - `order_lines.price_cents` (for the total);
+    - `order_items`: `quantity`, `snapshot->>'name'`, and each option's name and label from `snapshot->'options'` (never the option's `extraDays`); whether the item arrived comes as a boolean computed in the query from `status` (`status IN ('received', 'ready', 'installed')`, as the domain's `arrived` does), never the raw `status`;
+    - `payments`: `amount_cents` and `currency` of the rows with `voided_at IS NULL`, summed, for what was paid.
+    A `security_invoker` view over exactly these, selecting only those jsonb keys, is the safest way to hold the rule; the repository then reads the view and nothing else.
+    **Traps, the columns the list above leaves out (examples, not a complete list):**
+    - `order_items.snapshot` whole: it holds `leadDays`, the supplier's lead time;
+    - `order_items.status` raw (`to_buy` and `sent_to_supplier` name purchasing), `check_result`, `sourcing_mode` and `expected_date` (the forecast, from which "Pode atrasar" follows);
+    - `orders.created_by`, `released_by` and `release_date`, `payments.recorded_by`, `voided_by` and `void_reason`;
+    - `orders.assembly_days`, `safety_margin_days`, and `order_lines.assembly_days` and `safety_margin_days`: with `delivery_date` they give the arrival limit;
+    - `orders.promise_changed_by_hand`, `customer_id`, `tracking_token_hash`, `cancel_reason`, `deposit_confirmed_cents`, `deposit_percent`, `delivery_address` and `delivery_address_id`;
+    - every row of `order_status_history`, `order_messages` and `order_item_sourcing` (no client policy at all).
+  - **A store-page scope (a tenant, no user) reads every row of `customers` and `customer_addresses`, and `orders.delivery_address`,** under `tenant_isolation`: names, phones, emails, notes and addresses of every customer of the store. Store-page repositories must never read them, except the one lookup of a customer by phone that checkout needs (below), and the app layer is the only guard there.
   - **Low:** the payment grants would let a void be undone, which only the domain stops. And any scope of the store may delete a live idempotency key: limit deletes to expired keys when the worker takes them over.
 - From the reviews of 4.8–4.11, for M7 and later:
   - **The store page needs its own answer types.** `Quote` and `Create` answer staff types: `QuoteView` has the arrival limit, the safety margin and each item's expected date, and `CreatedView.Order` has supplier names. The store page's Preview and checkout must answer client view types: price, deposit and the ready-by date only.

@@ -13,8 +13,9 @@ import (
 type IdempotencyKey struct {
 	// Key is the header: 1 to 128 printable ASCII characters.
 	Key string
-	// RequestHash is the SHA-256 of the method, path and body, from the
-	// HTTP adapter: the same key with another request is refused.
+	// RequestHash is the SHA-256 of the caller's user id, the method, the
+	// path and the body, from the HTTP adapter: the same key with another
+	// request, or from another user, is refused.
 	RequestHash [32]byte
 }
 

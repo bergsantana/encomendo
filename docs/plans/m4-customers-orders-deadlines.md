@@ -4,6 +4,71 @@ Written 2026-11-27 on Opus with `/plan-milestone 4`, against `main` at `b83f31e`
 
 Goal (build plan): the core of the product. An order moves through its store's status list, and the delivery date and delay alerts are always right.
 
+## Result (2026-11-27)
+
+**Closed.** Steps 4.1 to 4.23 are done and merged through PRs #77 to #86 and the closing PR (`feat/m4-close`). The build plan's M4 section is 17 of 17.
+
+**What was built**
+
+| PR | Steps | What it holds |
+| --- | --- | --- |
+| #77 | plan | This plan, the code design, ADR 0030 and the pt-BR wording (4.15) |
+| #78 | 4.1 | The contract (OpenAPI) and the new permissions `order:manage`, `order:override`, `customer:write` |
+| #79 | 4.2 to 4.6 | `domain/workflow`, `schedule`, `customer` and `order` |
+| #80 | 4.7 | Migrations 0012 to 0015, with the tenant, staff-only and client-read RLS tiers |
+| #81 | 4.8 to 4.11 | `app/workflow`, `customer`, `order` (writes and queries) and `schedule` |
+| #82 | 4.12 to 4.14 | The order repository, tracking tokens, `wa.me` links, `Idempotency-Key` in Postgres, the HTTP handlers and the wiring |
+| #83 | 4.16 to 4.18 | Web API clients, Configurações and Clientes |
+| #84, #85 | gaps | See "What changed from the plan" |
+| #86 | 4.19 to 4.22 | Pedidos, Novo pedido, the order screen, Hoje and Financeiro |
+| this PR | 4.23 | The real-stack and phone specs and the docs below |
+
+- **Real stack, desktop (`web/e2e/pedidos.spec.ts`).** An owner signs up, makes a store and chooses the "Orçamento primeiro" list in Configurações. A catalog (two items and a kit) is seeded through the API, since Catálogo has its own flow. The owner then creates a customer in Clientes and an order from the kit in Novo pedido (the quote shows Custo and Margem), tries to advance before the deposit and sees the guard, records the deposit, changes the delivery date, receives both items, hits the balance guard at handover, records the balance and hands the order over as "Retirada na loja". An admin invited through Equipe opens the same order and Novo pedido and sees no Custo and no Margem, and no Financeiro entry.
+- **"Nothing is sent automatically".** No outbound sender exists: the API only returns the link. The backend test `TestChangeDeliveryDate_AnswersTheLinkAndRecordsTheMessage` checks the link and the stored message. In the browser `window.open` is stubbed and every request of both browsers is recorded. The spec asserts that the app opened exactly one link, `https://wa.me/`, and that it is the one the API answered on `PUT /delivery-date`. It also checks that its text names no supplier, cost, margin or alert, and that the browser made no request to a WhatsApp host.
+- **Real stack, phone (`web/e2e/phone-pedidos.spec.ts`).** The same path at 390 × 844 on the `phone` project. Every screen (Hoje, Pedidos, Novo pedido, Pedido, Clientes, Financeiro, Configurações) has no side scroll and every control a thumb hits is at least 48 px tall. The dialogs it opens are each checked as a full-screen sheet with no sideways scroll: the customer form, the kit and item pickers, Registrar pagamento, Anular, Liberar sem sinal, Cancelar pedido, Alterar data and the handover question. Com defeito and "Enviar link de acompanhamento" are buttons on the page, not dialogs, so they are checked for thumb size only. A second, unpaid order gives Financeiro's "A receber" a row at phone size.
+- **Client tier.** Nothing in M4 is served to the store page, tracking or the client area (they are milestone 7). What exists is the `TrackingView` and `dto.TrackingOrder` types and their visibility tests (`TestTrackingView_HasNoInternalField`, `TestTrackingOrder_HasNoInternalField`, which also checks the closed schema in the contract) and the RLS cases `TestClientRead_*`, which run only in `make test-integration` (they carry the `integration` build tag). Reading these types and running those tests found no field that could carry internal data; the independent tenancy review of the closing PR is the final pass.
+
+**What changed from the plan**
+
+- **#84, `toReceive.list`.** Step 4.22's "A receber" is a list of orders with a balance, but `FinanceSummary.toReceive` carried only a count. The list was added to the contract (additive), and the handler maps what `app/order` already built.
+- **#85, what the Pedidos screens needed.** Without these the client would have done money or date arithmetic, or built `wa.me` links itself:
+  - the quote carries `refundDue` ("Valor a devolver" before a paid change is saved), `daysAfterDeposit` ("n dias depois do sinal") and, for the owner, `cost` and `margin`;
+  - the order carries `depositOwed` (the amount "Registrar pagamento" fills in) and `customer.whatsappUrl` (a text-less chat link for "Abrir conversa no WhatsApp");
+  - `TermsInput.newAddress`, so "Novo endereço" works inside an order: `order:write` may add one address to the customer in the order's transaction, and editing or removing addresses still needs `customer:write` (ADR 0030, Amendments);
+  - a kit line is one kit; the contract and the wording say so.
+- **The browser-clock rule.** The client reads its own clock in two places only, through `storeDay` (`web/apps/admin/src/format.ts`): to place "Hoje" on the order's timeline, and for the bounds of Financeiro's presets. Deadlines, alerts and every date of an order stay the API's. The date picker in "Alterar data" lets the browser decide "from today", and the API still refuses a past date in the store's time zone.
+- **Items skip steps.** The plan and the design document say items move one step at a time, but the domain allows `to_buy` straight to `received` (and `sent_to_supplier` straight to `received`). The screen follows the API's `nextMoves`, so "Tudo certo" shows beside "Marcar como enviada ao fornecedor". The spec does both. M5 decides when it drives the same moves from receiving.
+
+**Hand-offs that remain** (code design section 8, for the milestone named)
+
+- **M5:** `Cancel` cancels unsent purchase lines and flags sent ones; `schedule.Timing.Promised` is filled; `GeneratePurchases` must be idempotent per order item, because `order.deposit_confirmed` fires again when a voided deposit is paid again; `schedule.Recalculate` redates once the domain has a public redate (and a time zone change calls it); M5 decides whether manual moves of bought items stay.
+- **M6:** stock reservation, `InitialStatus(stock)`, capacity waits and the daily check.
+- **M7:**
+  - store page answer types (the Preview and checkout answer price, deposit and ready-by date only, never the staff `Quote` and `Created` views), and the decision on `order_item_sourcing` for orders made with no staff user (`app/order/doc.go`);
+  - **An explicit allow-list for client-area and tracking repositories (M7).** The client policy and a store-page scope can read whole rows, so a repository selects only the columns below, by name, and never loads the admin models. Anything not listed is refused until a test and a review add it. `TrackingView` (`app/order/tracking_view.go`) needs exactly these, and the client area adds nothing else without a new view type:
+    - `tenants.name`, for the store's name;
+    - `orders`: `number`, `delivery_date` (the promise), `handover`, `currency`, `subtotal_cents`, `freight_cents`, `discount_cents`, and `cancelled_at` read only as "is it cancelled" (never `cancel_reason`);
+    - the order's steps: `orders.workflow_id`, `workflow_version` and `status_key`, joined to `workflow_statuses.client_label` and `position` (never the staff `label`);
+    - `order_lines.price_cents` (for the total);
+    - `order_items`: `quantity`, `snapshot->>'name'`, and each option's name and label from `snapshot->'options'` (never the option's `extraDays`); whether the item arrived comes as a boolean computed in the query from `status` (`status IN ('received', 'ready', 'installed')`, as the domain's `arrived` does), never the raw `status`;
+    - `payments`: `amount_cents` and `currency` of the rows with `voided_at IS NULL`, summed, for what was paid.
+    A `security_invoker` view over exactly these, selecting only those jsonb keys, is the safest way to hold the rule; the repository then reads the view and nothing else.
+    **Traps, the columns the list above leaves out (examples, not a complete list):**
+    - `order_items.snapshot` whole: it holds `leadDays`, the supplier's lead time;
+    - `order_items.status` raw (`to_buy` and `sent_to_supplier` name purchasing), `check_result`, `sourcing_mode` and `expected_date` (the forecast, from which "Pode atrasar" follows);
+    - `orders.created_by`, `released_by` and `release_date`, `payments.recorded_by`, `voided_by` and `void_reason`;
+    - `orders.assembly_days`, `safety_margin_days`, and `order_lines.assembly_days` and `safety_margin_days`: with `delivery_date` they give the arrival limit;
+    - `orders.promise_changed_by_hand`, `customer_id`, `tracking_token_hash`, `cancel_reason`, `deposit_confirmed_cents`, `deposit_percent`, `delivery_address` and `delivery_address_id`;
+    - every row of `order_status_history`, `order_messages` and `order_item_sourcing` (no client policy at all).
+  - **A store-page scope (a tenant, no user) reads every row of `customers` and `customer_addresses`, and `orders.delivery_address`,** under `tenant_isolation`: names, phones, emails, notes and addresses of every customer of the store. Store-page repositories must never read them, except the one lookup of a customer by phone that checkout needs (below), and the app layer is the only guard there.
+  - idempotency keys per caller before the store page uses them, and deletes limited to expired keys;
+  - deleting a client account (it fails while an order or customer links to it) and `PlaceOrder` on a customer matched only by phone (no customer facts, no stored addresses);
+  - an address id from another store sent to the customer repository's upsert is an RLS error (500), not `ErrInvalid`: pin it with a contract case.
+- **M8:** Hoje and Financeiro read at most 500 active orders and 2000 hand-overs (`truncated`): load-test and page them; `GET /orders?customerId=` needs a newest-first sort; customer names are read one at a time (a batch read on the `Customers` port if it is slow). To confirm with the product: "A receber" counts drafts, and "há mais de 3 dias" means strictly more.
+- **Deploy:** `deploy/.env.prod` must set `STORE_ORIGIN_TEMPLATE` before the next deploy.
+
+**Pending: the Android shell walkthrough.** The emulator cannot run here: KVM is blocked by Windows update KB5127648 on AMD. It is not a box of M4's own, but the milestone's phone screens are only proven in a 390 × 844 Chromium until the shell opens them. Do it on a physical phone over `adb` against `make stack-up`: start the stack with `WEB_PORT=8080` and `MINIO_PORT=9000`, run `adb reverse tcp:8080 tcp:8080` and `adb reverse tcp:9000 tcp:9000`, install the shell's debug APK (it opens `http://admin.localhost:8080`; the steps are in `web/apps/android/README.md` and step 3.5.5), sign in, and walk Hoje, Pedidos, Novo pedido, an order through the deposit and a date change (the `wa.me` link must open outside the app, ADR 0029), Clientes, Financeiro and Configurações. The same session also closes milestone 3's last box (a catalog item created in the shell and shown on the web) and milestone 3.5's walkthrough.
+
 ## Blocked
 
 Nothing. The section 12 questions that touch milestone 4 (payments, preset-only workflows) were answered in ADR 0023: payments by hand, no PIX, presets only, deposit 50%, assembly 3 days, margin 2 days.

@@ -80,6 +80,13 @@ The full table is in `docs/architecture.md` section 4.2. The names you will use 
 | Cliente pode trocar, pode trocar por | swappable `catalog.KitItem` and its alternatives (ADR 0025) |
 | Manter o desconto / cobrar a soma avulsa | kit swap mode `keep` / `lose` (ADR 0023) |
 | Arquivar / Restaurar | `Archive` / `Restore` on items and kits; nothing in the catalog is deleted (ADR 0025) |
+| Número do pedido (P-0231) | `order.Number`: counted per store from 1, shown with `String()` as "P-" and at least four digits (ADR 0030) |
+| Linha do pedido (um kit, ou um item avulso) | `order.Line`: a kit sold at its kit price holds one `order.Item` per kit item, each with its own status and expected date; a loose item is a line of one |
+| Entrega prevista (a promessa) / Previsto (a previsão) | The promise is `Order.Promise()` (the API calls it `deliveryDate`), moved only by `ChangeDeliveryDate`; the forecast is each `order.Item`'s expected date. An alert compares the forecast to the promise less assembly days (ADR 0030) |
+| Anular pagamento | `Order.VoidPayment`: a wrong payment is voided with a reason and never deleted; a voided payment does not count. Owner only |
+| Cadastrar cliente (tela Clientes) | `identity.PermCustomerWrite` (`customer:write`, owner and admin); creating a customer inside a new order needs only `order:write` |
+| Cancelar, alterar a data, alterar pedido pago, desconto | `identity.PermOrderManage` (`order:manage`, owner and admin) |
+| Liberar sem o sinal, anular pagamento | `identity.PermOrderOverride` (`order:override`, owner only) |
 
 For a term that isn't listed, don't invent a context or a name on your own. Ask, record the decision as an ADR, and add the term here.
 

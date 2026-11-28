@@ -330,6 +330,16 @@ export const useOrderStore = defineStore('order', () => {
     return done
   }
 
+  /** refreshOrder reads the open order again without clearing the screen's messages; a failed read leaves the order as it was. */
+  async function refreshOrder(orderId: string): Promise<void> {
+    try {
+      const read = await getOrder(api, orderId)
+      if (order.value?.id === orderId) order.value = read
+    } catch (failure) {
+      if (!(failure instanceof ApiError)) throw failure
+    }
+  }
+
   /** sendTracking issues a new tracking link and opens WhatsApp with it; the previous link stops working. */
   async function sendTracking(): Promise<boolean> {
     const current = currentOrder()
@@ -342,6 +352,10 @@ export const useOrderStore = defineStore('order', () => {
       openWhatsapp(link.whatsappUrl)
       whatsappUrl.value = link.whatsappUrl
       notice.value = 'Link de acompanhamento criado.'
+      // Making the link rotates the order's token, a write that moves its
+      // version on, and the answer does not carry the order: read it again, or
+      // the next write would send the old version and be refused as a conflict.
+      await refreshOrder(current.id)
       void readHistory(undefined)
       return true
     } catch (failure) {

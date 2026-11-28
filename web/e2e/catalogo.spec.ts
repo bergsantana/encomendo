@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { createStore, latestEmail, mailpitUrl, password, signUp, unique } from './support'
+import { apiSession, createStore, latestEmail, mailpitUrl, password, signUp, unique } from './support'
 
 // Catálogo against the real stack (see admin.spec.ts for how to run it): an
 // owner makes an item with a new supplier, a lead time, a cost and a photo
@@ -163,27 +163,19 @@ test.describe('Catálogo against the real stack', () => {
     expect(created.status()).toBe(201)
 
     // A new login has the store selected.
-    const login = await request.post(`${api}/auth/login`, { headers: json, data: { email: owner.email, password } })
-    expect(login.status()).toBe(200)
-    const headers = { ...json, authorization: `Bearer ${((await login.json()) as { accessToken: string }).accessToken}` }
-    const supplier = await request.post(`${api}/api/v1/admin/suppliers`, { headers, data: { name: 'Fornecedor da API', whatsappPhone: '5511987654321' } })
-    expect(supplier.status()).toBe(201)
-    const supplierId = ((await supplier.json()) as { id: string }).id
-    const item = await request.post(`${api}/api/v1/admin/catalog/items`, {
-      headers,
-      data: {
-        name: 'Item pela API',
-        description: '',
-        categoryId: null,
-        sourcingMode: 'to_order',
-        priceCents: 12000,
-        mainSupplier: { supplierId, leadDays: 4, costCents: 7000 },
-        attributeValueIds: [],
-        options: [],
-        published: false,
-      },
+    const session = await apiSession(request, owner.email)
+    const supplier = await session.send<{ id: string }>('POST', '/api/v1/admin/suppliers', { name: 'Fornecedor da API', whatsappPhone: '5511987654321' })
+    await session.send('POST', '/api/v1/admin/catalog/items', {
+      name: 'Item pela API',
+      description: '',
+      categoryId: null,
+      sourcingMode: 'to_order',
+      priceCents: 12000,
+      mainSupplier: { supplierId: supplier.id, leadDays: 4, costCents: 7000 },
+      attributeValueIds: [],
+      options: [],
+      published: false,
     })
-    expect(item.status()).toBe(201)
 
     await page.goto('/')
     await page.getByLabel('E-mail').fill(owner.email)
