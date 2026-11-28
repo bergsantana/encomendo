@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { apiSession, createStore, expectNoWhatsappRequests, latestEmail, mailpitUrl, password, seedCatalog, signUp, unique, watchWhatsapp } from './support'
+import { apiSession, createStore, expectNoWhatsappRequests, latestEmail, mailpitUrl, noClientData, password, seedCatalog, signUp, unique, watchWhatsapp } from './support'
 
 // Pedidos against the real stack (see admin.spec.ts for how to run it): an
 // owner chooses the store's status list, sells a kit to a new customer,
@@ -147,7 +147,7 @@ test.describe('Pedidos against the real stack', () => {
     await expect.poll(async () => (await whatsapp.opened()).length).toBe(2)
     expect((await whatsapp.opened())[1], 'the app opens exactly the link the API answered').toBe(supplierAnswer.whatsappUrl)
     expect(supplierAnswer.whatsappUrl.startsWith('https://wa.me/5511987654321')).toBe(true)
-    expect(new URL(supplierAnswer.whatsappUrl).searchParams.get('text') ?? '').not.toMatch(/Rafael|Lima|P-\d{4}/)
+    expect(new URL(supplierAnswer.whatsappUrl).searchParams.get('text') ?? '').not.toMatch(noClientData)
 
     // The pedido de compra goes to "Em trânsito", then both items arrive in Receber itens.
     await page.getByRole('link', { name: 'Ver pedido de compra' }).click()
@@ -246,13 +246,13 @@ test.describe('Pedidos against the real stack', () => {
       await expect(guestSummary.getByRole('term').filter({ hasText: /^Custo$/ })).toHaveCount(0)
       await expect(guestSummary.getByRole('term').filter({ hasText: /^Margem$/ })).toHaveCount(0)
       expect(await guestWhatsapp.opened()).toEqual([])
-      expectNoWhatsappRequests(guestWhatsapp.requests)
+      expectNoWhatsappRequests(guestWhatsapp)
     } finally {
       await guestContext.close()
     }
 
     // Nothing is sent automatically: the browser asked WhatsApp for nothing, and the API only wrote the links (the new date and the supplier's order).
     expect(await whatsapp.opened()).toHaveLength(2)
-    expectNoWhatsappRequests(whatsapp.requests)
+    expectNoWhatsappRequests(whatsapp)
   })
 })

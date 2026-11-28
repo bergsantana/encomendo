@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { apiSession, createStore, expectNoWhatsappRequests, itemPhoto, latestEmail, mailpitUrl, password, placeOrder, seedBoughtItem, signUp, unique, watchWhatsapp } from './support'
+import { apiSession, createStore, expectNoWhatsappRequests, itemPhoto, latestEmail, mailpitUrl, noClientData, password, placeOrder, seedBoughtItem, signUp, unique, watchWhatsapp } from './support'
 
 // Compras and Receber itens against the real stack (see admin.spec.ts for how
 // to run it). An owner sells a bought item and records the deposit; the item
@@ -60,7 +60,7 @@ test.describe('Compras against the real stack', () => {
     await menu(page).getByRole('link', { name: 'Pedidos' }).click()
     await page.getByRole('link', { name: first.number }).click()
     await expect(page.getByRole('heading', { name: 'Pedido P-0001' })).toBeVisible()
-    await expect(page.getByRole('button', { name: new RegExp(`Marcar como enviada ao fornecedor|Marcar como em trânsito`) })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Marcar como enviada ao fornecedor|Marcar como em trânsito/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: `Tudo certo: ${bought.item}` })).toHaveCount(0)
     await expect(page.getByRole('button', { name: `Com defeito: ${bought.item}` })).toHaveCount(0)
     await page.getByRole('button', { name: 'Registrar pagamento' }).click()
@@ -89,7 +89,7 @@ test.describe('Compras against the real stack', () => {
     await expect(preview).toContainText(`1× ${bought.item}`)
     const message = await preview.locator('pre').innerText()
     expect(message).toContain(bought.supplier)
-    expect(message).not.toMatch(/Rafael|Lima|992|9123|4567|P-\d{4}/)
+    expect(message).not.toMatch(noClientData)
     await expect(card.getByRole('button', { name: 'Copiar mensagem' })).toBeVisible()
 
     // Enviar pelo WhatsApp: the app opens exactly the link the API answered, and calls WhatsApp for nothing.
@@ -104,7 +104,11 @@ test.describe('Compras against the real stack', () => {
     const supplierText = new URL(supplierLink).searchParams.get('text') ?? ''
     expect(supplierText).toContain('C-0001')
     expect(supplierText).toContain(`1× ${bought.item}`)
-    expect(supplierText).not.toMatch(/Rafael|Lima|992|9123|4567|P-\d{4}/)
+    expect(supplierText).not.toMatch(noClientData)
+    // The first send's words, as the design document gives them (Supplier messages).
+    expect(supplierText).toContain(`Olá, ${bought.supplier}! Aqui é da Compras Teste.`)
+    expect(supplierText).toContain('Pedido de compra C-0001:')
+    expect(supplierText).toContain('Pode me confirmar a data de entrega?')
     await expect(page.getByText('Nada para comprar agora.')).toBeVisible()
 
     // The pedido de compra: the supplier, who sent it and the line.
@@ -160,13 +164,25 @@ test.describe('Compras against the real stack', () => {
     await expect(lines.getByRole('row', { name: new RegExp(bought.item) })).toContainText('Com defeito (reposição em Compras)')
     await expect(lines).toContainText('Costura aberta no encosto')
 
+    // Fornecedores: the supplier the item came with.
+    await menu(page).getByRole('link', { name: 'Compras' }).click()
+    await page.getByRole('tab', { name: 'Fornecedores' }).click()
+    await expect(page.getByRole('row', { name: new RegExp(bought.supplier) })).toContainText('(11) 98765-4321')
+    await expect(page.getByRole('button', { name: 'Novo fornecedor' })).toBeVisible()
+
     // The same item again: a second pedido de compra, then it arrives right.
     await menu(page).getByRole('link', { name: 'Compras' }).click()
     await page.getByRole('tab', { name: 'A comprar' }).click()
     await page.getByRole('article', { name: bought.supplier }).getByRole('button', { name: 'Enviar pelo WhatsApp' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Pedido de compra C-0002 criado.' })).toBeVisible()
     await expect.poll(async () => (await whatsapp.opened()).length).toBe(2)
-    expect((await whatsapp.opened())[1].startsWith('https://wa.me/')).toBe(true)
+    const replacementLink = (await whatsapp.opened())[1]
+    expect(replacementLink.startsWith(`https://wa.me/${bought.supplierPhone}`)).toBe(true)
+    // The replacement's message has no client data either.
+    const replacementText = new URL(replacementLink).searchParams.get('text') ?? ''
+    expect(replacementText).toContain('C-0002')
+    expect(replacementText).toContain(`1× ${bought.item}`)
+    expect(replacementText).not.toMatch(noClientData)
     await page.getByRole('tab', { name: 'Receber itens' }).click()
     await expect(page.getByRole('heading', { name: `C-0002 · ${bought.supplier}` })).toBeVisible()
     await page.getByRole('button', { name: `Tudo certo: ${bought.item}` }).click()
@@ -179,7 +195,7 @@ test.describe('Compras against the real stack', () => {
     await expect(page.getByRole('heading', { name: 'Pedido P-0001' })).toBeVisible()
     await expect(page.getByRole('row', { name: new RegExp(`${bought.item}.*Recebida`) })).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Em montagem' }).click()
-    await expect(page.getByText('Em montagem', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pedido P-0001' }).locator('xpath=..').getByText('Em montagem', { exact: true })).toBeVisible()
 
     // A second sold order, for the admin to see what is still to buy.
     const second = await placeOrder(api, bought.itemId, `${owner.slug}-2`, true)
@@ -222,13 +238,13 @@ test.describe('Compras against the real stack', () => {
       await expect(guest.getByRole('button', { name: 'Informar preço pago' })).toHaveCount(0)
       await expect(guest.getByText(/Custo|Preço pago|R\$ 180,00/)).toHaveCount(0)
       expect(await guestWhatsapp.opened()).toEqual([])
-      expectNoWhatsappRequests(guestWhatsapp.requests)
+      expectNoWhatsappRequests(guestWhatsapp)
     } finally {
       await guestContext.close()
     }
 
     // Nothing was sent automatically: two links opened, both the API's, and the browser asked WhatsApp for nothing.
     expect(await whatsapp.opened()).toHaveLength(2)
-    expectNoWhatsappRequests(whatsapp.requests)
+    expectNoWhatsappRequests(whatsapp)
   })
 })

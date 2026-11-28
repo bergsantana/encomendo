@@ -8,7 +8,7 @@ import {
   expectSheetFits,
   expectThumbSized,
   itemPhoto,
-  mailpitUrl,
+  noClientData,
   openMenu,
   placeOrder,
   seedBoughtItem,
@@ -19,7 +19,7 @@ import {
 
 // Compras and Receber itens at phone size (ADR 0029), in the `phone` project of
 // playwright.config.ts: 390 x 844, touch. The path of compras.spec.ts runs here
-// against the real stack (`make stack-up`, E2E_BASE_URL and E2E_MAILPIT_URL):
+// against the real stack (`make stack-up`, E2E_BASE_URL):
 // the deposit, A comprar, Ver mensagem, Enviar pelo WhatsApp, the pedido de
 // compra with its dialogs, Receber itens with a defective item and a photo,
 // the replacement bought again, and the order moved into Montagem. Every screen
@@ -39,16 +39,13 @@ async function expectWorkshopSized(page: Page, targets: Locator[], text: Locator
     expect(size, 'text size in px').toBeGreaterThanOrEqual(18)
   }
   const save = page.getByRole('button', { name: 'Salvar recebimento' })
-  const height = await save.evaluate((node) => node.getBoundingClientRect().height)
+  const { height, size } = await save.evaluate((node) => ({ height: node.getBoundingClientRect().height, size: Number.parseFloat(getComputedStyle(node).fontSize) }))
   expect(height, 'Salvar recebimento is 64 px tall').toBeGreaterThanOrEqual(64)
+  expect(size, 'Salvar recebimento text size in px').toBeGreaterThanOrEqual(18)
 }
 
 test.describe('Compras and Receber itens at phone size, against the real stack', () => {
-  test.skip(!realStack, 'set E2E_BASE_URL (and E2E_MAILPIT_URL) to run against `make stack-up`')
-
-  test.beforeEach(() => {
-    expect(mailpitUrl, 'E2E_MAILPIT_URL must name Mailpit').not.toBe('')
-  })
+  test.skip(!realStack, 'set E2E_BASE_URL to run against `make stack-up`')
 
   test.setTimeout(180_000)
 
@@ -83,7 +80,7 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     await expect(page.getByRole('button', { name: /Marcar como enviada ao fornecedor|Marcar como em trânsito|Tudo certo|Com defeito/ })).toHaveCount(0)
     await expectThumbSized(48, page.getByRole('link', { name: `Ver em Compras: ${bought.item}` }))
     await page.getByRole('button', { name: 'Registrar pagamento' }).click()
-    const payment = await expectSheetFits(page, 'Registrar pagamento')
+    const payment = await expectSheetFits(page, 'Registrar pagamento', ['Registrar', 'Cancelar'])
     await payment.getByLabel('Forma').selectOption({ label: 'Pix' })
     await payment.getByRole('button', { name: 'Registrar', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Pagamento registrado.' })).toBeVisible()
@@ -101,7 +98,7 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     await card.getByRole('button', { name: 'Ver mensagem' }).click()
     const preview = card.getByRole('region', { name: `Mensagem para ${bought.supplier}` })
     await expect(preview).toContainText(`1× ${bought.item}`)
-    expect(await preview.locator('pre').innerText()).not.toMatch(/Rafael|Lima|992|9123|4567|P-\d{4}/)
+    expect(await preview.locator('pre').innerText()).not.toMatch(noClientData)
     await expectNoSideScroll(page)
     await expectThumbSized(48, card.getByRole('button', { name: 'Copiar mensagem' }))
 
@@ -113,6 +110,7 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     await expect.poll(async () => (await whatsapp.opened()).length).toBe(1)
     expect(await whatsapp.opened()).toEqual([sentOrder.whatsappUrl])
     expect(sentOrder.whatsappUrl.startsWith(`https://wa.me/${bought.supplierPhone}`)).toBe(true)
+    expect(new URL(sentOrder.whatsappUrl).searchParams.get('text') ?? '').not.toMatch(noClientData)
     await expectNoSideScroll(page)
     await expectThumbSized(48, page.getByRole('button', { name: 'Abrir o WhatsApp' }), page.getByRole('button', { name: 'Copiar mensagem' }), page.getByRole('link', { name: 'Ver pedido de compra' }))
 
@@ -133,13 +131,13 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     await expect(lines.getByRole('row', { name: new RegExp(bought.item) })).toContainText('Enviada ao fornecedor')
 
     await page.getByRole('button', { name: 'Desfazer envio' }).click()
-    const undo = await expectSheetFits(page, 'Desfazer envio')
+    const undo = await expectSheetFits(page, 'Desfazer envio', ['Desfazer envio', 'Voltar'])
     await expectThumbSized(48, undo.getByRole('button', { name: 'Desfazer envio' }), undo.getByRole('button', { name: 'Voltar' }))
     await undo.getByRole('button', { name: 'Voltar' }).click()
     await expect(undo).toBeHidden()
 
     await page.getByRole('button', { name: 'Informar preço pago' }).click()
-    const prices = await expectSheetFits(page, 'Informar preço pago')
+    const prices = await expectSheetFits(page, 'Informar preço pago', ['Salvar preços', 'Cancelar'])
     await expectThumbSized(48, prices.getByLabel(/Preço pago/), prices.getByRole('button', { name: 'Salvar preços' }), prices.getByRole('button', { name: 'Cancelar' }))
     await prices.getByRole('button', { name: 'Cancelar' }).click()
     await expect(prices).toBeHidden()
@@ -150,7 +148,7 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
       return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
     })
     await page.getByRole('button', { name: 'Informar prazo' }).click()
-    const dateSheet = await expectSheetFits(page, 'Informar prazo')
+    const dateSheet = await expectSheetFits(page, 'Informar prazo', ['Salvar prazo', 'Cancelar'])
     await expectThumbSized(48, dateSheet.getByLabel('Data prometida pelo fornecedor'), dateSheet.getByRole('button', { name: 'Salvar prazo' }), dateSheet.getByRole('button', { name: 'Cancelar' }))
     await dateSheet.getByLabel('Data prometida pelo fornecedor').fill(promised)
     await dateSheet.getByRole('button', { name: 'Salvar prazo' }).click()
@@ -167,19 +165,19 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     await expectNoSideScroll(page)
     const save = page.getByRole('button', { name: 'Salvar recebimento' })
     const defective = page.getByRole('button', { name: `Com defeito: ${bought.item}` })
-    const photoLabel = page.getByText('Foto do item', { exact: false }).first()
+    const photoInput = page.getByLabel(`Foto do item: ${bought.item}`)
     await expectWorkshopSized(
       page,
       [page.getByRole('button', { name: `Tudo certo: ${bought.item}` }), defective, page.getByLabel('Buscar item, pedido ou fornecedor'), page.getByRole('button', { name: 'Mostrar todos' })],
-      [page.getByText(`1× ${bought.item}`), page.getByText('Marque um item só quando toda a quantidade chegou.')],
+      [page.getByText(`1× ${bought.item}`), page.getByText('Marque um item só quando toda a quantidade chegou.'), page.getByRole('button', { name: `Tudo certo: ${bought.item}` }), defective],
     )
     await defective.click()
-    await expect(photoLabel).toBeVisible()
-    await expectWorkshopSized(page, [photoLabel, page.getByText('Foto da nota fiscal'), page.getByLabel('O que houve?')], [page.getByText('O que houve?')])
+    await expect(photoInput).toBeAttached()
+    await expectWorkshopSized(page, [photoInput, page.getByLabel('Foto da nota fiscal'), page.getByLabel('O que houve?')], [page.getByText('O que houve?')])
     await save.click()
     await expect(page.getByText(`Conte o que houve com ${bought.item}.`)).toBeVisible()
     await page.getByLabel('O que houve?').fill('Costura aberta no encosto')
-    await page.getByLabel(`Foto do item: ${bought.item}`).setInputFiles(itemPhoto)
+    await photoInput.setInputFiles(itemPhoto)
     await expect(page.getByText('Foto 1', { exact: true })).toBeVisible()
     await expect(page.getByText('Enviando a foto…')).toHaveCount(0)
     await expectWorkshopSized(page, [page.getByRole('button', { name: /^Remover foto/ })], [page.getByText('Foto 1', { exact: true })])
@@ -194,16 +192,39 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     const again = page.getByRole('article', { name: bought.supplier })
     await expect(again.getByText('Reposição', { exact: true })).toBeVisible()
     await expectNoSideScroll(page)
+
+    // Enviadas and Fornecedores (no new data): each tab fits, its cards are thumb-sized, and the supplier sheet keeps its buttons on screen.
+    await page.getByRole('tab', { name: 'Enviadas' }).click()
+    await page.getByLabel('Todos', { exact: true }).check()
+    const sentRow = page.getByRole('row', { name: /C-0001/ })
+    await expect(sentRow).toContainText(bought.supplier)
+    await expectNoSideScroll(page)
+    await expectThumbSized(48, page.getByLabel('Abertos', { exact: true }), page.getByLabel('Todos', { exact: true }), sentRow, sentRow.getByRole('link', { name: 'C-0001' }))
+    await page.getByRole('tab', { name: 'Fornecedores' }).click()
+    const supplierRow = page.getByRole('row', { name: new RegExp(bought.supplier) })
+    await expect(supplierRow).toContainText('(11) 98765-4321')
+    await expectNoSideScroll(page)
+    await expectThumbSized(48, page.getByLabel('Buscar fornecedor'), page.getByRole('button', { name: 'Novo fornecedor' }), supplierRow, supplierRow.getByRole('button', { name: bought.supplier }))
+    await page.getByRole('button', { name: 'Novo fornecedor' }).click()
+    const supplierSheet = await expectSheetFits(page, 'Novo fornecedor', ['Salvar', 'Cancelar'])
+    await expectThumbSized(48, supplierSheet.getByLabel('Nome', { exact: true }), supplierSheet.getByLabel('WhatsApp', { exact: true }))
+    await supplierSheet.getByRole('button', { name: 'Cancelar' }).click()
+    await expect(supplierSheet).toBeHidden()
+    await page.getByRole('tab', { name: 'A comprar' }).click()
     await again.getByRole('button', { name: 'Enviar pelo WhatsApp' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Pedido de compra C-0002 criado.' })).toBeVisible()
     await expect.poll(async () => (await whatsapp.opened()).length).toBe(2)
+    // The replacement's message has no client data either.
+    const replacementLink = (await whatsapp.opened())[1]
+    expect(replacementLink.startsWith(`https://wa.me/${bought.supplierPhone}`)).toBe(true)
+    expect(new URL(replacementLink).searchParams.get('text') ?? '').not.toMatch(noClientData)
 
     // The Receber itens tab of Compras has the same sizes; the item arrives right and the order is complete.
     await page.getByRole('tab', { name: 'Receber itens' }).click()
     await expect(page.getByRole('heading', { name: `C-0002 · ${bought.supplier}` })).toBeVisible()
     await expectNoSideScroll(page)
     await page.getByRole('button', { name: `Tudo certo: ${bought.item}` }).click()
-    await expectWorkshopSized(page, [page.getByRole('button', { name: `Tudo certo: ${bought.item}` }), page.locator('label', { hasText: 'Foto do item' }).first()], [page.getByText(`1× ${bought.item}`)])
+    await expectWorkshopSized(page, [page.getByRole('button', { name: `Tudo certo: ${bought.item}` }), page.getByLabel(`Foto do item: ${bought.item}`)], [page.getByText(`1× ${bought.item}`)])
     await save.click()
     await expect(page.getByText('Recebimento salvo.')).toBeVisible()
     await expect(page.getByText('Pedido P-0001: todos os itens chegaram e foram conferidos.')).toBeVisible()
@@ -216,10 +237,10 @@ test.describe('Compras and Receber itens at phone size, against the real stack',
     await expectNoSideScroll(page)
     await expectThumbSized(48, page.getByRole('button', { name: 'Mover para Em montagem' }))
     await page.getByRole('button', { name: 'Mover para Em montagem' }).click()
-    await expect(page.getByText('Em montagem', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pedido P-0001' }).locator('xpath=..').getByText('Em montagem', { exact: true })).toBeVisible()
 
     // Nothing was sent automatically: two links opened, and the browser asked WhatsApp for nothing.
     expect(await whatsapp.opened()).toHaveLength(2)
-    expectNoWhatsappRequests(whatsapp.requests)
+    expectNoWhatsappRequests(whatsapp)
   })
 })

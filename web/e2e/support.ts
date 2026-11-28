@@ -162,15 +162,26 @@ export async function seedCatalog(api: Api): Promise<Catalog> {
   return { kit: 'Kit esportivo', kitId: kit.id, first: 'Escapamento esportivo', second: 'Filtro de ar' }
 }
 
+/** WhatsappWatch is what watchWhatsapp recorded: the wa.me links the app tried to open, every request, and any tab that really opened. */
+export interface WhatsappWatch {
+  opened: () => Promise<string[]>
+  requests: string[]
+  popups: string[]
+}
+
 /**
  * watchWhatsapp stubs window.open before any page script runs, so a wa.me tab
- * never really opens, and returns the links the app tried to open and every
- * request the page made. The stub lives on the document, so a flow that reads
- * `opened` must stay inside the SPA (no reload or full navigation before it).
+ * never really opens, and returns the links the app tried to open, every
+ * request the page made and the address of any page the browser opened anyway
+ * (a link that escaped the stub). The stub lives on the document, so a flow
+ * that reads `opened` must stay inside the SPA (no reload or full navigation
+ * before it).
  */
-export async function watchWhatsapp(page: Page): Promise<{ opened: () => Promise<string[]>; requests: string[] }> {
+export async function watchWhatsapp(page: Page): Promise<WhatsappWatch> {
   const requests: string[] = []
+  const popups: string[] = []
   page.on('request', (request) => requests.push(request.url()))
+  page.context().on('page', (opened) => popups.push(opened.url()))
   await page.addInitScript(() => {
     const opened: string[] = []
     Object.assign(window, { __opened: opened })
@@ -179,14 +190,26 @@ export async function watchWhatsapp(page: Page): Promise<{ opened: () => Promise
       return null
     }
   })
-  return { requests, opened: () => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened) }
+  return { requests, popups, opened: () => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened) }
 }
 
-/** expectNoWhatsappRequests fails when the browser called WhatsApp itself: the app only hands over a link. */
-export function expectNoWhatsappRequests(requests: string[]): void {
-  expect(requests.filter((url) => /(^|\.)(wa\.me|whatsapp\.com|whatsapp\.net)(\/|:|$)/.test(new URL(url).host + '/')), 'requests to WhatsApp').toEqual([])
-  expect(requests.length, 'the browser made requests').toBeGreaterThan(0)
+/**
+ * expectNoWhatsappRequests fails when the browser called WhatsApp itself or
+ * opened a tab of its own: the app only hands over a link, and the stub
+ * records it.
+ */
+export function expectNoWhatsappRequests(watch: WhatsappWatch): void {
+  expect(watch.requests.filter((url) => /(^|\.)(wa\.me|whatsapp\.com|whatsapp\.net)(\/|:|$)/.test(new URL(url).host + '/')), 'requests to WhatsApp').toEqual([])
+  expect(watch.popups, 'pages the browser opened').toEqual([])
+  expect(watch.requests.length, 'the browser made requests').toBeGreaterThan(0)
 }
+
+/**
+ * noClientData matches what a supplier's message must never carry: the
+ * client's name, the customer's phone ((92) 99123-4567, in any format) or an
+ * order number P-nnnn (docs/product/design-document.md, System rules).
+ */
+export const noClientData = /Rafael|Lima|992|9123|4567|P-\d{4}/
 
 /** itemPhoto is a 1 x 1 JPEG, the smallest photo the API accepts, for the file inputs of Receber itens. */
 export const itemPhoto = {
@@ -255,37 +278,54 @@ export async function placeOrder(api: Api, itemId: string, key: string, deposit:
 
 /**
  * expectThumbSized checks the controls a thumb must hit are at least `min` px
- * tall (48 for the management screens, 56 for Receber itens). A checkbox or
- * radio is hit through its label, which is what is measured.
+ * tall (48 for the management screens, 56 for Receber itens). A checkbox,
+ * radio or file input is hit through its label, which is what is measured.
  */
 export async function expectThumbSized(min: number, ...controls: Locator[]): Promise<void> {
   for (const control of controls) {
     const height = await control.evaluate((element) => {
-      const boxed = element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio')
-      const target = (boxed ? element.closest('label') : null) ?? element
+      const hitThroughLabel = element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio' || element.type === 'file')
+      const label = element instanceof HTMLInputElement ? element.labels?.item(0) : null
+      const target = hitThroughLabel && label ? label : element
       return { height: target.getBoundingClientRect().height, html: element.outerHTML.slice(0, 100) }
     })
     expect(height.height, height.html).toBeGreaterThanOrEqual(min)
   }
 }
 
-/** expectNoSideScroll fails when the page is wider than the screen: a phone must never scroll sideways. */
+/**
+ * expectNoSideScroll fails when the page is wider than the screen: a phone must
+ * never scroll sideways. It compares with the visual viewport, the real 390 px
+ * of the device: when a page overflows, a mobile browser widens the layout
+ * viewport (`innerWidth`) to fit it, so `innerWidth` alone would never show it.
+ */
 export async function expectNoSideScroll(page: Page): Promise<void> {
-  const widths = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth }))
-  expect(widths.scroll, `page is ${widths.scroll} px wide on a ${widths.inner} px screen`).toBeLessThanOrEqual(widths.inner)
+  const widths = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: window.innerWidth, screen: window.visualViewport?.width ?? window.innerWidth }))
+  expect(widths.scroll, `page is ${widths.scroll} px wide on a ${widths.screen} px screen`).toBeLessThanOrEqual(Math.min(widths.inner, widths.screen))
 }
 
-/** expectSheetFits checks the open sheet fills the 390 x 844 screen and nothing in it spills sideways. */
-export async function expectSheetFits(page: Page, name: string | RegExp): Promise<Locator> {
+/**
+ * expectSheetFits checks the open sheet fills the 390 x 844 screen and nothing
+ * in it spills sideways. `buttons` names the sheet's main and cancel buttons,
+ * which must sit fully inside the screen: the footer stays put while the body
+ * scrolls.
+ */
+export async function expectSheetFits(page: Page, name: string | RegExp, buttons: string[] = []): Promise<Locator> {
   const sheet = page.getByRole('dialog', typeof name === 'string' ? { name, exact: true } : { name })
   await expect(sheet).toBeVisible()
-  const box = await sheet.boundingBox()
-  expect([box?.x, box?.y, box?.width, box?.height]).toEqual([0, 0, 390, 844])
+  // A sheet may still be sliding in when it first shows: wait for it to settle on the screen.
+  await expect
+    .poll(async () => {
+      const box = await sheet.boundingBox()
+      return [box?.x, box?.y, box?.width, box?.height]
+    })
+    .toEqual([0, 0, 390, 844])
   await expectNoSideScroll(page)
   const inner = await sheet.evaluate((element) => {
     const body = element.querySelector('.enc-dialog__body')
     return body === null ? 0 : body.scrollWidth - body.clientWidth
   })
   expect(inner, 'the sheet scrolls sideways').toBeLessThanOrEqual(0)
+  for (const button of buttons) await expect(sheet.getByRole('button', { name: button, exact: true })).toBeInViewport({ ratio: 1 })
   return sheet
 }
