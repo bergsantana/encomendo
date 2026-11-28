@@ -632,7 +632,6 @@ Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 - If the API refuses a move because purchasing drives it: "Este item é movido por Compras. Use Compras ou Receber itens."
 - The delay banner gains "Falar com o fornecedor ({fornecedor})" (Dono, Admin), which opens WhatsApp.
 - **Histórico** gains:
-  - "O sistema gerou as compras de {n} itens";
   - "Ana enviou {item} ao fornecedor (C-0012)";
   - "Ana informou o prazo do fornecedor de {item}: {data}";
   - "Ana marcou {item} como em trânsito";

@@ -67,7 +67,7 @@ Receiving needs a connection, like every admin screen (ADR 0029). A tap or an up
 
 - A **receipt** is one save on Receber itens: lines of one supplier order, or pending items bought at the counter (a line is written for them as it is received). Each line it holds is checked **Tudo certo** or **Com defeito**.
 - **All or nothing per line:** a line is received only when its whole quantity arrived. Partial quantities are not tracked.
-- **Photos are optional:** up to 4 invoice photos per receipt and up to 2 photos per line. They are staged and promoted as ADR 0028 says, under `t/{tenant}/receipts/{receipt}/{photo}`. **Com defeito needs a note** (up to 500 characters).
+- **Photos are optional:** up to 4 invoice photos per receipt and up to 2 photos per line. They are staged and promoted as ADR 0028 says, under `t/{tenant}/receipts/{photo}` (uploaded before the receipt exists, then recorded with it). **Com defeito needs a note** (up to 500 characters).
 - **Tudo certo** moves the item to `received` with `ok`.
 - **Com defeito** records the check and moves the item back to `to_buy` (the domain's `landing`). The line becomes `defective` and keeps its note and photos. The item, back in `to_buy`, shows again in "A comprar" for the same supplier, marked **Reposição** because it has a defective line. The owner can still switch it to the backup. Returns and refunds with the supplier happen outside Encomendo.
 - A receipt is a POST with `Idempotency-Key`.

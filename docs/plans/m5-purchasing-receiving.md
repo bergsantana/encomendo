@@ -192,7 +192,7 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 - **Must hold:**
   - `purchase_lines` keeps `order_id` (orders are never deleted) and `order_item_id` with `ON DELETE SET NULL (order_item_id)` (Postgres 15+; the stack runs 17), plus its own snapshot of name, quantity and choices;
   - a partial unique index on `(tenant_id, order_item_id) WHERE status IN ('sent','in_transit')`;
-  - photo object keys checked as `t/{tenant}/receipts/{receipt}/{photo}`;
+  - photo object keys checked as `t/{tenant}/receipts/{photo}`;
   - no client policy on any of these tables;
   - audit triggers on supplier orders, lines and receipts, never over a cost column: `audit_log` is read by every staff role while costs are the owner's, so `cost_cents` and `paid_cost_cents` live in a table of their own (`purchase_line_costs`) or out of the audit, as 0013 did for sourcing.
 - **Tests (RLS, integration):**
