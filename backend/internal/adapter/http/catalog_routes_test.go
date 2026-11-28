@@ -21,7 +21,7 @@ const (
 )
 
 // catalogAdminPaths are the 29 catalog operations of the contract, and
-// supplierAdminPaths the four supplier ones, with an id in every path
+// supplierAdminPaths the five supplier ones, with an id in every path
 // parameter.
 var catalogAdminPaths = []struct{ method, path string }{
 	{"GET", samplePath + "/categories"},
@@ -60,6 +60,7 @@ var supplierAdminPaths = []struct{ method, path string }{
 	{"POST", "/api/v1/admin/suppliers"},
 	{"GET", "/api/v1/admin/suppliers/" + sampleID},
 	{"PUT", "/api/v1/admin/suppliers/" + sampleID},
+	{"GET", "/api/v1/admin/suppliers/" + sampleID + "/items"},
 }
 
 // newCatalogBody returns a body that passes the handler's checks for the
@@ -246,7 +247,7 @@ func TestNewRouter_RefusesCatalogWithoutAuthn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sup, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliersReached{n: &calls}, Log: log})
+	sup, err := handler.NewSuppliers(handler.SuppliersDeps{UseCases: suppliersReached{n: &calls}, Items: supplierItemsReached{n: &calls}, Log: log})
 	if err != nil {
 		t.Fatal(err)
 	}
