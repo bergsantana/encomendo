@@ -180,6 +180,6 @@ func (s *OrderStore) Facts(ctx context.Context) (apporder.StoreFacts, error) {
 	return apporder.StoreFacts{
 		Name: v.StoreName, Slug: v.Slug, WhatsApp: v.WhatsAppPhone, Currency: v.Currency,
 		DepositPercent: v.DepositPercent, AssemblyDays: v.AssemblyDays, SafetyMarginDays: v.SafetyMarginDays,
-		Location: loc,
+		Location: loc, PurchaseBeforeDeposit: v.PurchaseBeforeDeposit,
 	}, nil
 }

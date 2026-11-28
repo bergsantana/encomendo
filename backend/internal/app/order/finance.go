@@ -299,9 +299,9 @@ func (s *Service) margins(ctx context.Context, names *customerNames, r readCtx, 
 		if identity.SeesCosts(r.by.Role()) {
 			if cost, ok := o.Cost(); ok {
 				row.Cost = &cost
-			}
-			if m, ok := o.Margin(); ok {
-				row.Margin = &m
+				if m, ok := o.Margin(); ok {
+					row.Margin = &m
+				}
 			}
 		}
 		out = append(out, row)

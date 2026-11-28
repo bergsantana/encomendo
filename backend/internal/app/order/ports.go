@@ -182,6 +182,9 @@ type StoreFacts struct {
 	DepositPercent                 int
 	AssemblyDays, SafetyMarginDays int
 	Location                       *time.Location // the store's time zone
+	// PurchaseBeforeDeposit is "Liberar compras antes do sinal": bought
+	// items show in "A comprar" once their order leaves its draft (ADR 0031).
+	PurchaseBeforeDeposit bool
 }
 
 // TrackingURLs builds the tracking page URL of a token on a store's page.

@@ -248,3 +248,32 @@ func TestQueries_ReturnTheRepositorysFailure(t *testing.T) {
 		}
 	}
 }
+
+// An order's margin counts what was actually paid when purchasing recorded
+// it, and the cost known at order time when it did not.
+func TestFinance_MarginUsesPaidCost(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	staff, owner := h.staff(t), h.owner(t)
+	paid := h.deliver(staff, t, h.released(staff, t, nil))
+	plain := h.deliver(staff, t, h.released(staff, t, nil))
+	if err := h.svc.RecordPaidCosts(owner, []apporder.PaidCostInput{{Order: paid.ID, Item: paid.Items[0].ID, Cost: brl(t, 45_000)}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.svc.Finance(owner, day2(t, "2026-12-01"), day2(t, "2026-12-01"))
+	if err != nil || len(got.Margins) != 2 {
+		t.Fatalf("margins = %+v, %v", got.Margins, err)
+	}
+	for _, row := range got.Margins {
+		want, margin := int64(40_000), catalog.Margin{Cents: 60_000, BasisPoints: 6000}
+		if row.Order == paid.ID {
+			want, margin = 45_000, catalog.Margin{Cents: 55_000, BasisPoints: 5500}
+		}
+		if row.Order != paid.ID && row.Order != plain.ID {
+			t.Fatalf("unexpected order %s", row.Order)
+		}
+		if row.Cost == nil || row.Cost.Cents() != want || row.Margin == nil || *row.Margin != margin {
+			t.Errorf("order %s: cost %v margin %v, want R$ %d and %+v", row.Number, row.Cost, row.Margin, want/100, margin)
+		}
+	}
+}

@@ -630,7 +630,21 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
   - `toSend` = the items in `ToBuy`;
   - needs: notices, then open supplier orders with no promised date sent more than 2 days ago (days in the store's zone), then items to send per supplier.
 
-**App errors** (`errors.go`): `ErrItemNotToBuy`, `ErrIdempotencyKeyRequired`; the rest are the domain's.
+**App errors** (`errors.go`): `ErrItemNotToBuy`, `ErrIdempotencyKeyRequired`, `ErrReceiptNotFound`; the rest are the domain's.
+
+**As built in 5.7** (the ports above, amended; `ports.go` is the source):
+- `Store` also has `Currency(ctx)`, because prices paid arrive as bare cents, and `Location(ctx)`, so `Today` can count days in the store's zone.
+- `Repository`:
+  - `InsertCounterLine(ctx, tenant, l)` takes the tenant;
+  - `Message(ctx, tenant, id)` answers a `Send` replay with the stored message;
+  - `Receipt(ctx, tenant, id)` answers a `Receive` replay after the lines closed;
+  - `OpenLines` and `LinesOfOrder` return `[]StoredLine`, the line plus its pedido de compra's number, name, phone, send time and promised date;
+  - records are `purchasing.Record`.
+- `Receive` runs the replay check in a small transaction before the photo checks, and again inside the main one.
+- `Remember` runs before `Promote`, which is last; a promote left behind by a failed transaction is reported with `ReportOrphan`.
+- A dry `NewReceipt` with placeholder photos refuses an over-limit request before any storage call.
+- Bad uploads are `catalog.ErrPhotoNotUploaded` and `catalog.ErrPhotoInvalid`, so HTTP reuses `photo_not_uploaded` and `photo_invalid`.
+- `Today` leaves out a pedido de compra's "sem prazo" need when every open line on it is a notice.
 
 **Tests (named):**
 

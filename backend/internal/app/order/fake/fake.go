@@ -471,14 +471,28 @@ func (f *Workflows) Get(_ context.Context, id shared.WorkflowID, version int) (w
 	return workflow.Workflow{}, fmt.Errorf("fake: workflow %s v%d: %w", id, version, shared.ErrNotFound)
 }
 
-// Store is an apporder.Store with fixed facts.
-type Store struct{ facts apporder.StoreFacts }
+// Store is an apporder.Store whose facts a test sets.
+type Store struct {
+	mu    sync.Mutex
+	facts apporder.StoreFacts
+}
 
 // NewStore returns a store whose facts are f.
-func NewStore(f apporder.StoreFacts) Store { return Store{facts: f} }
+func NewStore(f apporder.StoreFacts) *Store { return &Store{facts: f} }
 
 // Facts implements apporder.Store.
-func (s Store) Facts(context.Context) (apporder.StoreFacts, error) { return s.facts, nil }
+func (s *Store) Facts(context.Context) (apporder.StoreFacts, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.facts, nil
+}
+
+// SetPurchaseBeforeDeposit turns "Liberar compras antes do sinal" on or off.
+func (s *Store) SetPurchaseBeforeDeposit(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.facts.PurchaseBeforeDeposit = on
+}
 
 // Tracking builds tracking URLs on a test domain.
 type Tracking struct{}

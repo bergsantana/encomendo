@@ -165,8 +165,8 @@ func (s *Service) UseBackupSupplier(ctx context.Context, in ItemVersionInput) (V
 }
 
 // Cancel cancels the order (order:manage). Payments stay as recorded.
-// Milestone 5 cancels its unsent purchases and flags the sent ones, and
-// milestone 6 releases its stock, each from order.cancelled.
+// Purchasing reads cancelled orders and flags their sent lines (ADR 0031).
+// Milestone 6 releases the order's stock from order.cancelled.
 func (s *Service) Cancel(ctx context.Context, in CancelInput) (View, error) {
 	return s.write(ctx, write{perm: identity.PermOrderManage, order: in.Order, version: in.Version,
 		change: func(_ context.Context, o *order.Order, w writeCtx) ([]appshared.Event, error) {
