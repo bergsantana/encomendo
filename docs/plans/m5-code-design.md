@@ -766,9 +766,9 @@ Layers as `web/CLAUDE.md` says: `views/*.vue` → `store.ts` (Pinia) → `packag
     - `FornecedoresTab.vue` with `SupplierDrawer.vue` (it reuses `catalogo/components/SupplierFields.vue`, moved to `packages/ui` or imported as is, never duplicated);
     - `PromisedDateDialog.vue`, `PaidPricesDialog.vue`, `UndoDialog.vue`;
     - `ReceiptLine.vue`, `PhotoPicker.vue`.
-  - `store.ts` (`useComprasStore`): to-buy, picks per supplier, supplier orders, notices.
-  - `receberStore.ts` (`useReceberStore`):
-    - the checks, notes and photo states of one receipt;
+  - `store.ts` (`useComprasStore`, the feature's one store, `web/CLAUDE.md`):
+    - to-buy, picks per supplier, supplier orders and notices;
+    - the receipt being made: its checks, notes and photo states;
     - the `Idempotency-Key` made once per "Salvar recebimento" and kept for "Tentar de novo";
     - the result (`completedOrders`, `backToBuy`).
 - Routes: `/compras` with `meta.permission: 'purchase:write'`; `/compras/receber` with `meta.permission: 'receiving:write'`.
