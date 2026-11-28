@@ -52,15 +52,15 @@ ADR 0031 records them. The short form:
 
 - **Online only.** No offline queue; retries are safe through `Idempotency-Key`.
 - **Compras is the only path** for bought items from `to_buy` to `received`. The order's move endpoint refuses those moves with `409 item_moved_by_purchasing` and keeps `received → installed`. In-house items keep manual moves until M6.
-- **An in-transaction event dispatcher** (`adapter/inproc`) wraps the outbox publisher and runs purchasing's handlers in the order's transaction. `app/order` never names purchasing. Purchasing reaches orders through an `OrderItems` port.
-- **Lines appear** on `deposit_confirmed` and `released`, or when the order leaves `draft` with "Liberar compras antes do sinal" on. They are idempotent per order item (one open line per item), and follow changes, cancels and backup switches. Sent lines that are no longer needed are **flagged** ("Avisar o fornecedor").
-- **Supplier orders** are numbered per store, `C-0001`. Sending creates one from the picked pending lines and answers the `wa.me` link. The message sums the same item and choices, and never names the client. "Desfazer envio" works while nothing is received.
+- **Pending purchases are read, not stored.** "A comprar" is the bought items in `to_buy` of purchasable orders (released, or past draft with "Liberar compras antes do sinal"), read from `app/order` through purchasing's `OrderItems` port. A `purchase_lines` row is written when a line is sent or received at the counter. Purchasing depends on orders; orders never know purchasing, so there is no cycle (`backend/CLAUDE.md`) and no event handler. Deposits, changes, cancels and backup switches need no purchasing code. Sent lines that are no longer needed are **flagged** when read ("Avisar o fornecedor").
+- **The order screen and Hoje read purchasing's own endpoints** for C-numbers, promised dates, "Falar com o fornecedor" and the purchasing entries.
+- **Supplier orders** are numbered per store, `C-0001`. Sending creates one from the picked pending items and answers the `wa.me` link. The message sums the same item and choices, and never names the client. "Desfazer envio" works while nothing is received.
 - **Promised date** per supplier order, with a per-line override; it redates the items (forecast), never the promise.
 - **Price paid** per line, owner only; Financeiro margins prefer it.
-- **Receipts:** all or nothing per line; photos optional; "Com defeito" needs a note and makes a replacement line.
+- **Receipts:** all or nothing per line; photos optional; "Com defeito" needs a note, and the item goes back to "A comprar" as "Reposição".
 - **No new permission:** `purchase:write` for Compras, `receiving:write` for Receber itens.
 - **Staff-only RLS** on every purchasing table.
-- **Time zone changes** call `schedule.Recalculate`, which now redates.
+- **`schedule.Recalculate` now redates**; a time zone change still doesn't call it (it would be a `tenancy` → `order` cycle).
 
 ## Ownership
 
@@ -76,12 +76,12 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 | --- | --- | --- |
 | 5.1 | Code design and contract: purchasing, receipts, supplier orders, order and Hoje changes, problem codes | opus |
 | 5.2 | `domain/purchasing` I: purchase line, supplier order, numbers, supplier message | sonnet |
-| 5.3 | `domain/purchasing` II: receipt, checks, replacement lines, notices | sonnet |
-| 5.4 | `domain/order` changes: purchasing-only moves, promised-date redate, paid cost, new events | opus |
+| 5.3 | `domain/purchasing` II: receipt, checks, notices | sonnet |
+| 5.4 | `domain/order` changes: purchasing-only moves, promised-date redate, paid cost | opus |
 | 5.5 | Migration `0016_purchasing` with staff-only RLS, and `paid_cost_cents` on sourcing | opus |
-| 5.6 | In-transaction event dispatcher, purchasing's event handlers, `OrderItems` port | opus |
-| 5.7 | `app/purchasing` commands and queries: send, undo, promised date, in transit, prices, receive, notices | sonnet |
-| 5.8 | `app/order` and `app/schedule` changes: refuse bought moves, `Recalculate` redates, Hoje entries, Financeiro paid cost, supplier chat link | sonnet |
+| 5.6 | `app/order` purchasing entry points and the `OrderItems` port: the to-buy read, moves, promised dates, paid costs | opus |
+| 5.7 | `app/purchasing`: to-buy, send, undo, promised date, in transit, prices, receive, notices, order lines, Hoje | sonnet |
+| 5.8 | `app/order` and `app/schedule` changes: refuse bought moves, `Recalculate` redates, Financeiro paid cost | sonnet |
 | 5.9 | `adapter/postgres` purchasing repository and receipt photo storage, with the contract suite | sonnet |
 | 5.10 | `wa.me` supplier links, `inproc` adapters, HTTP handlers, routes, wiring, visibility tests | sonnet |
 | 5.11 | pt-BR wording for Compras, Receber itens, Fornecedores, order and Hoje changes | done in the plan PR |
@@ -96,7 +96,7 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 - 5.1 first.
 - 5.2, 5.3 and 5.4 are pure and run in parallel once 5.1 is merged (5.3 builds on 5.2's types, so the same subagent does both if that is simpler).
 - 5.5 needs 5.2–5.4, so the columns follow the domain.
-- 5.6 needs 5.4 and 5.5. 5.7 needs 5.6. 5.8 needs 5.4 and 5.6.
+- 5.6 needs 5.4 and 5.5. 5.7 needs 5.6. 5.8 needs 5.4.
 - 5.9 needs 5.5 and 5.7. 5.10 needs everything above.
 - On the web side, 5.11 is done in the plan PR, and 5.12 starts once 5.1 is merged. 5.13 to 5.15 follow 5.12 against MSW; 5.16 checks them against the real stack.
 
@@ -109,12 +109,12 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 ### 5.1 Code design and contract
 
 - **Goal:** write `docs/plans/m5-code-design.md` (packages, types and signatures, SQL, endpoints, problem codes, web files, test names, as M4's) and the purchasing part of `docs/api/openapi.yaml`. Ticks: part of "HTTP handlers and OpenAPI" (the contract half; the box ticks in 5.10).
-- **Model:** opus. It fixes the cross-context design (dispatcher, `OrderItems` port, event payloads), the schema and the client-visibility edges for every later step.
+- **Model:** opus. It fixes the cross-context design (the `OrderItems` port and its permissions), the schema and the client-visibility edges for every later step.
 - **Skill:** none. `/new-endpoint`'s contract section is the checklist for each operation.
 - **Files and owner:** `docs/plans/m5-code-design.md`, `docs/api/openapi.yaml` (owned here), `web/packages/api/src/types` regenerated (`make api-types`).
 - **Contract, at least:**
-  - `GET /admin/purchasing/to-buy`: pending lines grouped by supplier, with the order number, the arrival limit, "Reposição" and, for the owner, the cost;
-  - `POST /admin/purchasing/supplier-orders/preview`: the message for picked lines;
+  - `GET /admin/purchasing/to-buy`: pending items grouped by supplier, with the order number, the arrival limit, "Reposição" and, for the owner, the cost;
+  - `POST /admin/purchasing/supplier-orders/preview`: the message for picked items;
   - `POST /admin/purchasing/supplier-orders`: send, with `Idempotency-Key`; answers the supplier order and its `wa.me` link;
   - `GET /admin/purchasing/supplier-orders` and `GET /admin/purchasing/supplier-orders/{id}`;
   - on a supplier order: `PUT …/promised-date` (with per-line dates), `POST …/in-transit`, `POST …/undo`, `PUT …/paid-prices` (owner);
@@ -122,10 +122,10 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
   - `POST /admin/purchasing/receipt-photo-uploads` (signed upload, as catalog photos);
   - `POST /admin/purchasing/receipts`, with `Idempotency-Key`;
   - `GET /admin/purchasing/notices` and `POST …/notices/{lineId}/resolve`, with the notice's `wa.me` link;
-  - `OrderItem` gains `purchase` (supplier order number, line status, promised date) and, for `purchase:write`, `supplierChatUrl`;
-  - Hoje gains the three purchasing entries and the "Compras a enviar" count, for `purchase:write`;
+  - `GET /admin/purchasing/orders/{orderId}/lines`: each bought item's line, C-number and promised date and, for `purchase:write`, `supplierChatUrl`;
+  - `GET /admin/purchasing/today`: Hoje's three purchasing entries and the "Compras a enviar" count, for `purchase:write`;
   - the move endpoint documents `409 item_moved_by_purchasing`.
-- **Event shapes:** `order.advanced` gains `fromPhase`; `order.supplier_switched` is new; each handler's input is listed.
+- **Ports:** `OrderItems` (purchasing → order) with every method's contract; nothing from order to purchasing.
 - **Tests:** none (docs and contract). `make api-types` and the contract lint in `web.yml` pass.
 - **Reviewers:** `tenancy-security-reviewer` on the contract (no client-tier field, costs owner-only, no client data in any purchasing schema), `web-reviewer` on the generated types.
 - **Depends on:** nothing.
@@ -137,8 +137,8 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 - **Skill:** none; `/new-bounded-context` only as the layout reference (the context is new, but its scaffold comes with 5.6–5.9).
 - **Files:** `backend/internal/domain/purchasing/`.
 - **Tests (domain):**
-  - line states `pending → sent → received | defective`, `pending → cancelled`, `sent → pending` (undo), and the flag on sent lines;
-  - a supplier order holds lines of one supplier only and refuses an empty pick;
+  - line states `sent → in_transit → received | defective`, `sent → received | defective`, `sent | in_transit → cancelled` (undo, or a resolved notice), and a line written straight as `received` or `defective` for an item bought at the counter;
+  - a supplier order holds lines of one supplier only, refuses an empty pick and an item picked twice;
   - the promised date per order and per line, refusing a past day;
   - prices are integer cents with a currency;
   - `Number.String()` gives `C-0001` and `C-12345`.
@@ -146,15 +146,15 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 - **Reviewers:** `go-reviewer`.
 - **Depends on:** 5.1.
 
-### 5.3 `domain/purchasing` II: receipt, checks, replacements, notices
+### 5.3 `domain/purchasing` II: receipt, checks, notices
 
-- **Goal:** `receipt.go`: lines checked `ok` or `defective`; all or nothing; a defect note of 1 to 500 characters; photo limits (4 invoice photos, 2 per line); a defective line yields its replacement `pending` line; notices and their resolution. Ticks: the rest of "`domain/purchasing`".
+- **Goal:** `receipt.go`: lines checked `ok` or `defective`; all or nothing; a defect note of 1 to 500 characters; photo limits (4 invoice photos, 2 per line); a receipt line for an item bought at the counter (no supplier order); notices (cancelled order, removed item, changed quantity or choices) and their resolution. Ticks: the rest of "`domain/purchasing`".
 - **Model:** sonnet.
 - **Files:** `backend/internal/domain/purchasing/`.
 - **Tests (domain):**
   - a receipt refuses no lines, a line twice, a line already received or cancelled, and a defect without a note;
   - receiving a `pending` line (bought at the counter) works;
-  - a defective check makes exactly one replacement line, pointing at the old one;
+  - a defective check leaves the line `defective` and asks the order to land the item on `to_buy`;
   - resolving a notice cancels the line, and resolving it twice is refused.
 - **Reviewers:** `go-reviewer`.
 - **Depends on:** 5.2.
@@ -162,79 +162,95 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 ### 5.4 `domain/order` changes
 
 - **Goal:** the order side of ADR 0031:
-  - a purchasing-only path for bought items (`MarkSentToSupplier`, `MarkInTransit`, `UndoSent`, `ReceiveBought` with its check), while `MoveItem` refuses those moves for bought items (`ErrItemMovedByPurchasing`) and keeps `received → installed` and every in-house move;
-  - `RecordPromisedDate(item, date)`, which fills `Timing.Promised` and redates the forecast (the public redate M4 left out);
+  - a purchasing-only path for bought items: `MarkSentToSupplier`, `MarkInTransit`, `UndoSent`, and `ReceiveBought` with its check;
+  - `MoveItem` refuses those moves for bought items (`ErrItemMovedByPurchasing`), and keeps `received → installed` and every in-house move;
+  - `RecordPromisedDate(item, date)`, which fills `Timing.Promised` and redates the forecast, and `Redate(today)`: the public redate M4 left out;
   - `RecordPaidCost(item, cents)` on the sourcing snapshot;
-  - the events `SupplierSwitched` and `Advanced.FromPhase`.
-  Ticks: none alone (it serves "`app/purchasing`").
-- **Model:** opus. It changes the aggregate's invariants and the event contract other contexts depend on.
+  - `Purchasable(settingOn)`: the order rule of "A comprar".
+  Ticks: none alone; it serves "`app/purchasing`".
+- **Model:** opus. It changes the aggregate's invariants, which purchasing then depends on.
 - **Files:** `backend/internal/domain/order/`.
 - **Tests (domain):**
   - every bought move through `MoveItem` other than `received → installed` is refused;
   - each purchasing method follows `CanMoveItem`, with a defect landing on `to_buy`;
   - a promised date after the arrival limit makes the item `at_risk` and leaves `Promise()` unchanged;
-  - `UseBackupSupplier` publishes `SupplierSwitched`;
-  - leaving draft publishes `FromPhase: draft`;
+  - `Purchasable` for each phase, with and without a release date and the setting;
   - the existing `TestAdvance_*` tables still pass with items received through the new path.
 - **Reviewers:** `go-reviewer`.
 - **Depends on:** 5.1.
 
 ### 5.5 Migration `0016_purchasing`
 
-- **Goal:** `purchase_counters`, `supplier_orders`, `purchase_lines`, `receipts`, `receipt_lines` and `receipt_photos`, plus `order_item_sourcing.paid_cost_cents`, all with composite tenant foreign keys and the **staff-only** policy. Ticks: "Purchasing migration, with RLS and tests".
+- **Goal:**
+  - the tables `purchase_counters`, `supplier_orders`, `purchase_lines`, `receipts`, `receipt_lines` and `receipt_photos`;
+  - `order_item_sourcing.paid_cost_cents`;
+  - composite tenant foreign keys and the **staff-only** policy on all of them.
+  Ticks: "Purchasing migration, with RLS and tests".
 - **Model:** opus. Schema and RLS.
 - **Skill:** `/new-migration`.
 - **Files and owner:** `backend/internal/adapter/postgres/migrations/0016_purchasing.sql` (owned here), the RLS suite.
 - **Must hold:**
-  - a partial unique index on `purchase_lines (tenant_id, order_item_id) WHERE status IN ('pending','sent')`;
-  - `order_item_id` nullable (restock, M6), with a check that only M6 kinds may leave it null (or no null until M6, as the code design decides);
+  - `purchase_lines` keeps `order_id` (orders are never deleted) and `order_item_id` with `ON DELETE SET NULL (order_item_id)` (Postgres 15+; the stack runs 17), plus its own snapshot of name, quantity and choices;
+  - a partial unique index on `(tenant_id, order_item_id) WHERE status IN ('sent','in_transit')`;
   - photo object keys checked as `t/{tenant}/receipts/{receipt}/{photo}`;
   - no client policy on any of these tables;
-  - audit triggers on supplier orders, lines and receipts, but not on cost columns (`audit_log` is readable by every staff role, while costs are the owner's: split `paid_cost_cents` into its own table or leave it out of the audit, as 0013 did for sourcing).
+  - audit triggers on supplier orders, lines and receipts, never over a cost column: `audit_log` is read by every staff role while costs are the owner's, so `cost_cents` and `paid_cost_cents` live in a table of their own (`purchase_line_costs`) or out of the audit, as 0013 did for sourcing.
 - **Tests (RLS, integration):**
   - the tenant cases for every new table;
   - the staff-only case: a store page scope reads zero rows;
   - the client case: a client account reads zero rows;
   - the unique index refuses a second open line;
+  - removing an order item keeps its line with a null item;
   - a cross-tenant foreign key is refused.
 - **Reviewers:** `tenancy-security-reviewer`, `go-reviewer`.
 - **Depends on:** 5.2–5.4.
 
-### 5.6 Event dispatcher, purchasing's handlers, `OrderItems` port
+### 5.6 `app/order` purchasing entry points and the `OrderItems` port
 
 - **Goal:**
-  - `adapter/inproc/event_dispatcher.go` (wraps `EventPublisher`; handlers by name, synchronous, in the publishing transaction);
-  - `app/purchasing` handlers for `deposit_confirmed`, `released`, `advanced` (leaving draft with `purchase_before_deposit`), `changed`, `cancelled` and `supplier_switched`;
-  - the `OrderItems` port and its fake.
-  Ticks: "`app/purchasing`: `GeneratePurchases` (after deposit unless `purchase_before_deposit`) …" (the generation half).
-- **Model:** opus. Cross-context design, and the handlers run without a permission check in the caller's scope.
+  - `app/order` use cases that purchasing calls through `adapter/inproc/purchasing_orders.go`:
+    - `ToBuy` (bought `to_buy` items of purchasable orders, with order number, arrival limit, quantity, name, choices, supplier and, for the owner, cost);
+    - `PurchaseFacts(itemIDs)` (each item's order, status, version, arrival limit, expected date, whether it was removed, its order cancelled or its quantity or choices changed);
+    - `MarkSent`, `MarkInTransit`, `UndoSent`, `ReceiveBought`, `RecordPromisedDates` and `RecordPaidCosts`.
+    Each checks its own permission (`purchase:write`, `receiving:write`, the owner for costs) and joins the caller's transaction.
+  - `app/purchasing`'s `OrderItems` port and its fake, and the contract suite that runs it against the fake and the inproc adapter over a real `app/order` with fakes.
+  Ticks: "`app/purchasing`: `GeneratePurchases` (after deposit unless `purchase_before_deposit`) …" (the generation half: "A comprar" is this read).
+- **Model:** opus. Cross-context design and permissions on a port another context calls.
 - **Skill:** `/new-bounded-context` for `app/purchasing`'s ports, fakes and contract-suite layout.
-- **Files:** `backend/internal/app/purchasing/`, `backend/internal/adapter/inproc/`, `backend/test/contract/`.
-- **Tests:**
-  - app with fakes: lines appear after the deposit and not before; with the setting on, they appear on leaving draft and never for a draft; a deposit paid again after a void makes nothing new; a change adds and cancels lines and flags sent ones; a cancel does the same for every item; a backup switch moves a pending line and leaves a sent one;
-  - the dispatcher: a failing handler fails the publish, and the transaction rolls back the order write (fake tx), and an unregistered event changes nothing;
-  - the handlers reject a scope with no tenant.
-- **Reviewers:** `go-reviewer`, `tenancy-security-reviewer` (permission-less internal entry points).
+- **Files:** `backend/internal/app/order/`, `backend/internal/app/purchasing/` (ports and fake only), `backend/internal/adapter/inproc/`, `backend/test/contract/`.
+- **Tests (app with fakes):**
+  - `ToBuy`:
+    - shows items after the deposit and not before;
+    - with the setting on, shows them once the order leaves draft, and never for a draft;
+    - a deposit paid again after a void shows each item once;
+    - a cancelled order, a removed item and an in-house item are absent;
+    - a backup switch shows the item under the backup supplier;
+    - costs only for the owner;
+  - each move refuses a caller without its permission;
+  - every write joins the outer transaction and rolls back with it (fake tx).
+- **Reviewers:** `go-reviewer`, `tenancy-security-reviewer` (a port other contexts call, and cost visibility).
 - **Depends on:** 5.4, 5.5.
 
-### 5.7 `app/purchasing` commands and queries
+### 5.7 `app/purchasing`
 
 - **Goal:**
-  - `SendSupplierOrder` (→ `wa.me` link through a `SupplierLinks` port), `PreviewMessage`, `UndoSend`, `RecordPromisedDate` (→ `OrderItems.RecordPromisedDate`), `MarkInTransit`, `RecordPaidPrices` (owner) and `Receive` (receipt, photos confirmed through the storage port, checks to `OrderItems`);
-  - `ResolveNotice`;
-  - the queries `ToBuy`, `SupplierOrders`, `SupplierOrder`, `ToReceive` and `Notices`.
+  - the commands: `PreviewMessage`, `SendSupplierOrder` (→ `wa.me` link through a `SupplierLinks` port), `UndoSend`, `RecordPromisedDate`, `MarkInTransit`, `RecordPaidPrices` (owner), `Receive` (receipt, photos confirmed through the storage port, checks through `OrderItems`) and `ResolveNotice`;
+  - the queries: `ToBuy` (grouped by supplier, "Reposição" marked), `SupplierOrders`, `SupplierOrder`, `ToReceive`, `Notices`, `OrderLines(orderID)` (with "Falar com o fornecedor" for `purchase:write`) and `Today` (Hoje's purchasing entries).
   Ticks: the rest of "`app/purchasing`".
 - **Model:** sonnet. The code design holds the design.
 - **Files:** `backend/internal/app/purchasing/`.
 - **Tests (app with fakes, fixed clock and IDs):**
-  - every command checks its permission (`purchase:write`, `receiving:write`, the owner for prices);
+  - every command and query checks its permission;
   - costs and paid prices are absent from every view built for a non-owner;
-  - send moves the lines and the items and records the link;
+  - send writes the lines, moves the items, records the link, and is a conflict when the item was sent by someone else first;
   - undo is refused once anything is received;
   - a promised date redates the items and raises `at_risk` when late;
-  - receive with a defect makes the replacement and moves the item back;
+  - receive with a defect leaves the item in "A comprar" as "Reposição";
+  - receive at the counter writes a line with no supplier order;
   - an `Idempotency-Key` replay of send and receive answers the first result;
-  - the message test from 5.2 again, through the use case, with real orders from the fake.
+  - notices for a cancelled order, a removed item and a changed quantity, and resolving one;
+  - `Today` gives nothing to staff;
+  - the message test from 5.2 again, through the use case, with orders from the fake.
 - **Reviewers:** `go-reviewer`.
 - **Depends on:** 5.6.
 
@@ -242,39 +258,35 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 
 - **Goal:**
   - `MoveItem` maps `ErrItemMovedByPurchasing`;
-  - `schedule.Recalculate` redates and saves, and the time zone change in `app/tenancy` settings calls it for active orders;
-  - Hoje gains the purchasing entries through a `PurchasingAlerts` port (only for `purchase:write`);
+  - `schedule.Recalculate` redates and saves;
   - Financeiro margins prefer `paid_cost_cents`;
-  - the order view's bought items carry `purchase` and, for `purchase:write`, `supplierChatUrl`;
-  - the M4 hand-off comment in `Cancel` is removed (the handler now does it) and its issue closed.
-  Ticks: none alone; serves "HTTP handlers and OpenAPI" and the web boxes.
+  - the M4 hand-off comment in `Cancel` is replaced (nothing calls purchasing, which reads cancelled orders), and its issue closed.
+  Ticks: none alone; it serves "HTTP handlers and OpenAPI".
 - **Model:** sonnet.
-- **Files:** `backend/internal/app/order/`, `backend/internal/app/schedule/`, `backend/internal/app/tenancy/`.
+- **Files:** `backend/internal/app/order/`, `backend/internal/app/schedule/`.
 - **Tests (app with fakes):**
-  - a staff move of a bought item to `received` is refused and an in-house move still works;
-  - a time zone change redates;
-  - Hoje shows the three entries to the owner and admin and none to staff;
-  - a margin uses the paid price when there is one;
-  - `supplierChatUrl` is absent for staff and viewers and never names the client.
+  - a staff move of a bought item to `received` is refused, and an in-house move still works;
+  - `Recalculate` saves a redated order;
+  - a margin uses the paid price when there is one.
 - **Reviewers:** `go-reviewer`.
-- **Depends on:** 5.4, 5.6.
+- **Depends on:** 5.4.
 
 ### 5.9 `adapter/postgres` purchasing repository and receipt photos
 
-- **Goal:** `purchasing_repo.go`:
-  - lines, supplier orders with their number counter, receipts and notices;
-  - `ToBuy` grouped by supplier with `Raw` where clearer;
-  - receipt photos staged and promoted through `adapter/storage` (ADR 0028), under the receipts key prefix;
+- **Goal:**
+  - `purchasing_repo.go`: lines, supplier orders with their number counter, receipts and notices (sent lines joined to their order's state with `Raw` where clearer);
+  - the order repository's `ToBuy` and `PurchaseFacts` reads;
+  - receipt photos staged and promoted through `adapter/storage` (ADR 0028) under the receipts key prefix;
   - the GORM models in `models/`.
   Ticks: "Postgres repository (grouping by supplier with `Raw` where clearer); receipt photo upload through storage".
 - **Model:** sonnet.
 - **Files:** `backend/internal/adapter/postgres/`, `backend/internal/adapter/storage/` (key helper only), `backend/test/contract/`.
 - **Tests:**
-  - the contract suite for every purchasing port against the fake (`make test`) and Postgres and Silo (`make test-integration`);
+  - the contract suite for every purchasing port against the fake (`make test`) and against Postgres and Silo (`make test-integration`);
   - the second open line for one item is a conflict;
   - the counter never repeats under two concurrent sends;
   - a receipt photo under another store's key is refused;
-  - the outbox and the handlers commit or roll back together with the order write (integration).
+  - a send commits the lines and the order moves together, or neither (integration).
 - **Reviewers:** `go-reviewer`, `tenancy-security-reviewer`.
 - **Depends on:** 5.5, 5.7.
 
@@ -282,11 +294,11 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
 
 - **Goal:**
   - `adapter/notify` supplier links (send, falar, avisar);
-  - `adapter/inproc/purchasing_orders.go` (`OrderItems` over `app/order`) and `order_purchasing_alerts.go`;
+  - `adapter/inproc/purchasing_orders.go` wired;
   - the HTTP handlers and DTOs, routes and problem codes;
-  - the dispatcher wired in `main.go` with the handlers registered.
+  - the purchasing service wired in `main.go` (after the order service, which it depends on; nothing depends on it).
   Ticks: "HTTP handlers and OpenAPI".
-- **Model:** sonnet. The main session reviews the wiring and the dispatcher registration on Opus before the PR.
+- **Model:** sonnet. The main session reviews the wiring on Opus before the PR.
 - **Skill:** `/new-endpoint` for each operation's handler and tests.
 - **Files and owner:** `backend/internal/adapter/http/` (`router.go` owned here), `backend/cmd/api/main.go` (owned here), `backend/internal/adapter/notify/`, `backend/internal/adapter/inproc/`.
 - **Tests:**
@@ -295,7 +307,7 @@ This session is the only milestone 5 session. It owns `backend/cmd/api/main.go`,
     - no purchasing DTO field reaches a client-tier type;
     - cost and paid price reach the owner only;
     - the supplier link's text never holds a customer field (`TestSupplierLinks_HaveNoClientData`, through HTTP);
-  - an API e2e path in `test/e2e`: deposit → lines → send → promised date → receive with one defect → replacement → receive → assembling allowed.
+  - an API e2e path in `test/e2e`: deposit → "A comprar" → send → promised date → receive with one defect → "Reposição" → send again → receive → assembling allowed.
 - **Reviewers:** `go-reviewer`, `tenancy-security-reviewer`.
 - **Depends on:** 5.7–5.9.
 
@@ -305,7 +317,7 @@ The pt-BR texts for every M5 screen are drafted in `docs/product/design-document
 
 ### 5.12 Web `packages/api`
 
-- **Goal:** `purchasing.ts` (to-buy, preview, send, supplier orders, promised dates, in transit, undo, prices, notices) and `receipts.ts` (photo upload reusing the catalog upload flow, receipt with `Idempotency-Key`), plus the order and Hoje type changes; MSW handlers from the contract. Ticks: none alone.
+- **Goal:** `purchasing.ts` (to-buy, preview, send, supplier orders, promised dates, in transit, undo, prices, notices) and `receipts.ts` (photo upload reusing the catalog upload flow, receipt with `Idempotency-Key`), plus `orderLines` and `today`; MSW handlers from the contract. Ticks: none alone.
 - **Model:** sonnet.
 - **Files:** `web/packages/api/src/`.
 - **Tests (web unit):** each call's path, body, key header and problem mapping; a retried receipt reuses its key.
@@ -362,7 +374,7 @@ The pt-BR texts for every M5 screen are drafted in `docs/product/design-document
 ### 5.16 Real stack, phone, close
 
 - **Goal:**
-  - `web/e2e/compras.spec.ts` against `make stack-up`: an order with a paid deposit, its lines in A comprar, send (the opened link is exactly the API's `https://wa.me/…`, and its text holds no customer name, phone or `P-` number), a promised date, receive one line "Com defeito" with a note and a photo, then the replacement "Tudo certo", and the order allowed into Montagem;
+  - `web/e2e/compras.spec.ts` against `make stack-up`: an order with a paid deposit, its items in A comprar, send (the opened link is exactly the API's `https://wa.me/…`, and its text holds no customer name, phone or `P-` number), a promised date, receive one item "Com defeito" with a note and a photo, send its "Reposição" and receive it "Tudo certo", and the order allowed into Montagem;
   - `web/e2e/phone-compras.spec.ts` at 390 × 844 with workshop sizes on Receber itens;
   - update `pedidos.spec.ts` and `phone-pedidos.spec.ts`, which received items on the order screen;
   - tick the boxes, update the summary and the audit line.
