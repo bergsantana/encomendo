@@ -4,19 +4,26 @@
  * opens Pedidos with the filter it counts: the numbers are the server's, and
  * nothing here adds or compares them. "Entregas nos próximos 7 dias" opens
  * the plain list, because the order list has no delivery-window filter yet.
+ * "Compras a enviar" is a fifth card, for the roles that buy: the items in "A
+ * comprar", opening Compras.
  */
 import type { Today } from '@encomendo/api'
 import { type RouteLocationRaw, RouterLink } from 'vue-router'
 
 defineProps<{
   counts: Today['counts']
+  /** toSend is the items in "A comprar", or null for a role that does not buy (no card). */
+  toSend: number | null
 }>()
 
 const orders = (query: Record<string, string> = {}): RouteLocationRaw => ({ name: 'orders', query })
 </script>
 
 <template>
-  <ul class="cards">
+  <ul
+    class="cards"
+    :class="{ 'cards--five': toSend !== null }"
+  >
     <li>
       <RouterLink
         class="card"
@@ -53,6 +60,15 @@ const orders = (query: Record<string, string> = {}): RouteLocationRaw => ({ name
         <span class="value enc-number">{{ counts.dueIn7Days }}</span>
       </RouterLink>
     </li>
+    <li v-if="toSend !== null">
+      <RouterLink
+        class="card"
+        :to="{ name: 'purchasing' }"
+      >
+        <span class="label">Compras a enviar</span>{{ ' ' }}
+        <span class="value enc-number">{{ toSend }}</span>
+      </RouterLink>
+    </li>
   </ul>
 </template>
 
@@ -64,6 +80,9 @@ const orders = (query: Record<string, string> = {}): RouteLocationRaw => ({ name
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.cards--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 .card {
   display: flex;
@@ -88,7 +107,8 @@ const orders = (query: Record<string, string> = {}): RouteLocationRaw => ({ name
 
 /* Phone: two cards a row, each a thumb-sized target. */
 @media (max-width: 640px) {
-  .cards {
+  .cards,
+  .cards--five {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .card {

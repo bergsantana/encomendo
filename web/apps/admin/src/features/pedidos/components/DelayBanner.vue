@@ -4,10 +4,12 @@
  * a entrega", "{n} itens podem atrasar a entrega", "{n} item atrasado" or
  * "{n} itens atrasados", then each item's expected date against "Precisa
  * chegar até". Its ways out are buttons: "Usar o fornecedor reserva" (while
- * the item is still "A comprar" and has a backup) and "Alterar a data de
- * entrega". Which items have an alert is the API's call.
+ * the item is still "A comprar" and has a backup), "Falar com o fornecedor
+ * ({fornecedor})" (only for an item the API sent a chat link for, which it
+ * does for the roles that buy) and "Alterar a data de entrega". Which items
+ * have an alert is the API's call.
  */
-import type { Order } from '@encomendo/api'
+import type { Order, OrderPurchase } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
 import { computed } from 'vue'
 
@@ -20,11 +22,14 @@ const props = defineProps<{
   /** canFix is `order:manage`: the roles that may switch the supplier or change the date. */
   canFix: boolean
   busy: boolean
+  /** purchases is what purchasing knows of the bought items, by order item: where the supplier chat link comes from. */
+  purchases: Readonly<Record<string, OrderPurchase>>
 }>()
 
 const emit = defineEmits<{
   useBackup: [itemId: string]
   changeDate: []
+  talkToSupplier: [itemId: string]
 }>()
 
 const late = computed(() => props.order.items.filter((item) => item.alerts.includes('late')))
@@ -37,6 +42,12 @@ function lateTitle(count: number): string {
 
 function riskTitle(count: number): string {
   return count === 1 ? '1 item pode atrasar a entrega' : `${count} itens podem atrasar a entrega`
+}
+
+/** supplierName is the supplier of a delayed item, when the API sent the chat link for it. */
+function chatSupplier(item: OrderItem): string | null {
+  const purchase = props.purchases[item.id]
+  return purchase?.supplierChatUrl === undefined ? null : purchase.supplierName
 }
 
 function canSwitch(item: OrderItem): boolean {
@@ -67,6 +78,13 @@ function canSwitch(item: OrderItem): boolean {
           @click="emit('useBackup', item.id)"
         >
           Usar o fornecedor reserva ({{ item.backupSupplier.name }}, {{ formatDays(item.backupSupplier.leadDays) }})
+        </BaseButton>
+        <BaseButton
+          v-if="chatSupplier(item) !== null"
+          :disabled="busy"
+          @click="emit('talkToSupplier', item.id)"
+        >
+          Falar com o fornecedor ({{ chatSupplier(item) }})
         </BaseButton>
       </li>
     </ul>

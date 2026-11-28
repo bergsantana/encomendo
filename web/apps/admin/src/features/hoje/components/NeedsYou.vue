@@ -4,18 +4,22 @@
  * as it came. Each entry names the order and the customer and opens the
  * order. The sentence depends on the kind; the days and the amount are the
  * server's. Entries for a late or at-risk item carry the same alert tag the
- * order list shows.
+ * order list shows. Purchasing's entries, for the roles that buy, come first
+ * in the order the server sent them and each opens Compras.
  */
-import type { Today } from '@encomendo/api'
-import { RouterLink } from 'vue-router'
+import type { PurchasingNeed, Today } from '@encomendo/api'
+import { computed } from 'vue'
+import { type RouteLocationRaw, RouterLink } from 'vue-router'
 
 import { formatDays, formatMoney } from '../../../format'
 import AlertBadge from '../../../components/AlertBadge.vue'
 
 type Need = Today['needsYou'][number]
 
-defineProps<{
+const props = defineProps<{
   needs: readonly Need[]
+  /** purchasing is Compras' entries: notices first, then pedidos de compra with no promised date, then items to send. */
+  purchasing: readonly PurchasingNeed[]
 }>()
 
 /** sentence is the product's wording for a need (docs/product/design-document.md, Hoje). */
@@ -34,7 +38,24 @@ function sentence(need: Need): string {
       return need.amount === undefined ? 'Valor a devolver.' : `Valor a devolver: ${formatMoney(need.amount.cents, need.amount.currency)}.`
   }
 }
+/** purchasingSentence is the product's wording for a purchasing need (docs/product/design-document.md, Changes to Hoje). */
+function purchasingSentence(need: PurchasingNeed): string {
+  switch (need.kind) {
+    case 'to_send':
+      return `${need.count === 1 ? '1 item' : `${need.count} itens`} para comprar de ${need.supplierName}.`
+    case 'no_promised_date':
+      return `Pedido de compra ${need.number} sem prazo do fornecedor há ${formatDays(need.days)}.`
+    case 'notify_supplier':
+      return `Avise ${need.supplierName}: ${need.itemName} não é mais necessário (${need.number}).`
+  }
+}
 
+/** purchasingTarget is where an entry leads: always inside Compras. A late pedido de compra opens its own screen, where "Informar prazo" is. */
+function purchasingTarget(need: PurchasingNeed): RouteLocationRaw {
+  return need.kind === 'no_promised_date' ? { name: 'supplier-order', params: { supplierOrderId: need.supplierOrderId } } : { name: 'purchasing' }
+}
+
+const empty = computed(() => props.needs.length === 0 && props.purchasing.length === 0)
 </script>
 
 <template>
@@ -46,7 +67,7 @@ function sentence(need: Need): string {
       Precisa de você
     </h2>
     <p
-      v-if="needs.length === 0"
+      v-if="empty"
       class="muted"
     >
       Nada precisa de você agora.
@@ -55,6 +76,17 @@ function sentence(need: Need): string {
       v-else
       class="list"
     >
+      <li
+        v-for="(need, index) in purchasing"
+        :key="`purchasing-${need.kind}-${index}`"
+      >
+        <RouterLink
+          class="entry"
+          :to="purchasingTarget(need)"
+        >
+          <span class="what">{{ purchasingSentence(need) }}</span>
+        </RouterLink>
+      </li>
       <li
         v-for="(need, index) in needs"
         :key="`${need.kind}-${need.order.id}-${index}`"

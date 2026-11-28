@@ -337,8 +337,6 @@ describe('"Itens"', () => {
   })
 
   it.each([
-    ['sent_to_supplier', 'Marcar como enviada ao fornecedor'],
-    ['in_transit', 'Marcar como em trânsito'],
     ['installed', 'Marcar como instalada'],
     ['in_production', 'Iniciar produção'],
   ] as const)('moves an item to %s with "%s"', async (to, label) => {
@@ -357,34 +355,35 @@ describe('"Itens"', () => {
     expect(button(wrapper, 'Marcar como instalado').exists()).toBe(true)
   })
 
-  it('offers only the moves the API allows now', async () => {
-    const { wrapper } = await openOrder(newOrderState(withItems(orderAsAdmin(), [item({ status: 'in_transit', nextMoves: ['received'] })])))
+  it('offers a received bought item only "Marcar como instalada": sending and receiving belong to Compras', async () => {
+    const { wrapper } = await openOrder(newOrderState(withItems(orderAsAdmin(), [item({ status: 'received', nextMoves: ['installed'] })])))
 
-    expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button').map((b) => b.text())).toEqual(['Tudo certo', 'Com defeito'])
+    expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button').map((b) => b.text())).toEqual(['Marcar como instalada'])
   })
 
-  it('receives an item as "Tudo certo", sending the check', async () => {
-    const state = newOrderState(withItems(orderAsAdmin(), [item({ status: 'in_transit', nextMoves: ['received'] })]))
+  it.each([
+    ['to_buy', 'A comprar'],
+    ['sent_to_supplier', 'Enviada ao fornecedor'],
+    ['in_transit', 'Em trânsito'],
+  ] as const)('draws no move button for a bought item that is %s, even if a move came with it', async (status, word) => {
+    const stale = item({ status, nextMoves: ['sent_to_supplier', 'in_transit', 'received'] })
+    const { wrapper } = await openOrder(newOrderState(withItems(orderAsAdmin(), [stale])))
+
+    expect(wrapper.get('.items tbody .enc-status-badge').text()).toBe(word)
+    expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Marcar como enviada ao fornecedor')
+    expect(wrapper.text()).not.toContain('Marcar como em trânsito')
+  })
+
+  it('says purchasing moves the item when the API refuses a manual move for that reason', async () => {
+    const state = newOrderState(withItems(orderAsAdmin(), [item({ status: 'received', nextMoves: ['installed'] })]))
+    state.answers.move = () => orderProblem('item_moved_by_purchasing')
     const { wrapper } = await openOrder(state)
 
-    await button(wrapper, 'Tudo certo').trigger('click')
+    await button(wrapper, 'Marcar como instalada').trigger('click')
     await flushPromises()
 
-    expect(state.calls.move?.[0]?.body).toEqual({ to: 'received', check: 'ok', version: 1 })
-  })
-
-  it('sends a defective item back and says where it went', async () => {
-    const state = newOrderState(withItems(orderAsAdmin(), [item({ status: 'in_transit', nextMoves: ['received'] })]))
-    state.answers.move = () => {
-      state.order = withItems(state.order, [item({ status: 'to_buy', check: 'defective', nextMoves: ['sent_to_supplier'] })])
-      return HttpResponse.json(state.order)
-    }
-    const { wrapper } = await openOrder(state)
-
-    await button(wrapper, 'Com defeito').trigger('click')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Banco de couro Scrambler voltou para A comprar.'))
-
-    expect(state.calls.move?.[0]?.body).toEqual({ to: 'received', check: 'defective', version: 1 })
+    expect(wrapper.get('.alert').text()).toBe('Este item é movido por Compras. Use Compras ou Receber itens.')
   })
 
   it('says "Em produção" for a defective in-house item', async () => {
@@ -427,18 +426,18 @@ describe('"Itens"', () => {
   })
 
   it('shows the refusal of a move', async () => {
-    const state = newOrderState(withItems(orderAsAdmin(), [item({ nextMoves: ['sent_to_supplier'] })]))
+    const state = newOrderState(withItems(orderAsAdmin(), [item({ status: 'received', nextMoves: ['installed'] })]))
     state.answers.move = () => orderProblem('invalid_item_move')
     const { wrapper } = await openOrder(state)
 
-    await button(wrapper, 'Marcar como enviada ao fornecedor').trigger('click')
+    await button(wrapper, 'Marcar como instalada').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.alert').text()).toBe('O item não pode ir para este estado.')
   })
 
   it('gives a viewer no actions', async () => {
-    const { wrapper } = await openOrder(newOrderState(withItems(orderAsAdmin(), [item({ nextMoves: ['sent_to_supplier'] })])), 'viewer')
+    const { wrapper } = await openOrder(newOrderState(withItems(orderAsAdmin(), [item({ status: 'received', nextMoves: ['installed'] })])), 'viewer')
 
     expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button')).toHaveLength(0)
   })
@@ -1094,13 +1093,50 @@ describe('"Histórico"', () => {
       'Ana alterou a entrega de 12/12/2026 para 20/12/2026',
       'Ana registrou o sinal de R$ 300,00 (Pix)',
       'Ana moveu para Em montagem',
-      'Ana marcou Banco de couro Scrambler como recebida (com defeito)',
+      'Ana recebeu Banco de couro Scrambler com defeito',
       'Ana anulou o pagamento de R$ 300,00: Erro',
       'Ana liberou o pedido sem o sinal',
       'Ana usou o fornecedor reserva em Banco de couro Scrambler',
       'O sistema criou o pedido',
     ])
     expect(wrapper.get('.history li time').attributes('datetime')).toBe('2026-11-27T20:00:00Z')
+  })
+
+  it("writes the purchasing entries as the design document's Histórico does", async () => {
+    const painel = item({ id: 'painel', name: 'Painel', sourcingMode: 'in_house', status: 'ready', nextMoves: ['installed'] })
+    const state = newOrderState(withItems(orderAsAdmin(), [boughtItem, painel]))
+    const move = (itemTo: NonNullable<HistoryEntry['itemTo']>, extra: Partial<HistoryEntry> = {}): HistoryEntry => ({
+      kind: 'item',
+      at: '2026-11-27T14:00:00Z',
+      by,
+      itemId: boughtItem.id,
+      itemName: 'Banco de couro Scrambler',
+      itemTo,
+      ...extra,
+    })
+    state.history = [
+      move('received', { check: 'defective', reason: 'Veio riscado', ref: 'C-0012' }),
+      move('received', { check: 'ok', ref: 'C-0012' }),
+      move('received', { check: 'ok' }),
+      move('to_buy', { itemFrom: 'sent_to_supplier', ref: 'C-0012' }),
+      move('in_transit', { ref: 'C-0012' }),
+      move('sent_to_supplier', { ref: 'C-0012' }),
+      move('installed'),
+      { ...move('ready', { check: 'defective' }), itemId: 'painel', itemName: 'Painel' },
+    ]
+    const { wrapper } = await openOrder(state)
+    await vi.waitFor(() => expect(wrapper.find('.history li').exists()).toBe(true))
+
+    expect(wrapper.findAll('.history li span').map((span) => plain(span.text()))).toEqual([
+      'Ana recebeu Banco de couro Scrambler com defeito: Veio riscado',
+      'Ana recebeu Banco de couro Scrambler (tudo certo)',
+      'Ana recebeu Banco de couro Scrambler (tudo certo)',
+      'Ana desfez o envio de Banco de couro Scrambler (C-0012)',
+      'Ana marcou Banco de couro Scrambler como em trânsito',
+      'Ana enviou Banco de couro Scrambler ao fornecedor (C-0012)',
+      'Ana marcou Banco de couro Scrambler como instalada',
+      'Ana marcou Painel como pronto (com defeito)',
+    ])
   })
 
   it('reads the next page on "Carregar mais"', async () => {

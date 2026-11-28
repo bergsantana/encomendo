@@ -5,7 +5,8 @@
  * status", "Pagamentos" and "Histórico". Every role that reads orders opens
  * it; each button needs its own right (`order:write`, `order:manage` for
  * "Alterar data", cancelling, the backup supplier and changing a paid or
- * discounted order, `order:override` for voiding and releasing). The buttons
+ * discounted order, `order:override` for voiding and releasing, `purchase:write`
+ * and `receiving:write` for the links into Compras and Receber itens). The buttons
  * only hide what a role cannot do; the API refuses it again. Cost and margin
  * show only when the API sent them.
  */
@@ -35,11 +36,13 @@ import type { Handover } from '../labels'
 import { useOrderStore } from '../orderStore'
 
 const store = useOrderStore()
-const { order, loading, loadError, timeZone, busy, notice, whatsappUrl, error, dialogError, guardMessage, conflict, history, hasMoreHistory, historyLoading, historyError } =
+const { order, purchases, loading, loadError, timeZone, busy, notice, whatsappUrl, error, dialogError, guardMessage, conflict, history, hasMoreHistory, historyLoading, historyError } =
   storeToRefs(store)
 const canWrite = usePermission('order:write')
 const canManage = usePermission('order:manage')
 const canOverride = usePermission('order:override')
+const canBuy = usePermission('purchase:write')
+const canReceive = usePermission('receiving:write')
 const route = useRoute()
 
 const orderId = (): string => String(route.params.orderId ?? '')
@@ -198,7 +201,9 @@ const money = (value: { cents: number; currency: string }) => formatMoney(value.
         :order="order"
         :can-fix="canManage"
         :busy="busy"
+        :purchases="purchases"
         @use-backup="store.switchSupplier($event)"
+        @talk-to-supplier="store.openSupplierChat($event)"
         @change-date="show('date')"
       />
       <DeliveryInfo
@@ -214,6 +219,9 @@ const money = (value: { cents: number; currency: string }) => formatMoney(value.
         :items="order.items"
         :can-move="open && canWrite"
         :busy="busy"
+        :purchases="purchases"
+        :can-buy="canBuy"
+        :can-receive="canReceive"
         @move="(itemId, to, check) => store.moveItem(itemId, to, check)"
       />
       <AdvanceButtons

@@ -1,4 +1,4 @@
-import type { Today } from '@encomendo/api'
+import type { PurchasingToday, Today } from '@encomendo/api'
 import { enableAutoUnmount } from '@vue/test-utils'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
@@ -228,16 +228,114 @@ describe('Hoje', () => {
     expect(wrapper.find('[role=alert]').exists()).toBe(false)
   })
 
-  it('shows no purchase of the day: those come with Compras', async () => {
+  it('shows no purchasing to a role that does not buy, and never calls it', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/api/v1/admin/purchasing/today', () => {
+        calls += 1
+        return HttpResponse.json({ toSend: 1, needs: [] })
+      }),
+    )
     const { wrapper } = await openHoje()
 
     expect(wrapper.text()).not.toContain('Compras')
+    expect(wrapper.findAll('a.card')).toHaveLength(4)
+    expect(calls).toBe(0)
   })
 
   it('never shows a cost, a margin or a supplier', async () => {
     const { wrapper } = await openHoje()
 
     for (const word of ['Custo', 'Margem', 'Fornecedor']) expect(wrapper.text()).not.toContain(word)
+  })
+})
+
+describe('Hoje for a role that buys', () => {
+  const needsToBuy: PurchasingToday = {
+    toSend: 7,
+    // The server's order: notices, then pedidos de compra with no date, then items to send.
+    needs: [
+      { kind: 'notify_supplier', lineId: id(601), supplierOrderId: id(501), number: 'C-0011', supplierName: 'Couros Paulista', itemName: 'Capa de banco' },
+      { kind: 'no_promised_date', supplierOrderId: id(502), number: 'C-0012', supplierName: 'Moto Peças', days: 3 },
+      { kind: 'to_send', supplierId: id(701), supplierName: 'Couros Paulista', count: 4 },
+      { kind: 'to_send', supplierId: id(702), supplierName: 'Moto Peças', count: 1 },
+    ],
+  }
+  let reads = 0
+
+  beforeEach(() => {
+    reads = 0
+    server.use(
+      http.post('*/auth/refresh', () => HttpResponse.json(authSession({ role: 'admin', permissions: ['order:read', 'purchase:write'] }))),
+      http.get('*/api/v1/admin/purchasing/today', () => {
+        reads += 1
+        return HttpResponse.json(needsToBuy)
+      }),
+    )
+  })
+
+  it('adds the card "Compras a enviar", which opens Compras', async () => {
+    const { wrapper } = await openHoje()
+
+    const cards = wrapper.findAll('a.card').map((card) => [plain(card.text()), card.attributes('href')])
+    expect(cards.at(-1)).toEqual(['Compras a enviar 7', '/compras'])
+    expect(cards).toHaveLength(5)
+    expect(reads).toBe(1)
+  })
+
+  it('puts the purchasing entries at the top of "Precisa de você", in the server order, in the product wording', async () => {
+    const { wrapper } = await openHoje()
+
+    const entries = wrapper.findAll('a.entry')
+    expect(entries.slice(0, 4).map((entry) => plain(entry.text()))).toEqual([
+      'Avise Couros Paulista: Capa de banco não é mais necessário (C-0011).',
+      'Pedido de compra C-0012 sem prazo do fornecedor há 3 dias.',
+      '4 itens para comprar de Couros Paulista.',
+      '1 item para comprar de Moto Peças.',
+    ])
+    expect(plain(entries[4]?.text() ?? '')).toContain('P-0240')
+    expect(entries).toHaveLength(4 + needs.length)
+  })
+
+  it('opens Compras from every entry: the pedido de compra without a date opens its own screen', async () => {
+    const { wrapper, router } = await openHoje()
+
+    expect(wrapper.findAll('a.entry').slice(0, 4).map((entry) => entry.attributes('href'))).toEqual(['/compras', `/compras/pedidos/${id(502)}`, '/compras', '/compras'])
+
+    await link(wrapper, '4 itens para comprar de Couros Paulista.').trigger('click')
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('purchasing'))
+  })
+
+  it('opens Compras from the card', async () => {
+    const { wrapper, router } = await openHoje()
+
+    await wrapper.findAll('a.card').at(-1)?.trigger('click')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('purchasing'))
+  })
+
+  it('does not say nothing needs the owner when only purchasing does', async () => {
+    const { wrapper } = await openHoje({ ...busyDay, needsYou: [] })
+
+    expect(wrapper.text()).not.toContain('Nada precisa de você agora.')
+    expect(wrapper.findAll('a.entry')).toHaveLength(4)
+  })
+
+  it('shows a zero card and the usual empty message when purchasing has nothing', async () => {
+    server.use(http.get('*/api/v1/admin/purchasing/today', () => HttpResponse.json({ toSend: 0, needs: [] })))
+    const { wrapper } = await openHoje(emptyToday)
+
+    expect(plain(wrapper.findAll('a.card').at(-1)?.text() ?? '')).toBe('Compras a enviar 0')
+    expect(wrapper.text()).toContain('Nada precisa de você agora.')
+  })
+
+  it('still shows Hoje, without purchasing, when purchasing cannot be read', async () => {
+    server.use(http.get('*/api/v1/admin/purchasing/today', () => new HttpResponse(null, { status: 500 })))
+    const { wrapper } = await openHoje()
+
+    expect(wrapper.findAll('a.card')).toHaveLength(4)
+    expect(wrapper.find('[role=alert]').exists()).toBe(false)
+    expect(wrapper.findAll('a.entry')).toHaveLength(needs.length)
   })
 })
 

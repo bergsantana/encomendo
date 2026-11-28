@@ -3,7 +3,8 @@
  * HojeView is the first screen: the store's day with four summary cards,
  * "Precisa de você" and "Próximas entregas". Every number and list is the
  * server's answer for today in the store's time zone; this screen only lays
- * it out. Today's purchases come with Compras (milestone 5).
+ * it out. For the roles that buy it adds "Compras a enviar" and the
+ * purchasing entries at the top of "Precisa de você", as the server sent them.
  */
 import { BaseButton } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
@@ -17,7 +18,7 @@ import UpcomingList from '../components/UpcomingList.vue'
 import { useHojeStore } from '../store'
 
 const store = useHojeStore()
-const { today, loading, loadError } = storeToRefs(store)
+const { today, purchasing, loading, loadError } = storeToRefs(store)
 
 onMounted(() => store.open())
 </script>
@@ -55,8 +56,14 @@ onMounted(() => store.open())
       >
         Mostrando só os 500 pedidos ativos com entrega mais próxima. Os números e os avisos desta tela cobrem só esses pedidos.
       </p>
-      <SummaryCards :counts="today.counts" />
-      <NeedsYou :needs="today.needsYou" />
+      <SummaryCards
+        :counts="today.counts"
+        :to-send="purchasing?.toSend ?? null"
+      />
+      <NeedsYou
+        :needs="today.needsYou"
+        :purchasing="purchasing?.needs ?? []"
+      />
       <UpcomingList :orders="today.upcoming" />
       <RouterLink
         class="all"
