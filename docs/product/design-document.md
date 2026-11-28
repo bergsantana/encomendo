@@ -590,7 +590,7 @@ Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · C
   - "Escolha uma data a partir de hoje."
   - After it: "Prazo salvo. As datas previstas dos pedidos foram atualizadas." When a line is now late for its order: "{item} do pedido P-0231 pode atrasar a entrega. Veja o pedido para resolver."
 - "Marcar como em trânsito". After it: "Itens em trânsito."
-- "Receber itens" opens Receber itens on this pedido de compra.
+- "Receber itens" opens Receber itens on this pedido de compra (for those who receive, while it has open lines).
 - **Informar preço pago** (Dono): one field per line, "Preço pago (por unidade)", filled with the cost at order time; "Salvar preços".
   - "Confira o valor."
   - After it: "Preços salvos. As margens do Financeiro usam o preço pago."
@@ -604,16 +604,22 @@ Hoje · Pedidos · Compras · Catálogo · Clientes · Financeiro · Equipe · C
 Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 
 - Title "Receber itens". While loading: "Carregando o que falta receber…". Search "Buscar item, pedido ou fornecedor".
+  - A search with nothing: "Nenhum item encontrado."
+  - When the list was cut: "A lista está cortada. Salve o que já conferiu para ver os itens que faltam."
+  - Opened from a pedido de compra (`?pedido=`), it shows only that one: "Mostrando só o pedido de compra C-0012." with "Mostrar todos". If it has nothing left to receive: "Este pedido de compra não tem itens para receber."
 - One group per pedido de compra, "C-0012 · {fornecedor}", then "Comprados sem pedido de compra", the lines still in "A comprar", for items bought at the counter. Empty: "Nada para receber agora."
 - Each line shows "{qtd}× {item}", its choices and "Pedido P-0231", with two large buttons, "Tudo certo" and "Com defeito".
   - Hint above the list: "Marque um item só quando toda a quantidade chegou."
   - "Com defeito" opens "O que houve?" (required: "Conte o que houve com {item}.") and "Foto do item".
   - "Tudo certo" also offers "Foto do item". At most 2 photos per item: "Cada item pode ter até 2 fotos."
 - "Foto da nota fiscal", once per save, at most 4: "Cada recebimento pode ter até 4 fotos da nota."
+  - A receipt holds at most 20 photos in all, the invoice's included: "Cada recebimento pode ter até 20 fotos no total."
+  - Each photo is listed as "Foto 1", "Foto 2", with "Remover foto".
   - The file input offers the camera or the gallery. While a photo goes up: "Enviando a foto…".
   - Errors as in Catálogo: "Use uma foto JPEG, PNG ou WebP de até 10 MB.", "A foto não foi enviada. Tente de novo."
 - Button "Salvar recebimento" ("Marque Tudo certo ou Com defeito em ao menos um item.").
   - A save that fails keeps every check and photo, and "Tentar de novo" sends the same save again.
+  - A save refused because a line was already received, or its order was handed over or cancelled, says "Algum item já foi recebido ou o pedido dele foi entregue ou cancelado. A lista foi atualizada; confira e salve de novo." and the list is read again.
 - After it: "Recebimento salvo." Then, as they apply:
   - "{item} voltou para A comprar. A reposição está em Compras.";
   - "Pedido P-0231: todos os itens chegaram e foram conferidos." with "Abrir pedido".
@@ -647,8 +653,8 @@ Workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 
 - A summary card "Compras a enviar" ({n} itens), for Dono and Admin, which opens Compras.
 - **"Precisa de você"** gains, for Dono and Admin:
-  - "{n} itens para comprar de {fornecedor}." (opens A comprar);
-  - "Pedido de compra C-0012 sem prazo do fornecedor há {n} dias." (more than 2 days after sending);
+  - "{n} itens para comprar de {fornecedor}." ("1 item para comprar de {fornecedor}." for one; opens A comprar);
+  - "Pedido de compra C-0012 sem prazo do fornecedor há {n} dias." (more than 2 days after sending; opens that pedido de compra, where "Informar prazo" is);
   - "Avise {fornecedor}: {item} não é mais necessário (C-0012)."
 
 ### Supplier messages
