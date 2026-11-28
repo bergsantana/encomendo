@@ -6307,7 +6307,18 @@ components:
     HistoryEntry:
       type: object
       required: [kind, at]
-      description: One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them.
+      description: |
+        One event of the order. Fields beyond `kind`, `at` and `by` appear
+        when the kind has them. The purchasing entries (ADR 0031):
+
+        - an item move made by purchasing is `item` with `itemId`,
+          `itemName`, `itemFrom`, `itemTo` and `ref` (the pedido de compra;
+          absent for an item received at the counter). A receipt has
+          `check`; a defect lands on `itemTo: to_buy` and carries its note
+          in `reason`. An undone send is a move back to `to_buy` with `ref`
+          and no `check`.
+        - `promised_date` has `itemId`, `itemName`, `newDate` (the supplier's
+          date) and `ref`.
       properties:
         kind:
           $ref: "#/components/schemas/HistoryKind"
@@ -6793,8 +6804,8 @@ components:
           description: Lines received or found defective.
         total:
           type: integer
-          minimum: 1
-          description: Lines not cancelled.
+          minimum: 0
+          description: Lines not cancelled; 0 once undone.
         state:
           $ref: "#/components/schemas/SupplierOrderState"
     SupplierOrderPage:
@@ -6893,7 +6904,7 @@ components:
       properties:
         lineId:
           $ref: "#/components/schemas/Uuid"
-          description: Absent for an item still in "A comprar" (bought at the counter).
+          description: Present in a group's lines; absent in `toBuy` (items bought at the counter, received by `orderItemId`).
         orderId:
           $ref: "#/components/schemas/Uuid"
         orderNumber:
@@ -6911,11 +6922,10 @@ components:
             $ref: "#/components/schemas/PurchaseChoice"
     ToReceiveGroup:
       type: object
-      required: [supplierName, lines]
+      required: [supplierOrderId, number, supplierName, lines]
       properties:
         supplierOrderId:
           $ref: "#/components/schemas/Uuid"
-          description: Absent for the group of items bought at the counter.
         number:
           $ref: "#/components/schemas/SupplierOrderNumber"
         supplierName:
@@ -6949,32 +6959,53 @@ components:
           type: string
           enum: [image/jpeg, image/png, image/webp]
     ReceiptEntry:
+      description: One entry of a receipt, for an open line or for an item bought at the counter.
+      oneOf:
+        - $ref: "#/components/schemas/ReceiptLineEntry"
+        - $ref: "#/components/schemas/ReceiptCounterEntry"
+    ReceiptLineEntry:
       type: object
       additionalProperties: false
-      required: [check]
-      description: Exactly one of `lineId` and `orderItemId`.
+      required: [lineId, check]
       properties:
         lineId:
-          $ref: "#/components/schemas/Uuid"
-        orderItemId:
           $ref: "#/components/schemas/Uuid"
         check:
           $ref: "#/components/schemas/Check"
         note:
-          type: string
-          maxLength: 500
-          description: Required for `defective` ("O que houve?").
+          $ref: "#/components/schemas/DefectNote"
         photoKeys:
-          type: array
-          maxItems: 2
-          uniqueItems: true
-          items:
-            type: string
-            maxLength: 256
+          $ref: "#/components/schemas/EntryPhotoKeys"
+    ReceiptCounterEntry:
+      type: object
+      additionalProperties: false
+      required: [orderItemId, check]
+      properties:
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+          description: An item still in "A comprar", bought at the counter.
+        check:
+          $ref: "#/components/schemas/Check"
+        note:
+          $ref: "#/components/schemas/DefectNote"
+        photoKeys:
+          $ref: "#/components/schemas/EntryPhotoKeys"
+    DefectNote:
+      type: string
+      maxLength: 500
+      description: Required for `defective` ("O que houve?"); dropped for `ok`.
+    EntryPhotoKeys:
+      type: array
+      maxItems: 2
+      uniqueItems: true
+      items:
+        type: string
+        maxLength: 256
     ReceiptRequest:
       type: object
       additionalProperties: false
       required: [entries]
+      description: At most 20 photos in all, invoice photos included; more is `400 invalid` on `invoicePhotoKeys`.
       properties:
         entries:
           type: array
@@ -7076,8 +7107,14 @@ components:
           items:
             $ref: "#/components/schemas/Notice"
     OrderPurchase:
+      description: What purchasing knows of one bought item of the order; its fields follow `status`.
+      oneOf:
+        - $ref: "#/components/schemas/OrderPurchaseToBuy"
+        - $ref: "#/components/schemas/OrderPurchaseLine"
+    OrderPurchaseToBuy:
       type: object
       required: [orderItemId, supplierName, status]
+      description: The item is in "A comprar".
       properties:
         orderItemId:
           $ref: "#/components/schemas/Uuid"
@@ -7085,20 +7122,41 @@ components:
           type: string
         status:
           type: string
-          enum: [to_buy, sent, in_transit, received, defective]
-          description: "`to_buy` while the item is in \"A comprar\"; otherwise its latest line's status."
+          enum: [to_buy]
+        supplierChatUrl:
+          $ref: "#/components/schemas/SupplierChatUrl"
+    OrderPurchaseLine:
+      type: object
+      required: [orderItemId, supplierName, status, lineId, number]
+      description: The item's open line, or else its latest one.
+      properties:
+        orderItemId:
+          $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum: [sent, in_transit, received, defective]
         lineId:
           $ref: "#/components/schemas/Uuid"
         supplierOrderId:
           $ref: "#/components/schemas/Uuid"
+          description: Absent for an item received at the counter.
         number:
-          $ref: "#/components/schemas/SupplierOrderNumber"
+          oneOf:
+            - $ref: "#/components/schemas/SupplierOrderNumber"
+            - type: "null"
+          description: Null for an item received at the counter.
         promisedDate:
-          $ref: "#/components/schemas/CivilDate"
+          oneOf:
+            - $ref: "#/components/schemas/CivilDate"
+            - type: "null"
         supplierChatUrl:
-          type: string
-          format: uri
-          description: '"Falar com o fornecedor", a `wa.me` link with a text that never names the client. Only for `purchase:write`.'
+          $ref: "#/components/schemas/SupplierChatUrl"
+    SupplierChatUrl:
+      type: string
+      format: uri
+      description: '"Falar com o fornecedor", a `wa.me` link with a text that never names the client. Only for `purchase:write`.'
     OrderPurchases:
       type: object
       required: [items]
@@ -7111,30 +7169,69 @@ components:
       type: string
       enum: [to_send, no_promised_date, notify_supplier]
     PurchasingNeed:
+      description: One purchasing entry of "Precisa de você"; its fields follow `kind`.
+      oneOf:
+        - $ref: "#/components/schemas/ToSendNeed"
+        - $ref: "#/components/schemas/NoPromisedDateNeed"
+        - $ref: "#/components/schemas/NotifySupplierNeed"
+      discriminator:
+        propertyName: kind
+        mapping:
+          to_send: "#/components/schemas/ToSendNeed"
+          no_promised_date: "#/components/schemas/NoPromisedDateNeed"
+          notify_supplier: "#/components/schemas/NotifySupplierNeed"
+    ToSendNeed:
       type: object
-      required: [kind, supplierName]
+      required: [kind, supplierId, supplierName, count]
+      description: '"{n} itens para comprar de {fornecedor}."'
       properties:
         kind:
-          $ref: "#/components/schemas/PurchasingNeedKind"
-        supplierName:
           type: string
+          enum: [to_send]
         supplierId:
           $ref: "#/components/schemas/Uuid"
+        supplierName:
+          type: string
         count:
           type: integer
           minimum: 1
-          description: With `to_send`, the items to buy from the supplier.
+          description: Entries in "A comprar" for the supplier (lines, not summed quantities).
+    NoPromisedDateNeed:
+      type: object
+      required: [kind, supplierOrderId, number, supplierName, days]
+      description: '"Pedido de compra C-0012 sem prazo do fornecedor há {n} dias."'
+      properties:
+        kind:
+          type: string
+          enum: [no_promised_date]
         supplierOrderId:
           $ref: "#/components/schemas/Uuid"
         number:
           $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierName:
+          type: string
         days:
           type: integer
           minimum: 3
-          description: With `no_promised_date`, days since it was sent.
+          description: Days since it was sent, in the store's time zone.
+    NotifySupplierNeed:
+      type: object
+      required: [kind, lineId, supplierOrderId, number, supplierName, itemName]
+      description: '"Avise {fornecedor}: {item} não é mais necessário (C-0012)."'
+      properties:
+        kind:
+          type: string
+          enum: [notify_supplier]
+        lineId:
+          $ref: "#/components/schemas/Uuid"
+        supplierOrderId:
+          $ref: "#/components/schemas/Uuid"
+        number:
+          $ref: "#/components/schemas/SupplierOrderNumber"
+        supplierName:
+          type: string
         itemName:
           type: string
-          description: With `notify_supplier`.
     PurchasingToday:
       type: object
       required: [toSend, needs]

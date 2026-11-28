@@ -3109,7 +3109,19 @@ export interface components {
         };
         /** @enum {string} */
         HistoryKind: "created" | "status" | "item" | "backup_supplier" | "payment" | "payment_voided" | "released" | "date" | "changed" | "tracking_link" | "cancelled" | "promised_date";
-        /** @description One event of the order. Fields beyond `kind`, `at` and `by` appear when the kind has them. */
+        /**
+         * @description One event of the order. Fields beyond `kind`, `at` and `by` appear
+         *     when the kind has them. The purchasing entries (ADR 0031):
+         *
+         *     - an item move made by purchasing is `item` with `itemId`,
+         *       `itemName`, `itemFrom`, `itemTo` and `ref` (the pedido de compra;
+         *       absent for an item received at the counter). A receipt has
+         *       `check`; a defect lands on `itemTo: to_buy` and carries its note
+         *       in `reason`. An undone send is a move back to `to_buy` with `ref`
+         *       and no `check`.
+         *     - `promised_date` has `itemId`, `itemName`, `newDate` (the supplier's
+         *       date) and `ref`.
+         */
         HistoryEntry: {
             kind: components["schemas"]["HistoryKind"];
             /** Format: date-time */
@@ -3357,7 +3369,7 @@ export interface components {
             promisedDate: components["schemas"]["CivilDate"] | null;
             /** @description Lines received or found defective. */
             received: number;
-            /** @description Lines not cancelled. */
+            /** @description Lines not cancelled; 0 once undone. */
             total: number;
             state: components["schemas"]["SupplierOrderState"];
         };
@@ -3405,7 +3417,7 @@ export interface components {
             }[];
         };
         ToReceiveLine: {
-            /** @description Absent for an item still in "A comprar" (bought at the counter). */
+            /** @description Present in a group's lines; absent in `toBuy` (items bought at the counter, received by `orderItemId`). */
             lineId?: components["schemas"]["Uuid"];
             orderId: components["schemas"]["Uuid"];
             orderNumber: string;
@@ -3415,9 +3427,8 @@ export interface components {
             choices: components["schemas"]["PurchaseChoice"][];
         };
         ToReceiveGroup: {
-            /** @description Absent for the group of items bought at the counter. */
-            supplierOrderId?: components["schemas"]["Uuid"];
-            number?: components["schemas"]["SupplierOrderNumber"];
+            supplierOrderId: components["schemas"]["Uuid"];
+            number: components["schemas"]["SupplierOrderNumber"];
             supplierName: string;
             lines: components["schemas"]["ToReceiveLine"][];
         };
@@ -3432,15 +3443,25 @@ export interface components {
             /** @enum {string} */
             contentType: "image/jpeg" | "image/png" | "image/webp";
         };
-        /** @description Exactly one of `lineId` and `orderItemId`. */
-        ReceiptEntry: {
-            lineId?: components["schemas"]["Uuid"];
-            orderItemId?: components["schemas"]["Uuid"];
+        /** @description One entry of a receipt, for an open line or for an item bought at the counter. */
+        ReceiptEntry: components["schemas"]["ReceiptLineEntry"] | components["schemas"]["ReceiptCounterEntry"];
+        ReceiptLineEntry: {
+            lineId: components["schemas"]["Uuid"];
             check: components["schemas"]["Check"];
-            /** @description Required for `defective` ("O que houve?"). */
-            note?: string;
-            photoKeys?: string[];
+            note?: components["schemas"]["DefectNote"];
+            photoKeys?: components["schemas"]["EntryPhotoKeys"];
         };
+        ReceiptCounterEntry: {
+            /** @description An item still in "A comprar", bought at the counter. */
+            orderItemId: components["schemas"]["Uuid"];
+            check: components["schemas"]["Check"];
+            note?: components["schemas"]["DefectNote"];
+            photoKeys?: components["schemas"]["EntryPhotoKeys"];
+        };
+        /** @description Required for `defective` ("O que houve?"); dropped for `ok`. */
+        DefectNote: string;
+        EntryPhotoKeys: string[];
+        /** @description At most 20 photos in all, invoice photos included; more is `400 invalid` on `invoicePhotoKeys`. */
         ReceiptRequest: {
             entries: components["schemas"]["ReceiptEntry"][];
             invoicePhotoKeys?: string[];
@@ -3488,41 +3509,79 @@ export interface components {
         NoticeList: {
             items: components["schemas"]["Notice"][];
         };
-        OrderPurchase: {
+        /** @description What purchasing knows of one bought item of the order; its fields follow `status`. */
+        OrderPurchase: components["schemas"]["OrderPurchaseToBuy"] | components["schemas"]["OrderPurchaseLine"];
+        /** @description The item is in "A comprar". */
+        OrderPurchaseToBuy: {
             orderItemId: components["schemas"]["Uuid"];
             supplierName: string;
-            /**
-             * @description `to_buy` while the item is in "A comprar"; otherwise its latest line's status.
-             * @enum {string}
-             */
-            status: "to_buy" | "sent" | "in_transit" | "received" | "defective";
-            lineId?: components["schemas"]["Uuid"];
-            supplierOrderId?: components["schemas"]["Uuid"];
-            number?: components["schemas"]["SupplierOrderNumber"];
-            promisedDate?: components["schemas"]["CivilDate"];
-            /**
-             * Format: uri
-             * @description "Falar com o fornecedor", a `wa.me` link with a text that never names the client. Only for `purchase:write`.
-             */
-            supplierChatUrl?: string;
+            /** @enum {string} */
+            status: "to_buy";
+            supplierChatUrl?: components["schemas"]["SupplierChatUrl"];
         };
+        /** @description The item's open line, or else its latest one. */
+        OrderPurchaseLine: {
+            orderItemId: components["schemas"]["Uuid"];
+            supplierName: string;
+            /** @enum {string} */
+            status: "sent" | "in_transit" | "received" | "defective";
+            lineId: components["schemas"]["Uuid"];
+            /** @description Absent for an item received at the counter. */
+            supplierOrderId?: components["schemas"]["Uuid"];
+            /** @description Null for an item received at the counter. */
+            number: components["schemas"]["SupplierOrderNumber"] | null;
+            promisedDate?: components["schemas"]["CivilDate"] | null;
+            supplierChatUrl?: components["schemas"]["SupplierChatUrl"];
+        };
+        /**
+         * Format: uri
+         * @description "Falar com o fornecedor", a `wa.me` link with a text that never names the client. Only for `purchase:write`.
+         */
+        SupplierChatUrl: string;
         OrderPurchases: {
             items: components["schemas"]["OrderPurchase"][];
         };
         /** @enum {string} */
         PurchasingNeedKind: "to_send" | "no_promised_date" | "notify_supplier";
-        PurchasingNeed: {
-            kind: components["schemas"]["PurchasingNeedKind"];
+        /** @description One purchasing entry of "Precisa de você"; its fields follow `kind`. */
+        PurchasingNeed: components["schemas"]["ToSendNeed"] | components["schemas"]["NoPromisedDateNeed"] | components["schemas"]["NotifySupplierNeed"];
+        /** @description "{n} itens para comprar de {fornecedor}." */
+        ToSendNeed: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "to_send";
+            supplierId: components["schemas"]["Uuid"];
             supplierName: string;
-            supplierId?: components["schemas"]["Uuid"];
-            /** @description With `to_send`, the items to buy from the supplier. */
-            count?: number;
-            supplierOrderId?: components["schemas"]["Uuid"];
-            number?: components["schemas"]["SupplierOrderNumber"];
-            /** @description With `no_promised_date`, days since it was sent. */
-            days?: number;
-            /** @description With `notify_supplier`. */
-            itemName?: string;
+            /** @description Entries in "A comprar" for the supplier (lines, not summed quantities). */
+            count: number;
+        };
+        /** @description "Pedido de compra C-0012 sem prazo do fornecedor há {n} dias." */
+        NoPromisedDateNeed: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "no_promised_date";
+            supplierOrderId: components["schemas"]["Uuid"];
+            number: components["schemas"]["SupplierOrderNumber"];
+            supplierName: string;
+            /** @description Days since it was sent, in the store's time zone. */
+            days: number;
+        };
+        /** @description "Avise {fornecedor}: {item} não é mais necessário (C-0012)." */
+        NotifySupplierNeed: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "notify_supplier";
+            lineId: components["schemas"]["Uuid"];
+            supplierOrderId: components["schemas"]["Uuid"];
+            number: components["schemas"]["SupplierOrderNumber"];
+            supplierName: string;
+            itemName: string;
         };
         PurchasingToday: {
             /** @description Items in "A comprar" ("Compras a enviar"). */

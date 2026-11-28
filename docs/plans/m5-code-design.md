@@ -98,7 +98,7 @@ type SendSpec struct {
     By       shared.Principal
     Now      time.Time
 }
-type LineSpec struct{ ID shared.PurchaseLineID; Item Item; Cost *shared.Money }
+type LineSpec struct{ ID shared.PurchaseLineID; Item Item } // no cost: the repository copies it in SQL (§4.1)
 
 // Send makes a supplier order with every line sent. ErrEmptyPick for no
 // lines, ErrItemPickedTwice for one order item twice, a ValidationError for
@@ -142,7 +142,8 @@ type ItemPrice struct{ Order shared.OrderID; Item shared.OrderItemID; Price shar
 // CounterLine is a line for an item received while still in "A comprar"
 // (bought at the counter): received or defective at once, with no supplier
 // order.
-func CounterLine(id shared.PurchaseLineID, supplier shared.SupplierID, item Item, cost *shared.Money, check Check, note string, today shared.CivilDate) (Line, error)
+type CounterSpec struct{ ID shared.PurchaseLineID; Supplier shared.SupplierID; Item Item; Check Check; Note string; Today shared.CivilDate }
+func CounterLine(s CounterSpec) (Line, error)
 
 type Receipt struct {
     tenant      shared.TenantID
@@ -156,7 +157,9 @@ type ReceiptEntry struct{ Line shared.PurchaseLineID; Check Check; Note string; 
 type Photo struct{ ID shared.PhotoID; Key string; ContentType string; Size int64 }
 
 // NewReceipt validates the limits: ErrEmptyReceipt, ErrLineTwice,
-// ErrPhotoLimit (field "invoicePhotoKeys" or "entries[i].photoKeys").
+// ErrPhotoLimit (field "invoicePhotoKeys" or "entries[i].photoKeys"; at
+// most 20 photos in all, so one request cannot hold a transaction over
+// hundreds of storage calls).
 func NewReceipt(spec ReceiptSpec) (*Receipt, error)
 
 // PhotoKey returns a receiving photo's object key: t/{tenant}/receipts/{photo}.
@@ -298,6 +301,12 @@ ALTER TABLE order_item_sourcing
 -- The promised date is the supplier's: staff-only, so it lives in sourcing,
 -- never in order_items, which has a client read policy (0013).
 ALTER TABLE order_status_history ADD COLUMN ref text CHECK (ref ~ '^C-[0-9]{4,}$');
+-- 0013's CHECK on order_status_history.kind lists the M4 kinds: drop and
+-- re-add it with 'promised_date' (Down restores the old list).
+-- 0013 grants UPDATE on order_item_sourcing by column: add the new ones.
+GRANT UPDATE (promised_date, paid_cost_cents) ON order_item_sourcing TO encomendo_app;
+-- An item and its order, tied for the line's foreign key below.
+ALTER TABLE order_items ADD CONSTRAINT order_items_tenant_order_id_key UNIQUE (tenant_id, order_id, id);
 
 CREATE TABLE purchase_counters (   -- as order_counters
     tenant_id uuid NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
@@ -313,11 +322,11 @@ CREATE TABLE supplier_orders (
     supplier_name  text NOT NULL,
     supplier_phone text NOT NULL,
     sent_at        timestamptz NOT NULL,
-    sent_by        uuid NOT NULL REFERENCES users (id),
+    sent_by        uuid NOT NULL,   -- no FK: records outlive the account, as payments
     promised_date  date,
     in_transit_at  timestamptz,
     undone_at      timestamptz,
-    undone_by      uuid REFERENCES users (id),
+    undone_by      uuid,
     message_text   text NOT NULL,   -- as sent, no client data (ADR 0031)
     message_url    text NOT NULL,
     version        int  NOT NULL DEFAULT 1 CHECK (version >= 1),
@@ -334,7 +343,7 @@ CREATE TABLE purchase_lines (
     supplier_order_id uuid,                 -- null for a counter receipt
     supplier_id       uuid NOT NULL,
     order_id          uuid NOT NULL,        -- orders are never deleted
-    order_item_id     uuid,                 -- null once removed from the order
+    order_item_id     uuid,                 -- null once removed from the order (M6's restock gets its own column)
     catalog_item_id   uuid NOT NULL,
     name              text NOT NULL,
     quantity          int  NOT NULL CHECK (quantity BETWEEN 1 AND 99),
@@ -347,10 +356,11 @@ CREATE TABLE purchase_lines (
     position          int  NOT NULL CHECK (position >= 0),
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id), UNIQUE (tenant_id, id),
+    FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,  -- deleting a store (audit_test.go)
     FOREIGN KEY (tenant_id, supplier_order_id) REFERENCES supplier_orders (tenant_id, id),
     FOREIGN KEY (tenant_id, supplier_id) REFERENCES suppliers (tenant_id, id),
     FOREIGN KEY (tenant_id, order_id) REFERENCES orders (tenant_id, id),
-    FOREIGN KEY (tenant_id, order_item_id) REFERENCES order_items (tenant_id, id) ON DELETE SET NULL (order_item_id),
+    FOREIGN KEY (tenant_id, order_id, order_item_id) REFERENCES order_items (tenant_id, order_id, id) ON DELETE SET NULL (order_item_id),
     CHECK ((status = 'cancelled') = (cancel_reason IS NOT NULL)),
     CHECK (supplier_order_id IS NOT NULL OR status IN ('received','defective')),
     CHECK ((status IN ('received','defective')) = (received_on IS NOT NULL)),
@@ -374,7 +384,7 @@ CREATE TABLE purchase_line_costs (
 CREATE TABLE receipts (
     tenant_id   uuid NOT NULL,
     id          uuid NOT NULL,
-    received_by uuid NOT NULL REFERENCES users (id),
+    received_by uuid NOT NULL,
     received_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id), UNIQUE (tenant_id, id),
@@ -408,12 +418,22 @@ CREATE INDEX receipt_photos_tenant_receipt_idx ON receipt_photos (tenant_id, rec
 ```
 
 - Every table: `ENABLE` and `FORCE ROW LEVEL SECURITY`, and the **`staff_only`** policy of 0013 (a tenant **and** a staff user). There is no client policy anywhere. `purchase_counters` gets the same policy.
-- Grants to `encomendo_app`, as in 0013:
-  - `SELECT, INSERT, UPDATE` on every table;
-  - `DELETE` on none (nothing is deleted: lines are cancelled, and a line keeps its row when its order item goes);
-  - `UPDATE` limited by column where 0013 did so.
+- Grants to `encomendo_app`: `SELECT, INSERT` on every table, `DELETE` on none (nothing is deleted: lines are cancelled, and a line keeps its row when its order item goes), and `UPDATE` only on the columns that change, so the database keeps a line's order item, supplier and snapshot fixed and receipts append-only:
+
+  ```sql
+  GRANT UPDATE (status, promised_date, check_note, cancel_reason, received_on, updated_at) ON purchase_lines TO encomendo_app;
+  GRANT UPDATE (promised_date, in_transit_at, undone_at, undone_by, version, updated_at) ON supplier_orders TO encomendo_app;
+  GRANT UPDATE (paid_cost_cents, updated_at) ON purchase_line_costs TO encomendo_app;
+  GRANT UPDATE (last_number, updated_at) ON purchase_counters TO encomendo_app;
+  -- receipts, receipt_lines, receipt_photos: SELECT, INSERT only.
+  ```
+
+  `order_item_id` needs no grant: the set-null action runs as the table owner.
 - Audit triggers (`audit_row`, 0005) on `supplier_orders`, `purchase_lines`, `receipts`, `receipt_lines` and `receipt_photos`. **Not** on `purchase_line_costs` or `purchase_counters`. `order_item_sourcing` stays unaudited.
-- **The `ON DELETE SET NULL (order_item_id)` trap:** the referential action updates `purchase_lines` inside the order repository's delete, in the same staff scope, so `staff_only` and the audit trigger see the tenant and the user. 5.5 proves it with `TestPurchaseLine_KeepsRowWhenOrderItemRemoved` (integration, as `encomendo_app`).
+- **The `ON DELETE SET NULL (order_item_id)` trap:** Postgres runs a referential action as the table owner and **ignores RLS**, so `staff_only` does not guard it (the tenancy review saw a store page scope's `DELETE FROM order_items` null a line it cannot read). The guard is `hasStaff` in the order repository, which refuses an update without a staff scope before any delete. The audit trigger runs after the statement as `encomendo_app` and records `app.user_id`. 5.5 tests:
+  - `TestPurchaseLine_KeepsRowWhenOrderItemRemoved`, where a staff-scope delete leaves an audit row for the line with the user as actor;
+  - `TestOrders_UpdateWithoutStaffRefusedBeforeDelete`, in the repository;
+  - and the M7 allow-list gains the trap "a store page scope must never delete `order_items`".
 - Down: drop the tables in reverse, then the three columns.
 
 **RLS suite (5.5):**
@@ -422,7 +442,9 @@ CREATE INDEX receipt_photos_tenant_receipt_idx ON receipt_photos (tenant_id, rec
 - `TestClientRead_PurchasingTablesHaveNoClientPolicy`;
 - `TestPurchaseLines_OneOpenLinePerItem`;
 - `TestPurchaseLines_CrossTenantForeignKeysRefused`;
-- `TestPurchaseLine_KeepsRowWhenOrderItemRemoved`.
+- `TestPurchaseLine_KeepsRowWhenOrderItemRemoved`;
+- `TestPurchaseLine_ItemMustBelongToItsOrder`;
+- `TestTenantDelete_CascadesPurchasing` (a store with a sent line, a counter line, a receipt and a photo row is deleted cleanly, as `TestAuditTrigger_SkipsADeletedStoresCascade`).
 
 **M7 allow-list:** `order_item_sourcing.promised_date` and `paid_cost_cents` join the list of traps (they are staff-only anyway). 5.5 adds that line to `docs/plans/m4-customers-orders-deadlines.md`'s list.
 
@@ -456,7 +478,7 @@ type BoughtItemView struct {
     Supplier     shared.SupplierID
     SupplierName string
     ArrivalLimit shared.CivilDate
-    Cost         *shared.Money // nil unless the caller sees costs
+    Cost         *shared.Money // nil unless the caller sees costs; never stored from here (§4.1)
 }
 type PurchaseOrderView struct {
     Order        shared.OrderID
@@ -497,7 +519,9 @@ type PaidCostInput     struct{ Order shared.OrderID; Item shared.OrderItemID; Co
 - `TestToBuy_LeavesOutCancelledRemovedInHouse`
 - `TestToBuy_BackupSwitchShowsBackupSupplier`
 - `TestToBuy_CostOnlyForOwner`
-- `TestMovePurchased_PermissionPerMove`
+- `TestMovePurchased_PermissionPerMove` (keyed on the requested `To`: a staff "Com defeito" receipt, which lands on `to_buy`, stays `receiving:write`)
+- `TestMovePurchased_VersionConflictFailsTheCall`
+- `TestMovePurchased_TwoMovesOnOneOrder`
 - `TestMovePurchased_JoinsOuterTxAndRollsBack`
 - `TestRecordPaidCosts_OwnerOnly`
 - `TestPurchaseOrders_RemovedItemAbsent`
@@ -577,22 +601,25 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
   - `OrderItems.ToBuy`; every picked id must be there for `in.Supplier`, else `ErrItemNotToBuy`;
   - `Suppliers.Contact`, `Store.Name`, `NextNumber`;
   - `purchasing.Send`, then `OrderMessage`, then `SupplierLinks.Link`;
-  - `InsertSupplierOrder`, then `OrderItems.Move` (to `sent_to_supplier`, `Ref` = number);
+  - `InsertSupplierOrder`, which copies each line's order-time cost from `order_item_sourcing` in SQL, in the same transaction, whoever sends (an admin never sees costs, and the owner must still find them; §4.1);
+  - `OrderItems.Move` (to `sent_to_supplier`, `Ref` = number);
   - `Idempotency.Remember`.
   The unique open-line index turns a race into `shared.ErrConflict`, which `Send` maps to `ErrItemNotToBuy`.
 - **`Undo`:** `so.Undo`, then `Update`, then `Move` each item to `to_buy`. A closed order (cancelled) is skipped: its items need no move.
 - **`RecordPromisedDate`:** `so.RecordPromisedDate`, then `Update`, then `OrderItems.RecordPromisedDates` for items still on an open order.
 - **`MarkInTransit`:** `so.MarkInTransit`, then `Update`, then `Move` to `in_transit`. Items of cancelled orders or removed items are skipped.
 - **`RecordPaidPrices`:** owner only (`identity.SeesCosts`, else `shared.ErrForbidden`). `so.RecordPaidPrices`, then `Update`, then `OrderItems.RecordPaidCosts` for items still present.
-- **`Receive`:** `receiving:write`, the Idempotency-Key, then `WithinTx`:
-  - validate the photo keys (`ParsePhotoKey`, `Stat` and sniff with `Head`, at most 10 MB);
-  - for each `lineId` entry: `SupplierOrderOfLine`, `so.Receive`, `Update` (each supplier order loaded once);
-  - for each `orderItemId` entry: it must be in `OrderItems.ToBuy`, else `ErrItemNotToBuy`; then `purchasing.CounterLine` and `InsertCounterLine`;
-  - `NewReceipt`, then `InsertReceipt`;
-  - `OrderItems.Move`: `received` with `ok`, or with `defective` and its note, which lands on `to_buy`;
-  - `Promote` each photo, last, as ADR 0028 does; a failed promote rolls back;
-  - `Idempotency.Remember`.
-  After the transaction it reads `OrderItems.Orders` for `completedOrders` (every item arrived).
+- **`Receive`:** `receiving:write`, then the Idempotency-Key.
+  1. **Before the transaction**, validate the photo keys: `ParsePhotoKey`, `Stat`, and sniff with `Head`, at most 10 MB and 20 photos in all. Storage calls never hold a transaction.
+  2. `WithinTx`:
+     - the replay check first, as `Send` does: a key whose resource is a receipt answers it again, whatever state the lines are now in;
+     - for each `lineId` entry: `SupplierOrderOfLine`, `so.Receive`, `Update` (each supplier order loaded once);
+     - for each `orderItemId` entry: it must be in `OrderItems.ToBuy`, else `ErrItemNotToBuy`; then `purchasing.CounterLine` and `InsertCounterLine` (the cost is copied in SQL, as in `Send`);
+     - `NewReceipt`, then `InsertReceipt`;
+     - `OrderItems.Move`: `received` with `ok`, or with `defective` and its note, which lands on `to_buy`. **Lines whose order was cancelled or whose item was removed are received but not moved**, as `Undo` and `MarkInTransit` skip them (ADR 0031: such an item "is still received");
+     - `Promote` each photo, last, as ADR 0028 does; a failed promote rolls back;
+     - `Idempotency.Remember`.
+  3. After the transaction it reads `OrderItems.Orders` for `completedOrders` (every item arrived).
 - **`Notices`:** `OpenLines`, then `OrderItems.Orders` for their orders, then `NoticeOf`. Each notice gets `CancelMessage` and a link.
 - **`ResolveNotice`:** checks it is a notice now (`ErrLineClosed` otherwise), then `so.Resolve` and `Update`. For `item_changed` it also moves the item to `to_buy`, so it is bought again as it is now.
 - **`ToBuy` (the purchasing view):** `OrderItems.ToBuy`, grouped by supplier (by name, then id). `DefectiveItems` marks "Reposição". `Suppliers.Contact` gives each phone.
@@ -610,7 +637,8 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
 - `TestSend_WritesLinesMovesItemsRecordsLink`
 - `TestSend_ItemSentByAnotherIsNotToBuy`
 - `TestSend_ReplayAnswersSameSupplierOrder`
-- `TestSend_MessageHasNoClientData`
+- `TestSend_AdminSendKeepsOwnerCost`
+- `TestSend_MessageHasNoClientData` (the send, notice and Falar texts, and the stored `message_text`, against every customer field of the orders behind them)
 - `TestUndo_RefusedOnceReceived`
 - `TestRecordPromisedDate_RedatesAndRaisesAtRisk`
 - `TestRecordPaidPrices_OwnerOnly`
@@ -618,7 +646,9 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
 - `TestReceive_DefectBackToBuyAsReposicao`
 - `TestReceive_CounterLine`
 - `TestReceive_PhotoChecks`
-- `TestReceive_ReplayAnswersSameReceipt`
+- `TestReceive_ReplayAnswersSameReceipt` (after the lines closed)
+- `TestReceive_LineOfCancelledOrderIsReceivedNotMoved`
+- `TestReceive_PhotoChecksRunBeforeTheTransaction`
 - `TestReceive_CompletedOrders`
 - `TestNotices_EachReason`
 - `TestResolveNotice_ChangedItemBackToBuy`
@@ -632,6 +662,7 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
 - `Cancel`: the hand-off comment is replaced by "Purchasing reads cancelled orders and flags their sent lines (ADR 0031)."
 - `schedule.Recalculate`: load, `o.Redate(today)`, save (`Update`); with no change it saves nothing.
 - `finance.go`: the margin's unit cost is `Sourcing.PaidCost` when set, else `Sourcing.Cost`.
+- `Change` keeps a kept item's `promised` date (`keepState`) and its `Sourcing.PaidCost` (`lines.go` passes the old sourcing): `TestChange_KeepsPromisedDateAndPaidCost`.
 - The order repository reads and writes `order_item_sourcing.promised_date` and `paid_cost_cents`, and `order_status_history.ref` (5.9).
 
 **Tests (named):**
@@ -654,7 +685,9 @@ type ReceiptPhotos interface { // adapter/storage.ReceiptStore over S3
 - `NextNumber` as order's counter: `INSERT … ON CONFLICT DO UPDATE … RETURNING`. `PeekNumber` reads `last_number + 1` without writing.
 - `OpenLines`: a `Raw` join of `purchase_lines` (status open) with `supplier_orders` (number, supplier name, `sent_at`), ordered by `sent_at`, `position`.
 - Costs are read from and written to `purchase_line_costs` in the same transaction.
-- Unique-index violations map to `shared.ErrConflict` (23505); the app maps them to `ErrItemNotToBuy`.
+- 23505 maps by constraint: `purchase_lines_open_item_idx` to `shared.ErrConflict` (the app maps it to `ErrItemNotToBuy`); `receipt_photos_object_key_key` to the photo refusal `photo_not_uploaded`; `receipt_lines` (a line received twice) to `purchasing.ErrLineClosed`.
+- **The repository refuses a scope without a staff user** before any write, as the order repository does (`hasStaff`), since referential actions bypass RLS.
+- **Costs are copied, not passed:** `InsertSupplierOrder` and `InsertCounterLine` write `purchase_line_costs` with `INSERT … SELECT cost_cents FROM order_item_sourcing WHERE tenant_id = ? AND order_item_id = ?`, so a line sent by an admin keeps the owner's cost.
 - Order repository changes: `ItemRecord.Promised`, `Sourcing.PaidCost` and `HistoryEntry.Ref`.
 
 **Contract suite:** `test/contract/purchasing_repository.go`, run against `fake` and Postgres. It covers:
@@ -722,24 +755,39 @@ In `main.go`, construct `apppurchasing.NewService(Deps{…})` after `apporder` a
 
 ### 6.2 Admin
 
+Layers as `web/CLAUDE.md` says: `views/*.vue` → `store.ts` (Pinia) → `packages/api`.
+
 - `features/compras/`:
-  - `ComprasPage.vue` (tabs; the `?tab=` query keeps the tab on reload);
-  - `AComprarTab.vue` with `SupplierCard.vue`;
-  - `EnviadasTab.vue`;
-  - `SupplierOrderPage.vue` (route `/compras/pedidos/:id`), with its dialogs: `PromisedDateDialog.vue`, `PaidPricesDialog.vue`, `UndoDialog.vue`;
-  - `NoticesPanel.vue`;
-  - `FornecedoresTab.vue` with `SupplierDrawer.vue`;
-  - `receber/ReceberPage.vue` (route `/compras/receber`; also the staff menu entry) with `ReceiptLine.vue` and `PhotoPicker.vue`.
+  - `views/`: `ComprasView.vue` (tabs; `?tab=` keeps the tab on reload), `SupplierOrderView.vue` (route `/compras/pedidos/:id`), `ReceberView.vue` (route `/compras/receber`, also the staff menu entry).
+  - `components/`:
+    - `AComprarTab.vue` with `SupplierCard.vue`;
+    - `EnviadasTab.vue`;
+    - `NoticesPanel.vue`;
+    - `FornecedoresTab.vue` with `SupplierDrawer.vue` (it reuses `catalogo/components/SupplierFields.vue`, moved to `packages/ui` or imported as is, never duplicated);
+    - `PromisedDateDialog.vue`, `PaidPricesDialog.vue`, `UndoDialog.vue`;
+    - `ReceiptLine.vue`, `PhotoPicker.vue`.
+  - `store.ts` (`useComprasStore`): to-buy, picks per supplier, supplier orders, notices.
+  - `receberStore.ts` (`useReceberStore`):
+    - the checks, notes and photo states of one receipt;
+    - the `Idempotency-Key` made once per "Salvar recebimento" and kept for "Tentar de novo";
+    - the result (`completedOrders`, `backToBuy`).
+- Routes: `/compras` with `meta.permission: 'purchase:write'`; `/compras/receber` with `meta.permission: 'receiving:write'`.
 - Menu:
   - "Compras" for `purchase:write`;
   - "Receber itens" for `receiving:write` without `purchase:write`.
   The menu order is the design document's.
 - `features/pedidos/`:
-  - the item row reads `orderPurchases` and shows the C-number (a link for `purchase:write`) and "Prazo do fornecedor";
+  - the item row reads `orderPurchases` through the pedidos store and shows the C-number (a link for `purchase:write`) and "Prazo do fornecedor";
   - it shows "Ver em Compras" or "Receber itens", and only "Marcar como instalada" among the moves of a bought item;
-  - the delay banner shows "Falar com o fornecedor" when `supplierChatUrl` is there.
-- `features/hoje/`: for `purchase:write`, `purchasingToday`, with the "Compras a enviar" card and its entries merged at the top of "Precisa de você" in the API's order.
-- Wording: `docs/product/design-document.md`, "Milestone 5 screens". The Fornecedores table has "Fornecedor" and "WhatsApp"; the drawer lists the supplier's items.
+  - the delay banner shows "Falar com o fornecedor" when `supplierChatUrl` is there;
+  - `historyText.ts` writes the purchasing entries of `HistoryEntry`.
+- `features/hoje/`: Hoje calls `purchasingToday` only for `purchase:write`. It adds the "Compras a enviar" card and puts the entries at the top of "Precisa de você", in the API's order.
+- **Workshop sizes (5.14):** `packages/ui/src/tokens.css` gains a scoped tier, `.enc-workshop`, with 18 px text, `--enc-control-height: 56px` and a 64 px primary button. Receber itens sets it on its root. `web/CLAUDE.md` names it under "Product and design rules" (sizes) and "Phone layouts".
+- **Phone:**
+  - Enviadas, Fornecedores and the pedido de compra's lines are `enc-cards` tables;
+  - `PromisedDateDialog`, `PaidPricesDialog`, `UndoDialog` and `SupplierDrawer` are `BaseDialog` sheets with `enc-sheet-actions`;
+  - the A comprar boxes are `enc-check` labels.
+- Wording: `docs/product/design-document.md`, "Milestone 5 screens". The Fornecedores table has "Fornecedor" and "WhatsApp"; the drawer lists the supplier's items. "{n} itens" counts entries, not summed quantities. Costs are shown as "Custo (por unidade)" and "Preço pago (por unidade)".
 
 ### 6.3 Web tests
 

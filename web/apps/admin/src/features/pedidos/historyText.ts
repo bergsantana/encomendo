@@ -38,6 +38,8 @@ export function historyText(entry: HistoryEntry, items: Order['items']): string 
       return `${who} enviou o link de acompanhamento`
     case 'cancelled':
       return `${who} cancelou${entry.reason ? `: ${entry.reason}` : ''}`
+    case 'promised_date':
+      return `${who} informou o prazo do fornecedor de ${entry.itemName ?? 'um item'}: ${entry.newDate === undefined ? '' : formatCivilDate(entry.newDate)}`
   }
 }
 
