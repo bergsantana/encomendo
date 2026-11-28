@@ -4,6 +4,47 @@ Written 2026-11-28 on Opus with `/plan-milestone 5`, against `main` at `0fda109`
 
 Goal (build plan): the business buys only what was sold, tells the supplier without leaking the client, and checks what arrives.
 
+## Result (2026-11-28)
+
+**Closed but for the device walkthrough.** Steps 5.1 to 5.16 are merged. The build plan's M5 section is 8 of 9. The box left is the camera through the Android shell, which waits for a phone over `adb`, as M3.5's and M4's do.
+
+| PR | Steps | What it holds |
+| --- | --- | --- |
+| #89 | plan | This plan, ADR 0031 and the M5 wording; amended in the same PR to read "A comprar" from orders (below) |
+| #90 | 5.1 | The code design and the purchasing contract |
+| #92 | fix | The `x-unserved` marks #90 left out (backend CI does not run on a contract-only change) |
+| #91 | 5.2–5.4 | `domain/purchasing`; bought items move only through purchasing in `domain/order` |
+| #93 | 5.5 | Migration 0016, staff-only, with no client policy and no audit |
+| #95 | 5.6–5.8 | `app/order`'s `ForPurchasing`, `app/purchasing`, `Recalculate`, the price paid in `Cost` |
+| #97 | 5.9–5.10 | The Postgres repository, the HTTP API, the wiring and the API e2e |
+| #94 | 5.12–5.13 | Web Compras, the pedido de compra and Fornecedores |
+| #96 | 5.14–5.15 | Web Receber itens at workshop sizes; the order screen and Hoje follow Compras |
+| this PR | 5.16 | The real-stack Playwright specs at desktop and phone size; the M4 specs receive through Compras |
+
+**What changed from the plan**
+
+- **"A comprar" is read, not generated.** The plan first ran purchasing's handlers inside the order's transaction. `backend/CLAUDE.md` forbids two contexts with ports to each other, so purchasing reads "A comprar" from `app/order` through `ForPurchasing`. Orders never call purchasing, and no event or handler exists (ADR 0031, amended in #89).
+- **No audit on purchasing tables.** No staff-only table is audited, and every staff role reads `audit_log`.
+- **The price paid lives in the domain.** `Order.Cost` prefers it, so Financeiro and the order screen agree.
+- **The ports changed as 5.7 built them** (`docs/plans/m5-code-design.md`, "As built in 5.7"):
+  - `Store` gained `Currency` and `Location`;
+  - the repository gained `Message` and `Receipt` for replays;
+  - `StaffNames` answers only the store's members.
+- **Rate limits in the tests.** The suites make more stores than the per-IP sign-up limit allows in an hour from one address:
+  - the API e2e clears the counts before each sign-up, one at a time;
+  - the Playwright `signUp()` sends an `X-Forwarded-For` in the private 198.18.0.0/15 range on that one call, which only the local stack's trusted proxies honour (ADR 0021).
+
+**Hand-offs** (code design, "Hand-offs"):
+- **The client timeline (M7)** must leave out the purchasing history kinds: promised dates with their C-number, and defect notes.
+- **Fornecedores** reads the whole catalog to list a supplier's items, until the item port has a query by supplier.
+- **`schedule.Recalculate`** is not wired: it needs an inproc `Orders.Update`.
+- **`stock` items** take the bought path until M6 adds reservation.
+- **Optional CI change:** `backend.yml` could also run on a change to `docs/api/openapi.yaml`. That is a workflow edit, waiting for the user.
+
+**Pending: the Android shell walkthrough.** As M4's (see its Result), on a physical phone over `adb`, add these steps:
+- open Compras and send a pedido de compra (the `wa.me` link must leave the app);
+- take an item photo with the camera in Receber itens and save a defect.
+
 ## Blocked
 
 Nothing. Milestone 5 depends on none of the questions in `docs/architecture.md` section 12. Payments by hand (ADR 0023) don't touch purchasing. The one conflict, offline receiving in the "Done when" against ADR 0029, was answered by the user (Q1).

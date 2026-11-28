@@ -337,7 +337,7 @@ func TestHistory_NamesTheItemOfAnItemMove(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := page.Items[0]
-	if e.Kind != order.HistoryItem || e.Item != v.Items[0].ID || e.ItemName != "Banco de couro" || e.ItemFrom != order.ItemToBuy || e.ItemTo != order.ItemSentToSupplier {
+	if e.Kind != order.HistoryItem || e.Item != v.Items[0].ID || e.ItemName != "Banco de couro" || e.ItemFrom != order.ItemToBuy || e.ItemTo != order.ItemSentToSupplier || e.Ref != "C-0001" {
 		t.Errorf("item entry = %+v", e)
 	}
 }

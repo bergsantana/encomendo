@@ -1,45 +1,22 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { apiSession, createStore, latestEmail, mailpitUrl, password, seedCatalog, signUp, unique } from './support'
+import { apiSession, createStore, expectNoWhatsappRequests, latestEmail, mailpitUrl, noClientData, password, seedCatalog, signUp, unique, watchWhatsapp } from './support'
 
 // Pedidos against the real stack (see admin.spec.ts for how to run it): an
 // owner chooses the store's status list, sells a kit to a new customer,
-// records the deposit, receives the items and moves the order to handover.
-// An admin opens the same order and sees no Custo and no Margem. Changing the
-// delivery date answers a wa.me link that the app only opens in a tab: the
-// run records every request the browser makes and asserts that none went to
-// WhatsApp ("nothing is sent automatically", ADR 0030).
+// records the deposit, buys and receives the items through Compras and Receber
+// itens (bought items move only there, ADR 0031) and moves the order to
+// handover. An admin opens the same order and sees no Custo and no Margem.
+// Changing the delivery date answers a wa.me link that the app only opens in a
+// tab: the run records every request the browser makes and asserts that none
+// went to WhatsApp ("nothing is sent automatically", ADR 0030); the supplier's message
+// is the second link, and it too is only opened as the API wrote it.
 //
 // This spec signs up one account. A full run of the suite signs up ten from
 // one address, and the API allows 10 sign-ups an hour per IP (ADR 0021), so
 // clear the counts before every full run (see admin.spec.ts):
 //   docker exec <redis container> sh -c "redis-cli --scan --pattern 'g:rl:*' | xargs -r redis-cli del"
 const realStack = process.env.E2E_BASE_URL !== undefined && process.env.E2E_BASE_URL !== ''
-
-/**
- * watchWhatsapp stubs window.open before any page script runs, so a wa.me tab
- * never really opens, and returns the links the app tried to open and every
- * request the page made.
- */
-async function watchWhatsapp(page: Page): Promise<{ opened: () => Promise<string[]>; requests: string[] }> {
-  const requests: string[] = []
-  page.on('request', (request) => requests.push(request.url()))
-  await page.addInitScript(() => {
-    const opened: string[] = []
-    Object.assign(window, { __opened: opened })
-    window.open = (url?: string | URL) => {
-      opened.push(String(url))
-      return null
-    }
-  })
-  return { requests, opened: () => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened) }
-}
-
-/** expectNoWhatsappRequests fails when the browser called WhatsApp itself: the app only hands over a link. */
-function expectNoWhatsappRequests(requests: string[]): void {
-  expect(requests.filter((url) => /(^|\.)(wa\.me|whatsapp\.com|whatsapp\.net)(\/|:|$)/.test(new URL(url).host + '/')), 'requests to WhatsApp').toEqual([])
-  expect(requests.length, 'the browser made requests').toBeGreaterThan(0)
-}
 
 test.describe('Pedidos against the real stack', () => {
   test.skip(!realStack, 'set E2E_BASE_URL (and E2E_MAILPIT_URL) to run against `make stack-up`')
@@ -155,11 +132,37 @@ test.describe('Pedidos against the real stack', () => {
     await page.getByRole('button', { name: 'Mover para Pronto' }).click()
     await expect(page.getByRole('alert').filter({ hasText: 'Nem todos os itens chegaram e foram conferidos.' })).toBeVisible()
 
-    // Items: the first one step at a time, the second straight to received.
-    await page.getByRole('button', { name: `Marcar como enviada ao fornecedor: ${catalog.first}` }).click()
-    await page.getByRole('button', { name: `Marcar como em trânsito: ${catalog.first}` }).click()
+    // The items are bought in Compras, not on the order screen: they have no purchasing buttons here, only the way in.
+    await expect(page.getByRole('button', { name: /Marcar como enviada ao fornecedor|Marcar como em trânsito|Tudo certo|Com defeito/ })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: `Ver em Compras: ${catalog.first}` })).toBeVisible()
+    await menu(page).getByRole('link', { name: 'Compras' }).click()
+    const supplierCard = page.getByRole('article', { name: 'Escapes do Sul' })
+    await expect(supplierCard.getByRole('checkbox', { name: `1× ${catalog.first}` })).toBeChecked()
+    await expect(supplierCard.getByRole('checkbox', { name: `1× ${catalog.second}` })).toBeChecked()
+    const sentResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/supplier-orders'))
+    await supplierCard.getByRole('button', { name: 'Enviar pelo WhatsApp' }).click()
+    const supplierAnswer = (await (await sentResponse).json()) as { whatsappUrl: string }
+    await expect(page.getByRole('status').filter({ hasText: 'Pedido de compra C-0001 criado.' })).toBeVisible()
+    // The supplier's link is the second tab the app opened, exactly as the API wrote it.
+    await expect.poll(async () => (await whatsapp.opened()).length).toBe(2)
+    expect((await whatsapp.opened())[1], 'the app opens exactly the link the API answered').toBe(supplierAnswer.whatsappUrl)
+    expect(supplierAnswer.whatsappUrl.startsWith('https://wa.me/5511987654321')).toBe(true)
+    expect(new URL(supplierAnswer.whatsappUrl).searchParams.get('text') ?? '').not.toMatch(noClientData)
+
+    // The pedido de compra goes to "Em trânsito", then both items arrive in Receber itens.
+    await page.getByRole('link', { name: 'Ver pedido de compra' }).click()
+    await expect(page.getByRole('heading', { name: 'Pedido de compra C-0001' })).toBeVisible()
+    await page.getByRole('button', { name: 'Marcar como em trânsito' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Itens em trânsito.' })).toBeVisible()
+    await page.getByRole('link', { name: 'Receber itens' }).click()
+    await expect(page.getByRole('heading', { name: 'C-0001 · Escapes do Sul' })).toBeVisible()
     await page.getByRole('button', { name: `Tudo certo: ${catalog.first}` }).click()
     await page.getByRole('button', { name: `Tudo certo: ${catalog.second}` }).click()
+    await page.getByRole('button', { name: 'Salvar recebimento' }).click()
+    await expect(page.getByText('Recebimento salvo.')).toBeVisible()
+    await expect(page.getByText('Pedido P-0001: todos os itens chegaram e foram conferidos.')).toBeVisible()
+    await page.getByRole('link', { name: 'Abrir pedido P-0001' }).click()
+    await expect(page.getByRole('heading', { name: 'Pedido P-0001' })).toBeVisible()
     await expect(page.getByRole('row', { name: new RegExp(`${catalog.first}.*Recebida`) })).toBeVisible()
     await expect(page.getByRole('row', { name: new RegExp(`${catalog.second}.*Recebida`) })).toBeVisible()
 
@@ -243,13 +246,13 @@ test.describe('Pedidos against the real stack', () => {
       await expect(guestSummary.getByRole('term').filter({ hasText: /^Custo$/ })).toHaveCount(0)
       await expect(guestSummary.getByRole('term').filter({ hasText: /^Margem$/ })).toHaveCount(0)
       expect(await guestWhatsapp.opened()).toEqual([])
-      expectNoWhatsappRequests(guestWhatsapp.requests)
+      expectNoWhatsappRequests(guestWhatsapp)
     } finally {
       await guestContext.close()
     }
 
-    // Nothing is sent automatically: the browser asked WhatsApp for nothing, and the API only wrote the link.
-    expect(await whatsapp.opened()).toHaveLength(1)
-    expectNoWhatsappRequests(whatsapp.requests)
+    // Nothing is sent automatically: the browser asked WhatsApp for nothing, and the API only wrote the links (the new date and the supplier's order).
+    expect(await whatsapp.opened()).toHaveLength(2)
+    expectNoWhatsappRequests(whatsapp)
   })
 })

@@ -444,6 +444,7 @@ type HistoryEntry struct {
 	NewDate          *shared.CivilDate   `json:"newDate,omitempty"`
 	Reason           string              `json:"reason,omitempty"`
 	CustomerApproved bool                `json:"customerApproved,omitempty"`
+	Ref              string              `json:"ref,omitempty"`
 }
 
 // NewHistoryEntry maps one event of an order's history.
@@ -452,6 +453,7 @@ func NewHistoryEntry(h apporder.HistoryView) HistoryEntry {
 		Kind: h.Kind, At: h.At.UTC(), Handover: h.Handover, ItemName: h.ItemName, ItemFrom: h.ItemFrom, ItemTo: h.ItemTo,
 		Check: h.Check, PaymentKind: h.PaymentKind, PaymentMethod: h.PaymentMethod, Amount: h.Amount,
 		OldDate: datePtr(h.OldDate), NewDate: datePtr(h.NewDate), Reason: h.Reason, CustomerApproved: h.CustomerApproved,
+		Ref: h.Ref,
 	}
 	if h.By != nil {
 		out.By = &Actor{ID: h.By.ID, Name: h.By.Name}

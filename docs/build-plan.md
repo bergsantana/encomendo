@@ -2,7 +2,7 @@
 
 Tracks how much of the system is built, milestone by milestone. The milestones and their order come from `docs/architecture.md` section 11; the scope of each item comes from sections 4, 7 and 8 of the same document. This file records **status only**. If it disagrees with the architecture or the product docs, those win.
 
-**Last audited:** 2026-11-27, at the close of milestone 4. Run locally: backend lint (golangci-lint v2.15.0, 0 issues), unit, contract and integration tests (Postgres, RLS, Redis, and storage on Silo) pass; the coverage gate passes on the merged unit and integration profiles (93.9% overall, 95.7% domain and app); web lint, typecheck and unit tests (771 in admin) pass; the Playwright suite passes against the real stack at desktop and phone size (10 passed, the 13 mock-only tests skipped) and its mock-only part passes without a stack (13 passed, 10 skipped). The mobile `./gradlew check` was not rerun: `mobile/` is frozen and nothing in it changed since the milestone 3 audit. CI is green on every milestone 4 PR (#77 to #87; #87 keeps query strings and tracking tokens out of the nginx access log). **Not run:** the Android device walkthrough, which waits for a physical phone over `adb` because KVM is blocked in the WSL VM (see the milestone 4 plan's Result).
+**Last audited:** 2026-11-28, at the close of milestone 5. Run locally: backend unit, contract and integration tests (Postgres, RLS, Redis, Silo) pass, with golangci-lint v2.15.0 at 0 issues; the backend API e2e suite passes against `docker compose up postgres redis api`, the purchasing path from the deposit to Montagem included; web lint, typecheck and unit tests pass (admin 939); the Playwright suite passes twice in a row against the real stack at desktop and phone size (12 passed, the 13 mock-only tests skipped). CI is green on every milestone 5 PR (#89 to #97). **Not run:** the Android shell walkthrough, which waits for a physical phone over `adb` (KVM is blocked in the WSL VM).
 
 ## How to keep this file honest
 
@@ -25,11 +25,11 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
 | 4 | Customers, orders and deadlines | 17 | 17 | Done: the backend is built and served (#77 to #82, #84, #85), every web screen is built (#83, #86), and the order flow runs against the real stack at desktop and phone size; only the Android shell walkthrough is pending, on a physical phone |
-| 5 | Purchasing and receiving | 5 | 9 | In progress: the backend is built and served (5.1–5.10); Compras and Receber itens built against the contract (5.12–5.15); the real-stack and phone close (5.16) remains |
+| 5 | Purchasing and receiving | 8 | 9 | Almost done: built and served (#89 to #97 and the close), checked on the real stack at desktop and phone size; only the camera through the Android shell waits for the device walkthrough |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **87** | **127** | **about 69%** (68.5%) |
+|   | **All milestones** | **90** | **127** | **about 71%** (70.9%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -243,16 +243,16 @@ Plan: `docs/plans/m5-purchasing-receiving.md` (steps 5.1–5.16). Decisions: ADR
 
 ### Web
 
-- [ ] Compras: by supplier, send via `wa.me`, promised dates; Fornecedores tab
-- [ ] Receber itens: checklist, item and invoice photos, Tudo certo / Com defeito
+- [x] Compras: by supplier, send via `wa.me`, promised dates; Fornecedores tab (steps 5.12, 5.13; `web/e2e/compras.spec.ts` on the real stack)
+- [x] Receber itens: checklist, item and invoice photos, Tudo certo / Com defeito (step 5.14; the defect, its photo and the "Reposição" on the real stack)
 
 ### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
-- [ ] Compras and receiving work at phone size, with workshop sizes on the receiving screens, and item and invoice photos from the camera through the shell
+- [ ] Compras and receiving work at phone size, with workshop sizes on the receiving screens, and item and invoice photos from the camera through the shell (partial: `web/e2e/phone-compras.spec.ts` runs the path at 390 × 844 with no side scroll, ≥ 48 px targets, the dialogs as full-screen sheets and Receber itens at workshop sizes, uploading the photo through the file input; the camera through the Android shell waits for the device walkthrough, as M3.5's and M4's)
 
 ### Done when
 
-- [ ] Order with deposit paid → purchase lines appear → supplier message sent through `wa.me` with no client data → items received on a phone, a dropped save retried without recording twice (reworded 2026-11-28: online only, ADR 0029 and ADR 0031)
+- [x] Order with deposit paid → purchase lines appear → supplier message sent through `wa.me` with no client data → items received on a phone, a dropped save retried without recording twice (reworded 2026-11-28: online only, ADR 0029 and ADR 0031) (step 5.16 and the API e2e: the send and the receipt replay with their `Idempotency-Key`; `phone-compras.spec.ts` receives at 390 × 844)
 
 ---
 
