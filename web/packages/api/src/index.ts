@@ -1,5 +1,5 @@
 export { ApiError, createHttpClient } from './http'
-export type { FieldIssue, HttpClient, HttpClientOptions, ProblemBody, Reference, RequestOptions, SessionHooks } from './http'
+export type { FieldIssue, Guard, HttpClient, HttpClientOptions, ProblemBody, Reference, RequestOptions, SessionHooks } from './http'
 export {
   acceptInvitation,
   confirmPasswordReset,
@@ -93,7 +93,73 @@ export type {
 } from './catalog'
 export { createSupplier, getSupplier, listSuppliers, replaceSupplier } from './suppliers'
 export type { ReplaceSupplierRequest, Supplier, SupplierInput, SupplierListRequest, SupplierPage } from './suppliers'
-export { createTenant, getSettings } from './tenancy'
-export type { CreateTenantRequest, Tenant, TenantSettings } from './tenancy'
+export { createTenant } from './tenancy'
+export type { CreateTenantRequest, Tenant } from './tenancy'
+export { chooseStatusWorkflow, getSettings, updateSettings } from './settings'
+export type { ChooseWorkflowRequest, EditableSettings, TenantSettings, TimeZone, UpdateSettingsRequest } from './settings'
+export { listStatusWorkflows } from './workflows'
+export type { OrderStatus, StatusWorkflow, StatusWorkflowList } from './workflows'
+export { createCustomer, getCustomer, listCustomers, updateCustomer } from './customers'
+export type {
+  Address,
+  AddressInput,
+  Customer,
+  CustomerInput,
+  CustomerListRequest,
+  CustomerPage,
+  CustomerSummary,
+  ReplaceCustomerRequest,
+  UF,
+} from './customers'
+export { idempotencyHeaders, newIdempotencyKey } from './idempotency'
+export {
+  advanceOrder,
+  cancelOrder,
+  changeDeliveryDate,
+  changeOrder,
+  createOrder,
+  getFinanceSummary,
+  getOrder,
+  getToday,
+  listOrders,
+  moveOrderItem,
+  orderHistory,
+  quoteOrder,
+  recordPayment,
+  releaseOrder,
+  sendTrackingLink,
+  useBackupSupplier,
+  voidPayment,
+} from './orders'
+export type {
+  AdvanceRequest,
+  Alert,
+  CancelRequest,
+  ChangedOrder,
+  ChangeOrderRequest,
+  CreatedOrder,
+  CreateOrderRequest,
+  DeliveryDateRequest,
+  FinanceSummary,
+  HistoryEntry,
+  HistoryPage,
+  LineRequest,
+  MessagedOrder,
+  MoveItemRequest,
+  Order,
+  OrderListFilter,
+  OrderPage,
+  OrderPhase,
+  OrderSummary,
+  OrderVersionRequest,
+  PaymentRequest,
+  Period,
+  Quote,
+  QuoteRequest,
+  TermsInput,
+  Today,
+  TrackingLink,
+  VoidPaymentRequest,
+} from './orders'
 export { getReadiness } from './health'
 export type { Status } from './health'

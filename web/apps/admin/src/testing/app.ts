@@ -30,14 +30,15 @@ export async function openApp(path: string) {
   return { wrapper, router }
 }
 
-/** Scope is where a helper looks: the whole app, or one part of it such as a table row. */
-type Scope = VueWrapper | DOMWrapper<Element>
+/** Scope is where a helper looks: the whole app, or one part of it such as a table row or a dialog. */
+type Scope = Pick<VueWrapper | DOMWrapper<Element>, 'findAll' | 'get'>
 
-/** field finds an input by its visible label, as a user does. */
+/** field finds an input by its visible label, as a user does: a label for it, or the label that wraps it (a checkbox or radio). */
 export function field(wrapper: Scope, label: string) {
-  const id = wrapper.findAll('label').find((l) => l.text() === label)?.attributes('for')
-  if (id === undefined) throw new Error(`no field labelled ${label}`)
-  return wrapper.get(`#${id}`)
+  const found = wrapper.findAll('label').find((l) => l.text() === label)
+  if (found === undefined) throw new Error(`no field labelled ${label}`)
+  const id = found.attributes('for')
+  return id === undefined ? found.get('input') : wrapper.get(`#${id}`)
 }
 
 /** button finds a button by its visible text. */

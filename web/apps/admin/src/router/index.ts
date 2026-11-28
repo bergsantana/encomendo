@@ -54,10 +54,29 @@ export const routes: RouteRecordRaw[] = [
         meta: { permission: 'catalog:read' },
       },
       {
+        path: 'clientes',
+        name: 'customers',
+        component: () => import('../features/clientes/views/ClientesView.vue'),
+        meta: { permission: 'order:read' },
+      },
+      {
+        // The same screen: the customer's own address opens the drawer over the list.
+        path: 'clientes/:customerId',
+        name: 'customer',
+        component: () => import('../features/clientes/views/ClientesView.vue'),
+        meta: { permission: 'order:read' },
+      },
+      {
         path: 'equipe',
         name: 'members',
         component: () => import('../features/members/views/MembersView.vue'),
         meta: { permission: 'members:manage' },
+      },
+      {
+        path: 'configuracoes',
+        name: 'settings',
+        component: () => import('../features/settings/views/SettingsView.vue'),
+        meta: { permission: 'settings:write' },
       },
     ],
   },
