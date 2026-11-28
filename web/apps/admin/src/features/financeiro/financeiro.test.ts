@@ -49,7 +49,17 @@ const november: FinanceSummary = {
       { key: 'outro', total: brl(4500) },
     ],
   },
-  toReceive: { total: brl(754300), orders: 4 },
+  toReceive: {
+    total: brl(754300),
+    orders: 4,
+    // By delivery date, as the server sends it; each balance is that order's own.
+    list: [
+      orderSummary(encomendaMontagem, 'em_montagem', { id: id(211), number: 'P-0231', deliveryDate: '2026-12-02', balanceDue: brl(300000) }),
+      orderSummary(prontaEntrega, 'separando', { id: id(212), number: 'P-0198', customer: { id: id(102), name: 'Maria Souza' }, deliveryDate: '2026-12-12', balanceDue: brl(250000) }),
+      orderSummary(encomendaMontagem, 'comprando', { id: id(213), number: 'P-0240', deliveryDate: '2026-12-15', balanceDue: brl(150000) }),
+      orderSummary(prontaEntrega, 'pagar_sinal', { id: id(214), number: 'P-0250', customer: { id: id(102), name: 'Maria Souza' }, deliveryDate: '2026-12-20', balanceDue: brl(54300) }),
+    ],
+  },
   toRefund: [
     { order: orderSummary(encomendaMontagem, 'pronto', { id: id(201), number: 'P-0260', customer: { id: id(101), name: 'João Pereira' } }), amount: brl(25050) },
     { order: orderSummary(prontaEntrega, 'separado', { id: id(202), number: 'P-0270', customer: { id: id(102), name: 'Maria Souza' } }), amount: brl(1000) },
@@ -274,12 +284,12 @@ describe('the period', () => {
 
     const to = field(wrapper, 'Até')
     await to.setValue('2026-10-01')
-    await to.trigger('change')
-    await vi.waitFor(() => expect(wrapper.find('[role=alert]').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Confira o período'))
 
-    const errorId = wrapper.get('[role=alert]').attributes('id')
-    expect(field(wrapper, 'Até').attributes('aria-describedby')).toBe(errorId)
-    expect(field(wrapper, 'De').attributes('aria-invalid')).toBe('true')
+    const refused = field(wrapper, 'Até')
+    expect(refused.attributes('aria-invalid')).toBe('true')
+    const message = wrapper.get(`#${refused.attributes('aria-describedby')}`).text()
+    expect(message).toBe('Confira o período: o início não pode passar do fim, e o período tem no máximo 366 dias.')
   })
 
   it('keeps "Escolher período" when "Tentar de novo" reads again', async () => {
@@ -289,8 +299,7 @@ describe('the period', () => {
     server.use(http.get('*/api/v1/admin/finance/summary', () => new HttpResponse(null, { status: 500 })))
     const to = field(wrapper, 'Até')
     await to.setValue('2026-11-10')
-    await to.trigger('change')
-    await vi.waitFor(() => expect(wrapper.find('[role=alert]').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('O servidor não respondeu'))
 
     serve()
     await button(wrapper, 'Tentar de novo').trigger('click')
@@ -330,7 +339,7 @@ describe('the period', () => {
         calls += 1
         const url = new URL(request.url)
         if (calls === 2) await slow.opened
-        return HttpResponse.json({ ...november, toReceive: { total: brl(calls === 2 ? 111100 : 222200), orders: 1 }, from: url.searchParams.get('from') })
+        return HttpResponse.json({ ...november, toReceive: { total: brl(calls === 2 ? 111100 : 222200), orders: 0, list: [] }, from: url.searchParams.get('from') })
       }),
     )
     const { wrapper } = await openFinanceiro()
@@ -390,8 +399,43 @@ describe('the summary', () => {
     expect(section).toContain('4 pedidos com saldo')
   })
 
+  it('lists the orders with a balance, by delivery date, each with its own balance', async () => {
+    serve()
+
+    const { wrapper } = await openFinanceiro()
+
+    const section = wrapper.get('[aria-labelledby=to-receive-title]')
+    expect(section.findAll('thead th').map((th) => th.text())).toEqual(['Pedido', 'Cliente', 'Saldo', 'Entrega prevista'])
+    expect(section.findAll('tbody tr').map(line)).toEqual([
+      'P-0231 João Pereira R$ 3.000,00 02/12/2026',
+      'P-0198 Maria Souza R$ 2.500,00 12/12/2026',
+      'P-0240 João Pereira R$ 1.500,00 15/12/2026',
+      'P-0250 Maria Souza R$ 543,00 20/12/2026',
+    ])
+    // The server's total stays the server's: the balances are shown, never added up here.
+    expect(plain(section.get('.total').text())).toBe('R$ 7.543,00')
+  })
+
+  it('opens the order from its number in "A receber"', async () => {
+    serve()
+
+    const { wrapper } = await openFinanceiro()
+
+    const section = wrapper.get('[aria-labelledby=to-receive-title]')
+    expect(link(section, 'P-0198').attributes('href')).toBe(`/pedidos/${id(212)}`)
+  })
+
+  it('shows no table when no order has a balance', async () => {
+    serve((url) => ({ ...november, from: url.searchParams.get('from') ?? '', toReceive: { total: brl(0), orders: 0, list: [] } }))
+
+    const { wrapper } = await openFinanceiro()
+
+    expect(wrapper.get('[aria-labelledby=to-receive-title]').text()).toContain('0 pedidos com saldo')
+    expect(wrapper.find('[aria-labelledby=to-receive-title] table').exists()).toBe(false)
+  })
+
   it('says "1 pedido com saldo" in the singular', async () => {
-    serve((url) => ({ ...november, from: url.searchParams.get('from') ?? '', toReceive: { total: brl(5000), orders: 1 } }))
+    serve((url) => ({ ...november, from: url.searchParams.get('from') ?? '', toReceive: { total: brl(5000), orders: 1, list: november.toReceive.list.slice(0, 1) } }))
 
     const { wrapper } = await openFinanceiro()
 
@@ -465,7 +509,7 @@ describe('the summary', () => {
 
     const { wrapper } = await openFinanceiro()
 
-    expect(link(wrapper, 'P-0231').attributes('href')).toBe(`/pedidos/${id(203)}`)
+    expect(link(wrapper.get('[aria-labelledby=margins-title]'), 'P-0231').attributes('href')).toBe(`/pedidos/${id(203)}`)
   })
 
   it('says so when no order was handed over in the period', async () => {
@@ -550,18 +594,21 @@ describe('the summary', () => {
 })
 
 describe('Financeiro on the phone', () => {
-  it('turns "A devolver" and the margins into cards, every cell labelled', async () => {
+  it('turns "A receber", "A devolver" and the margins into cards, every cell labelled', async () => {
     serve()
 
     const { wrapper } = await openFinanceiro()
 
     const tables = wrapper.findAll('table.enc-cards')
-    expect(tables).toHaveLength(2)
-    const refundCells = tables[0]?.get('tbody tr').findAll('td').map((cell) => cell.attributes('data-label'))
+    expect(tables).toHaveLength(3)
+    const receiveCells = tables[0]?.get('tbody tr').findAll('td').map((cell) => cell.attributes('data-label'))
+    expect(receiveCells).toEqual(['Cliente', 'Saldo', 'Entrega prevista'])
+    expect(tables[0]?.get('tbody th[scope=row]').text()).toBe('P-0231')
+    const refundCells = tables[1]?.get('tbody tr').findAll('td').map((cell) => cell.attributes('data-label'))
     expect(refundCells).toEqual(['Cliente', 'Status', 'Valor a devolver'])
-    const marginCells = tables[1]?.get('tbody tr').findAll('td').map((cell) => cell.attributes('data-label'))
+    const marginCells = tables[2]?.get('tbody tr').findAll('td').map((cell) => cell.attributes('data-label'))
     expect(marginCells).toEqual(['Entregue em', 'Total', 'Custo', 'Margem'])
-    expect(tables[1]?.get('tfoot').findAll('td[data-label]').map((cell) => cell.attributes('data-label'))).toEqual(['Total', 'Custo', 'Margem'])
+    expect(tables[2]?.get('tfoot').findAll('td[data-label]').map((cell) => cell.attributes('data-label'))).toEqual(['Total', 'Custo', 'Margem'])
   })
 
   it('keeps the period picker labelled for a thumb: a select and, for a custom period, two day fields', async () => {

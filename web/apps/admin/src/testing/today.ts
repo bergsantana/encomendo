@@ -30,7 +30,7 @@ export function emptyFinance(from = '2026-11-01', to = '2026-11-27'): FinanceSum
     from,
     to,
     received: { total: brl(0), byKind: [], byMethod: [] },
-    toReceive: { total: brl(0), orders: 0 },
+    toReceive: { total: brl(0), orders: 0, list: [] },
     toRefund: [],
     margins: [],
     marginsTotal: { total: brl(0), cost: brl(0), margin: null },

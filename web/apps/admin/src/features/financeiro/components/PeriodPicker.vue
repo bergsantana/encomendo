@@ -5,8 +5,8 @@
  * only reports what the owner chose; the store turns a preset into days and
  * the API checks the period.
  */
-import { BaseSelect } from '@encomendo/ui'
-import { computed, useId } from 'vue'
+import { BaseInput, BaseSelect } from '@encomendo/ui'
+import { computed } from 'vue'
 
 import { isPreset, type PeriodPreset, presetLabels } from '../period'
 
@@ -15,7 +15,10 @@ const props = defineProps<{
   /** from and to are the days in effect, "YYYY-MM-DD"; they fill the two fields of "Escolher período". */
   from: string
   to: string
-  /** error is the pt-BR message under the picker, linked to its fields. */
+  /**
+   * error is the pt-BR message of the last read. With "Escolher período" it sits under "Até",
+   * linked to the field; otherwise it sits under the picker.
+   */
   error?: string | null
 }>()
 
@@ -25,10 +28,6 @@ const emit = defineEmits<{
   days: [from: string, to: string]
 }>()
 
-const fromId = useId()
-const toId = useId()
-const errorId = useId()
-
 const choice = computed({
   get: () => props.preset,
   set: (value: string) => {
@@ -36,11 +35,15 @@ const choice = computed({
   },
 })
 
-function typed(event: Event, which: 'from' | 'to'): void {
-  if (!(event.target instanceof HTMLInputElement)) return
-  if (which === 'from') emit('days', event.target.value, props.to)
-  else emit('days', props.from, event.target.value)
-}
+// A day is reported when the field's value is complete: the date input only changes then.
+const fromDay = computed({
+  get: () => props.from,
+  set: (value: string) => emit('days', value, props.to),
+})
+const toDay = computed({
+  get: () => props.to,
+  set: (value: string) => emit('days', props.from, value),
+})
 </script>
 
 <template>
@@ -49,35 +52,22 @@ function typed(event: Event, which: 'from' | 'to'): void {
       v-model="choice"
       label="Período"
       :options="presetLabels"
-      :aria-describedby="error ? errorId : undefined"
     />
     <template v-if="preset === 'custom'">
-      <div class="day">
-        <label :for="fromId">De</label>
-        <input
-          :id="fromId"
-          type="date"
-          :value="from"
-          :aria-invalid="error ? 'true' : undefined"
-          :aria-describedby="error ? errorId : undefined"
-          @change="typed($event, 'from')"
-        >
-      </div>
-      <div class="day">
-        <label :for="toId">Até</label>
-        <input
-          :id="toId"
-          type="date"
-          :value="to"
-          :aria-invalid="error ? 'true' : undefined"
-          :aria-describedby="error ? errorId : undefined"
-          @change="typed($event, 'to')"
-        >
-      </div>
+      <BaseInput
+        v-model="fromDay"
+        type="date"
+        label="De"
+      />
+      <BaseInput
+        v-model="toDay"
+        type="date"
+        label="Até"
+        :error="error"
+      />
     </template>
     <p
-      v-if="error"
-      :id="errorId"
+      v-else-if="error"
       role="alert"
       class="error"
     >
@@ -90,13 +80,8 @@ function typed(event: Event, which: 'from' | 'to'): void {
 .picker {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px;
-}
-.day {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 .error {
   flex-basis: 100%;
@@ -104,25 +89,9 @@ function typed(event: Event, which: 'from' | 'to'): void {
   font-weight: 600;
   color: var(--enc-status-alert-text);
 }
-.day label {
-  font-weight: 600;
-}
-.day input {
-  height: var(--enc-control-height, 32px);
-  padding: 0 8px;
-  border: 1px solid var(--enc-secondary-border);
-  border-radius: var(--enc-radius-card);
-  background: var(--enc-surface);
-  color: var(--enc-ink);
-  font: inherit;
-}
 
 /* Phone: every field takes the full width. */
 @media (max-width: 640px) {
-  .picker,
-  .day {
-    width: 100%;
-  }
   .picker > * {
     flex: 1 1 100%;
   }

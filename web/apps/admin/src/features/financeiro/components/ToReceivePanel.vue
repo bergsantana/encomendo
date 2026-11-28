@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
  * ToReceivePanel is "A receber" and "A devolver": the balances still due on
- * active orders (the server's total and how many orders), whatever the
- * period, and the orders with "Valor a devolver", when there are any.
+ * active orders, whatever the period (the server's total, how many orders and
+ * the list by delivery date, each with its own balance), and the orders with
+ * "Valor a devolver", when there are any. Nothing is added up here.
  */
 import type { FinanceSummary } from '@encomendo/api'
 import { StatusBadge } from '@encomendo/ui'
 import { RouterLink } from 'vue-router'
 
-import { formatMoney } from '../../../format'
+import { formatCivilDate, formatMoney } from '../../../format'
 
 defineProps<{
   toReceive: FinanceSummary['toReceive']
@@ -30,6 +31,63 @@ defineProps<{
     <p class="muted">
       {{ toReceive.orders === 1 ? '1 pedido com saldo' : `${toReceive.orders} pedidos com saldo` }}
     </p>
+    <table
+      v-if="toReceive.list.length > 0"
+      class="enc-cards"
+    >
+      <caption class="enc-visually-hidden">
+        Pedidos com saldo a receber
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">
+            Pedido
+          </th>
+          <th scope="col">
+            Cliente
+          </th>
+          <th
+            scope="col"
+            class="amount"
+          >
+            Saldo
+          </th>
+          <th scope="col">
+            Entrega prevista
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          v-for="order in toReceive.list"
+          :key="order.id"
+        >
+          <th scope="row">
+            <RouterLink
+              class="number enc-code"
+              :to="{ name: 'order', params: { orderId: order.id } }"
+            >
+              {{ order.number }}
+            </RouterLink>
+          </th>
+          <td data-label="Cliente">
+            {{ order.customer.name }}
+          </td>
+          <td
+            class="amount enc-number"
+            data-label="Saldo"
+          >
+            {{ formatMoney(order.balanceDue.cents, order.balanceDue.currency) }}
+          </td>
+          <td
+            class="enc-number"
+            data-label="Entrega prevista"
+          >
+            {{ formatCivilDate(order.deliveryDate) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </section>
 
   <section

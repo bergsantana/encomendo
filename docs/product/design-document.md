@@ -531,7 +531,7 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 
 - Title "Financeiro", Dono only. Period: "Este mês", "Mês passado", "Últimos 30 dias", "Escolher período" (from, to).
 - **Recebido no período:** total, then by type ("Sinal", "Saldo") and by form (Pix, Dinheiro …). Voided payments don't count.
-- **A receber:** the sum of the balances of active orders, then "{n} pedidos com saldo" ("1 pedido com saldo"). The list "Pedido", "Cliente", "Saldo", "Entrega prevista" waits until the API sends it (it sends the total and the count only).
+- **A receber:** the sum of the balances of active orders, then "{n} pedidos com saldo" ("1 pedido com saldo") and the list "Pedido", "Cliente", "Saldo", "Entrega prevista".
 - **A devolver:** orders with "Valor a devolver", when there are any: "Pedido", "Cliente", "Status", "Valor a devolver".
 - **Margem dos pedidos entregues:** "Pedido", "Entregue em", "Total", "Custo", "Margem" ("{valor} ({n}%)", or "—" without a cost), and the period's total as "Total do período", with the hint "Custo e margem somam só os pedidos com todos os custos informados." No order handed over in the period: "Nenhum pedido entregue neste período."
 - Empty period: "Nenhum pagamento neste período."
