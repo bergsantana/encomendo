@@ -7,7 +7,6 @@ import (
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
-	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
@@ -153,57 +152,4 @@ func (s *Service) CheckStore(ctx context.Context) error {
 		}
 		return nil
 	})
-}
-
-// Settings returns the selected store's settings. Every role may read them
-// (settings:read), because the apps hide Produção and Estoque when they are
-// off.
-func (s *Service) Settings(ctx context.Context) (SettingsView, error) {
-	by, err := authz.Require(ctx, identity.PermSettingsRead)
-	if err != nil {
-		return SettingsView{}, err
-	}
-	var st *tenancy.Settings
-	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		st, err = s.tenants.SettingsOf(ctx, by.TenantID())
-		if err != nil {
-			return mustExist("read settings", err)
-		}
-		return nil
-	})
-	if err != nil {
-		return SettingsView{}, err
-	}
-	return settingsView(st, st.Version()), nil
-}
-
-// UpdateSettings replaces the editable settings (owner only:
-// settings:write). It returns a ValidationError for a value out of range
-// and shared.ErrVersionConflict when in.Version is not the stored version.
-func (s *Service) UpdateSettings(ctx context.Context, in UpdateSettingsInput) (SettingsView, error) {
-	by, err := authz.Require(ctx, identity.PermSettingsWrite)
-	if err != nil {
-		return SettingsView{}, err
-	}
-	if err := in.Settings.Validate(); err != nil {
-		return SettingsView{}, err
-	}
-	var st *tenancy.Settings
-	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
-		st, err = s.tenants.SettingsOf(ctx, by.TenantID())
-		if err != nil {
-			return mustExist("read settings", err)
-		}
-		if err := st.Change(in.Settings, in.Version); err != nil {
-			return err
-		}
-		if err := s.tenants.UpdateSettings(ctx, st); err != nil {
-			return fmt.Errorf("save settings: %w", err)
-		}
-		return s.events.Publish(ctx, tenancy.SettingsUpdated{Version: st.Version() + 1, By: by.UserID()})
-	})
-	if err != nil {
-		return SettingsView{}, err
-	}
-	return settingsView(st, st.Version()+1), nil // the repository stored the next version
 }

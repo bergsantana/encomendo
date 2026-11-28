@@ -11,6 +11,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/workflow"
 )
 
 // Users is a UserDirectory over an in-memory list.
@@ -75,15 +76,50 @@ func (u *Users) UsersByID(ctx context.Context, ids []shared.UserID) ([]apptenanc
 	return out, nil
 }
 
-// Workflows is a WorkflowPresets with one default preset.
-type Workflows struct {
-	mu   sync.Mutex
-	ref  tenancy.WorkflowRef
-	fail error
+type presetKey struct {
+	id      shared.WorkflowID
+	version int
 }
 
-// NewWorkflows returns presets whose default is ref.
-func NewWorkflows(ref tenancy.WorkflowRef) *Workflows { return &Workflows{ref: ref} }
+// Workflows is a WorkflowPresets over a few presets, one of them the
+// default. Like the real port it refuses calls outside a fake transaction.
+type Workflows struct {
+	mu      sync.Mutex
+	def     tenancy.WorkflowRef
+	presets map[presetKey]preset
+	fail    error
+}
+
+type preset struct {
+	ref      tenancy.WorkflowRef
+	statuses []apptenancy.WorkflowStatus
+}
+
+// NewWorkflows returns presets whose default is ref, with a short list of
+// statuses.
+func NewWorkflows(ref tenancy.WorkflowRef) *Workflows {
+	w := &Workflows{def: ref, presets: map[presetKey]preset{}}
+	w.Add(ref, []apptenancy.WorkflowStatus{
+		{Key: "draft", Label: "Rascunho", ClientLabel: "Pedido recebido", Phase: workflow.PhaseDraft},
+		{Key: "delivered", Label: "Entregue", ClientLabel: "Entregue", Phase: workflow.PhaseHandedOver},
+	})
+	return w
+}
+
+// Add publishes a preset version with its statuses.
+func (w *Workflows) Add(ref tenancy.WorkflowRef, statuses []apptenancy.WorkflowStatus) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.presets[presetKey{ref.ID, ref.Version}] = preset{ref: ref, statuses: statuses}
+}
+
+// Remove unpublishes a preset version, to test a store that points at one
+// that is gone.
+func (w *Workflows) Remove(ref tenancy.WorkflowRef) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.presets, presetKey{ref.ID, ref.Version})
+}
 
 // Fail makes every later call return err; nil heals it.
 func (w *Workflows) Fail(err error) {
@@ -92,17 +128,49 @@ func (w *Workflows) Fail(err error) {
 	w.fail = err
 }
 
+func (w *Workflows) enter(ctx context.Context) error {
+	if !sharedfake.InTx(ctx) {
+		return appshared.ErrNoTransaction
+	}
+	return w.fail
+}
+
 // DefaultWorkflow implements WorkflowPresets.
 func (w *Workflows) DefaultWorkflow(ctx context.Context) (tenancy.WorkflowRef, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if !sharedfake.InTx(ctx) {
-		return tenancy.WorkflowRef{}, appshared.ErrNoTransaction
+	if err := w.enter(ctx); err != nil {
+		return tenancy.WorkflowRef{}, err
 	}
-	if w.fail != nil {
-		return tenancy.WorkflowRef{}, w.fail
+	return w.def, nil
+}
+
+// Exists implements WorkflowPresets.
+func (w *Workflows) Exists(ctx context.Context, id shared.WorkflowID, version int) (tenancy.WorkflowRef, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.enter(ctx); err != nil {
+		return tenancy.WorkflowRef{}, err
 	}
-	return w.ref, nil
+	p, ok := w.presets[presetKey{id, version}]
+	if !ok {
+		return tenancy.WorkflowRef{}, shared.ErrNotFound
+	}
+	return p.ref, nil
+}
+
+// Statuses implements WorkflowPresets.
+func (w *Workflows) Statuses(ctx context.Context, id shared.WorkflowID, version int) ([]apptenancy.WorkflowStatus, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.enter(ctx); err != nil {
+		return nil, err
+	}
+	p, ok := w.presets[presetKey{id, version}]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	return slices.Clone(p.statuses), nil
 }
 
 // Mailer is an InvitationMailer that keeps what it sent.

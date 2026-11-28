@@ -6,6 +6,7 @@ import (
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/workflow"
 )
 
 // ErrEmailUnavailable means an invitation was saved but its email could not
@@ -20,10 +21,19 @@ type CreateTenantInput struct {
 }
 
 // UpdateSettingsInput replaces the editable settings, with the version read
-// (PUT /api/v1/admin/settings).
+// (PUT /api/v1/admin/settings). An empty Settings.TimeZone, from a client
+// that leaves it out, keeps the stored zone.
 type UpdateSettingsInput struct {
 	Settings tenancy.Editable
 	Version  int
+}
+
+// ChooseWorkflowInput picks the status workflow new orders take (PUT
+// /api/v1/admin/settings/status-workflow).
+type ChooseWorkflowInput struct {
+	Workflow        shared.WorkflowID
+	Version         int
+	ExpectedVersion int // the settings version read
 }
 
 // ChangeRoleInput gives a member another role (PUT
@@ -48,11 +58,27 @@ type TenantView struct {
 	CreatedAt time.Time
 }
 
+// WorkflowStatus is one status of a workflow as the settings screen
+// previews it.
+type WorkflowStatus struct {
+	Key         workflow.StatusKey
+	Label       string
+	ClientLabel string
+	Phase       workflow.Phase
+}
+
+// WorkflowView is the store's status workflow with its statuses in order
+// (the StatusWorkflowRef schema).
+type WorkflowView struct {
+	Ref      tenancy.WorkflowRef
+	Statuses []WorkflowStatus
+}
+
 // SettingsView is a store's settings (the TenantSettings schema).
 type SettingsView struct {
 	Editable tenancy.Editable
 	Currency string
-	Workflow tenancy.WorkflowRef
+	Workflow WorkflowView
 	Version  int
 }
 
@@ -79,8 +105,10 @@ func tenantView(t *tenancy.Tenant) TenantView {
 	return TenantView{ID: t.ID(), Name: t.Name().String(), Slug: t.Slug().String(), CreatedAt: t.CreatedAt()}
 }
 
-func settingsView(s *tenancy.Settings, version int) SettingsView {
-	return SettingsView{Editable: s.Editable(), Currency: s.Currency(), Workflow: s.Workflow(), Version: version}
+func settingsView(s *tenancy.Settings, statuses []WorkflowStatus, version int) SettingsView {
+	return SettingsView{
+		Editable: s.Editable(), Currency: s.Currency(), Workflow: WorkflowView{Ref: s.Workflow(), Statuses: statuses}, Version: version,
+	}
 }
 
 func invitationView(inv *tenancy.Invitation) InvitationView {

@@ -59,3 +59,15 @@ func TestFakeIDs_Contract(t *testing.T) {
 		return sharedfake.NewIDs(sharedfake.NewClock(start))
 	})
 }
+
+func TestFakeIdempotency_Contract(t *testing.T) {
+	RunIdempotencyContract(t, func(*testing.T) IdempotencyHarness {
+		return IdempotencyHarness{
+			Tx:       sharedfake.NewTxManager(),
+			Keys:     sharedfake.NewIdempotency(sharedfake.NewClock(start)),
+			Store:    shared.TenantID(shared.NewV7(start.UnixMilli(), [10]byte{0xa})),
+			Other:    shared.TenantID(shared.NewV7(start.UnixMilli(), [10]byte{0xb})),
+			Resource: shared.NewV7(start.UnixMilli(), [10]byte{0xc}).String(),
+		}
+	})
+}

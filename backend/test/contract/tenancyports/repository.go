@@ -29,6 +29,8 @@ type Harness struct {
 	NewSlug func(t *testing.T) string
 	// Workflow is a published preset settings may point at.
 	Workflow tenancy.WorkflowRef
+	// OtherWorkflow is a second published preset a store may switch to.
+	OtherWorkflow tenancy.WorkflowRef
 	// Now is a recent time, at the store's precision (microseconds for
 	// Postgres); every timestamp is built from it.
 	Now time.Time
@@ -186,8 +188,18 @@ func settingsUpdate(t *testing.T, h Harness) {
 		if err != nil {
 			return err
 		}
-		next := tenancy.Editable{ProductionEnabled: true, DepositPercent: 0, AssemblyDays: 0, SafetyMarginDays: 7, WhatsAppPhone: "5592991234567"}
+		if s.Editable().TimeZone != tenancy.ZoneSaoPaulo {
+			t.Errorf("a new store's zone = %q, want America/Sao_Paulo", s.Editable().TimeZone)
+		}
+		next := tenancy.Editable{
+			ProductionEnabled: true, DepositPercent: 0, AssemblyDays: 0, SafetyMarginDays: 7, WhatsAppPhone: "5592991234567",
+			TimeZone: tenancy.ZoneRioBranco,
+		}
 		if err := s.Change(next, 1); err != nil {
+			return err
+		}
+		// Choosing a workflow and changing the settings save together.
+		if err := s.ChooseWorkflow(h.OtherWorkflow, 1); err != nil {
 			return err
 		}
 		if err := h.Tenants.UpdateSettings(ctx, s); err != nil {
@@ -196,6 +208,9 @@ func settingsUpdate(t *testing.T, h Harness) {
 		got, err := h.Tenants.SettingsOf(ctx, tn.ID())
 		if err != nil || got.Editable() != next || got.Version() != 2 {
 			t.Errorf("after the update: %+v, %v; want the new values, zeros and false included, at version 2", got, err)
+		}
+		if err == nil && got.Workflow() != h.OtherWorkflow {
+			t.Errorf("workflow after the update = %+v, want %+v, with its name", got.Workflow(), h.OtherWorkflow)
 		}
 		if err := h.Tenants.UpdateSettings(ctx, s); !errors.Is(err, shared.ErrVersionConflict) {
 			t.Errorf("a stale update: %v, want ErrVersionConflict", err)

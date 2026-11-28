@@ -24,6 +24,7 @@ func TestEvents_HaveStableNamesAndNoPersonalData(t *testing.T) {
 		"tenancy.member_role_changed": MemberRoleChanged{UserID: staffID, From: shared.RoleStaff, To: shared.RoleAdmin, By: ownerID},
 		"tenancy.member_removed":      MemberRemoved{UserID: staffID, By: ownerID},
 		"tenancy.settings_updated":    SettingsUpdated{Version: 2, By: ownerID},
+		"tenancy.workflow_chosen":     WorkflowChosen{Workflow: defaultWorkflow.ID, Version: 1},
 	}
 	for name, e := range events {
 		if e.EventName() != name {
@@ -48,6 +49,7 @@ func TestErrors_MatchTheirSentinels(t *testing.T) {
 		{ErrSlugTaken, shared.ErrConflict},            // 409 slug_taken
 		{ErrAlreadyMember, shared.ErrConflict},        // 409 already_member
 		{ErrOwnerFixed, shared.ErrForbidden},          // 403 forbidden
+		{ErrWorkflowNotFound, shared.ErrNotFound},     // 404 workflow_not_found
 		{ErrInvitationNotPending, shared.ErrNotFound}, // 404 not_found
 	} {
 		if !errors.Is(c.err, c.sentinel) {

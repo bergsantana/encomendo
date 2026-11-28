@@ -14,6 +14,7 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/app/tenancy/fake"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
+	"github.com/bergsantana/encomendo/backend/internal/domain/workflow"
 )
 
 var (
@@ -154,8 +155,11 @@ func TestCreateTenant_MakesTheCallerOwnerWithDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Workflow != h.preset || s.Editable.DepositPercent != 50 || s.Currency != "BRL" || s.Version != 1 {
+	if s.Workflow.Ref != h.preset || s.Editable.DepositPercent != 50 || s.Currency != "BRL" || s.Version != 1 {
 		t.Errorf("settings = %+v; want the defaults and the default workflow", s)
+	}
+	if s.Editable.TimeZone != tenancy.ZoneSaoPaulo || len(s.Workflow.Statuses) != 2 || s.Workflow.Statuses[0].Phase != workflow.PhaseDraft {
+		t.Errorf("settings = %+v; want Brasília time and the workflow's statuses", s)
 	}
 	if got := h.events.Names(); !slices.Equal(got, []string{"tenancy.tenant_created"}) {
 		t.Errorf("events = %v", got)
@@ -251,7 +255,7 @@ func TestUpdateSettings(t *testing.T) {
 	h := newHarness(t)
 	store, owner := h.newStore(t, "altarpm")
 	ctx := as(t, owner, store, shared.RoleOwner)
-	next := tenancy.Editable{StockEnabled: true, DepositPercent: 30, AssemblyDays: 5, SafetyMarginDays: 1, WhatsAppPhone: "5592991234567"}
+	next := tenancy.Editable{StockEnabled: true, DepositPercent: 30, AssemblyDays: 5, SafetyMarginDays: 1, WhatsAppPhone: "5592991234567", TimeZone: tenancy.ZoneManaus}
 
 	saved, err := h.svc.UpdateSettings(ctx, apptenancy.UpdateSettingsInput{Settings: next, Version: 1})
 	if err != nil {
@@ -261,7 +265,7 @@ func TestUpdateSettings(t *testing.T) {
 	if saved.Editable != next || saved.Version != 2 {
 		t.Errorf("saved = %+v; want the new settings at version 2", saved)
 	}
-	if read, _ := h.svc.Settings(ctx); read != saved {
+	if read, _ := h.svc.Settings(ctx); !equalSettings(read, saved) {
 		t.Errorf("read back %+v, want %+v", read, saved)
 	}
 	if _, err := h.svc.UpdateSettings(ctx, apptenancy.UpdateSettingsInput{Settings: next, Version: 1}); !errors.Is(err, shared.ErrVersionConflict) {
@@ -271,8 +275,192 @@ func TestUpdateSettings(t *testing.T) {
 	if got := fieldsOf(t, err); !slices.Equal(got, []string{"depositPercent"}) {
 		t.Errorf("invalid: fields %v", got)
 	}
+	_, err = h.svc.UpdateSettings(ctx, apptenancy.UpdateSettingsInput{Settings: tenancy.Editable{TimeZone: "UTC"}, Version: 2})
+	if got := fieldsOf(t, err); !slices.Equal(got, []string{"timeZone"}) {
+		t.Errorf("a zone outside the four: fields %v", got)
+	}
 	if ev, ok := h.events.Published()[len(h.events.Published())-1].(tenancy.SettingsUpdated); !ok || ev.Version != 2 || ev.By != owner {
 		t.Errorf("last event = %+v; want settings_updated at version 2 by the owner", h.events.Published()[len(h.events.Published())-1])
+	}
+}
+
+// equalSettings compares views, whose statuses make them incomparable with ==.
+func equalSettings(a, b apptenancy.SettingsView) bool {
+	return a.Editable == b.Editable && a.Currency == b.Currency && a.Version == b.Version &&
+		a.Workflow.Ref == b.Workflow.Ref && slices.Equal(a.Workflow.Statuses, b.Workflow.Statuses)
+}
+
+// An older client leaves timeZone out of the PUT: the stored zone stays, it
+// never falls back to São Paulo (docs/api/openapi.yaml, TimeZone).
+func TestUpdateSettings_OmittedTimeZoneKeepsTheStoredOne(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	ctx := as(t, owner, store, shared.RoleOwner)
+	withZone := tenancy.Editable{DepositPercent: 50, TimeZone: tenancy.ZoneRioBranco}
+	if _, err := h.svc.UpdateSettings(ctx, apptenancy.UpdateSettingsInput{Settings: withZone, Version: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	saved, err := h.svc.UpdateSettings(ctx, apptenancy.UpdateSettingsInput{Settings: tenancy.Editable{DepositPercent: 40}, Version: 2})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Editable.TimeZone != tenancy.ZoneRioBranco || saved.Editable.DepositPercent != 40 {
+		t.Errorf("saved = %+v, want the deposit changed and America/Rio_Branco kept", saved.Editable)
+	}
+	read, err := h.svc.Settings(ctx)
+	if err != nil || read.Editable.TimeZone != tenancy.ZoneRioBranco {
+		t.Errorf("read back zone %q, %v; want America/Rio_Branco", read.Editable.TimeZone, err)
+	}
+}
+
+// ---- Status workflow choice ----
+
+// otherPreset publishes a second preset the owner can choose.
+func (h *harness) otherPreset() tenancy.WorkflowRef {
+	ref := tenancy.WorkflowRef{ID: shared.WorkflowID(h.ids.NewID()), Version: 1, Name: "Pronta entrega"}
+	h.workflows.Add(ref, []apptenancy.WorkflowStatus{
+		{Key: "draft", Label: "Rascunho", ClientLabel: "Pedido recebido", Phase: workflow.PhaseDraft},
+		{Key: "picked_up", Label: "Retirado", ClientLabel: "Retirado", Phase: workflow.PhaseHandedOver},
+		{Key: "extra", Label: "Extra", ClientLabel: "Extra", Phase: workflow.PhaseHandedOver},
+	})
+	return ref
+}
+
+func TestChooseStatusWorkflow_SavesItAndPublishesTheEventInTheTransaction(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	ctx := as(t, owner, store, shared.RoleOwner)
+	other := h.otherPreset()
+	before := len(h.events.Published())
+
+	saved, err := h.svc.ChooseStatusWorkflow(ctx, apptenancy.ChooseWorkflowInput{Workflow: other.ID, Version: 1, ExpectedVersion: 1})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Workflow.Ref != other || len(saved.Workflow.Statuses) != 3 || saved.Version != 2 {
+		t.Errorf("saved = %+v; want the new workflow with its statuses at version 2", saved)
+	}
+	if read, err := h.svc.Settings(ctx); err != nil || !equalSettings(read, saved) {
+		t.Errorf("read back %+v, %v; want %+v", read, err, saved)
+	}
+	published := h.events.Published()
+	if len(published) != before+1 {
+		t.Fatalf("%d events published, want one more", len(published)-before)
+	}
+	ev, ok := published[before].(tenancy.WorkflowChosen)
+	if !ok || ev.Workflow != other.ID || ev.Version != 1 || ev.EventName() != "tenancy.workflow_chosen" {
+		t.Errorf("event = %+v", published[before])
+	}
+	if rec := h.events.Records()[before]; rec.TenantID != store {
+		t.Errorf("event stored under %v, want the store", rec.TenantID)
+	}
+}
+
+func TestChooseStatusWorkflow_OnlyTheOwner(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, _ := h.newStore(t, "altarpm")
+	other := h.otherPreset()
+	in := apptenancy.ChooseWorkflowInput{Workflow: other.ID, Version: 1, ExpectedVersion: 1}
+	for _, role := range []shared.Role{shared.RoleAdmin, shared.RoleStaff, shared.RoleViewer} {
+		user := h.user(t, string(role), string(role)+"@ex.com")
+		h.join(t, store, user, role)
+
+		if _, err := h.svc.ChooseStatusWorkflow(as(t, user, store, role), in); !errors.Is(err, shared.ErrForbidden) {
+			t.Errorf("%s: %v, want ErrForbidden", role, err)
+		}
+	}
+	if _, err := h.svc.ChooseStatusWorkflow(context.Background(), in); !errors.Is(err, shared.ErrUnauthenticated) {
+		t.Errorf("no caller: %v, want ErrUnauthenticated", err)
+	}
+	if got := h.events.Names(); slices.Contains(got, "tenancy.workflow_chosen") {
+		t.Errorf("events = %v; a refused call published one", got)
+	}
+}
+
+func TestChooseStatusWorkflow_UnknownPresetIsNotFound(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	ctx := as(t, owner, store, shared.RoleOwner)
+
+	for name, in := range map[string]apptenancy.ChooseWorkflowInput{
+		"unknown id":      {Workflow: shared.WorkflowID(h.ids.NewID()), Version: 1, ExpectedVersion: 1},
+		"unknown version": {Workflow: h.preset.ID, Version: 9, ExpectedVersion: 1},
+		"zero id":         {Version: 1, ExpectedVersion: 1},
+	} {
+		_, err := h.svc.ChooseStatusWorkflow(ctx, in)
+		if !errors.Is(err, tenancy.ErrWorkflowNotFound) || !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s: %v, want ErrWorkflowNotFound", name, err)
+		}
+	}
+	if read, _ := h.svc.Settings(ctx); read.Workflow.Ref != h.preset || read.Version != 1 {
+		t.Errorf("settings = %+v; a refused choice changed them", read)
+	}
+}
+
+func TestChooseStatusWorkflow_StaleVersionConflicts(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	ctx := as(t, owner, store, shared.RoleOwner)
+	other := h.otherPreset()
+
+	_, err := h.svc.ChooseStatusWorkflow(ctx, apptenancy.ChooseWorkflowInput{Workflow: other.ID, Version: 1, ExpectedVersion: 7})
+
+	if !errors.Is(err, shared.ErrVersionConflict) {
+		t.Errorf("err = %v, want ErrVersionConflict", err)
+	}
+	if read, _ := h.svc.Settings(ctx); read.Workflow.Ref != h.preset {
+		t.Errorf("workflow = %+v; a stale choice changed it", read.Workflow.Ref)
+	}
+}
+
+func TestChooseStatusWorkflow_FailuresAreNotHidden(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	ctx := as(t, owner, store, shared.RoleOwner)
+	other := h.otherPreset()
+	in := apptenancy.ChooseWorkflowInput{Workflow: other.ID, Version: 1, ExpectedVersion: 1}
+
+	h.workflows.Fail(errBoom)
+	if _, err := h.svc.ChooseStatusWorkflow(ctx, in); !errors.Is(err, errBoom) || errors.Is(err, tenancy.ErrWorkflowNotFound) {
+		t.Errorf("a failing preset read: %v, want it passed through", err)
+	}
+	h.workflows.Fail(nil)
+	h.store.Fail("SettingsOf", shared.ErrNotFound)
+	if _, err := h.svc.ChooseStatusWorkflow(ctx, in); err == nil || errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("a missing settings row: %v, want a 500 that matches no sentinel", err)
+	}
+	h.store.Fail("SettingsOf", nil)
+	h.store.Fail("UpdateSettings", errBoom)
+	if _, err := h.svc.ChooseStatusWorkflow(ctx, in); !errors.Is(err, errBoom) {
+		t.Errorf("a failing save: %v", err)
+	}
+	h.store.Fail("UpdateSettings", nil)
+	if read, _ := h.svc.Settings(ctx); read.Workflow.Ref != h.preset || read.Version != 1 {
+		t.Errorf("settings = %+v; a failed choice must change nothing", read)
+	}
+}
+
+// A store whose workflow has no published statuses is a bug, not a 404 the
+// apps would read as "no such store".
+func TestSettings_AMissingWorkflowIsABug(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	store, owner := h.newStore(t, "altarpm")
+	h.workflows.Remove(h.preset)
+
+	_, err := h.svc.Settings(as(t, owner, store, shared.RoleOwner))
+
+	if err == nil || errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("err = %v, want an error that matches no sentinel", err)
 	}
 }
 

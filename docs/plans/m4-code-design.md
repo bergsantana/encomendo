@@ -1299,6 +1299,19 @@ func NewTrackingView(o *order.Order, store string) TrackingView
   The thresholds are constants in `today.go` (`awaitingDepositDays = 3`, `readyDays = 2`).
 - `Finance(from, to)`: `Received{Total, ByKind, ByMethod}` from non-void payments in the period (in the store zone); `ToReceive{Total, Orders}` from active orders with a balance; `ToRefund []…`; `Margins []MarginRow` from orders handed over in the period, `Margin` nil without a full cost. `from` after `to` or a period over 366 days → `ErrInvalid`.
 
+### 3.6a As built in 4.10
+
+- **`OrderView` is `View`.** revive refuses the stutter `order.OrderView`; `app/customer` and `app/supplier` name theirs `View` too. Write answers carry the version the repository stored, which is the read version + 1.
+- **`Customers.FindOrCreate(ctx, name, phone)`** replaces `Create(ctx, name, phone)`: the method finds the store's customer by phone first, unchanged, and creates one only when there is none. `inproc.OrderCustomers` builds it over `appcustomer.UseCases.ByPhone` and `Create`.
+- **`Repository` holds the write methods** (`NextNumber`, `Insert`, `Update`, `ByID`, `AddMessage`). 4.11 adds the query methods (`List`, `Active`, `History`, `Payments`, `HandedOver`) and the `UseCases` queries.
+- **`Message`** is `{ID, Order, Kind, ToPhone, Text, URL, By, At}`. Its text and its `wa.me` URL have the tracking link replaced by `[link de acompanhamento]`. The URL the user opens, from the answer, carries the link.
+- **Lines on a change** (`lines.go`):
+  - A line sent back unchanged keeps its old price, snapshots, sourcing and ids. Unchanged means the same kit and swaps, or the same item and quantity, and the same choices. So later catalog edits never reprice it.
+  - Any other line is priced by the catalog now. When it is the same kit or loose item as an old line, the items it still holds keep their ids, sourcing and lead days. So their status and a backup-supplier switch survive.
+- **`write`** is one helper for the writes that load an order at a version, change it, save it with its events, and answer the view. `anyVersion` skips the version check, for the tracking link.
+- **`Quote` with `Order` set** runs the change on the loaded order in memory and never saves it. A quote with no customer names a delivery address but does not look it up.
+- **`app/catalog.OrderLines`** returns its own types (`OrderLine`, `OrderItem`, `SupplierFact`, `OrderKit`, `ChosenOption`). `inproc.OrderCatalog` maps them to `order.LineSpec`. An archived kit is an error matching `catalog.ErrItemArchived`.
+
 ### 3.7 `app/schedule` (step 4.11)
 
 ```go
@@ -1529,5 +1542,14 @@ Rules that the reviewers will check:
   - **Idempotency keys are per store.** Before the store page uses them, add who made the call (staff user, client account, or a store-page marker) to the key, so an anonymous caller can neither replay nor probe another's key.
   - **Some columns clients must never see sit on rows they can read:** `order_items.expected_date`, `orders.cancel_reason`, `released_by` and `tracking_token_hash`, and `payments.recorded_by`, `voided_by` and `void_reason`. They are readable under `client_read`, and under `tenant_isolation` by a store-page scope. Client-area and tracking repositories therefore name their columns and never load the admin models. Consider a `security_invoker` view with only the client columns. Customers' phones and emails are readable by a store-page scope too; M7 needs that to match a customer by phone, so the app layer is the only guard there.
   - **Low:** the payment grants would let a void be undone, which only the domain stops. And any scope of the store may delete a live idempotency key: limit deletes to expired keys when the worker takes them over.
+- From the reviews of 4.8–4.11, for M7 and later:
+  - **The store page needs its own answer types.** `Quote` and `Create` answer staff types: `QuoteView` has the arrival limit, the safety margin and each item's expected date, and `CreatedView.Order` has supplier names. The store page's Preview and checkout must answer client view types: price, deposit and the ready-by date only.
+  - **An address id from another store** sent to the customer repository's upsert fails with an RLS error (a 500) instead of `ErrInvalid`. `app/customer` never sends one; a cross-store contract case should pin it.
+  - **`schedule.Recalculate`** checks access and the order's store but redates nothing yet, because the domain has no public redate. M5 adds one (for example `Order.Redate`) when it records promised dates, and `Recalculate` then saves.
+  - **Hoje and Financeiro** read at most 500 active orders and 2000 hand-overs. Past that they set `truncated` and the screen says so; M8 load-tests and pages them. Financeiro carries `marginsTotal`, so clients never add money up.
+  - **A time zone change** leaves the dates already computed as they were: nothing calls `schedule.Recalculate` from settings. M5 (or the owner's change of zone, if it matters before then) adds the call once `Recalculate` redates.
+  - **Customer names** in lists, Hoje and Financeiro are read one customer at a time (cached per call). A batch read on the `Customers` port is the fix if the queries show it slow.
+  - **Product to confirm:** "A receber" includes drafts (active orders), and "há mais de 3 dias" means strictly more than 3.
+  - **The HTTP layer (4.14)** maps `appshared.ErrIdempotencyKeyReused` to 422 `idempotency_key_reused` and `ErrIdempotencyKeyInFlight` to 409 `conflict`, before the generic conflict. It requires `handover` and `freightCents` in `TermsInput`, and puts the method and path in the request hash.
 - `order.deposit_confirmed` fires again when a voided deposit is paid again, so M5's `GeneratePurchases` must be idempotent per order item: a line that already exists for an item is never made twice.
 - M7's `PlaceOrder` reuses the find-by-phone path of `Create`. On the public store page a phone proves nothing, so for a customer matched only by phone it must answer no customer facts (name, addresses) and must not use the stored addresses; the delivery address comes from the checkout form (security review of 4.1, D5). 4.10 writes this in `app/order/doc.go`.

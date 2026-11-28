@@ -192,3 +192,31 @@ func optionInCurrency(o CustomizationOption, currency string) bool {
 	}
 	return true
 }
+
+// PriceWithOptions returns what a loose item costs with the client's
+// choices: (unit price + every chosen extra) × quantity (ADR 0024). It
+// returns shared.ErrCurrencyMismatch when an extra is in another currency
+// and shared.ErrMoneyOverflow when the result does not fit.
+func PriceWithOptions(unit shared.Money, extras []shared.Money, quantity int) (shared.Money, error) {
+	each, err := AddOptionExtras(unit, extras, 1)
+	if err != nil {
+		return shared.Money{}, err
+	}
+	return times(each, quantity)
+}
+
+// AddOptionExtras returns base + every extra × quantity: a kit's price with
+// the choices made for one of its items, which the kit holds quantity of.
+// Errors are those of PriceWithOptions.
+func AddOptionExtras(base shared.Money, extras []shared.Money, quantity int) (shared.Money, error) {
+	for _, e := range extras {
+		part, err := times(e, quantity)
+		if err != nil {
+			return shared.Money{}, err
+		}
+		if base, err = base.Add(part); err != nil {
+			return shared.Money{}, err
+		}
+	}
+	return base, nil
+}

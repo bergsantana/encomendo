@@ -192,7 +192,7 @@ func (s *Store) UpdateSettings(ctx context.Context, st *tenancy.Settings) error 
 		return shared.ErrVersionConflict
 	}
 	sharedfake.KeepOnRollback(ctx, &s.mu, s.settings, st.TenantID())
-	r.Editable, r.Version = st.Editable(), r.Version+1
+	r.Editable, r.Workflow, r.Version = st.Editable(), st.Workflow(), r.Version+1
 	s.settings[st.TenantID()] = r
 	return nil
 }

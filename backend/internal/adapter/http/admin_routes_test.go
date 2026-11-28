@@ -76,6 +76,11 @@ func (u *tenancyReached) UpdateSettings(context.Context, apptenancy.UpdateSettin
 	return apptenancy.SettingsView{}, shared.ErrForbidden
 }
 
+func (u *tenancyReached) ChooseStatusWorkflow(context.Context, apptenancy.ChooseWorkflowInput) (apptenancy.SettingsView, error) {
+	u.calls++
+	return apptenancy.SettingsView{}, shared.ErrForbidden
+}
+
 func (u *tenancyReached) Members(context.Context, shared.PageRequest) (shared.Page[apptenancy.MemberView], error) {
 	u.calls++
 	return shared.Page[apptenancy.MemberView]{}, shared.ErrForbidden

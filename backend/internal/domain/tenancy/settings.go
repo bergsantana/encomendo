@@ -28,7 +28,7 @@ type WorkflowRef struct {
 func (w WorkflowRef) IsZero() bool { return w.ID.IsZero() || w.Version < 1 }
 
 // Editable is what the owner changes in settings. The workflow is chosen
-// elsewhere (milestone 4) and the currency is fixed.
+// with ChooseWorkflow and the currency is fixed.
 type Editable struct {
 	StockEnabled          bool // Estoque and the stock sourcing mode
 	ProductionEnabled     bool // Produção and the in-house sourcing mode
@@ -37,11 +37,12 @@ type Editable struct {
 	AssemblyDays          int
 	SafetyMarginDays      int    // Margem de segurança
 	WhatsAppPhone         string // 55 + DDD + number, digits only; "" for none
+	TimeZone              TimeZone
 }
 
 // Validate returns a ValidationError listing every field out of range: the
-// deposit 0 to 100, assembly days and safety margin 0 to 365, and the
-// WhatsApp number as wa.me needs it.
+// deposit 0 to 100, assembly days and safety margin 0 to 365, the WhatsApp
+// number as wa.me needs it, and a time zone among Zones.
 func (e Editable) Validate() error {
 	var fields []shared.FieldError
 	if e.DepositPercent < 0 || e.DepositPercent > maxDepositPercent {
@@ -59,6 +60,9 @@ func (e Editable) Validate() error {
 			Message: "Use 55, o DDD e o número, só com dígitos. Exemplo: 5592991234567.",
 		})
 	}
+	if !e.TimeZone.Valid() {
+		fields = append(fields, shared.FieldError{Field: "timeZone", Message: "Escolha o fuso horário."})
+	}
 	if len(fields) > 0 {
 		return shared.NewValidationError(fields...)
 	}
@@ -75,9 +79,9 @@ type Settings struct {
 }
 
 // DefaultSettings returns a new store's settings (docs/architecture.md 4.2):
-// deposit 50%, assembly 3 days, safety margin 2 days, BRL, stock and
-// production off, purchases only after the deposit, and workflow as the
-// status workflow. It returns ErrInvalidSettings for a zero tenant or
+// deposit 50%, assembly 3 days, safety margin 2 days, BRL, Brasília time,
+// stock and production off, purchases only after the deposit, and workflow
+// as the status workflow. It returns ErrInvalidSettings for a zero tenant or
 // workflow.
 func DefaultSettings(tenant shared.TenantID, workflow WorkflowRef) (*Settings, error) {
 	if tenant.IsZero() || workflow.IsZero() {
@@ -86,7 +90,7 @@ func DefaultSettings(tenant shared.TenantID, workflow WorkflowRef) (*Settings, e
 	return &Settings{
 		tenant:   tenant,
 		workflow: workflow,
-		editable: Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2},
+		editable: Editable{DepositPercent: 50, AssemblyDays: 3, SafetyMarginDays: 2, TimeZone: ZoneSaoPaulo},
 		currency: defaultCurrency,
 		version:  1,
 	}, nil
@@ -143,5 +147,21 @@ func (s *Settings) Change(e Editable, expectedVersion int) error {
 		return shared.ErrVersionConflict
 	}
 	s.editable = e
+	return nil
+}
+
+// ChooseWorkflow makes w the status workflow new orders take; orders already
+// made keep theirs (ADR 0004). It returns ErrInvalidSettings for a zero
+// reference and shared.ErrVersionConflict when expectedVersion is not the
+// version read; either way nothing changes. Whether w exists is the use
+// case's check.
+func (s *Settings) ChooseWorkflow(w WorkflowRef, expectedVersion int) error {
+	if w.IsZero() {
+		return fmt.Errorf("choose workflow for %v: %w", s.tenant, ErrInvalidSettings)
+	}
+	if expectedVersion != s.version {
+		return shared.ErrVersionConflict
+	}
+	s.workflow = w
 	return nil
 }
