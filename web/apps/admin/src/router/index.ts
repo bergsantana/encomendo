@@ -74,6 +74,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { permission: 'order:read' },
       },
       {
+        path: 'financeiro',
+        name: 'finance',
+        component: () => import('../features/financeiro/views/FinanceiroView.vue'),
+        meta: { permission: 'finance:read' },
+      },
+      {
         path: 'equipe',
         name: 'members',
         component: () => import('../features/members/views/MembersView.vue'),
