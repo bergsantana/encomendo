@@ -8,21 +8,11 @@
 import type { FinanceSummary } from '@encomendo/api'
 
 import { formatMoney } from '../../../format'
+import { paymentKindLabel, paymentMethodLabel } from '../../../paymentLabels'
 
 const props = defineProps<{
   received: FinanceSummary['received']
 }>()
-
-// A key the screen does not know yet is shown as the server wrote it, never hidden.
-const kindLabels: Record<string, string> = { deposit: 'Sinal', balance: 'Saldo' }
-const methodLabels: Record<string, string> = {
-  pix: 'Pix',
-  dinheiro: 'Dinheiro',
-  cartao_credito: 'Cartão de crédito',
-  cartao_debito: 'Cartão de débito',
-  transferencia: 'Transferência',
-  outro: 'Outro',
-}
 
 const empty = (): boolean => props.received.byKind.length === 0 && props.received.byMethod.length === 0
 </script>
@@ -56,7 +46,7 @@ const empty = (): boolean => props.received.byKind.length === 0 && props.receive
               :key="entry.key"
             >
               <th scope="row">
-                {{ kindLabels[entry.key] ?? entry.key }}
+                {{ paymentKindLabel(entry.key) }}
               </th>
               <td class="enc-number">
                 {{ formatMoney(entry.total.cents, entry.total.currency) }}
@@ -74,7 +64,7 @@ const empty = (): boolean => props.received.byKind.length === 0 && props.receive
               :key="entry.key"
             >
               <th scope="row">
-                {{ methodLabels[entry.key] ?? entry.key }}
+                {{ paymentMethodLabel(entry.key) }}
               </th>
               <td class="enc-number">
                 {{ formatMoney(entry.total.cents, entry.total.currency) }}

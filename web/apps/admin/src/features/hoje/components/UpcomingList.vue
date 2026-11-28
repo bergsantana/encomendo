@@ -10,16 +10,12 @@ import { StatusBadge } from '@encomendo/ui'
 import { RouterLink } from 'vue-router'
 
 import { formatCivilDate } from '../../../format'
+import { worstAlert } from '../../../alerts'
 import AlertBadge from '../../../components/AlertBadge.vue'
 
 defineProps<{
   orders: readonly OrderSummary[]
 }>()
-
-/** kinds lists each alert kind once, whatever the number of items it is about. */
-function kinds(order: OrderSummary): ('late' | 'at_risk')[] {
-  return [...new Set(order.alerts.map((alert) => alert.kind))]
-}
 </script>
 
 <template>
@@ -85,9 +81,8 @@ function kinds(order: OrderSummary): ('late' | 'at_risk')[] {
                 :phase="order.status.phase"
               />
               <AlertBadge
-                v-for="kind in kinds(order)"
-                :key="kind"
-                :kind="kind"
+                v-if="worstAlert(order.alerts) !== null"
+                :kind="worstAlert(order.alerts) ?? 'at_risk'"
               />
             </span>
           </td>

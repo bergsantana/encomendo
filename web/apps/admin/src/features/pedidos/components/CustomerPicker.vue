@@ -55,6 +55,10 @@ function startOver(): void {
   emit('clear')
 }
 
+function create(): void {
+  emit('create', fresh.name, fresh.phone)
+}
+
 function searchNow(): void {
   clearTimeout(timer)
   emit('search', typed.value)
@@ -97,16 +101,18 @@ onBeforeUnmount(() => clearTimeout(timer))
       </p>
       <p
         v-if="orderError"
+        :id="`${searchId}-error`"
+        role="alert"
         class="error"
       >
         {{ orderError }}
       </p>
 
-      <form
+      <!-- Plain blocks, not forms: this picker sits inside the order's own form, and a submit here would save the order. -->
+      <div
         v-if="!adding"
         class="search"
         role="search"
-        @submit.prevent="searchNow"
       >
         <label :for="searchId">Buscar cliente</label>
         <input
@@ -114,9 +120,12 @@ onBeforeUnmount(() => clearTimeout(timer))
           type="search"
           autocomplete="off"
           :value="typed"
+          :aria-invalid="orderError ? 'true' : undefined"
+          :aria-describedby="orderError ? `${searchId}-error` : undefined"
           @input="onSearch"
+          @keydown.enter.prevent="searchNow"
         >
-      </form>
+      </div>
       <ul
         v-if="!adding && results.length > 0"
         class="results"
@@ -141,16 +150,15 @@ onBeforeUnmount(() => clearTimeout(timer))
         Nenhum cliente encontrado.
       </p>
 
-      <form
+      <div
         v-if="adding"
         class="fresh"
-        novalidate
-        @submit.prevent="emit('create', fresh.name, fresh.phone)"
       >
         <BaseInput
           v-model="fresh.name"
           label="Nome"
           :error="fieldErrors.name ?? null"
+          @keydown.enter.prevent="create"
         />
         <BaseInput
           v-model="fresh.phone"
@@ -158,16 +166,17 @@ onBeforeUnmount(() => clearTimeout(timer))
           hint="Com DDD, como (92) 99123-4567."
           inputmode="tel"
           :error="fieldErrors.phone ?? null"
+          @keydown.enter.prevent="create"
         />
         <div class="buttons">
-          <BaseButton type="submit">
+          <BaseButton @click="create">
             Criar cliente
           </BaseButton>
           <BaseButton @click="adding = false">
             Cancelar
           </BaseButton>
         </div>
-      </form>
+      </div>
       <div v-else>
         <BaseButton @click="adding = true">
           Novo cliente

@@ -149,6 +149,10 @@ describe('createAuthGuard', () => {
     )
 
     const { router, heading } = await open('/financeiro')
+    // The store forgets the failed attempt on the next task (a setTimeout 0, started
+    // earlier than this one, so it runs first). Waiting one task makes "the next
+    // navigation" a fact instead of a race with flushPromises.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     await router.push('/convite')
 
     expect(heading).toBe('Entrar')

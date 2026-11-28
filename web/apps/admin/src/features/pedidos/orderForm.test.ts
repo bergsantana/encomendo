@@ -226,6 +226,52 @@ describe('the customer', () => {
     expect(calls.creates[0]?.body.newCustomer).toBeDefined()
   })
 
+  it('does not save the order when "Criar cliente" is pressed with a line already in it', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await addItem(wrapper)
+    await button(wrapper, 'Novo cliente').trigger('click')
+    await field(wrapper, 'Nome').setValue('Carla Dias')
+    await field(wrapper, 'WhatsApp').setValue('(92) 98111-2222')
+
+    await button(wrapper, 'Criar cliente').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.chosen').text()).toContain('Carla Dias')
+    expect(calls.creates).toEqual([])
+    expect(wrapper.text()).not.toContain('Pedido P-0231 criado.')
+  })
+
+  it('searches on Enter in "Buscar cliente" without saving the order or complaining about the customer', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await addItem(wrapper)
+    const search = field(wrapper, 'Buscar cliente')
+    await search.setValue('Jo')
+    const before = calls.customerQueries.length
+
+    await search.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(calls.customerQueries.length).toBeGreaterThan(before)
+    expect(calls.creates).toEqual([])
+    expect(wrapper.text()).not.toContain('Informe o cliente do pedido.')
+  })
+
+  it('has no form inside the order form, and every button in it is a button or the one submit', async () => {
+    serve()
+    const { wrapper } = await openForm()
+    expect(wrapper.findAll('form form')).toHaveLength(0)
+    await button(wrapper, 'Novo cliente').trigger('click')
+    await addKit(wrapper)
+    await field(wrapper, 'Entrega').setValue(true)
+    await field(wrapper, 'Endereço').setValue('new')
+
+    expect(wrapper.findAll('form form')).toHaveLength(0)
+    const submits = wrapper.findAll('form button').filter((candidate) => candidate.attributes('type') === 'submit')
+    expect(submits.map((candidate) => candidate.text())).toEqual(['Salvar rascunho'])
+  })
+
   it('starts the customer over with the search box when "Trocar cliente" is pressed after a new one', async () => {
     serve()
     const { wrapper } = await openForm()
@@ -247,14 +293,14 @@ describe('the customer', () => {
     const { wrapper } = await openForm()
     await button(wrapper, 'Novo cliente').trigger('click')
 
-    await wrapper.get('form.fresh').trigger('submit')
+    await button(wrapper, 'Criar cliente').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Informe o nome do cliente.')
     expect(wrapper.text()).toContain('Informe o WhatsApp do cliente.')
 
     await field(wrapper, 'Nome').setValue('Carla Dias')
     await field(wrapper, 'WhatsApp').setValue('123')
-    await wrapper.get('form.fresh').trigger('submit')
+    await button(wrapper, 'Criar cliente').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Confira o número: use DDD e 8 ou 9 dígitos.')
     expect(wrapper.find('.chosen').exists()).toBe(false)

@@ -210,6 +210,49 @@ describe('the tabs', () => {
     expect(router.currentRoute.value.query).toEqual({ status: 'confirmado' })
   })
 
+  it('say "Nenhum pedido encontrado." for a phase with nothing, not "Nenhum pedido ainda."', async () => {
+    serve({ rows: [] })
+
+    const { wrapper } = await openApp('/pedidos?phase=awaiting_deposit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Nenhum pedido encontrado.'))
+
+    expect(wrapper.text()).not.toContain('Nenhum pedido ainda.')
+  })
+
+  it('show the phase as a chip in the store\'s own words, and clear it', async () => {
+    const seen = serve()
+    const { wrapper, router } = await openPedidos('/pedidos?phase=awaiting_deposit')
+
+    expect(wrapper.get('.chip').text()).toBe('Aguardando sinal ×')
+    await wrapper.get('.chip').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.chip').exists()).toBe(false)
+    expect(seen.at(-1)?.searchParams.get('phase')).toBeNull()
+    expect(router.currentRoute.value.query).toEqual({})
+  })
+
+  it('use the other workflow\'s words for the same phase', async () => {
+    serve({ workflow: prontaEntrega, rows: [pronta] })
+
+    const { wrapper } = await openApp('/pedidos?phase=awaiting_deposit')
+    await vi.waitFor(() => expect(wrapper.find('.chip').exists()).toBe(true))
+
+    expect(wrapper.get('.chip').text()).toBe('Pagar sinal ×')
+  })
+
+  it('name the panel by the tab that is open', async () => {
+    const { wrapper } = await openPedidos()
+
+    const open = wrapper.get('[role=tab][aria-selected=true]')
+    expect(wrapper.get('[role=tabpanel]').attributes('aria-labelledby')).toBe(open.attributes('id'))
+
+    await button(wrapper, 'Confirmado').trigger('click')
+    await flushPromises()
+    const next = wrapper.get('[role=tab][aria-selected=true]')
+    expect(wrapper.get('[role=tabpanel]').attributes('aria-labelledby')).toBe(next.attributes('id'))
+  })
+
   it('ignore a phase it does not know', async () => {
     const seen = serve()
 

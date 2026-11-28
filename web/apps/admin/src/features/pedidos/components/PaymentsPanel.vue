@@ -10,7 +10,7 @@ import type { Order } from '@encomendo/api'
 import { BaseButton } from '@encomendo/ui'
 
 import { formatDate, formatMargin, formatMoney } from '../../../format'
-import { paymentKindLabel, paymentMethodLabel } from '../labels'
+import { paymentKindLabel, paymentMethodLabel } from '../../../paymentLabels'
 
 defineProps<{
   order: Order

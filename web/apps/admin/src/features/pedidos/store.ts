@@ -12,6 +12,11 @@ export const activeTab = 'active'
 export const handedOverTab = 'handed_over'
 export const cancelledTab = 'cancelled'
 
+/** tabElementId is the id of a tab's button, so the panel it opens can be named by it. */
+export function tabElementId(id: string): string {
+  return `orders-tab-${id}`
+}
+
 /** OrderTab is one tab of the order list. */
 export interface OrderTab {
   id: string
@@ -55,6 +60,14 @@ export const usePedidosStore = defineStore('pedidos', () => {
   /** phase narrows the list to one phase, as a link from Hoje does ("Aguardando sinal"); choosing a tab drops it. */
   const phase = ref<OrderPhase | undefined>(undefined)
   let listRead = 0
+
+  /**
+   * phaseLabel is the word of the phase filter's chip: the label of the first
+   * status of the store's current list that is in that phase ("Aguardando
+   * sinal"), so the words stay the store's own. It is undefined when the list
+   * has no status in that phase.
+   */
+  const phaseLabel = computed(() => (phase.value === undefined ? undefined : statuses.value.find((status) => status.phase === phase.value)?.label))
 
   /**
    * tabs are "Ativos", the statuses of the store's current list that are not
@@ -142,6 +155,12 @@ export const usePedidosStore = defineStore('pedidos', () => {
     loadFailed.value = !(await attempt(() => readList(undefined)))
   }
 
+  /** clearPhase takes the phase filter off ("Aguardando sinal ×") and reads the list again. */
+  async function clearPhase(): Promise<void> {
+    phase.value = undefined
+    await reload()
+  }
+
   /** select opens a tab. */
   async function select(id: string): Promise<void> {
     tab.value = id
@@ -166,6 +185,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
     query,
     alertOnly,
     phase,
+    phaseLabel,
+    clearPhase,
     open,
     reload,
     select,

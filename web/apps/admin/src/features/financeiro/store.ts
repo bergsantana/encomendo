@@ -4,7 +4,8 @@ import { ref, shallowRef } from 'vue'
 
 import { api } from '../../api'
 import { errorMessage } from '../../errorMessage'
-import { daysFor, dayInZone, type PeriodPreset } from './period'
+import { storeDay } from '../../format'
+import { daysFor, type PeriodPreset } from './period'
 
 const badPeriod = 'Confira o período: o início não pode passar do fim, e o período tem no máximo 366 dias.'
 
@@ -58,7 +59,7 @@ export const useFinanceStore = defineStore('finance', () => {
     } catch (failure) {
       if (!(failure instanceof ApiError)) throw failure
     }
-    today = dayInZone(new Date(), timeZone)
+    today = storeDay(timeZone)
     await choose('this_month')
   }
 

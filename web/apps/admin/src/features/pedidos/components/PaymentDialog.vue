@@ -10,7 +10,7 @@ import { BaseButton, BaseDialog, BaseInput, BaseSelect } from '@encomendo/ui'
 import { ref, watch } from 'vue'
 
 import { centsToText, parseCents } from '../../../format'
-import { type PaymentKind, type PaymentMethod, paymentMethods } from '../labels'
+import { type PaymentKind, type PaymentMethod, paymentMethods } from '../../../paymentLabels'
 import type { PaymentInput } from '../orderStore'
 
 const props = defineProps<{

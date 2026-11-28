@@ -39,20 +39,6 @@ function parseDay(day: string): Date {
   return new Date(`${day}T00:00:00Z`)
 }
 
-/**
- * dayInZone is the calendar day it is now in a time zone, "2026-11-27", so a
- * store in Manaus asks for the period of its own day, not the viewer's. A
- * zone the browser does not know falls back to the browser's own.
- */
-export function dayInZone(now: Date, timeZone: string | undefined): string {
-  try {
-    return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
-  } catch (failure) {
-    if (!(failure instanceof RangeError)) throw failure
-    return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
-  }
-}
-
 /** daysFor returns the days of a preset, counted from `today`; `custom` has none of its own. */
 export function daysFor(preset: Exclude<PeriodPreset, 'custom'>, today: string): Days {
   const day = parseDay(today)

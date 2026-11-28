@@ -16,7 +16,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { usePermission } from '../../../composables/usePermission'
-import { formatMoney } from '../../../format'
+import { formatMoney, storeDay } from '../../../format'
 import AdvanceButtons from '../components/AdvanceButtons.vue'
 import DateDialog from '../components/DateDialog.vue'
 import DeadlineTimeline from '../components/DeadlineTimeline.vue'
@@ -33,7 +33,6 @@ import ReleaseDialog from '../components/ReleaseDialog.vue'
 import TrackingLinkButton from '../components/TrackingLinkButton.vue'
 import type { Handover } from '../labels'
 import { useOrderStore } from '../orderStore'
-import { civilToday } from '../timeline'
 
 const store = useOrderStore()
 const { order, loading, loadError, timeZone, busy, notice, whatsappUrl, error, dialogError, guardMessage, conflict, history, hasMoreHistory, historyLoading, historyError } =
@@ -74,7 +73,7 @@ function isOpen(current: Order): boolean {
 }
 
 const open = computed(() => order.value !== null && isOpen(order.value))
-const today = computed(() => civilToday(timeZone.value))
+const today = computed(() => storeDay(timeZone.value))
 
 /**
  * canChange says whether "Alterar pedido" is offered: before assembling, and

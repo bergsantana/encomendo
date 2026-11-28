@@ -16,10 +16,10 @@ import { usePermission } from '../../../composables/usePermission'
 import OrdersToolbar from '../components/OrdersToolbar.vue'
 import OrderTable from '../components/OrderTable.vue'
 import StatusTabs from '../components/StatusTabs.vue'
-import { activeTab, cancelledTab, handedOverTab, statusTabId, usePedidosStore } from '../store'
+import { activeTab, cancelledTab, handedOverTab, statusTabId, tabElementId, usePedidosStore } from '../store'
 
 const store = usePedidosStore()
-const { items, tabs, hasMore, loading, loaded, loadFailed, error, tab, query, alertOnly, phase } = storeToRefs(store)
+const { items, tabs, hasMore, loading, loaded, loadFailed, error, tab, query, alertOnly, phase, phaseLabel } = storeToRefs(store)
 const canWrite = usePermission('order:write')
 const route = useRoute()
 const router = useRouter()
@@ -79,8 +79,13 @@ const selectedTab = computed({
   },
 })
 
-const noFilter = (): boolean => query.value.trim() === '' && !alertOnly.value && tab.value === activeTab
+const noFilter = (): boolean => query.value.trim() === '' && !alertOnly.value && phase.value === undefined && tab.value === activeTab
 const empty = computed(() => loaded.value && items.value.length === 0 && !error.value && noFilter())
+
+async function clearPhase(): Promise<void> {
+  await store.clearPhase()
+  await router.replace({ name: 'orders', query: queryForState() })
+}
 
 function newOrder(): void {
   void router.push({ name: 'new-order' })
@@ -104,9 +109,24 @@ function newOrder(): void {
     />
 
     <div
+      v-if="phase !== undefined && phaseLabel"
+      class="chips"
+    >
+      <button
+        type="button"
+        class="chip"
+        :aria-label="`Tirar o filtro ${phaseLabel}`"
+        @click="clearPhase"
+      >
+        {{ phaseLabel }} ×
+      </button>
+    </div>
+
+    <div
       id="orders-panel"
       class="panel"
       role="tabpanel"
+      :aria-labelledby="tabElementId(tab)"
     >
       <p
         v-if="error"
@@ -174,6 +194,17 @@ p {
 }
 [role='alert'] {
   font-weight: 600;
+}
+.chip {
+  min-height: var(--enc-control-height);
+  padding: 0 12px;
+  border: 1px solid var(--enc-secondary-border);
+  border-radius: var(--enc-radius-badge);
+  background: var(--enc-surface);
+  color: var(--enc-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 .muted {
   color: var(--enc-ink-secondary);

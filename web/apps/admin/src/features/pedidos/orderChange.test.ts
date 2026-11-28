@@ -150,8 +150,16 @@ describe('"Alterar pedido"', () => {
     ])
   })
 
+  it('shows "O que muda" only for a paid order: a free one has nothing to agree with the customer', async () => {
+    const { wrapper, calls } = await openChange(newOrderState(looseOrder()))
+    await vi.waitFor(() => expect(calls.quotes).toHaveLength(1))
+    await vi.waitFor(() => expect(wrapper.get('.summary').text()).toContain('Total'))
+
+    expect(wrapper.find('.change').exists()).toBe(false)
+  })
+
   it('shows what changes, from the order and the quote: total and delivery date', async () => {
-    const { wrapper } = await openChange(newOrderState(looseOrder()))
+    const { wrapper } = await openChange(newOrderState(looseOrder('confirmado', { editable: 'approval', paid: brl(64995), depositPaid: true })))
 
     await vi.waitFor(() => expect(wrapper.find('.change').exists()).toBe(true))
 
@@ -177,7 +185,7 @@ describe('"Alterar pedido"', () => {
         version: 4,
       },
     ])
-    expect(plain(wrapper.get('.change').text())).toContain('TotalR$ 1.299,90 → R$ 1.234,00')
+    expect(wrapper.find('.change').exists()).toBe(false)
     expect(link(wrapper, 'Abrir pedido').attributes('href')).toBe(`/pedidos/${looseOrder().id}`)
     // Nothing was paid, so there is no message to send.
     expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Avisar o cliente pelo WhatsApp')
@@ -368,7 +376,7 @@ describe('refusals of a change', () => {
     await button(wrapper, 'Salvar alterações').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.alert').text()).toBe('Este pedido já está em montagem e não pode mais ser alterado.')
+    expect(wrapper.get('.alert').text()).toBe('Este pedido já está em Montagem e não pode mais ser alterado.')
   })
 
   it('names an archived item', async () => {

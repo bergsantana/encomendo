@@ -1,4 +1,4 @@
-import type { Alert, HistoryEntry, Order, OrderPhase, PaymentRequest } from '@encomendo/api'
+import type { Alert, HistoryEntry, Order, OrderPhase } from '@encomendo/api'
 
 /** OrderItem is one item of an order as the order screen shows it. */
 export type OrderItem = Order['items'][number]
@@ -8,10 +8,6 @@ export type ItemStatus = OrderItem['status']
 export type SourcingMode = OrderItem['sourcingMode']
 /** AlertKind is "Pode atrasar" (`at_risk`) or "Atrasada" (`late`). */
 export type AlertKind = Alert['kind']
-/** PaymentKind is the deposit ("Sinal") or the balance ("Saldo"). */
-export type PaymentKind = PaymentRequest['kind']
-/** PaymentMethod is how a payment was received. */
-export type PaymentMethod = PaymentRequest['method']
 /** Handover is "Entrega" or "Retirada na loja". */
 export type Handover = Order['handover']
 /** ItemCheck is the result of checking an arrived item. */
@@ -63,32 +59,6 @@ export function itemTone(status: ItemStatus): OrderPhase {
 export function sourcingLabel(mode: SourcingMode): string {
   const words: Record<SourcingMode, string> = { to_order: 'Sob encomenda', stock: 'Estoque', in_house: 'Produção própria' }
   return words[mode]
-}
-
-/** worstAlert is the alert an order shows on its status: "Atrasada" over "Pode atrasar", or null. */
-export function worstAlert(alerts: readonly Alert[]): AlertKind | null {
-  if (alerts.some((alert) => alert.kind === 'late')) return 'late'
-  return alerts.length > 0 ? 'at_risk' : null
-}
-
-/** paymentKindLabel is "Sinal" or "Saldo". */
-export function paymentKindLabel(kind: PaymentKind): string {
-  return kind === 'deposit' ? 'Sinal' : 'Saldo'
-}
-
-/** paymentMethods are the choices of "Forma", in the design document's order. */
-export const paymentMethods: readonly { value: PaymentMethod; label: string }[] = [
-  { value: 'pix', label: 'Pix' },
-  { value: 'dinheiro', label: 'Dinheiro' },
-  { value: 'cartao_credito', label: 'Cartão de crédito' },
-  { value: 'cartao_debito', label: 'Cartão de débito' },
-  { value: 'transferencia', label: 'Transferência' },
-  { value: 'outro', label: 'Outro' },
-]
-
-/** paymentMethodLabel is the word of a payment method. */
-export function paymentMethodLabel(method: PaymentMethod): string {
-  return paymentMethods.find((choice) => choice.value === method)?.label ?? method
 }
 
 /** handoverLabel is "Retirada na loja" or "Entrega". */

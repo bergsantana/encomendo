@@ -34,6 +34,7 @@ import { errorMessage, issuesByField } from '../../errorMessage'
 import { useSessionStore } from '../../stores/session'
 import { customerChecks, emptyDraft } from '../clientes/customerForm'
 import { searchTerm } from '../clientes/store'
+import { niche } from '../../niche'
 import { whatsappDigits } from '../../phone'
 import { openWhatsapp } from './openLink'
 import {
@@ -549,7 +550,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
     archivedNames.value = []
     const saved = await form.attempt(
       saveChecks(),
-      { byCode: { version_conflict: conflictMessage, order_not_editable: 'Este pedido já está em montagem e não pode mais ser alterado.' } },
+      { byCode: { version_conflict: conflictMessage, order_not_editable: `Este pedido já está em ${niche.montagem} e não pode mais ser alterado.` } },
       async () => {
         try {
           await submit(sendToCustomer)

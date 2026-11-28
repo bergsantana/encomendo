@@ -1,7 +1,8 @@
 import type { HistoryEntry, Order } from '@encomendo/api'
 
 import { formatCivilDate, formatMoney } from '../../format'
-import { itemStatusLabel, paymentMethodLabel } from './labels'
+import { paymentMethodLabel } from '../../paymentLabels'
+import { itemStatusLabel } from './labels'
 
 /**
  * historyText writes one history entry as "{quem} {o quê}", such as "Ana

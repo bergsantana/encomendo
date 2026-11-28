@@ -194,6 +194,7 @@ function quotedLine(index: number) {
         Pedido alterado.
       </p>
       <ChangeSummary
+        v-if="changed.change.paid"
         :order="order"
         :quote="null"
         :changed="changed"
@@ -348,7 +349,7 @@ function quotedLine(index: number) {
         :error="quoteError"
       />
       <ChangeSummary
-        v-if="order"
+        v-if="order && needsApproval"
         :order="order"
         :quote="quote"
         :changed="null"

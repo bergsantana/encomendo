@@ -111,6 +111,22 @@ describe('Hoje', () => {
     expect(badges.map((badge) => badge.attributes('data-tone'))).toEqual(['assembly', 'ready'])
   })
 
+  it('shows the worst alert only, as the order list does: "Atrasada" over "Pode atrasar"', async () => {
+    const mixed = orderSummary(encomendaMontagem, 'comprando', {
+      id: id(203),
+      number: 'P-0240',
+      alerts: [
+        { kind: 'at_risk', itemId },
+        { kind: 'late', itemId: id(302) },
+      ],
+    })
+    const { wrapper } = await openHoje({ ...busyDay, needsYou: [], upcoming: [mixed] })
+
+    const row = wrapper.get('tbody tr')
+    expect(row.text()).toContain('Atrasada')
+    expect(row.text()).not.toContain('Pode atrasar')
+  })
+
   it('puts the alert on top of the status: "Pode atrasar" and "Atrasada" with icon and word', async () => {
     const lateOrder = orderSummary(encomendaMontagem, 'comprando', { id: id(203), number: 'P-0240', alerts: [{ kind: 'late', itemId }, { kind: 'late', itemId: id(302) }] })
     const { wrapper } = await openHoje({ ...busyDay, needsYou: [], upcoming: [montagem, lateOrder, pronta] })

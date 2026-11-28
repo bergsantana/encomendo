@@ -460,7 +460,7 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 
 ### Pedidos
 
-- Title "Pedidos". Tabs: "Ativos", then one per status of the store's current list, then "Entregues" and "Cancelados". Search "Buscar por número ou cliente". Filter "Só com alerta". Button "Novo pedido".
+- Title "Pedidos". Tabs: "Ativos", then one per status of the store's current list, then "Entregues" and "Cancelados". Search "Buscar por número ou cliente". Filter "Só com alerta". Button "Novo pedido". A link from Hoje may preset a phase: the list then shows a chip with the word of that phase in the store's own list and a ×, such as "Aguardando sinal ×", which takes the filter off. With no result: "Nenhum pedido encontrado." (never "Nenhum pedido ainda." while a filter is on).
 - Table "Pedido", "Cliente", "Status", "Itens prontos", "Entrega prevista", "Total". "Pedido" shows the number in mono (P-0231). "Itens prontos" is "{a} de {b}". An alert sits on top of the status: "Pode atrasar" or "Atrasada", with its icon.
 - While loading: "Carregando os pedidos…". Empty: "Nenhum pedido ainda." with "Novo pedido". No results: "Nenhum pedido encontrado." "Carregar mais".
 - On the phone each order is a card: number and status, then "Cliente", "Itens prontos", "Entrega prevista", "Total".

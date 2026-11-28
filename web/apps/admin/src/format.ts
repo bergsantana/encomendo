@@ -61,3 +61,21 @@ export function parseCents(text: string): number | null {
 export function centsToText(cents: number): string {
   return `${Math.trunc(cents / 100)},${String(cents % 100).padStart(2, '0')}`
 }
+
+/**
+ * storeDay is the calendar day it is now in the store's time zone, as
+ * "YYYY-MM-DD". The client may read its own clock for this in two places
+ * only: to place "Hoje" on the order's timeline, and to choose the bounds of
+ * Financeiro's presets. Deadlines, alerts and every date of an order are the
+ * API's, never worked out from this. A zone the browser does not know, or no
+ * zone, falls back to the viewer's own.
+ */
+export function storeDay(timeZone?: string, now: Date = new Date()): string {
+  const format = (zone: string | undefined) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  try {
+    return format(timeZone)
+  } catch (failure) {
+    if (!(failure instanceof RangeError)) throw failure
+    return format(undefined)
+  }
+}

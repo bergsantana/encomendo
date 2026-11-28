@@ -7,7 +7,7 @@
  */
 import { nextTick, useTemplateRef } from 'vue'
 
-import type { OrderTab } from '../store'
+import { type OrderTab, tabElementId } from '../store'
 
 const props = defineProps<{
   tabs: readonly OrderTab[]
@@ -48,6 +48,7 @@ async function onKeydown(event: KeyboardEvent, index: number): Promise<void> {
   >
     <button
       v-for="(tab, index) in tabs"
+      :id="tabElementId(tab.id)"
       :key="tab.id"
       type="button"
       role="tab"

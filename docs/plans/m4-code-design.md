@@ -1521,9 +1521,9 @@ Routes (`router/index.ts`), all `requiresAuth` and `requiresStore`:
 | Path | Name | Permission |
 | --- | --- | --- |
 | `/pedidos` | `orders` | `order:read` |
-| `/pedidos/novo` | `order-new` | `order:write` |
+| `/pedidos/novo` | `new-order` | `order:write` |
 | `/pedidos/:orderId` | `order` | `order:read` |
-| `/pedidos/:orderId/alterar` | `order-change` | `order:write` (the view asks for `order:manage` when the order is paid) |
+| `/pedidos/:orderId/alterar` | `change-order` | `order:write` (the view asks for `order:manage` when the order is paid) |
 | `/clientes` | `customers` | `order:read` |
 | `/clientes/:customerId` | `customer` | `order:read` |
 | `/financeiro` | `finance` | `finance:read` |
@@ -1537,6 +1537,7 @@ Rules that the reviewers will check:
 - Status badges: `StatusBadge` with the API's label and `toneForPhase(phase)`. Alerts: `AlertBadge` ("Pode atrasar", "Atrasada"), on top of the status, icon + word.
 - Buttons that need `order:manage` or `order:override` are hidden by `usePermission`, and the API is still the authority.
 - `wa.me` links come from the API and are opened with `window.open(url, '_blank', 'noopener')`; the Android shell opens them outside the app (ADR 0029).
+- **The browser clock.** The client may read its own clock for the store's day (`storeDay` in `format.ts`, in the store's `settings.timeZone`, the viewer's zone when that is unknown) in two places only: to place "Hoje" on the order's timeline, and to choose the bounds of Financeiro's presets. Deadlines, alerts and every date of an order are the API's, never worked out from that clock.
 - Every screen has its phone layout (cards, sheets, `enc-sheet-actions`), and `DeadlineTimeline` becomes a vertical list of items with their dates at phone width.
 
 ### 7.3 Web tests
