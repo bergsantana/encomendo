@@ -92,12 +92,9 @@ func termsInput(f *fields, r *TermsRequest) apporder.TermsInput {
 		return apporder.TermsInput{}
 	}
 	t := apporder.TermsInput{
-		Handover:      order.Handover(need(f, r.Handover, "terms.handover")),
-		DiscountCents: r.DiscountCents, DepositPercent: r.DepositPercent,
+		Handover:     order.Handover(need(f, r.Handover, "terms.handover")),
+		FreightCents: r.FreightCents, DiscountCents: r.DiscountCents, DepositPercent: r.DepositPercent,
 		AssemblyDays: r.AssemblyDays, SafetyMarginDays: r.SafetyMarginDays,
-	}
-	if r.FreightCents != nil {
-		t.FreightCents = *r.FreightCents
 	}
 	if r.AddressID != nil {
 		t.Address = parseID[shared.AddressID](f, *r.AddressID, "terms.addressId")
@@ -170,7 +167,7 @@ func (r ChangeOrderRequest) Input(id shared.OrderID) (apporder.ChangeInput, erro
 	var f fields
 	in := apporder.ChangeInput{
 		Order: id, Lines: linesInput(&f, r.Lines), Terms: termsInput(&f, r.Terms),
-		CustomerApproved: need(&f, r.CustomerApproved, "customerApproved"), Version: need(&f, r.Version, "version"),
+		CustomerApproved: need(&f, r.CustomerApproved, "customerApproved"), Version: needVersion(&f, r.Version),
 	}
 	return in, f.err()
 }
@@ -187,7 +184,7 @@ type AdvanceRequest struct {
 func (r AdvanceRequest) Input(id shared.OrderID) (apporder.AdvanceInput, error) {
 	var f fields
 	in := apporder.AdvanceInput{
-		Order: id, To: workflow.StatusKey(need(&f, r.To, "to")), Version: need(&f, r.Version, "version"),
+		Order: id, To: workflow.StatusKey(need(&f, r.To, "to")), Version: needVersion(&f, r.Version),
 	}
 	if r.Handover != nil {
 		h := order.Handover(*r.Handover)
@@ -208,7 +205,7 @@ type MoveItemRequest struct {
 func (r MoveItemRequest) Input(id shared.OrderID, item shared.OrderItemID) (apporder.MoveItemInput, error) {
 	var f fields
 	in := apporder.MoveItemInput{
-		Order: id, Item: item, To: order.ItemStatus(need(&f, r.To, "to")), Version: need(&f, r.Version, "version"),
+		Order: id, Item: item, To: order.ItemStatus(need(&f, r.To, "to")), Version: needVersion(&f, r.Version),
 	}
 	if r.Check != nil {
 		c := order.Check(*r.Check)
@@ -231,7 +228,7 @@ func (r PaymentRequest) Input(id shared.OrderID, key appshared.IdempotencyKey) (
 	var f fields
 	in := apporder.PaymentInput{
 		Order: id, Kind: order.PaymentKind(need(&f, r.Kind, "kind")), AmountCents: need(&f, r.AmountCents, "amountCents"),
-		Method: order.PaymentMethod(need(&f, r.Method, "method")), Version: need(&f, r.Version, "version"), Idempotency: key,
+		Method: order.PaymentMethod(need(&f, r.Method, "method")), Version: needVersion(&f, r.Version), Idempotency: key,
 	}
 	return in, f.err()
 }
@@ -246,7 +243,7 @@ type VoidPaymentRequest struct {
 func (r VoidPaymentRequest) Input(id shared.OrderID, payment shared.PaymentID) (apporder.VoidPaymentInput, error) {
 	var f fields
 	in := apporder.VoidPaymentInput{
-		Order: id, Payment: payment, Reason: need(&f, r.Reason, "reason"), Version: need(&f, r.Version, "version"),
+		Order: id, Payment: payment, Reason: need(&f, r.Reason, "reason"), Version: needVersion(&f, r.Version),
 	}
 	return in, f.err()
 }
@@ -261,7 +258,7 @@ type DeliveryDateRequest struct {
 // Input returns the use case's input, or a ValidationError.
 func (r DeliveryDateRequest) Input(id shared.OrderID) (apporder.DateInput, error) {
 	var f fields
-	in := apporder.DateInput{Order: id, Reason: r.Reason, Version: need(&f, r.Version, "version")}
+	in := apporder.DateInput{Order: id, Reason: r.Reason, Version: needVersion(&f, r.Version)}
 	if raw := need(&f, r.Date, "date"); r.Date != nil {
 		d, err := shared.ParseCivilDate(raw)
 		if err != nil {
@@ -281,6 +278,6 @@ type CancelRequest struct {
 // Input returns the use case's input, or a ValidationError.
 func (r CancelRequest) Input(id shared.OrderID) (apporder.CancelInput, error) {
 	var f fields
-	in := apporder.CancelInput{Order: id, Reason: need(&f, r.Reason, "reason"), Version: need(&f, r.Version, "version")}
+	in := apporder.CancelInput{Order: id, Reason: need(&f, r.Reason, "reason"), Version: needVersion(&f, r.Version)}
 	return in, f.err()
 }

@@ -130,24 +130,24 @@ type Payment struct {
 	Kind       order.PaymentKind   `json:"kind"`
 	Amount     shared.Money        `json:"amount"`
 	Method     order.PaymentMethod `json:"method"`
-	RecordedBy shared.UserID       `json:"recordedBy"`
+	RecordedBy Actor               `json:"recordedBy"`
 	RecordedAt time.Time           `json:"recordedAt"`
 	Voided     *PaymentVoid        `json:"voided,omitempty"`
 }
 
 // PaymentVoid is who voided a payment, when and why.
 type PaymentVoid struct {
-	By     shared.UserID `json:"by"`
-	At     time.Time     `json:"at"`
-	Reason string        `json:"reason"`
+	By     Actor     `json:"by"`
+	At     time.Time `json:"at"`
+	Reason string    `json:"reason"`
 }
 
 func newPayments(in []apporder.PaymentView) []Payment {
 	out := make([]Payment, 0, len(in))
 	for _, p := range in {
-		v := Payment{ID: p.ID, Kind: p.Kind, Amount: p.Amount, Method: p.Method, RecordedBy: p.RecordedBy, RecordedAt: p.RecordedAt.UTC()}
+		v := Payment{ID: p.ID, Kind: p.Kind, Amount: p.Amount, Method: p.Method, RecordedBy: newActor(p.RecordedBy), RecordedAt: p.RecordedAt.UTC()}
 		if p.Voided != nil {
-			v.Voided = &PaymentVoid{By: p.Voided.By, At: p.Voided.At.UTC(), Reason: p.Voided.Reason}
+			v.Voided = &PaymentVoid{By: newActor(p.Voided.By), At: p.Voided.At.UTC(), Reason: p.Voided.Reason}
 		}
 		out = append(out, v)
 	}
@@ -406,6 +406,8 @@ type Actor struct {
 	ID   shared.UserID `json:"id"`
 	Name string        `json:"name"`
 }
+
+func newActor(a apporder.ActorView) Actor { return Actor{ID: a.ID, Name: a.Name} }
 
 // HistoryEntry is the HistoryEntry schema: only the fields its kind uses
 // are written.

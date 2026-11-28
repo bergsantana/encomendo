@@ -143,6 +143,6 @@ type ReplaceCustomerRequest struct {
 // ValidationError.
 func (r ReplaceCustomerRequest) Input(id shared.CustomerID) (appcustomer.UpdateInput, error) {
 	var f fields
-	in := appcustomer.UpdateInput{ID: id, Spec: r.spec(&f), Version: need(&f, r.Version, "version")}
+	in := appcustomer.UpdateInput{ID: id, Spec: r.spec(&f), Version: needVersion(&f, r.Version)}
 	return in, f.err()
 }

@@ -140,7 +140,7 @@ func TestQuote_DeliveryNeedsOnlyANamedAddress(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	in := apporder.QuoteInput{Lines: []apporder.LineRequest{h.bancoLine()},
-		Terms: apporder.TermsInput{Handover: order.HandoverDelivery, Address: shared.AddressID(h.ids.NewID()), FreightCents: 2_000}}
+		Terms: apporder.TermsInput{Handover: order.HandoverDelivery, Address: shared.AddressID(h.ids.NewID()), FreightCents: ptr[int64](2_000)}}
 	q, err := h.svc.Quote(h.staff(t), in)
 	if err != nil || q.Freight.Cents() != 2_000 || q.Total.Cents() != 102_000 {
 		t.Errorf("quote = %+v %v", q, err)

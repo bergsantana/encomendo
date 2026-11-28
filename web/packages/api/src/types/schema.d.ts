@@ -2567,14 +2567,13 @@ export interface components {
             kind: components["schemas"]["PaymentKind"];
             amount: components["schemas"]["Money"];
             method: components["schemas"]["PaymentMethod"];
-            /** @description The id of the staff member who recorded it. The order answer carries no names; the history entry of the payment does. */
-            recordedBy: components["schemas"]["Uuid"];
+            /** @description Who recorded it ("Registrado por"). The name is empty when the user no longer exists. */
+            recordedBy: components["schemas"]["Actor"];
             /** Format: date-time */
             recordedAt: string;
             /** @description Present when the owner voided it. */
             voided?: {
-                /** @description The id of the owner who voided it. */
-                by: components["schemas"]["Uuid"];
+                by: components["schemas"]["Actor"];
                 /** Format: date-time */
                 at: string;
                 reason: string;

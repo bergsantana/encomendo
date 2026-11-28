@@ -457,3 +457,20 @@ type WhatsApp struct{}
 func (WhatsApp) Link(phone, text string) (string, error) {
 	return "https://wa.me/" + phone + "?text=" + url.QueryEscape(text), nil
 }
+
+// StaffNames implements apporder.Repository, with the names set by
+// AddUser.
+func (r *Orders) StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error) {
+	if !sharedfake.InTx(ctx) {
+		return nil, appshared.ErrNoTransaction
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[shared.UserID]string{}
+	for _, id := range ids {
+		if name, ok := r.userNames[id]; ok {
+			out[id] = name
+		}
+	}
+	return out, nil
+}

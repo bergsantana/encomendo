@@ -44,8 +44,8 @@ func (r ChooseWorkflowRequest) Input() (apptenancy.ChooseWorkflowInput, error) {
 	var f fields
 	in := apptenancy.ChooseWorkflowInput{
 		Workflow:        needID[shared.WorkflowID](&f, r.WorkflowID, "workflowId"),
-		Version:         need(&f, r.Version, "version"),
-		ExpectedVersion: need(&f, r.ExpectedVersion, "expectedVersion"),
+		Version:         needVersion(&f, r.Version),
+		ExpectedVersion: needAtLeastOne(&f, r.ExpectedVersion, "expectedVersion"),
 	}
 	return in, f.err()
 }

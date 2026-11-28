@@ -14,6 +14,24 @@ import (
 var messageCases = []contractCase{
 	{"a message is recorded for an order of the store", messageRecorded},
 	{"every method refuses to run outside a transaction", noMethodRunsOutsideATransaction},
+	{"staff names are read by user id", staffNamesRead},
+}
+
+// staffNamesRead: the users' names come back by id, and an unknown user is
+// absent ("Registrado por" on payments).
+func staffNamesRead(t *testing.T, h Harness) {
+	s := h.newStore(t)
+	ana := h.NewUser(t, "Ana Souza")
+	gone := shared.UserID(h.NewID())
+	var names map[shared.UserID]string
+	h.in(t, s, func(ctx context.Context) error {
+		var err error
+		names, err = h.Orders.StaffNames(ctx, []shared.UserID{ana, gone})
+		return err
+	})
+	if len(names) != 1 || names[ana] != "Ana Souza" {
+		t.Errorf("names = %v, want only Ana Souza", names)
+	}
 }
 
 func messageRecorded(t *testing.T, h Harness) {

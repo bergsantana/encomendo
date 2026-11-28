@@ -84,7 +84,20 @@ func (s *Service) view(ctx context.Context, o *order.Order, by shared.Principal,
 	if err != nil {
 		return View{}, err
 	}
-	return toView(o, c, by, today), nil
+	return s.viewWith(ctx, o, c, by, today)
+}
+
+// viewWith builds the staff view of o with its customer c, naming the staff
+// who recorded and voided its payments.
+func (s *Service) viewWith(ctx context.Context, o *order.Order, c CustomerFacts, by shared.Principal, today shared.CivilDate) (View, error) {
+	staff := map[shared.UserID]string{}
+	if ids := staffIDs(o); len(ids) > 0 {
+		var err error
+		if staff, err = s.d.Repo.StaffNames(ctx, ids); err != nil {
+			return View{}, fmt.Errorf("staff names of order %s: %w", o.ID(), err)
+		}
+	}
+	return toView(o, c, staff, by, today), nil
 }
 
 // customerOf reads the order's customer.

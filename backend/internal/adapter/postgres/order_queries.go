@@ -409,3 +409,36 @@ func (*Orders) HandedOver(ctx context.Context, tenant shared.TenantID, from, to 
 	}
 	return loadRecords(ctx, db, tenant, heads)
 }
+
+// StaffNames implements apporder.Repository: the users' names, read from
+// users (a global table; only id and name are selected). A user that no
+// longer exists is absent.
+func (*Orders) StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error) {
+	db, err := conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[shared.UserID]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	keys := make([]string, len(ids))
+	for i, id := range ids {
+		keys[i] = id.String()
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	if err := db.Table("users").Select("id::text AS id, name").Where("id IN ?", keys).Scan(&rows).Error; err != nil {
+		return nil, wrap("read staff names", err)
+	}
+	for _, row := range rows {
+		id, err := shared.ParseUserID(row.ID)
+		if err != nil {
+			return nil, fmt.Errorf("stored user id is invalid: %s", err.Error())
+		}
+		out[id] = row.Name
+	}
+	return out, nil
+}

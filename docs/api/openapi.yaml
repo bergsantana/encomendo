@@ -5401,8 +5401,8 @@ components:
         method:
           $ref: "#/components/schemas/PaymentMethod"
         recordedBy:
-          $ref: "#/components/schemas/Uuid"
-          description: The id of the staff member who recorded it. The order answer carries no names; the history entry of the payment does.
+          $ref: "#/components/schemas/Actor"
+          description: Who recorded it ("Registrado por"). The name is empty when the user no longer exists.
         recordedAt:
           type: string
           format: date-time
@@ -5412,8 +5412,7 @@ components:
           description: Present when the owner voided it.
           properties:
             by:
-              $ref: "#/components/schemas/Uuid"
-              description: The id of the owner who voided it.
+              $ref: "#/components/schemas/Actor"
             at:
               type: string
               format: date-time

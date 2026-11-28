@@ -198,10 +198,14 @@ func (r ReplaceItemRequest) Input(id shared.ItemID) (appcatalog.ReplaceItemInput
 }
 
 // needVersion returns the version read, which must be at least 1.
-func needVersion(f *fields, v *int) int {
-	n := need(f, v, "version")
+func needVersion(f *fields, v *int) int { return needAtLeastOne(f, v, "version") }
+
+// needAtLeastOne reads a version field the contract bounds at 1: a version
+// below it is refused here, not left to the use case.
+func needAtLeastOne(f *fields, v *int, field string) int {
+	n := need(f, v, field)
 	if v != nil && n < 1 {
-		f.add("version", "Informe a versão que você leu.")
+		f.add(field, "Informe a versão que você leu.")
 	}
 	return n
 }

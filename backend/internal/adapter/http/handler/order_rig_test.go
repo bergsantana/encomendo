@@ -103,8 +103,8 @@ func orView(costs bool) apporder.View {
 		DepositPaid: true, Released: true, ReleaseDate: dayPtr(orDate(1)), DeliveryDate: orDate(28), DateByHand: true,
 		ArrivalLimit: orDate(25), Editable: order.EditApproval, CancelReason: "",
 		Payments: []apporder.PaymentView{{
-			ID: orPayment, Kind: order.PaymentDeposit, Amount: ctMoney(63500), Method: order.MethodPix, RecordedBy: orUser, RecordedAt: ctWhen,
-			Voided: &apporder.VoidView{By: orUser, At: ctWhen, Reason: "Valor errado"},
+			ID: orPayment, Kind: order.PaymentDeposit, Amount: ctMoney(63500), Method: order.MethodPix, RecordedBy: apporder.ActorView{ID: orUser, Name: "Ana Souza"}, RecordedAt: ctWhen,
+			Voided: &apporder.VoidView{By: apporder.ActorView{ID: orUser, Name: "Ana Souza"}, At: ctWhen, Reason: "Valor errado"},
 		}},
 		CreatedAt: ctWhen, Version: 3,
 	}

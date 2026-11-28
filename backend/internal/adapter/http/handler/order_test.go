@@ -169,6 +169,12 @@ func TestOrders_ValidationNamesTheField(t *testing.T) {
 		{"no approval flag", "PUT", order, `{"lines":` + orLines + `,"terms":` + orTerms + `,"version":3}`, "customerApproved"},
 		{"no version", "POST", order + "/release", `{}`, "version"},
 		{"version zero", "POST", order + "/release", `{"version":0}`, "version"},
+		{"advance version zero", "POST", order + "/advance", `{"to":"ready","version":0}`, "version"},
+		{"move version zero", "POST", order + "/items/" + orItem.String() + "/move", `{"to":"in_transit","version":0}`, "version"},
+		{"cancel version zero", "POST", order + "/cancel", `{"reason":"x","version":0}`, "version"},
+		{"void version zero", "POST", order + "/payments/" + orPayment.String() + "/void", `{"reason":"x","version":0}`, "version"},
+		{"date version zero", "PUT", order + "/delivery-date", `{"date":"2026-12-30","version":0}`, "version"},
+		{"customer version zero", "PUT", "/api/v1/admin/customers/" + orCustomer.String(), `{"name":"Ana","phone":"5592981234567","addresses":[],"version":0}`, "version"},
 		{"no target status", "POST", order + "/advance", `{"version":3}`, "to"},
 		{"no payment amount", "POST", order + "/payments", `{"kind":"deposit","method":"pix","version":3}`, "amountCents"},
 		{"no void reason", "POST", order + "/payments/" + orPayment.String() + "/void", `{"version":3}`, "reason"},
@@ -226,7 +232,7 @@ func TestOrders_CreateReachesTheUseCaseWhole(t *testing.T) {
 	if !ok {
 		t.Fatalf("use case got %T", h.orders.got)
 	}
-	discount, deposit, assembly, margin := int64(500), 30, 4, 1
+	discount, freight, deposit, assembly, margin := int64(500), int64(1500), 30, 4, 1
 	want := apporder.CreateInput{
 		New: &apporder.NewCustomer{Name: "Ana", Phone: "5592981234568"}, SendToCustomer: true,
 		Lines: []apporder.LineRequest{
@@ -237,7 +243,7 @@ func TestOrders_CreateReachesTheUseCaseWhole(t *testing.T) {
 			{Item: ctItem, Quantity: 3},
 		},
 		Terms: apporder.TermsInput{
-			Handover: order.HandoverDelivery, Address: orAddress, FreightCents: 1500, DiscountCents: &discount,
+			Handover: order.HandoverDelivery, Address: orAddress, FreightCents: &freight, DiscountCents: &discount,
 			DepositPercent: &deposit, AssemblyDays: &assembly, SafetyMarginDays: &margin,
 		},
 		Idempotency: got.Idempotency,
@@ -249,7 +255,9 @@ func TestOrders_CreateReachesTheUseCaseWhole(t *testing.T) {
 
 // Terms left out take the defaults the use case reads from nil; a freight
 // left out is zero (apporder.TermsInput).
-func TestOrders_TermsLeftOutAreNilAndFreightIsZero(t *testing.T) {
+// Terms left out reach the use case as nil, freight included, so a change
+// keeps the order's own values (go-reviewer and security review of 4.14).
+func TestOrders_TermsLeftOutAreNil(t *testing.T) {
 	t.Parallel()
 
 	h := newOrHandlers(t)

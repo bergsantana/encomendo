@@ -29,7 +29,9 @@ func NewWhatsAppLinks() WhatsAppLinks { return WhatsAppLinks{} }
 // 1 to 2000 characters of valid UTF-8.
 func (WhatsAppLinks) Link(phone, text string) (string, error) {
 	if !shared.ValidWhatsAppPhone(phone) {
-		return "", fmt.Errorf("wa.me link: phone %q: %w", phone, shared.ErrInvalid)
+		// The number is left out of the error: a customer's phone is never
+		// written to an error that could reach a log (backend/CLAUDE.md).
+		return "", fmt.Errorf("wa.me link: invalid phone: %w", shared.ErrInvalid)
 	}
 	n := utf8.RuneCountInString(text)
 	if n == 0 || n > maxMessageRunes || !utf8.ValidString(text) {

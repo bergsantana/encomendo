@@ -74,14 +74,14 @@ type PaymentView struct {
 	Kind       order.PaymentKind
 	Amount     shared.Money
 	Method     order.PaymentMethod
-	RecordedBy shared.UserID
+	RecordedBy ActorView
 	RecordedAt time.Time
 	Voided     *VoidView
 }
 
 // VoidView is who voided a payment, when and why.
 type VoidView struct {
-	By     shared.UserID
+	By     ActorView
 	At     time.Time
 	Reason string
 }
@@ -133,7 +133,7 @@ type View struct {
 
 // toView builds the staff view of o for by, today. It is the only builder
 // of View: costs and margins follow identity.SeesCosts(by.Role()).
-func toView(o *order.Order, c CustomerFacts, by shared.Principal, today shared.CivilDate) View {
+func toView(o *order.Order, c CustomerFacts, staff map[shared.UserID]string, by shared.Principal, today shared.CivilDate) View {
 	owner := identity.SeesCosts(by.Role())
 	terms := o.Terms()
 	v := View{
@@ -155,7 +155,7 @@ func toView(o *order.Order, c CustomerFacts, by shared.Principal, today shared.C
 	v.CancelReason, _ = o.CancelReason()
 	v.Lines = lineViews(o)
 	v.Items = itemViews(o, today, owner)
-	v.Payments = paymentViews(o)
+	v.Payments = paymentViews(o, staff)
 	if owner {
 		if cost, ok := o.Cost(); ok {
 			v.Cost = &cost
@@ -236,15 +236,29 @@ func itemViews(o *order.Order, today shared.CivilDate, owner bool) []ItemView {
 	return out
 }
 
-func paymentViews(o *order.Order) []PaymentView {
+func paymentViews(o *order.Order, staff map[shared.UserID]string) []PaymentView {
 	var out []PaymentView
 	for _, p := range o.Payments() {
 		by, at := p.RecordedBy()
-		v := PaymentView{ID: p.ID(), Kind: p.Kind(), Amount: p.Amount(), Method: p.Method(), RecordedBy: by, RecordedAt: at}
+		v := PaymentView{ID: p.ID(), Kind: p.Kind(), Amount: p.Amount(), Method: p.Method(),
+			RecordedBy: ActorView{ID: by, Name: staff[by]}, RecordedAt: at}
 		if vby, vat, reason, ok := p.Void(); ok {
-			v.Voided = &VoidView{By: vby, At: vat, Reason: reason}
+			v.Voided = &VoidView{By: ActorView{ID: vby, Name: staff[vby]}, At: vat, Reason: reason}
 		}
 		out = append(out, v)
+	}
+	return out
+}
+
+// staffIDs are the users an order's payments name.
+func staffIDs(o *order.Order) []shared.UserID {
+	var out []shared.UserID
+	for _, p := range o.Payments() {
+		by, _ := p.RecordedBy()
+		out = append(out, by)
+		if vby, _, _, ok := p.Void(); ok {
+			out = append(out, vby)
+		}
 	}
 	return out
 }
