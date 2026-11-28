@@ -960,6 +960,28 @@ describe('"Enviar link de acompanhamento"', () => {
     expect(window.open).toHaveBeenCalledWith('https://wa.me/5592991234567?text=link', '_blank', 'noopener')
   })
 
+  // Making a link rotates the order's token, which is a write: the order's
+  // version moves on, and the link's answer does not carry the order. The next
+  // write must send the new version, or the person is told "Outra pessoa alterou este pedido".
+  it('reads the order again, so the next write sends the version the link moved on to', async () => {
+    const state = asAdmin()
+    state.answers.tracking = () => {
+      state.order = { ...state.order, version: 2 }
+      return HttpResponse.json({ trackingUrl: 'https://altarpm.encomendo.com.br/p/novo', whatsappUrl: 'https://wa.me/5592991234567?text=link' })
+    }
+    state.answers.advance = () => HttpResponse.json(state.order)
+    const { wrapper } = await openOrder(state, 'staff')
+    await button(wrapper, 'Enviar link de acompanhamento').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('.notice').text()).toContain('Link de acompanhamento criado.'))
+    await flushPromises()
+
+    await button(wrapper, 'Mover para Confirmado').trigger('click')
+    await flushPromises()
+
+    expect(state.calls.advance?.[0]?.body).toEqual({ to: 'confirmado', version: 2 })
+    expect(wrapper.text()).not.toContain('Outra pessoa alterou este pedido')
+  })
+
   it('shows a refusal and opens nothing', async () => {
     const state = asAdmin()
     state.answers.tracking = () => orderProblem('order_closed')
