@@ -116,6 +116,17 @@ export {
   toBuy,
   undoSupplierOrder,
 } from './purchasing'
+export { recordReceipt, toReceive, uploadReceiptPhoto } from './receipts'
+export type {
+  Receipt,
+  ReceiptCheck,
+  ReceiptEntry,
+  ReceiptPhotoInput,
+  ReceiptRequest,
+  ToReceive,
+  ToReceiveGroup,
+  ToReceiveLine,
+} from './receipts'
 export type {
   Notice,
   NoticeList,

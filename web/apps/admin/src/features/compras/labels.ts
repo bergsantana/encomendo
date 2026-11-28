@@ -1,5 +1,7 @@
-import type { NoticeReason, PurchaseChoice, PurchaseLine, PurchaseLineStatus, SupplierOrderState } from '@encomendo/api'
+import { ApiError, type NoticeReason, PhotoFileError, PhotoUploadError, type PurchaseChoice, type PurchaseLine, type PurchaseLineStatus, type SupplierOrderState } from '@encomendo/api'
 import type { Phase } from '@encomendo/ui'
+
+import { errorMessage } from '../../errorMessage'
 
 /** conflictMessage is what an edit to a pedido de compra that someone else changed first says; "Recarregar" goes with it. */
 export const conflictMessage = 'Outra pessoa alterou este pedido de compra. Recarregue para ver a versão atual.'
@@ -88,3 +90,49 @@ export function lineAlert(line: Pick<PurchaseLine, 'alerts'>): 'late' | 'at_risk
   if (line.alerts.includes('late')) return 'late'
   return line.alerts.length > 0 ? 'at_risk' : null
 }
+
+/** photoNotSent is what a photo that did not reach the server says. */
+const photoNotSent = 'A foto não foi enviada. Tente de novo.'
+
+/**
+ * receiptPhotoMessage is what a failed receiving photo says, in the words of
+ * Catálogo, or null when the person cancelled it. Anything that is not a
+ * photo or API failure is a bug and is thrown on.
+ */
+export function receiptPhotoMessage(failure: unknown): string | null {
+  if (failure instanceof PhotoFileError) return 'Use uma foto JPEG, PNG ou WebP de até 10 MB.'
+  if (failure instanceof PhotoUploadError) return photoNotSent
+  if (failure instanceof DOMException && failure.name === 'AbortError') return null
+  if (!(failure instanceof ApiError)) throw failure
+  return errorMessage(failure, { photo_not_uploaded: photoNotSent, photo_invalid: 'Use uma foto JPEG, PNG ou WebP de até 10 MB.' })
+}
+
+/** itemPhotoLimitMessage is the refusal of a third photo on one item. */
+export const itemPhotoLimitMessage = 'Cada item pode ter até 2 fotos.'
+/** invoicePhotoLimitMessage is the refusal of a fifth photo of the nota fiscal. */
+export const invoicePhotoLimitMessage = 'Cada recebimento pode ter até 4 fotos da nota.'
+/** totalPhotoLimitMessage is the refusal of a photo past the 20 a receipt holds; the design document does not word it. */
+export const totalPhotoLimitMessage = 'Cada recebimento pode ter até 20 fotos no total.'
+
+/** missingNoteMessage asks for the defect's note before "Salvar recebimento" calls the API. */
+export function missingNoteMessage(itemName: string): string {
+  return `Conte o que houve com ${itemName}.`
+}
+
+/** backToBuyMessage tells where a defective item went: back to "A comprar", its replacement in Compras. */
+export function backToBuyMessage(itemName: string): string {
+  return `${itemName} voltou para A comprar. A reposição está em Compras.`
+}
+
+/** completedOrderMessage tells that every item of an order has arrived and been checked. */
+export function completedOrderMessage(orderNumber: string): string {
+  return `Pedido ${orderNumber}: todos os itens chegaram e foram conferidos.`
+}
+
+/**
+ * receiveClosedMessage is the refusal of a receipt that names a line already
+ * received or cancelled (`line_closed`), or an order handed over or cancelled
+ * (`order_closed`). The design document words neither for receiving, so it is
+ * written like Compras' refusals; the list is read again with it.
+ */
+export const receiveClosedMessage = 'Algum item já foi recebido ou o pedido dele foi entregue ou cancelado. A lista foi atualizada; confira e salve de novo.'

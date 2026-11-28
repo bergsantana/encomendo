@@ -59,7 +59,7 @@ From `docs/product/` and the Repair Shop design system:
 - Safety yellow `#FFC800` only for the logo mark, selection and focus. Never for text, never for status.
 - Money and quantities: ink color, bold, tabular figures. Format money from integer cents with `Intl.NumberFormat('pt-BR', { style: 'currency', currency })`. Never parse money into floats for arithmetic.
 - Type: IBM Plex Sans (Condensed for dense tables), IBM Plex Mono for codes like P-0231. Icons: Tabler outline.
-- Sizes: admin 14 px body, 13 px tables, 32 px controls. Store page: mobile-first, 16–17 px body, 48 px controls.
+- Sizes: admin 14 px body, 13 px tables, 32 px controls. Store page: mobile-first, 16–17 px body, 48 px controls. Workshop sizes (Receber itens): 18 px text, 56 px targets, a 64 px main action, through the `enc-workshop` class (`tokens.css`).
 - The store page has one fixed layout. Tenants change only logo, brand color, cover photo and which sections show. Never render tenant-supplied HTML or scripts: the client login cookie is shared across `*.encomendo.com.br`.
 - WhatsApp is always a `wa.me` link the API returns. Open it; don't build it in the client.
 - Avoid gradients, glass effects, emoji, stock photos and donut charts.
@@ -73,6 +73,7 @@ Two layouts, one breakpoint: desktop, and phone at 640 px wide or less (design s
 - Tables become cards with the `enc-cards` class on the `<table>`: a `data-label` on each `<td>`, and `enc-cards__actions` on the actions cell. The header row stays for screen readers. Every button keeps its accessible name.
 - `BaseDialog` (dialog and drawer) is a full-screen sheet at phone width. A phone has no Escape key and no backdrop to tap, so every dialog's slot carries its own "Fechar" or "Cancelar".
 - `enc-sheet-actions` (`tokens.css`) puts a sheet's "Salvar", "Cancelar" or "Fechar" in a sticky footer at phone width, so a long form never hides them. Put it on a block that is a direct child of the dialog's slot (or of the form that fills it), never nested in another scroller or wrapper with its own padding: it cancels the sheet's 16 px padding and sticks to the sheet body, whose `scroll-padding-bottom` keeps a focused field clear of it.
+- `enc-workshop` (`tokens.css`) is the third size tier, for the screen used with dirty hands: put it on the screen's root and 18 px text, `--enc-control-height: 56px` and a 64 px primary `BaseButton` follow, at every width, phone included. Only Receber itens uses it; do not add it to other screens without a product reason.
 - `enc-check` (`tokens.css`) is a checkbox or radio with its words as one `<label>`. Its base style (flex row, 8 px gap) applies at every width; at phone width the label is also at least 48 px tall and the box 24 px. Put the `<input>` inside the label.
 - `useIsPhone()` and `useMediaQuery()` follow a media query as a ref; `trapTab()` keeps Tab inside a container. Both are for focus behaviour (the menu drawer, `BaseDialog`), never for choosing what to render.
 - Never set `inert` to `false`; set it or remove it (an older WebView reads the bare attribute as inert).
