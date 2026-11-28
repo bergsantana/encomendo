@@ -6,16 +6,18 @@ import { apiSession, createStore, mailpitUrl, openMenu, seedCatalog, signUp, uni
 // playwright.config.ts: 390 x 844, touch. The main path of pedidos.spec.ts runs
 // here against the real stack (`make stack-up`, E2E_BASE_URL and
 // E2E_MAILPIT_URL): choose the status list, make a customer, sell a kit, record
-// the deposit, change the delivery date and receive the items, then visit
-// Hoje, Pedidos, Clientes, Financeiro and Configurações. Every screen must fit
-// the width and every control a thumb hits must be 48 px tall. The dialogs the
-// flow opens are checked as full-screen sheets: the customer form, the kit and
-// item pickers, Registrar pagamento, Anular, Liberar sem sinal, Cancelar
-// pedido, Alterar data and the handover question. Com defeito and "Enviar link
-// de acompanhamento" are buttons on the page, not dialogs, so they are checked
-// for thumb size only. The run signs up one account. A full run of the suite
-// signs up ten from one address, and the API allows 10 sign-ups an hour per IP
-// (ADR 0021), so clear the counts before every full run (see admin.spec.ts).
+// the deposit, change the delivery date and buy and receive the items through
+// Compras and Receber itens (bought items move only there, ADR 0031; those
+// screens are checked in depth by phone-compras.spec.ts), then visit Hoje,
+// Pedidos, Clientes, Financeiro and Configurações. Every screen must fit the
+// width and every control a thumb hits must be 48 px tall. The dialogs the flow
+// opens are checked as full-screen sheets: the customer form, the kit and item
+// pickers, Registrar pagamento, Anular, Liberar sem sinal, Cancelar pedido,
+// Alterar data and the handover question. "Enviar link de acompanhamento" and
+// "Ver em Compras" are on the page, not dialogs, so they are checked for thumb
+// size only. The run signs up one account. A full run of the suite signs up
+// several from one address, and the API allows 10 sign-ups an hour per IP (ADR
+// 0021), so clear the counts before every full run (see admin.spec.ts).
 const realStack = process.env.E2E_BASE_URL !== undefined && process.env.E2E_BASE_URL !== ''
 
 /** expectNoSideScroll fails when the page is wider than the screen: a phone must never scroll sideways. */
@@ -163,10 +165,10 @@ test.describe('against the real stack', () => {
       page.getByRole('button', { name: 'Alterar data' }),
       page.getByRole('button', { name: 'Mover para Aguardando sinal' }),
       page.getByRole('button', { name: 'Registrar pagamento' }),
-      page.getByRole('button', { name: `Marcar como enviada ao fornecedor: ${catalog.first}` }),
-      page.getByRole('button', { name: `Tudo certo: ${catalog.first}` }),
-      page.getByRole('button', { name: `Com defeito: ${catalog.first}` }),
+      page.getByRole('link', { name: `Ver em Compras: ${catalog.first}` }),
     )
+    // A bought item moves only through Compras and Receber itens (ADR 0031): no purchasing buttons on the order screen.
+    await expect(page.getByRole('button', { name: /Marcar como enviada ao fornecedor|Marcar como em trânsito|Tudo certo|Com defeito/ })).toHaveCount(0)
     await page.getByRole('button', { name: 'Mover para Aguardando sinal' }).click()
     await expect(status(page, 'Aguardando sinal')).toBeVisible()
 
@@ -224,10 +226,27 @@ test.describe('against the real stack', () => {
     await page.getByRole('link', { name: 'P-0001' }).click()
     await expect(page.getByRole('heading', { name: 'Pedido P-0001' })).toBeVisible()
 
-    // The items arrive and the order moves to Pronto, then the handover sheet asks how it was delivered.
+    // The items are bought and received in Compras and Receber itens, then the order moves to Pronto.
     await page.getByRole('button', { name: 'Mover para Aprovado' }).click()
+    await goTo(page, 'Compras', 'Compras')
+    const supplierCard = page.getByRole('article', { name: 'Escapes do Sul' })
+    await expectNoSideScroll(page)
+    await expectThumbSized(supplierCard.getByRole('checkbox', { name: `1× ${catalog.first}` }), supplierCard.getByRole('button', { name: 'Ver mensagem' }), supplierCard.getByRole('button', { name: 'Enviar pelo WhatsApp' }))
+    await supplierCard.getByRole('button', { name: 'Enviar pelo WhatsApp' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Pedido de compra C-0001 criado.' })).toBeVisible()
+    // The tracking link was the first tab the app opened; the supplier's order is the second, and only a wa.me link.
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual([expect.stringMatching(/^https:\/\/wa\.me\//), expect.stringMatching(/^https:\/\/wa\.me\/5511987654321/)])
+    await page.getByRole('link', { name: 'Ver pedido de compra' }).click()
+    await expect(page.getByRole('heading', { name: 'Pedido de compra C-0001' })).toBeVisible()
+    await page.getByRole('link', { name: 'Receber itens' }).click()
+    await expect(page.getByRole('heading', { name: 'C-0001 · Escapes do Sul' })).toBeVisible()
+    await expectNoSideScroll(page)
     await page.getByRole('button', { name: `Tudo certo: ${catalog.first}` }).click()
     await page.getByRole('button', { name: `Tudo certo: ${catalog.second}` }).click()
+    await page.getByRole('button', { name: 'Salvar recebimento' }).click()
+    await expect(page.getByText('Pedido P-0001: todos os itens chegaram e foram conferidos.')).toBeVisible()
+    await page.getByRole('link', { name: 'Abrir pedido P-0001' }).click()
+    await expect(page.getByRole('heading', { name: 'Pedido P-0001' })).toBeVisible()
     await expect(page.getByRole('row', { name: new RegExp(`${catalog.second}.*Recebida`) })).toBeVisible()
     await page.getByRole('button', { name: 'Mover para Em preparação' }).click()
     await page.getByRole('button', { name: 'Mover para Pronto' }).click()
