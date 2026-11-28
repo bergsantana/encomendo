@@ -50,6 +50,28 @@ func (r *Orders) scopeRows(tenant shared.TenantID) []order.Record {
 
 func deliveryKey(rec order.Record) string { return rec.Promise.String() + "|" + rec.ID.String() }
 
+// checkListCursor refuses a cursor List did not issue, as Postgres does.
+func checkListCursor(c string) error {
+	if c == "" {
+		return nil
+	}
+	date, id, ok := strings.Cut(c, "|")
+	if !ok {
+		return cursorError()
+	}
+	if _, err := shared.ParseCivilDate(date); err != nil {
+		return cursorError()
+	}
+	if _, err := shared.ParseOrderID(id); err != nil {
+		return cursorError()
+	}
+	return nil
+}
+
+func cursorError() error {
+	return shared.NewValidationError(shared.FieldError{Field: "cursor", Message: "Recarregue a lista."})
+}
+
 func closed(rec order.Record) bool { return !rec.CancelledAt.IsZero() || !rec.HandedOverAt.IsZero() }
 
 // matches reports whether rec passes f, as the SQL of the Postgres
@@ -121,6 +143,9 @@ func (r *Orders) List(ctx context.Context, tenant shared.TenantID, f apporder.Li
 		return shared.Page[order.Record]{}, err
 	}
 	defer r.mu.Unlock()
+	if err := checkListCursor(p.Cursor()); err != nil {
+		return shared.Page[order.Record]{}, err
+	}
 	var page shared.Page[order.Record]
 	for _, rec := range r.scopeRows(tenant) {
 		if p.Cursor() != "" && deliveryKey(rec) <= p.Cursor() {
@@ -155,7 +180,7 @@ func (r *Orders) Active(ctx context.Context, tenant shared.TenantID, limit int) 
 		if closed(rec) {
 			continue
 		}
-		if len(out) == limit {
+		if len(out) >= limit {
 			break
 		}
 		out = append(out, apporder.ActiveOrder{Record: rec, StatusSince: r.statusSince(rec)})
@@ -188,7 +213,7 @@ func (r *Orders) History(ctx context.Context, tenant shared.TenantID, id shared.
 	if p.Cursor() != "" {
 		n, err := strconv.Atoi(p.Cursor())
 		if err != nil || n < 0 {
-			return shared.Page[apporder.HistoryRow]{}, errors.New("fake: bad history cursor")
+			return shared.Page[apporder.HistoryRow]{}, cursorError()
 		}
 		skip = n
 	}

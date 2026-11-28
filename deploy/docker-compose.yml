@@ -78,6 +78,8 @@ services:
       # Plain HTTP locally, so not the __Host- cookie (ADR 0010).
       AUTH_REFRESH_COOKIE: encomendo_refresh
       ADMIN_ORIGIN: http://admin.localhost:${WEB_PORT:-8080}
+      # Where a store's page lives, for tracking links: {slug} is the store's address.
+      STORE_ORIGIN_TEMPLATE: http://{slug}.localhost:${WEB_PORT:-8080}
       # TRUSTED_PROXIES is unset, so the private ranges are trusted: the API
       # port is published here, and a client on it can pick its own
       # rate-limit key. Accepted for local stacks only (ADR 0021).

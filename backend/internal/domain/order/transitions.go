@@ -29,7 +29,7 @@ func (o *Order) Release(by shared.Principal, today shared.CivilDate, now time.Ti
 		return ErrInvalidTransition
 	}
 	if !o.releasedBy.IsZero() || o.hasDeposit() {
-		return ErrAlreadyReleased
+		return refuse(ErrAlreadyReleased, "release", msgAlreadyReleased)
 	}
 	o.releasedBy = by.UserID()
 	o.release(today)

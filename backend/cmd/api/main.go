@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the store's time zone is loaded by name; a slim image has no zone files, so a store's "today" never depends on the host
 
 	"github.com/bergsantana/encomendo/backend/internal/adapter/auth"
 	apihttp "github.com/bergsantana/encomendo/backend/internal/adapter/http"
@@ -25,10 +26,13 @@ import (
 	"github.com/bergsantana/encomendo/backend/internal/adapter/storage"
 	"github.com/bergsantana/encomendo/backend/internal/adapter/system"
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
+	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
 	appidentity "github.com/bergsantana/encomendo/backend/internal/app/identity"
+	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	appsupplier "github.com/bergsantana/encomendo/backend/internal/app/supplier"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
+	appworkflow "github.com/bergsantana/encomendo/backend/internal/app/workflow"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/platform/config"
 	"github.com/bergsantana/encomendo/backend/internal/platform/logger"
@@ -102,6 +106,9 @@ type services struct {
 	tenancy    *apptenancy.Service
 	catalog    *appcatalog.Service
 	suppliers  *appsupplier.Service
+	workflows  *appworkflow.Service
+	customers  *appcustomer.Service
+	orders     *apporder.Service
 	tokens     *auth.AccessTokens
 	limiter    ratelimit.Limiter
 	pseudonyms ratelimit.Pseudonyms
@@ -163,7 +170,33 @@ func buildHandlers(cfg config.Config, log *slog.Logger, svc services) (apihttp.H
 	if err != nil {
 		return apihttp.Handlers{}, err
 	}
-	return apihttp.Handlers{Auth: authH, Tenancy: tenancyH, Catalog: catalogH, Suppliers: suppliersH}, nil
+	orderH, err := buildOrderHandlers(log, svc)
+	if err != nil {
+		return apihttp.Handlers{}, err
+	}
+	orderH.Auth, orderH.Tenancy, orderH.Catalog, orderH.Suppliers = authH, tenancyH, catalogH, suppliersH
+	return orderH, nil
+}
+
+// buildOrderHandlers builds the handlers of the status workflows,
+// customers, orders, Hoje and Financeiro (milestone 4).
+func buildOrderHandlers(log *slog.Logger, svc services) (apihttp.Handlers, error) {
+	var h apihttp.Handlers
+	var err error
+	if h.Workflows, err = handler.NewWorkflows(handler.WorkflowsDeps{UseCases: svc.workflows, Log: log}); err != nil {
+		return h, err
+	}
+	if h.Customers, err = handler.NewCustomers(handler.CustomersDeps{UseCases: svc.customers, Log: log}); err != nil {
+		return h, err
+	}
+	if h.Orders, err = handler.NewOrders(handler.OrdersDeps{UseCases: svc.orders, Log: log}); err != nil {
+		return h, err
+	}
+	if h.Today, err = handler.NewToday(handler.TodayDeps{UseCases: svc.orders, Log: log}); err != nil {
+		return h, err
+	}
+	h.Finance, err = handler.NewFinance(handler.FinanceDeps{UseCases: svc.orders, Log: log})
+	return h, err
 }
 
 func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, error) {
@@ -184,10 +217,12 @@ func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, err
 		return services{}, err
 	}
 	tx := postgres.NewTxManager(w.db)
+	base := basePorts{tx: tx, ids: ids, cache: redis.NewCache(w.cache, log), clock: clock, secrets: secrets}
 	users := postgres.NewUsers()
+	workflows := appworkflow.NewService(postgres.NewWorkflows(), tx, base.cache)
 	tenancyDeps := apptenancy.Deps{
 		Tenants: postgres.NewTenants(), Members: postgres.NewMembers(), Invitations: postgres.NewInvitations(),
-		Users: inproc.NewTenancyUsers(appidentity.NewDirectory(users)), Workflows: postgres.NewWorkflowPresets(),
+		Users: inproc.NewTenancyUsers(appidentity.NewDirectory(users)), Workflows: inproc.NewTenancyWorkflows(workflows),
 		Mailer: w.mail, Tx: tx, Clock: clock, IDs: ids, Secrets: secrets, Events: postgres.NewOutbox(),
 		Slugs: tenancy.NewSlugPolicy(cfg.Origins.HostLabels()...),
 	}
@@ -202,18 +237,56 @@ func buildServices(cfg config.Config, log *slog.Logger, w wiring) (services, err
 		return services{}, err
 	}
 	tenancySvc := apptenancy.NewService(tenancyDeps)
-	suppliers, catalog, err := buildCatalog(cfg.Storage, basePorts{tx: tx, ids: ids, cache: redis.NewCache(w.cache, log)}, tenancySvc, log)
+	suppliers, catalog, err := buildCatalog(cfg.Storage, base, tenancySvc, log)
 	if err != nil {
 		return services{}, err
 	}
-	return services{identity: identity, tenancy: tenancySvc, catalog: catalog, suppliers: suppliers, tokens: tokens}, nil
+	customers := appcustomer.NewService(postgres.NewCustomers(), tx, ids)
+	orders, err := buildOrders(cfg.Origins.StoreTemplate, base, orderContexts{
+		tenancy: tenancySvc, catalog: catalog, customers: customers, workflows: workflows,
+	})
+	if err != nil {
+		return services{}, err
+	}
+	return services{
+		identity: identity, tenancy: tenancySvc, catalog: catalog, suppliers: suppliers,
+		workflows: workflows, customers: customers, orders: orders, tokens: tokens,
+	}, nil
 }
 
 // basePorts are the adapters every context's service is built on.
 type basePorts struct {
-	tx    appshared.TxManager
-	ids   appshared.IDGenerator
-	cache appshared.Cache
+	tx      appshared.TxManager
+	ids     appshared.IDGenerator
+	cache   appshared.Cache
+	clock   appshared.Clock
+	secrets appshared.SecretGenerator
+}
+
+// orderContexts are the services the order context reads through inproc
+// ports: it depends on them, and none of them on it (ADR 0030).
+type orderContexts struct {
+	tenancy   *apptenancy.Service
+	catalog   *appcatalog.Service
+	customers *appcustomer.Service
+	workflows *appworkflow.Service
+}
+
+// buildOrders wires the order context. Tracking links are made from the
+// store origin template; WhatsApp messages are wa.me links only, so nothing
+// here can send one.
+func buildOrders(storeTemplate string, base basePorts, c orderContexts) (*apporder.Service, error) {
+	tracking, err := auth.NewTrackingURLs(storeTemplate)
+	if err != nil {
+		return nil, err
+	}
+	return apporder.NewService(apporder.Deps{
+		Repo: postgres.NewOrders(base.ids), Catalog: inproc.NewOrderCatalog(c.catalog),
+		Customers: inproc.NewOrderCustomers(c.customers), Workflows: inproc.NewOrderWorkflows(c.tenancy, c.workflows),
+		Store: inproc.NewOrderStore(c.tenancy), Tracking: tracking, WhatsApp: notify.NewWhatsAppLinks(),
+		Idempotency: postgres.NewIdempotency(), Secrets: base.secrets, Tx: base.tx, Events: postgres.NewOutbox(),
+		Clock: base.clock, IDs: base.ids,
+	})
 }
 
 // buildCatalog wires the supplier and catalog contexts. The catalog reads

@@ -273,7 +273,7 @@ func TestCreate_AdminSetsTermsAndDelivery(t *testing.T) {
 	h := newHarness(t)
 	v := h.create(h.admin(t), t, func(in *apporder.CreateInput) {
 		in.Terms = apporder.TermsInput{Handover: order.HandoverDelivery, Address: h.joao.Addresses[0].ID,
-			FreightCents: 3_000, DiscountCents: ptr[int64](10_000), DepositPercent: ptr(30), AssemblyDays: ptr(5)}
+			FreightCents: ptr[int64](3_000), DiscountCents: ptr[int64](10_000), DepositPercent: ptr(30), AssemblyDays: ptr(5)}
 	})
 	o := v.Order
 	// 1.000 + 30 − 100 = 930; 30% = 279.

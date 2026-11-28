@@ -31,6 +31,7 @@ func RunIdempotencyContract(t *testing.T, newHarness func(t *testing.T) Idempote
 	t.Run("a rolled back write forgets the key", func(t *testing.T) { idemRollback(t, newHarness(t)) })
 	t.Run("keys are per store", func(t *testing.T) { idemPerStore(t, newHarness(t)) })
 	t.Run("a key stored by another call is in flight", func(t *testing.T) { idemInFlight(t, newHarness(t)) })
+	t.Run("two stores store the same key apart", func(t *testing.T) { idemStoresApart(t, newHarness(t)) })
 	t.Run("needs a transaction", func(t *testing.T) { idemNeedsTx(t, newHarness(t)) })
 }
 
@@ -119,6 +120,20 @@ func idemInFlight(t *testing.T, h IdempotencyHarness) {
 	})
 	if !errors.Is(err, appshared.ErrIdempotencyKeyInFlight) {
 		t.Errorf("second Remember of a stored key: err = %v, want ErrIdempotencyKeyInFlight", err)
+	}
+}
+
+// idemStoresApart: another store stores the same key while ours is live,
+// and each recalls its own (security review of 4.12).
+func idemStoresApart(t *testing.T, h IdempotencyHarness) {
+	ours, theirs := idemKey("pedido-6", 1), idemKey("pedido-6", 2)
+	remember(t, h, h.Store, ours)
+	remember(t, h, h.Other, theirs)
+	if res, ok, err := recall(t, h, h.Store, ours); err != nil || !ok || res != h.Resource {
+		t.Errorf("our key after theirs: %q %v %v", res, ok, err)
+	}
+	if _, ok, err := recall(t, h, h.Other, theirs); err != nil || !ok {
+		t.Errorf("their key: %v %v", ok, err)
 	}
 }
 

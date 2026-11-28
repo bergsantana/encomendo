@@ -50,6 +50,9 @@ type Repository interface {
 	// AddMessage records a wa.me message made for an order. Its text never
 	// holds a tracking link (ADR 0030, Amendments).
 	AddMessage(ctx context.Context, m Message) error
+	// StaffNames returns the name of each user in ids, for "Registrado por"
+	// on payments; a user that no longer exists is absent, not an error.
+	StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error)
 
 	// List returns one page of the store's orders that match f, by
 	// (delivery date, id) ascending. The cursor is the repository's own and

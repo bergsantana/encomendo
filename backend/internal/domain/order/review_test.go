@@ -217,22 +217,28 @@ func TestMoves_RefuseAZeroTodayOrPrincipal(t *testing.T) {
 	if err := o.Release(by, zero, day1); !errors.Is(err, shared.ErrInvalid) {
 		t.Errorf("release without today: err = %v", err)
 	}
-	if err := o.Advance("awaiting_deposit", nil, by, zero, day1); !errors.Is(err, shared.ErrInvalid) {
+	if err := o.Advance("awaiting_deposit", nil, by, zero, day1); !isBug(err) {
 		t.Errorf("advance without today: err = %v", err)
 	}
-	if err := o.MoveItem(o.Items()[0].ID(), order.ItemSentToSupplier, nil, zero, day1, by); !errors.Is(err, shared.ErrInvalid) {
+	if err := o.MoveItem(o.Items()[0].ID(), order.ItemSentToSupplier, nil, zero, day1, by); !isBug(err) {
 		t.Errorf("move without today: err = %v", err)
 	}
-	if _, err := o.ChangeDeliveryDate(date(t, "2026-12-20"), "", by, zero, day1); !errors.Is(err, shared.ErrInvalid) {
+	if _, err := o.ChangeDeliveryDate(date(t, "2026-12-20"), "", by, zero, day1); !isBug(err) {
 		t.Errorf("date without today: err = %v", err)
 	}
 	s := changeSpec(t, o, "2026-12-02")
 	s.Today = zero
-	if _, err := o.Change(s); !errors.Is(err, shared.ErrInvalid) {
+	if _, err := o.Change(s); !isBug(err) {
 		t.Errorf("change without today: err = %v", err)
 	}
 	if err := o.Cancel("x", by, time.Time{}); !errors.Is(err, shared.ErrInvalid) {
 		t.Errorf("cancel without a time: err = %v", err)
 	}
 
+}
+
+// isBug reports whether err is a refusal that means a caller's bug: an
+// error matching no sentinel, which the API answers as a logged 500.
+func isBug(err error) bool {
+	return err != nil && !errors.Is(err, shared.ErrInvalid) && !errors.Is(err, shared.ErrNotFound)
 }

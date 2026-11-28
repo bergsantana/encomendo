@@ -44,9 +44,15 @@ func newBaseline(f StoreFacts, lines []order.LineSpec) (order.Terms, error) {
 // the same address is sent, even if the customer no longer has it.
 func resolveTerms(by shared.Principal, baseline order.Terms, in TermsInput, c CustomerFacts) (order.Terms, error) {
 	currency := baseline.Freight.Currency()
-	freight, err := shared.NewMoney(in.FreightCents, currency)
-	if err != nil {
-		return order.Terms{}, err
+	freight := baseline.Freight
+	var err error
+	switch {
+	case in.FreightCents != nil:
+		if freight, err = shared.NewMoney(*in.FreightCents, currency); err != nil {
+			return order.Terms{}, err
+		}
+	case in.Handover == order.HandoverPickup:
+		freight = mustZero(currency)
 	}
 	t := baseline
 	t.Handover, t.Freight, t.Address = in.Handover, freight, nil
@@ -75,6 +81,15 @@ func resolveTerms(by shared.Principal, baseline order.Terms, in TermsInput, c Cu
 
 // msgAddress is the design document's refusal (Novo pedido, Entrega).
 const msgAddress = "Escolha o endereço de entrega."
+
+// mustZero is zero in a currency the baseline already holds.
+func mustZero(currency string) shared.Money {
+	z, err := shared.ZeroMoney(currency)
+	if err != nil {
+		return shared.Money{}
+	}
+	return z
+}
 
 func pick(v *int, def int) int {
 	if v == nil {

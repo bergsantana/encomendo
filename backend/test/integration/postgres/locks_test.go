@@ -17,6 +17,7 @@ import (
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 	"github.com/bergsantana/encomendo/backend/test/integration/pgtest"
 )
 
@@ -187,10 +188,11 @@ func TestDefaultWorkflow_IsTheSeededPresetSettingsJoinOn(t *testing.T) {
 	tx := postgres.NewTxManager(openApp(t))
 	store := s.Tenant(s.User())
 	err := tx.WithinTx(appshared.WithScope(context.Background(), appshared.Scope{TenantID: store}), func(ctx context.Context) error {
-		ref, err := postgres.NewWorkflowPresets().DefaultWorkflow(ctx)
+		w, err := postgres.NewWorkflows().Default(ctx)
 		if err != nil {
 			return err
 		}
+		ref := tenancy.WorkflowRef{ID: w.ID(), Version: w.Version(), Name: w.Name()}
 		settings, err := postgres.NewTenants().SettingsOf(ctx, store)
 		if err != nil {
 			return err

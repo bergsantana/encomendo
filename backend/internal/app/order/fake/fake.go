@@ -91,7 +91,40 @@ func (r *Orders) Insert(ctx context.Context, o *order.Order) error {
 	if _, ok := r.rows[k]; ok {
 		return fmt.Errorf("fake: order %s exists: %w", o.ID(), shared.ErrConflict)
 	}
-	r.store(ctx, k, o.Record(), o.PendingHistory())
+	rec := o.Record()
+	if err := r.heldElsewhere(k, rec); err != nil {
+		return err
+	}
+	r.store(ctx, k, rec, o.PendingHistory())
+	return nil
+}
+
+// heldElsewhere refuses a line or item id another order holds, of any
+// store, as Postgres's primary keys and its ON CONFLICT guard do. The caller
+// holds the lock.
+func (r *Orders) heldElsewhere(k orderKey, rec order.Record) error {
+	mine := map[[16]byte]bool{}
+	for _, l := range rec.Lines {
+		mine[l.ID] = true
+		for _, it := range l.Items {
+			mine[it.ID] = true
+		}
+	}
+	for other, o := range r.rows {
+		if other == k {
+			continue
+		}
+		for _, l := range o.Lines {
+			if mine[l.ID] {
+				return fmt.Errorf("fake: line %s belongs to another order: %w", l.ID, shared.ErrInvalid)
+			}
+			for _, it := range l.Items {
+				if mine[it.ID] {
+					return fmt.Errorf("fake: item %s belongs to another order: %w", it.ID, shared.ErrInvalid)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -111,6 +144,9 @@ func (r *Orders) Update(ctx context.Context, o *order.Order) error {
 		return shared.ErrVersionConflict
 	}
 	rec := o.Record()
+	if err := r.heldElsewhere(k, rec); err != nil {
+		return err
+	}
 	rec.Version++
 	r.store(ctx, k, rec, o.PendingHistory())
 	return nil
@@ -420,4 +456,21 @@ type WhatsApp struct{}
 // Link implements apporder.WhatsApp.
 func (WhatsApp) Link(phone, text string) (string, error) {
 	return "https://wa.me/" + phone + "?text=" + url.QueryEscape(text), nil
+}
+
+// StaffNames implements apporder.Repository, with the names set by
+// AddUser.
+func (r *Orders) StaffNames(ctx context.Context, ids []shared.UserID) (map[shared.UserID]string, error) {
+	if !sharedfake.InTx(ctx) {
+		return nil, appshared.ErrNoTransaction
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[shared.UserID]string{}
+	for _, id := range ids {
+		if name, ok := r.userNames[id]; ok {
+			out[id] = name
+		}
+	}
+	return out, nil
 }

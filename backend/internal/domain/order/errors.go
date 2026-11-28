@@ -102,29 +102,30 @@ func fieldError(field, message string) error {
 // pt-BR field messages, from docs/product/design-document.md (Milestone 4
 // screens).
 const (
-	msgNoLines        = "Adicione ao menos um item ou kit."
-	msgQuantity       = "Use uma quantidade de 1 a 99."
-	msgCurrency       = "Use a moeda da loja."
-	msgDiscount       = "O desconto não pode passar do valor dos itens."
-	msgNegative       = "Use um valor de zero ou mais."
-	msgFreightPickup  = "Retirada na loja não tem frete."
-	msgAddress        = "Escolha o endereço de entrega."
-	msgHandover       = "Escolha entre Entrega e Retirada na loja."
-	msgDepositPercent = "Use um sinal de 0 a 100%."
-	msgDays           = "Use de 0 a 60 dias."
-	msgAmount         = "Informe um valor maior que zero."
-	msgPaymentKind    = "Escolha Sinal ou Saldo."
-	msgPaymentMethod  = "Escolha a forma de pagamento."
-	msgReason         = "Informe o motivo."
-	msgReasonTooLong  = "Use um motivo de até 500 caracteres."
-	msgDateFromToday  = "Escolha uma data a partir de hoje."
-	msgHandedOverAs   = "Escolha como o pedido foi entregue: Entrega ou Retirada na loja."
-	msgLineShape      = "Um item avulso fica sozinho na linha."
-	msgPaymentVoided  = "Este pagamento já foi anulado."
-	msgItemName       = "Informe o nome do item."
-	msgLeadDays       = "Use de 0 a 365 dias."
-	msgSourcingMode   = "Escolha a origem do item."
-	msgAmountTooHigh  = "Use um valor de até R$ 1.000.000.000,00."
+	msgNoLines         = "Adicione ao menos um item ou kit."
+	msgQuantity        = "Use uma quantidade de 1 a 99."
+	msgCurrency        = "Use a moeda da loja."
+	msgDiscount        = "O desconto não pode passar do valor dos itens."
+	msgNegative        = "Use um valor de zero ou mais."
+	msgFreightPickup   = "Retirada na loja não tem frete."
+	msgAddress         = "Escolha o endereço de entrega."
+	msgHandover        = "Escolha entre Entrega e Retirada na loja."
+	msgDepositPercent  = "Use um sinal de 0 a 100%."
+	msgDays            = "Use de 0 a 60 dias."
+	msgAmount          = "Informe um valor maior que zero."
+	msgPaymentKind     = "Escolha Sinal ou Saldo."
+	msgPaymentMethod   = "Escolha a forma de pagamento."
+	msgReason          = "Informe o motivo."
+	msgReasonTooLong   = "Use um motivo de até 500 caracteres."
+	msgDateFromToday   = "Escolha uma data a partir de hoje."
+	msgHandedOverAs    = "Escolha como o pedido foi entregue: Entrega ou Retirada na loja."
+	msgLineShape       = "Um item avulso fica sozinho na linha."
+	msgPaymentVoided   = "Este pagamento já foi anulado."
+	msgItemName        = "Informe o nome do item."
+	msgLeadDays        = "Use de 0 a 365 dias."
+	msgSourcingMode    = "Escolha a origem do item."
+	msgAmountTooHigh   = "Use um valor de até R$ 1.000.000.000,00."
+	msgAlreadyReleased = "Este pedido já foi liberado ou o sinal já foi pago."
 )
 
 // maxAmountCents is the largest price, freight or cost an order takes: the
@@ -133,5 +134,6 @@ const (
 const maxAmountCents = 100_000_000_000
 
 // errMissingToday is the error a move gets without the store's day: a bug
-// in the caller, never bad input from a person.
-var errMissingToday = fmt.Errorf("order: today is required: %w", shared.ErrInvalid)
+// in the caller, never bad input from a person, so it matches no sentinel
+// and becomes a logged 500.
+var errMissingToday = errors.New("order: today is required")

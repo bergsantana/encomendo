@@ -243,3 +243,24 @@ func TestTrackingView_CancelledShowsOneStep(t *testing.T) {
 		t.Errorf("tracking view = %+v", tv)
 	}
 }
+
+// A change that leaves the freight out keeps the order's own; a switch to
+// pickup clears it (go-reviewer and security review of 4.14).
+func TestChange_FreightLeftOutIsKept(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	addr := h.joao.Addresses[0].ID
+	v := h.create(h.staff(t), t, func(in *apporder.CreateInput) {
+		in.Terms = apporder.TermsInput{Handover: order.HandoverDelivery, Address: addr, FreightCents: ptr[int64](3_000)}
+	}).Order
+	got, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: v.Version,
+		Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 2}}, Terms: apporder.TermsInput{Handover: order.HandoverDelivery, Address: addr}})
+	if err != nil || got.Order.Freight.Cents() != 3_000 {
+		t.Fatalf("freight left out: %v freight %v, want 3000 kept", err, got.Order.Freight)
+	}
+	pickup, err := h.svc.Change(h.staff(t), apporder.ChangeInput{Order: v.ID, Version: got.Order.Version,
+		Lines: []apporder.LineRequest{{Item: h.banco, Quantity: 2}}, Terms: apporder.TermsInput{Handover: order.HandoverPickup}})
+	if err != nil || !pickup.Order.Freight.IsZero() {
+		t.Errorf("switch to pickup: %v freight %v, want zero", err, pickup.Order.Freight)
+	}
+}

@@ -1551,5 +1551,10 @@ Rules that the reviewers will check:
   - **Customer names** in lists, Hoje and Financeiro are read one customer at a time (cached per call). A batch read on the `Customers` port is the fix if the queries show it slow.
   - **Product to confirm:** "A receber" includes drafts (active orders), and "há mais de 3 dias" means strictly more than 3.
   - **The HTTP layer (4.14)** maps `appshared.ErrIdempotencyKeyReused` to 422 `idempotency_key_reused` and `ErrIdempotencyKeyInFlight` to 409 `conflict`, before the generic conflict. It requires `handover` and `freightCents` in `TermsInput`, and puts the method and path in the request hash.
+- From step 4.14:
+  - **Payments name who recorded and voided them** (`Actor {id, name}`), read through `Repository.StaffNames`, so "Registrado por" works for every role; the name is empty for a user who no longer exists.
+  - **A freight left out of a change keeps the order's own**; a switch to pickup clears it. Every write refuses a version below 1 in the HTTP layer.
+  - **The same key from two staff members** is `idempotency_key_reused`, not a replay, because the caller's user id is in the request hash.
+  - **`STORE_ORIGIN_TEMPLATE`** is required in production (`deploy/docker-compose.prod.yml`), so the real `deploy/.env.prod` must set it before the next deploy.
 - `order.deposit_confirmed` fires again when a voided deposit is paid again, so M5's `GeneratePurchases` must be idempotent per order item: a line that already exists for an item is never made twice.
 - M7's `PlaceOrder` reuses the find-by-phone path of `Create`. On the public store page a phone proves nothing, so for a customer matched only by phone it must answer no customer facts (name, addresses) and must not use the stored addresses; the delivery address comes from the checkout form (security review of 4.1, D5). 4.10 writes this in `app/order/doc.go`.

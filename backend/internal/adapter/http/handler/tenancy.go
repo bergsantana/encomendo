@@ -84,6 +84,19 @@ func (h *Tenancy) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	h.answer(w, r, http.StatusOK, err, func() any { return dto.NewTenantSettings(s) })
 }
 
+// ChooseWorkflow is PUT /api/v1/admin/settings/status-workflow: new orders
+// take the chosen preset and orders already made keep theirs (ADR 0004). An
+// unknown preset is 404 workflow_not_found and a stale settings version is
+// 409 version_conflict.
+func (h *Tenancy) ChooseWorkflow(w http.ResponseWriter, r *http.Request) {
+	in, ok := decode(w, r, h.log, dto.ChooseWorkflowRequest.Input)
+	if !ok {
+		return
+	}
+	s, err := h.uc.ChooseStatusWorkflow(r.Context(), in)
+	h.answer(w, r, http.StatusOK, err, func() any { return dto.NewTenantSettings(s) })
+}
+
 // Members is GET /api/v1/admin/members: one page, oldest member first. A
 // cursor the server did not issue is 400.
 func (h *Tenancy) Members(w http.ResponseWriter, r *http.Request) {

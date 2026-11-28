@@ -38,6 +38,8 @@ services:
     environment:
       # The Vite admin app is its own origin here.
       ADMIN_ORIGIN: http://localhost:${ADMIN_PORT:-5173}
+      # The Vite store app is its own origin here.
+      STORE_ORIGIN_TEMPLATE: http://{slug}.localhost:${STORE_PORT:-5174}
     develop:
       watch:
         - action: rebuild

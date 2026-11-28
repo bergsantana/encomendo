@@ -100,7 +100,6 @@ func TestNew_RefusesMissingIdentity(t *testing.T) {
 		"number":   func(s *order.NewSpec) { s.Number = 0 },
 		"workflow": func(s *order.NewSpec) { s.Workflow = workflow.Workflow{} },
 		"tracking": func(s *order.NewSpec) { s.Tracking = shared.SecretHash{} },
-		"today":    func(s *order.NewSpec) { s.Today = shared.CivilDate{} },
 		"line id":  func(s *order.NewSpec) { s.Lines[0].ID = shared.OrderLineID{} },
 		"item id":  func(s *order.NewSpec) { s.Lines[0].Items[0].ID = shared.OrderItemID{} },
 	}
@@ -110,6 +109,11 @@ func TestNew_RefusesMissingIdentity(t *testing.T) {
 		if _, err := order.New(s); !errors.Is(err, shared.ErrInvalid) {
 			t.Errorf("no %s: err = %v, want ErrInvalid", name, err)
 		}
+	}
+	s := testkit.NewOrder().Spec(t)
+	s.Today = shared.CivilDate{}
+	if _, err := order.New(s); !isBug(err) {
+		t.Errorf("no today: err = %v, want a caller's bug (no sentinel)", err)
 	}
 }
 

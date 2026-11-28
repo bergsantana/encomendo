@@ -68,6 +68,10 @@ type Origins struct {
 	// APIHost is the API's host name, if it has one of its own; its first
 	// label is reserved as a store address.
 	APIHost string
+	// StoreTemplate is the origin of a store's page with {slug} where the
+	// store's address goes, such as https://{slug}.encomendo.com.br. Tracking
+	// links are built from it (ADR 0030).
+	StoreTemplate string
 }
 
 // SMTP configures the mail of invitations and password reset codes.
@@ -234,9 +238,18 @@ func (r *reader) resetCodeKey(env Environment, raw string) []byte {
 }
 
 func (r *reader) origins(env Environment) Origins {
-	o := Origins{Admin: r.required("ADMIN_ORIGIN"), APIHost: r.str("API_HOST", "")}
+	o := Origins{
+		Admin: r.required("ADMIN_ORIGIN"), APIHost: r.str("API_HOST", ""),
+		StoreTemplate: r.required("STORE_ORIGIN_TEMPLATE"),
+	}
 	r.check(env.IsLocal() || strings.HasPrefix(o.Admin, "https://"),
 		"ADMIN_ORIGIN must be https outside development, got %q", o.Admin)
+	if o.StoreTemplate != "" {
+		r.check(strings.Count(o.StoreTemplate, "{slug}") == 1,
+			"STORE_ORIGIN_TEMPLATE must contain {slug} once, got %q", o.StoreTemplate)
+		r.check(env.IsLocal() || strings.HasPrefix(o.StoreTemplate, "https://"),
+			"STORE_ORIGIN_TEMPLATE must be https outside development, got %q", o.StoreTemplate)
+	}
 	return o
 }
 

@@ -2567,6 +2567,7 @@ export interface components {
             kind: components["schemas"]["PaymentKind"];
             amount: components["schemas"]["Money"];
             method: components["schemas"]["PaymentMethod"];
+            /** @description Who recorded it ("Registrado por"). The name is empty when the user no longer exists. */
             recordedBy: components["schemas"]["Actor"];
             /** Format: date-time */
             recordedAt: string;

@@ -106,7 +106,11 @@ func (s *Service) create(ctx context.Context, in CreateInput, w writeCtx) (Creat
 	if err != nil {
 		return CreatedView{}, fmt.Errorf("tracking url: %w", err)
 	}
-	out := CreatedView{Order: toView(o, c, w.by, w.today), TrackingURL: link}
+	v, err := s.viewWith(ctx, o, c, w.by, w.today)
+	if err != nil {
+		return CreatedView{}, err
+	}
+	out := CreatedView{Order: v, TrackingURL: link}
 	if in.SendToCustomer {
 		text := order.CreatedMessage(messageFacts(w.facts, c, o), link)
 		out.WhatsAppURL, err = s.message(ctx, outgoing{order: o, to: c, kind: MessageCreated, text: text, link: link, by: w.by.UserID(), at: w.now})
