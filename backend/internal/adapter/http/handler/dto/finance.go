@@ -39,11 +39,20 @@ type Received struct {
 	ByMethod []MoneyByKey `json:"byMethod"`
 }
 
-// ToReceive is the balances still due on active orders: the contract gives
-// the number of orders, not the orders.
+// ToReceive is the balances still due on active orders: their total, how
+// many they are and the orders themselves, by delivery date.
 type ToReceive struct {
-	Total  shared.Money `json:"total"`
-	Orders int          `json:"orders"`
+	Total  shared.Money   `json:"total"`
+	Orders int            `json:"orders"`
+	List   []OrderSummary `json:"list"`
+}
+
+func newToReceive(v apporder.ToReceiveView) ToReceive {
+	out := ToReceive{Total: v.Total, Orders: len(v.Orders), List: make([]OrderSummary, 0, len(v.Orders))}
+	for _, o := range v.Orders {
+		out.List = append(out.List, NewOrderSummary(o))
+	}
+	return out
 }
 
 // Refund is an order with "Valor a devolver".
@@ -77,7 +86,7 @@ func NewFinanceSummary(v apporder.FinanceView) FinanceSummary {
 		Truncated: v.Truncated, From: v.From, To: v.To,
 		MarginsTotal: MarginsTotal{Total: v.MarginsTotal.Total, Cost: v.MarginsTotal.Cost},
 		Received:     Received{Total: v.Received.Total, ByKind: moneyByKey(v.Received.ByKind), ByMethod: moneyByKey(v.Received.ByMethod)},
-		ToReceive:    ToReceive{Total: v.ToReceive.Total, Orders: len(v.ToReceive.Orders)},
+		ToReceive:    newToReceive(v.ToReceive),
 		ToRefund:     make([]Refund, 0, len(v.ToRefund)), Margins: make([]MarginRow, 0, len(v.Margins)),
 	}
 	if m := v.MarginsTotal.Margin; m != nil {

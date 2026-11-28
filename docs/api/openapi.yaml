@@ -5797,7 +5797,7 @@ components:
                 $ref: "#/components/schemas/MoneyByKey"
         toReceive:
           type: object
-          required: [total, orders]
+          required: [total, orders, list]
           description: Balances still due on active orders, whatever the period.
           properties:
             total:
@@ -5805,6 +5805,12 @@ components:
             orders:
               type: integer
               minimum: 0
+              description: How many orders `list` holds.
+            list:
+              type: array
+              description: The active orders with a balance, by delivery date; each one's `balanceDue` is its share of `total`.
+              items:
+                $ref: "#/components/schemas/OrderSummary"
         toRefund:
           type: array
           description: Orders with "Valor a devolver".

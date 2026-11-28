@@ -2756,7 +2756,10 @@ export interface components {
             /** @description Balances still due on active orders, whatever the period. */
             toReceive: {
                 total: components["schemas"]["Money"];
+                /** @description How many orders `list` holds. */
                 orders: number;
+                /** @description The active orders with a balance, by delivery date; each one's `balanceDue` is its share of `total`. */
+                list: components["schemas"]["OrderSummary"][];
             };
             /** @description Orders with "Valor a devolver". */
             toRefund: {
