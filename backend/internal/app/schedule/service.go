@@ -83,6 +83,11 @@ func (s *Service) Recalculate(ctx context.Context, id shared.OrderID) error {
 		if err != nil {
 			return fmt.Errorf("load order %s: %w", id, err)
 		}
+		// A closed order has nothing left to arrive: redating it from today
+		// would move its dates every day for nothing.
+		if o.Closed() {
+			return nil
+		}
 		loc, err := s.store.Location(ctx)
 		if err != nil {
 			return fmt.Errorf("store time zone: %w", err)

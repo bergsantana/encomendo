@@ -118,7 +118,9 @@ func (s *Service) Preview(ctx context.Context, in PickInput) (string, error) {
 //
 // It returns ErrIdempotencyKeyRequired, appshared.ErrIdempotencyKeyReused,
 // ErrItemNotToBuy when an item is not in "A comprar" for the supplier (also
-// when another send took it first), purchasing.ErrEmptyPick,
+// when another send took it first, and also for the same key sent twice at
+// once: the second waits on the open-line index and finds the item taken; a
+// retry after the first committed replays it), purchasing.ErrEmptyPick,
 // purchasing.ErrItemPickedTwice, and the order context's refusals.
 func (s *Service) Send(ctx context.Context, in SendInput) (SentView, error) {
 	by, err := authz.Require(ctx, identity.PermPurchaseWrite)

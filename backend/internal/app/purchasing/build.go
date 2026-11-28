@@ -17,7 +17,7 @@ func (s *Service) supplierOrderView(ctx context.Context, by shared.Principal, so
 	if err != nil {
 		return SupplierOrderView{}, err
 	}
-	names, err := s.d.Repo.StaffNames(ctx, []shared.UserID{so.SentBy()})
+	names, err := s.d.Repo.StaffNames(ctx, so.Tenant(), []shared.UserID{so.SentBy()})
 	if err != nil {
 		return SupplierOrderView{}, fmt.Errorf("staff names of supplier order %s: %w", so.ID(), err)
 	}

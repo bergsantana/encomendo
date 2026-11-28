@@ -30,6 +30,9 @@ type OrderItemsHarness struct {
 	Draft func(t *testing.T) (shared.OrderID, shared.OrderItemID)
 	// Cancel cancels an order.
 	Cancel func(t *testing.T, id shared.OrderID)
+	// As returns a caller of the store with role. Nil for a fake, which
+	// knows no principal: permissions are the order context's.
+	As func(t *testing.T, role shared.Role) context.Context
 }
 
 type orderItemsCase struct {
@@ -49,6 +52,8 @@ func RunOrderItemsContract(t *testing.T, newHarness func(t *testing.T) OrderItem
 		{"a cancelled order refuses moves and says it is cancelled", cancelledRefuses},
 		{"a refused move moves nothing", refusedMoveMovesNothing},
 		{"Orders answers each order once, and an unknown one is not found", ordersOnceAndNotFound},
+		{"staff receive at the counter but never send; only the owner records a price paid", rolesThroughThePort},
+		{"a price paid is recorded for a bought item, also on a closed order, in the order's currency", paidCosts},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.run(t, newHarness(t)) })
 	}
@@ -217,5 +222,61 @@ func ordersOnceAndNotFound(t *testing.T, h OrderItemsHarness) {
 	}
 	if _, err := h.Items.Orders(h.Ctx, []shared.OrderID{shared.OrderID(unknown)}); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("an unknown order: err = %v, want ErrNotFound", err)
+	}
+}
+
+// rolesThroughThePort runs purchasing's calls as staff and as an admin
+// through the order context: staff see "A comprar" without costs and
+// receive at the counter, but may not send; an admin may not record a price
+// paid (security review of 5.6–5.8).
+func rolesThroughThePort(t *testing.T, h OrderItemsHarness) {
+	if h.As == nil {
+		t.Skip("the fake knows no principal; permissions are the order context's")
+	}
+	o, item := h.Released(t)
+	staff, admin := h.As(t, shared.RoleStaff), h.As(t, shared.RoleAdmin)
+	v, err := h.Items.ToBuy(staff)
+	if err != nil {
+		t.Fatalf("staff ToBuy: %v", err)
+	}
+	for _, it := range v.Items {
+		if it.Cost != nil {
+			t.Errorf("staff see a cost on %s", it.Item.Name)
+		}
+	}
+	if err := h.Items.Move(staff, []apppurchasing.ItemMove{{Order: o, Item: item, To: order.ItemSentToSupplier, Ref: "C-0001"}}); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("staff send: err = %v, want ErrForbidden", err)
+	}
+	cost, err := shared.NewMoney(41_000, "BRL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Items.RecordPaidCosts(admin, []apppurchasing.ItemCost{{Order: o, Item: item, Cost: cost}}); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("admin price paid: err = %v, want ErrForbidden", err)
+	}
+	if err := h.Items.Move(staff, []apppurchasing.ItemMove{{Order: o, Item: item, To: order.ItemReceived, Check: check(purchasing.CheckOK)}}); err != nil {
+		t.Errorf("staff receive at the counter: %v", err)
+	}
+}
+
+func paidCosts(t *testing.T, h OrderItemsHarness) {
+	o, item := h.Released(t)
+	brl, err := shared.NewMoney(41_000, "BRL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	usd, err := shared.NewMoney(100, "USD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Items.RecordPaidCosts(h.Ctx, []apppurchasing.ItemCost{{Order: o, Item: item, Cost: usd}}); !errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("another currency: err = %v, want ErrInvalid", err)
+	}
+	if err := h.Items.RecordPaidCosts(h.Ctx, []apppurchasing.ItemCost{{Order: o, Item: item, Cost: brl}}); err != nil {
+		t.Errorf("a price paid: %v", err)
+	}
+	h.Cancel(t, o)
+	if err := h.Items.RecordPaidCosts(h.Ctx, []apppurchasing.ItemCost{{Order: o, Item: item, Cost: brl}}); err != nil {
+		t.Errorf("a price paid on a closed order (margins are read after it): %v", err)
 	}
 }
