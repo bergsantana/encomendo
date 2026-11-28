@@ -85,6 +85,10 @@ type HistoryView struct {
 	OldDate, NewDate shared.CivilDate
 	Reason           string
 	CustomerApproved bool
+
+	// Ref is the pedido de compra ("C-0012") of a purchasing move or a
+	// promised date; staff data, never in a client view (ADR 0031).
+	Ref string
 }
 
 // toHistoryView maps a stored history row; itemName is the name of the
@@ -95,7 +99,7 @@ func toHistoryView(row HistoryRow, itemName string) HistoryView {
 		Kind: e.Kind, At: e.At, Handover: e.Handover,
 		Item: e.Item, ItemName: itemName, ItemFrom: e.ItemFrom, ItemTo: e.ItemTo, Check: e.Check,
 		Payment: e.Payment, PaymentKind: e.PaymentKind, PaymentMethod: e.PaymentMethod,
-		OldDate: e.OldDate, NewDate: e.NewDate, Reason: e.Reason, CustomerApproved: e.CustomerApproved,
+		OldDate: e.OldDate, NewDate: e.NewDate, Reason: e.Reason, CustomerApproved: e.CustomerApproved, Ref: e.Ref,
 	}
 	if !e.By.IsZero() {
 		v.By = &ActorView{ID: e.By, Name: row.ByName}

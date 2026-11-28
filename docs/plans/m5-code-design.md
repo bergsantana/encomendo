@@ -829,6 +829,9 @@ Layers as `web/CLAUDE.md` says: `views/*.vue` → `store.ts` (Pinia) → `packag
   - The order history now holds `promised_date` entries, whose `ref` is the C-number, and receipt notes in `reason`.
   - `order_status_history` is staff-read only today, and `TrackingOrder` carries no history.
   - Any client projection of the history must leave these kinds out (security review of PR E).
+- **M7, client projections of `order_items`** (security pass over M5). `order_items.expected_date` now holds the supplier's promised date plus the options' days, and that column has a `client_read` policy (0013). The 0016 comment ("never in order_items") is about where the promised date is stored, not about what the forecast reveals. Client and tracking queries must never select `expected_date`, `check_result` or the raw bought-item `status`: they give away the supplier's date and "Pode atrasar". This is already a trap in the M4 allow-list, and now matters more. Read them through a view or a column-restricted query.
+- **M7, store-page writes.** `order_items` and `order_lines` use `tenant_isolation` for every command, so at the database level a store-page scope may DELETE, which nulls purchase lines through `SET NULL`. Only `hasStaff` in `Orders.Update` stops it today. When the store page writes orders, split those policies per command so that DELETE needs `current_user_id() IS NOT NULL`.
+- **M7, public photos.** Receipt photos (invoices, defects) share the bucket under `t/{tenant}/receipts/`. Any public-read rule for store-page photos must be scoped to `t/*/items/*` and `t/*/kits/*`, never `t/*`.
 - **Later, Fornecedores.** `listSupplierItems` reads the store's whole catalog a page at a time and filters in memory. An `Items` port query by supplier replaces it if catalogs grow.
 - **Later, `schedule.Recalculate`.** It is not wired: it needs an inproc `Orders` (`ByID`, `Update`) over the order repository, with a contract for the version conflict.
 
