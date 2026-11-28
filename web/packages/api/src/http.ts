@@ -16,6 +16,9 @@ export interface Reference {
   name: string
 }
 
+/** Guard names the rule that stopped an order's move: the deposit, the items arriving, or the balance (`guard_failed`). */
+export type Guard = 'deposit_unpaid' | 'items_not_ready' | 'balance_unpaid'
+
 /** Fields of an RFC 9457 problem+json body. */
 export interface ProblemBody {
   type?: string
@@ -26,6 +29,7 @@ export interface ProblemBody {
   instance?: string
   errors?: FieldIssue[]
   references?: Reference[]
+  guard?: Guard
 }
 
 /**
@@ -40,6 +44,8 @@ export class ApiError extends Error {
   readonly fieldIssues: FieldIssue[]
   /** references are the rows an `item_in_kit` or `item_archived` refusal names. */
   readonly references: Reference[]
+  /** guard is which guard did not hold, with a `guard_failed` refusal. */
+  readonly guard: Guard | undefined
   /** retryAfterSeconds is the wait a 429 asks for, from its Retry-After header. */
   readonly retryAfterSeconds: number | undefined
 
@@ -52,6 +58,7 @@ export class ApiError extends Error {
     this.detail = body.detail
     this.fieldIssues = body.errors ?? []
     this.references = body.references ?? []
+    this.guard = body.guard
     this.retryAfterSeconds = retryAfterSeconds
   }
 }
