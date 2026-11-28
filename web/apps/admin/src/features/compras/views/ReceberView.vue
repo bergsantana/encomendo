@@ -9,12 +9,14 @@
  * tab of Compras (`embedded`, under that screen's own title). It is built at
  * workshop sizes: 18 px text, 56 px targets and a 64 px main button
  * (`enc-workshop`). Nothing here is worked out: the checks and photos live in
- * the store, and what a receipt completed is the API's answer.
+ * the store, and what a receipt completed is the API's answer. `?pedido=` (the
+ * pedido de compra's id, from its own screen) narrows the list to that one
+ * pedido de compra, with "Mostrar todos" to see the rest.
  */
 import { BaseButton, BaseInput } from '@encomendo/ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import PhotoPicker from '../components/PhotoPicker.vue'
 import ReceiptLine from '../components/ReceiptLine.vue'
@@ -28,6 +30,17 @@ const store = useComprasStore()
 const { receivable, receiveLoading, receiveError, marks, invoicePhotos, photoErrors, uploading, saving, saveError, receipt } = storeToRefs(store)
 
 const query = ref('')
+const route = useRoute()
+const router = useRouter()
+
+/** only is the pedido de compra the list is narrowed to, or null for all of them. */
+const only = computed(() => (typeof route.query.pedido === 'string' && route.query.pedido !== '' ? route.query.pedido : null))
+const onlyNumber = computed(() => receivable.value?.groups.find((group) => group.supplierOrderId === only.value)?.number ?? null)
+
+/** showAll drops the narrowing and keeps the rest of the address, such as the Compras tab. */
+function showAll(): void {
+  void router.replace({ query: Object.fromEntries(Object.entries(route.query).filter(([name]) => name !== 'pedido')) })
+}
 
 onMounted(() => store.openReceive())
 
@@ -47,12 +60,13 @@ const sections = computed<Section[]>(() => {
   if (answer === null) return []
   const words = query.value.trim().toLowerCase()
   const matches = (...texts: string[]) => words === '' || texts.some((text) => text.toLowerCase().includes(words))
-  const found: Section[] = answer.groups.map((group) => ({
+  const groups = only.value === null ? answer.groups : answer.groups.filter((group) => group.supplierOrderId === only.value)
+  const found: Section[] = groups.map((group) => ({
     key: group.supplierOrderId,
     title: `${group.number} · ${group.supplierName}`,
     lines: matches(group.number, group.supplierName) ? group.lines : group.lines.filter((line) => matches(line.name, line.orderNumber)),
   }))
-  found.push({ key: 'counter', title: 'Comprados sem pedido de compra', lines: answer.toBuy.filter((line) => matches(line.name, line.orderNumber)) })
+  if (only.value === null) found.push({ key: 'counter', title: 'Comprados sem pedido de compra', lines: answer.toBuy.filter((line) => matches(line.name, line.orderNumber)) })
   return found.filter((section) => section.lines.length > 0)
 })
 </script>
@@ -123,6 +137,17 @@ const sections = computed<Section[]>(() => {
         Nada para receber agora.
       </p>
       <template v-else>
+        <div
+          v-if="only"
+          class="only"
+        >
+          <p>
+            {{ onlyNumber ? `Mostrando só o pedido de compra ${onlyNumber}.` : 'Este pedido de compra não tem itens para receber.' }}
+          </p>
+          <BaseButton @click="showAll()">
+            Mostrar todos
+          </BaseButton>
+        </div>
         <BaseInput
           v-model="query"
           label="Buscar item, pedido ou fornecedor"
@@ -131,7 +156,7 @@ const sections = computed<Section[]>(() => {
           Marque um item só quando toda a quantidade chegou.
         </p>
         <p
-          v-if="sections.length === 0"
+          v-if="sections.length === 0 && (only === null || onlyNumber !== null)"
           class="muted"
         >
           Nenhum item encontrado.
@@ -258,6 +283,12 @@ h2 {
   color: var(--enc-ink);
   font-weight: 600;
   text-decoration: none;
+}
+.only {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
 .group {
   display: flex;

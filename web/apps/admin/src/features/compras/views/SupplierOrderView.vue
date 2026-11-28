@@ -3,8 +3,9 @@
  * SupplierOrderView is "Pedido de compra C-0012": the supplier with "Abrir
  * conversa no WhatsApp", who sent it and when, the supplier's promised date,
  * and "Itens". The actions follow the pedido: "Informar prazo", "Marcar como
- * em trânsito", "Informar preço pago" (the owner's) and "Desfazer envio" while
- * nothing was received. Compras needs `purchase:write`; the API checks every
+ * em trânsito", "Receber itens" (opens Receber itens narrowed to this pedido,
+ * for `receiving:write`, while it has open lines), "Informar preço pago" (the
+ * owner's) and "Desfazer envio" while nothing was received. Compras needs `purchase:write`; the API checks every
  * write again. Cost and paid price show only when the API sent them.
  */
 import { BaseButton, StatusBadge } from '@encomendo/ui'
@@ -12,6 +13,7 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
+import { usePermission } from '../../../composables/usePermission'
 import { formatCivilDate, formatDate } from '../../../format'
 import PaidPricesDialog from '../components/PaidPricesDialog.vue'
 import PromisedDateDialog from '../components/PromisedDateDialog.vue'
@@ -23,6 +25,7 @@ import { useComprasStore } from '../store'
 const store = useComprasStore()
 const { detail, detailLoading, detailError, busy, notice, error, dialogError, conflict, delayWarnings, timeZone, sendsCosts } = storeToRefs(store)
 const route = useRoute()
+const canReceive = usePermission('receiving:write')
 const dialog = ref<'date' | 'prices' | 'undo' | null>(null)
 
 const supplierOrderId = (): string => String(route.params.supplierOrderId ?? '')
@@ -116,6 +119,13 @@ async function done(write: Promise<boolean>): Promise<void> {
           >
             Marcar como em trânsito
           </BaseButton>
+          <RouterLink
+            v-if="canReceive && openLines.length > 0"
+            class="link-button"
+            :to="{ name: 'receive', query: { pedido: detail.id } }"
+          >
+            Receber itens
+          </RouterLink>
           <BaseButton
             v-if="sendsCosts && pricedLines.length > 0"
             :disabled="busy"

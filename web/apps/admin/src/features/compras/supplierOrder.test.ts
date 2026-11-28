@@ -34,8 +34,8 @@ interface Sent {
 }
 
 /** openOrder opens the screen on a pedido de compra; `owner` is the owner's view of it. */
-async function openOrder(order: SupplierOrder = supplierOrderAnswer(), role: 'owner' | 'admin' = 'admin') {
-  signedInAs(role)
+async function openOrder(order: SupplierOrder = supplierOrderAnswer(), role: 'owner' | 'admin' = 'admin', permissions: Permission[] = buyer) {
+  signedInAs(role, permissions)
   server.use(http.get(path, () => HttpResponse.json(order)), ...serve().handlers)
   const app = await openApp(`/compras/pedidos/${supplierOrderId}`)
   await vi.waitFor(() => expect(app.wrapper.text()).toContain('Itens'))
@@ -57,6 +57,36 @@ function answerWrites(answer: (url: string, body: unknown) => Response | Supplie
 
 beforeEach(() => {
   vi.spyOn(window, 'open').mockReturnValue(null)
+})
+
+describe('"Receber itens" on the pedido de compra', () => {
+  const receiver: Permission[] = [...buyer, 'receiving:write']
+
+  it('opens Receber itens narrowed to this pedido de compra, for a role that receives', async () => {
+    const { wrapper } = await openOrder(supplierOrderAnswer(), 'admin', receiver)
+
+    expect(link(wrapper, 'Receber itens').attributes('href')).toBe(`/compras/receber?pedido=${supplierOrderId}`)
+  })
+
+  it('is not offered without receiving:write', async () => {
+    const { wrapper } = await openOrder()
+
+    expect(wrapper.findAll('a').map((a) => a.text())).not.toContain('Receber itens')
+  })
+
+  it('is not offered once nothing is left to receive', async () => {
+    const order = supplierOrderAnswer()
+    const { wrapper } = await openOrder({ ...order, lines: order.lines.map((line) => ({ ...line, status: 'received' as const })) }, 'admin', receiver)
+
+    expect(wrapper.findAll('a').map((a) => a.text())).not.toContain('Receber itens')
+  })
+
+  it('is not offered on an undone pedido de compra', async () => {
+    const order = supplierOrderAnswer()
+    const { wrapper } = await openOrder({ ...order, state: 'undone', canUndo: false }, 'admin', receiver)
+
+    expect(wrapper.findAll('a').map((a) => a.text())).not.toContain('Receber itens')
+  })
 })
 
 describe('the pedido de compra screen', () => {

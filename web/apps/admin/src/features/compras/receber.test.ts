@@ -208,6 +208,58 @@ describe('the list', () => {
   })
 })
 
+describe('narrowed to one pedido de compra', () => {
+  const received = '0190f3c4-5e1a-7b2c-8d3e-000000005099'
+
+  async function openNarrowed(id: string) {
+    use()
+    const app = await openApp(`/compras/receber?pedido=${id}`)
+    await vi.waitFor(() => expect(app.wrapper.text()).toContain('Mostrar todos'))
+    return app
+  }
+
+  it('shows only that pedido de compra, with its number, and not the counter items', async () => {
+    const { wrapper } = await openNarrowed(supplierOrderId)
+
+    expect(wrapper.text()).toContain('Mostrando só o pedido de compra C-0012.')
+    expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['C-0012 · Couros Paulista'])
+    expect(wrapper.text()).not.toContain('Pastilha de freio')
+    expect(wrapper.text()).not.toContain('Parafuso M8')
+  })
+
+  it('shows the others again on "Mostrar todos", keeping what was checked', async () => {
+    const { wrapper, router } = await openNarrowed(supplierOrderId)
+    await button(row(wrapper, banco), 'Tudo certo').trigger('click')
+
+    await button(wrapper, 'Mostrar todos').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('h2')).toHaveLength(3))
+
+    expect(router.currentRoute.value.query.pedido).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Mostrando só')
+    expect(button(row(wrapper, banco), 'Tudo certo').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('keeps the Compras tab when it narrows inside the tab', async () => {
+    signedInAs('admin', buyer)
+    use()
+    const { wrapper, router } = await openApp(`/compras?tab=receber&pedido=${supplierOrderId}`)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Mostrando só'))
+
+    await button(wrapper, 'Mostrar todos').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('[role=tabpanel] h2')).toHaveLength(3))
+
+    expect(router.currentRoute.value.query).toEqual({ tab: 'receber' })
+  })
+
+  it('says so when that pedido de compra has nothing left to receive, with a way to see the rest', async () => {
+    const { wrapper } = await openNarrowed(received)
+
+    expect(wrapper.text()).toContain('Este pedido de compra não tem itens para receber.')
+    expect(wrapper.findAll('h2')).toHaveLength(0)
+    expect(button(wrapper, 'Mostrar todos').exists()).toBe(true)
+  })
+})
+
 describe('Tudo certo and Com defeito', () => {
   it('keeps "Salvar recebimento" off, with its hint, until a line is checked', async () => {
     use()
