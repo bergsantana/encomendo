@@ -4,10 +4,27 @@
 # the tenant slug from the host (altarpm.localhost, altarpm.encomendo.com.br).
 # API paths go to the api service on the same origin, so no CORS is needed.
 
+# The access log never holds a query string or a tracking token. Searches
+# carry customers' names and WhatsApp numbers (?q=), invitation and reset
+# links carry codes, and /p/{token} is the client's tracking link, which the
+# API stores only as a hash (backend/CLAUDE.md, Logging). So the log line has
+# the path without "?…", and the token after /p/ or /track/ masked.
+map $request_uri $encomendo_log_path {
+  "~^/p/"                     "/p/[token]";
+  "~^(?<encomendo_pre>[^?]*/track/)" "${encomendo_pre}[token]";
+  "~^(?<encomendo_bare>[^?]*)" $encomendo_bare;
+}
+
+log_format encomendo '$remote_addr [$time_local] "$request_method $encomendo_log_path" '
+                     '$status $body_bytes_sent $request_time "$http_user_agent"';
+
 server {
   listen 8080;
   server_name ${ADMIN_HOST};
   root /usr/share/nginx/admin;
+  # Per server, so it replaces the image's http-level log, which writes the
+  # whole request line, query included.
+  access_log /dev/stdout encomendo;
 
   location ~ ^/(api|auth|healthz|readyz)(/|$) {
     proxy_pass http://api:8080;
@@ -39,6 +56,7 @@ server {
   listen 8080 default_server;
   server_name _;
   root /usr/share/nginx/store;
+  access_log /dev/stdout encomendo;
 
   location ~ ^/(api|auth|healthz|readyz)(/|$) {
     proxy_pass http://api:8080;
