@@ -97,7 +97,15 @@ func (s *Service) viewWith(ctx context.Context, o *order.Order, c CustomerFacts,
 			return View{}, fmt.Errorf("staff names of order %s: %w", o.ID(), err)
 		}
 	}
-	return toView(o, c, staff, by, today), nil
+	v := toView(o, c, staff, by, today)
+	// The link has no text: it only opens the chat. The client never builds
+	// a wa.me link (CLAUDE.md, rule 8).
+	link, err := s.d.WhatsApp.Link(c.Phone, "")
+	if err != nil {
+		return View{}, fmt.Errorf("wa.me link of customer %s: %w", c.ID, err)
+	}
+	v.Customer.WhatsAppURL = link
+	return v, nil
 }
 
 // customerOf reads the order's customer.
@@ -139,6 +147,9 @@ type writeCtx struct {
 	facts StoreFacts
 	now   time.Time
 	today shared.CivilDate
+	// preview is set by Quote: the call computes what a write would do and
+	// stores nothing, not even a customer's new address.
+	preview bool
 }
 
 // writeCtx reads the store's facts and the clock once for a call, so every

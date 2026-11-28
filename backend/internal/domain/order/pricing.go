@@ -78,6 +78,13 @@ func (o *Order) DepositPaid() bool {
 	return o.depositPaidSoFar().Cents() >= o.DepositDue().Cents()
 }
 
+// DepositOwed returns the deposit still to pay: DepositDue less the deposit
+// payments that are not void, never below zero. It is what "Registrar
+// pagamento" prefills for a Sinal (docs/product/design-document.md, Pedido).
+func (o *Order) DepositOwed() shared.Money {
+	return mustMoney(max(o.DepositDue().Cents()-o.depositPaidSoFar().Cents(), 0), o.currency())
+}
+
 // BalanceDue returns what is still to pay: total − paid, never below zero.
 func (o *Order) BalanceDue() shared.Money {
 	return mustMoney(max(o.total().Cents()-o.Paid().Cents(), 0), o.currency())

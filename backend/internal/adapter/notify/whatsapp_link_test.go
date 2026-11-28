@@ -40,9 +40,23 @@ func TestWhatsAppLinks_RefusesBadPhonesAndTexts(t *testing.T) {
 			t.Errorf("phone %q: err = %v", phone, err)
 		}
 	}
-	for name, text := range map[string]string{"empty": "", "too long": strings.Repeat("a", 2001), "invalid utf-8": "\xff"} {
+	for name, text := range map[string]string{"too long": strings.Repeat("a", 2001), "invalid utf-8": "\xff"} {
 		if _, err := links.Link("5592981234567", text); !errors.Is(err, shared.ErrInvalid) {
 			t.Errorf("%s: err = %v", name, err)
 		}
+	}
+}
+
+func TestWhatsAppLinks_EmptyTextOnlyOpensTheChat(t *testing.T) {
+	t.Parallel()
+	link, err := notify.NewWhatsAppLinks().Link("5592981234567", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link != "https://wa.me/5592981234567" || strings.Contains(link, "?") {
+		t.Errorf("link = %q, want the chat with no ?text=", link)
+	}
+	if _, err := notify.NewWhatsAppLinks().Link("123", ""); !errors.Is(err, shared.ErrInvalid) {
+		t.Errorf("bad phone with no text: err = %v, want ErrInvalid", err)
 	}
 }

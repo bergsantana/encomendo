@@ -13,13 +13,23 @@ import (
 
 // QuoteView is what an order would be: prices, deposit and dates, all
 // computed by the server, with nothing saved.
+//
+// RefundDue is what the changed order would owe back, zero for a new order.
+// DaysAfterDeposit counts calendar days from the day the deadline counts
+// from to DeliveryDate: today for a new order and for a change to an order
+// not yet released, the order's release date for a change to a released one
+// ("N dias depois do sinal"). Cost and Margin are the owner's: they are nil
+// for every other role, and for the owner too when a cost is unknown.
 type QuoteView struct {
 	Lines                          []QuoteLine
 	Subtotal, Freight, Discount    shared.Money
-	Total, DepositDue              shared.Money
+	Total, DepositDue, RefundDue   shared.Money
 	DepositPercent                 int
 	AssemblyDays, SafetyMarginDays int
 	DeliveryDate, ArrivalLimit     shared.CivilDate
+	DaysAfterDeposit               int
+	Cost                           *shared.Money   // owner only
+	Margin                         *catalog.Margin // owner only
 }
 
 // QuoteLine is one line of a quote.
@@ -55,6 +65,7 @@ func (s *Service) Quote(ctx context.Context, in QuoteInput) (QuoteView, error) {
 		if err != nil {
 			return err
 		}
+		w.preview = true
 		var o *order.Order
 		if in.Order.IsZero() {
 			o, err = s.quoteNew(ctx, in, w)
@@ -64,7 +75,7 @@ func (s *Service) Quote(ctx context.Context, in QuoteInput) (QuoteView, error) {
 		if err != nil {
 			return err
 		}
-		out = quoteView(o)
+		out = quoteView(o, w)
 		return nil
 	})
 	return out, err
@@ -83,6 +94,10 @@ func (s *Service) quoteNew(ctx context.Context, in QuoteInput, w writeCtx) (*ord
 	c := CustomerFacts{ID: shared.CustomerID(s.d.IDs.NewID())}
 	if !in.Terms.Address.IsZero() {
 		c.Addresses = []order.DeliveryAddress{{ID: in.Terms.Address}}
+	}
+	in.Terms, c, err = s.withNewAddress(ctx, in.Terms, c, w)
+	if err != nil {
+		return nil, err
 	}
 	terms, err := s.newTerms(w.by, w.facts, lines, in.Terms, c)
 	if err != nil {
@@ -106,12 +121,27 @@ func (s *Service) quoteChange(ctx context.Context, in QuoteInput, w writeCtx) (*
 	return o, nil
 }
 
-func quoteView(o *order.Order) QuoteView {
+// quoteView maps the in-memory order o, as the call w would leave it. Cost
+// and margin follow identity.SeesCosts, as on every order view.
+func quoteView(o *order.Order, w writeCtx) QuoteView {
 	t := o.Terms()
 	v := QuoteView{
 		Subtotal: o.Subtotal(), Freight: t.Freight, Discount: t.Discount, Total: total(o), DepositDue: o.DepositDue(),
-		DepositPercent: t.DepositPercent, AssemblyDays: o.AssemblyDaysCounted(), SafetyMarginDays: t.SafetyMarginDays,
-		DeliveryDate: o.Promise(), ArrivalLimit: o.ArrivalLimit(),
+		RefundDue: o.RefundDue(), DepositPercent: t.DepositPercent, AssemblyDays: o.AssemblyDaysCounted(),
+		SafetyMarginDays: t.SafetyMarginDays, DeliveryDate: o.Promise(), ArrivalLimit: o.ArrivalLimit(),
+	}
+	from := w.today
+	if released, ok := o.ReleaseDate(); ok {
+		from = released
+	}
+	v.DaysAfterDeposit = from.DaysUntil(o.Promise())
+	if identity.SeesCosts(w.by.Role()) {
+		if cost, ok := o.Cost(); ok {
+			v.Cost = &cost
+		}
+		if m, ok := o.Margin(); ok {
+			v.Margin = &m
+		}
 	}
 	for _, l := range o.Lines() {
 		ql := QuoteLine{Price: l.Price()}
