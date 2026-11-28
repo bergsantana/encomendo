@@ -24,12 +24,12 @@ Legend: `[x]` done · `[ ]` not done · **Blocked** means waiting on an open que
 | 2 | Identity and tenancy | 26 | 26 | Done: everything is built and checked against the real stack on web and Android, suspended stores included (#47) |
 | 3 | Catalog and suppliers | 13 | 14 | Almost done: backend, web and the native Android screens are merged (PRs #52 to #72); the last box is checked in the Android shell in milestone 3.5 (ADR 0029) |
 | 3.5 | Android shell | 4 | 6 | In progress: ADR 0029 accepted, every existing admin screen at phone size, and the Capacitor shell built; the release-build check and the device walkthrough remain |
-| 4 | Customers, orders and deadlines | 13 | 17 | In progress: the backend is built and served (#78 to #81, and the adapters and HTTP PR); the web screens and the close remain |
+| 4 | Customers, orders and deadlines | 14 | 17 | In progress: the backend is built and served (#78 to #82); Configurações and Clientes are built; Pedidos, Hoje, Financeiro and the close remain |
 | 5 | Purchasing and receiving | 0 | 9 | Not started |
 | 6 | Inventory and production | 0 | 9 | Not started |
 | 7 | Store page | 0 | 13 | Not started |
 | 8 | Hardening | 0 | 9 | Not started |
-|   | **All milestones** | **78** | **127** | **about 61%** (61.4%) |
+|   | **All milestones** | **79** | **127** | **about 62%** (62.2%) |
 
 Percentages count checkboxes, and milestones differ a lot in size (milestone 4 is the heart of the product), so read them as a rough guide, not a schedule.
 
@@ -211,7 +211,7 @@ Plan: `docs/plans/m4-customers-orders-deadlines.md` (steps 4.1–4.23). Decision
 ### Web
 
 - [ ] Hoje (summary cards, orders by delivery date, "Precisa de você"), Pedidos (list by status, detail with item × deadline timeline), Clientes, Financeiro
-- [ ] Workflow choice in Settings, with a preview of its steps
+- [x] Workflow choice in Settings, with a preview of its steps (step 4.17: Configurações, with its phone check in 4.23)
 
 ### Phone (the web admin at phone size, opened by the Android shell; ADR 0029)
 
