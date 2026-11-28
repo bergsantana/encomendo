@@ -127,6 +127,11 @@ type OrderItemSourcing struct {
 	BackupSupplierName *string `gorm:"column:backup_supplier_name"`
 	BackupLeadDays     *int    `gorm:"column:backup_lead_days"`
 	BackupCostCents    *int64  `gorm:"column:backup_cost_cents"`
+	// PromisedDate is the day the supplier promised the item and PaidCostCents
+	// the unit price paid (0016): staff-only, so they live here and never on
+	// order_items, which clients may read.
+	PromisedDate  *time.Time `gorm:"column:promised_date;type:date"`
+	PaidCostCents *int64     `gorm:"column:paid_cost_cents"`
 }
 
 // TableName returns order_item_sourcing.
@@ -260,7 +265,7 @@ func sourcingFromRecord(tenant string, it order.ItemRecord) OrderItemSourcing {
 	s := it.Sourcing
 	m := OrderItemSourcing{
 		TenantID: tenant, OrderItemID: it.ID.String(), SupplierID: optID(s.Supplier), SupplierName: s.SupplierName,
-		CostCents: centsOrNil(s.Cost),
+		CostCents: centsOrNil(s.Cost), PaidCostCents: centsOrNil(s.PaidCost), PromisedDate: dateOrNil(it.Promised),
 	}
 	if b := s.Backup; b != nil {
 		name, lead := b.Name, b.LeadDays
@@ -432,6 +437,7 @@ func (m OrderItem) toRecord(currency string, s OrderItemSourcing) (order.ItemRec
 	if it.Sourcing, err = s.toDomain(currency); err != nil {
 		return order.ItemRecord{}, fmt.Errorf("order item %s sourcing: %w", m.ID, err)
 	}
+	it.Promised = dateOf(s.PromisedDate)
 	return it, nil
 }
 
@@ -448,6 +454,9 @@ func (m OrderItemSourcing) toDomain(currency string) (order.Sourcing, error) {
 	}
 	s.SupplierName = m.SupplierName
 	if s.Cost, err = moneyOrNil(m.CostCents, currency); err != nil {
+		return s, err
+	}
+	if s.PaidCost, err = moneyOrNil(m.PaidCostCents, currency); err != nil {
 		return s, err
 	}
 	if m.BackupSupplierID == nil {

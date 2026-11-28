@@ -811,3 +811,14 @@ Layers as `web/CLAUDE.md` says: `views/*.vue` → `store.ts` (Pinia) → `packag
 - Phone layouts at 390 × 844. Receber itens at workshop sizes: 18 px text, 56 px targets, a 64 px main button.
 - `web/e2e/compras.spec.ts` and `phone-compras.spec.ts` against the real stack (5.16).
 - `pedidos.spec.ts` and `phone-pedidos.spec.ts` receive items through Receber itens, not the order screen.
+
+**As built in 5.9** (`adapter/postgres/purchasing_repo.go`; deviations from section 4.1):
+
+- `NewPurchasing(ids)` keeps its `ids` argument for the wiring but the repository needs none yet: every row arrives with its id.
+- Every method, reads included, refuses a scope without a staff user (`errStaffScope`), not only the writes.
+- The costs row is written for every new line, with a null cost when the item has none, in the order's currency (`INSERT … SELECT … FROM purchase_lines JOIN orders LEFT JOIN order_item_sourcing`, all joined on `tenant_id`), so the price paid always has a row. `UpdateSupplierOrder` writes only `paid_cost_cents`.
+- Order of lines written: `purchase_lines.created_at` is stamped with `clock_timestamp()`, the statement's clock, because the table has no sequence column (`LinesOfOrder` orders by it, then `position`). `receipt_lines.created_at` holds the entry's place (`received_at` plus the entry index in microseconds), which `Receipt` orders by.
+- A photo key (or photo id) already stored matches both `catalog.ErrPhotoNotUploaded` and `shared.ErrConflict`; the HTTP mapper answers conflict first, as the port says.
+- `StaffNames` joins `memberships` on the scope's tenant, as the port says after the 5.6–5.8 review.
+- `pruneParts`: `app/order` never keeps an item id under a new line id (`keepIDs` takes both from the same old line), so no migration was needed. `order.Change` would accept such a move and lose the item's purchase line and sourcing; `TestOrders_ChangeKeepsTheItemsPurchaseLine` fails if one is ever introduced.
+- The contract suite is `test/contract/purchasingports/repository.go` and `repo_*.go` (not `purchasing_repository.go`), run by `repository_fake_test.go` and `test/integration/postgres/purchasing_contract_test.go`. The fake gained `KnowItem`, so it refuses a line of an item of another store as the composite foreign key does.
