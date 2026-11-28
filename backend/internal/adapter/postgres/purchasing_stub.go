@@ -97,6 +97,6 @@ func (*Purchasing) Receipt(context.Context, shared.TenantID, shared.ReceiptID) (
 }
 
 // StaffNames implements apppurchasing.Repository.
-func (*Purchasing) StaffNames(context.Context, []shared.UserID) (map[shared.UserID]string, error) {
+func (*Purchasing) StaffNames(context.Context, shared.TenantID, []shared.UserID) (map[shared.UserID]string, error) {
 	return nil, errPurchasingNotBuilt
 }
