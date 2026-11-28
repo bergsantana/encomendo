@@ -656,8 +656,8 @@ Prefilled texts the API puts in `wa.me` links to a supplier. `{fornecedor}` is t
   Pedido de compra {C-0012}:
   • {qtd}× {item} ({opção}: {escolha}, …)
   Pode me confirmar a data de entrega?"
-- **Falar com o fornecedor:** "Olá, {fornecedor}! Aqui é da {loja}. Sobre o pedido de compra {C-0012}: {qtd}× {item}. Consegue me confirmar a data de entrega?" (before it is sent: "Sobre {qtd}× {item}: consegue me dizer o prazo de entrega?")
-- **Avisar o fornecedor:** "Olá, {fornecedor}! Aqui é da {loja}. Sobre o pedido de compra {C-0012}: não vou mais precisar de {qtd}× {item}. Consegue cancelar?"
+- **Falar com o fornecedor:** "Olá, {fornecedor}! Aqui é da {loja}. Sobre o pedido de compra {C-0012}: {qtd}× {item} ({opção}: {escolha}, …). Consegue me confirmar a data de entrega?" (before it is sent: "Sobre {qtd}× {item} ({opção}: {escolha}, …): consegue me dizer o prazo de entrega?")
+- **Avisar o fornecedor:** "Olá, {fornecedor}! Aqui é da {loja}. Sobre o pedido de compra {C-0012}: não vou mais precisar de {qtd}× {item} ({opção}: {escolha}, …). Consegue cancelar?"
 
 Product rule: these texts never carry the client's name, phone or address, nor the client's order number (System rules).
 
