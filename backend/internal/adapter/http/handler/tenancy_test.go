@@ -134,6 +134,7 @@ func (f *tenancyFixture) call(t *testing.T, caller shared.Principal, method, pat
 		"POST /api/v1/admin/tenants":                      f.h.CreateTenant,
 		"GET /api/v1/admin/settings":                      f.h.Settings,
 		"PUT /api/v1/admin/settings":                      f.h.UpdateSettings,
+		"PUT /api/v1/admin/settings/status-workflow":      f.h.ChooseWorkflow,
 		"GET /api/v1/admin/members":                       f.h.Members,
 		"DELETE /api/v1/admin/members/{userId}":           f.h.RemoveMember,
 		"PUT /api/v1/admin/members/{userId}/role":         f.h.ChangeRole,

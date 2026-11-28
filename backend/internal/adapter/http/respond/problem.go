@@ -4,16 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	appcatalog "github.com/bergsantana/encomendo/backend/internal/app/catalog"
+	appcustomer "github.com/bergsantana/encomendo/backend/internal/app/customer"
+	apporder "github.com/bergsantana/encomendo/backend/internal/app/order"
+	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
 	"github.com/bergsantana/encomendo/backend/internal/app/shared/authz"
 	apptenancy "github.com/bergsantana/encomendo/backend/internal/app/tenancy"
 	"github.com/bergsantana/encomendo/backend/internal/domain/catalog"
 	"github.com/bergsantana/encomendo/backend/internal/domain/identity"
+	"github.com/bergsantana/encomendo/backend/internal/domain/order"
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
@@ -51,6 +56,21 @@ const (
 	CodePhotoLimit       = "photo_limit"
 	CodePhotoInvalid     = "photo_invalid"
 	CodePhotoNotUploaded = "photo_not_uploaded"
+
+	// The codes of customers, orders and status workflows (ADR 0030).
+	CodeInvalidTransition     = "invalid_transition"
+	CodeGuardFailed           = "guard_failed"
+	CodeOrderNotEditable      = "order_not_editable"
+	CodeOrderClosed           = "order_closed"
+	CodeApprovalRequired      = "approval_required"
+	CodePaymentExceedsDue     = "payment_exceeds_due"
+	CodeInvalidItemMove       = "invalid_item_move"
+	CodeNoBackupSupplier      = "no_backup_supplier"
+	CodeItemUnavailable       = "item_unavailable"
+	CodePhoneTaken            = "phone_taken"
+	CodeWorkflowNotFound      = "workflow_not_found"
+	CodeIdempotencyKeyMissing = "idempotency_key_required"
+	CodeIdempotencyKeyReused  = "idempotency_key_reused"
 )
 
 // StatusClientClosedRequest is the status logged for a request whose client
@@ -77,6 +97,8 @@ type Problem struct {
 	Errors   []FieldIssue `json:"errors,omitempty"`
 	// References name the rows behind item_in_kit and item_archived.
 	References []Reference `json:"references,omitempty"`
+	// Guard names the guard that did not hold, with guard_failed only.
+	Guard string `json:"guard,omitempty"`
 }
 
 // Reference is one row a refusal names: a kit that holds an item, or an
@@ -213,11 +235,65 @@ func problemFor(err error) Problem {
 		return conflictFor(err)
 	case errors.Is(err, shared.ErrInvalid):
 		return invalidFor(err)
+	case errors.Is(err, tenancy.ErrWorkflowNotFound):
+		return Problem{Status: http.StatusNotFound, Code: CodeWorkflowNotFound, Title: "Esta lista de status não existe."}
 	case errors.Is(err, shared.ErrNotFound):
 		return Problem{Status: http.StatusNotFound, Code: CodeNotFound, Title: "Não encontrado"}
 	default:
+		if p, ok := orderRefusalFor(err); ok {
+			return p
+		}
 		return Problem{Status: http.StatusInternalServerError, Code: CodeInternal, Title: "Erro interno"}
 	}
+}
+
+// guardTitles are the pt-BR titles of the phase guards of Advance
+// (docs/plans/m4-code-design.md section 5.3).
+var guardTitles = map[order.Guard]string{
+	order.GuardDepositUnpaid: "O sinal ainda não foi pago. Registre o sinal ou libere o pedido sem ele.",
+	order.GuardItemsNotReady: "Nem todos os itens chegaram e foram conferidos.",
+	order.GuardBalanceUnpaid: "Falta receber o saldo deste pedido.",
+}
+
+// orderRefusalFor maps the order domain's refusals that do not match a
+// shared sentinel: each is a 409 with a code of its own. The second result
+// is false for any other error.
+func orderRefusalFor(err error) (Problem, bool) {
+	refuse := func(code, title string) (Problem, bool) {
+		return Problem{Status: http.StatusConflict, Code: code, Title: title}, true
+	}
+	var ge *order.GuardError
+	switch {
+	case errors.As(err, &ge):
+		p, _ := refuse(CodeGuardFailed, guardTitles[ge.Guard])
+		p.Guard = string(ge.Guard)
+		return p, true
+	case errors.Is(err, order.ErrNotEditable):
+		return refuse(CodeOrderNotEditable, "Este pedido já está em montagem e não pode mais ser alterado.")
+	case errors.Is(err, order.ErrOrderClosed):
+		return refuse(CodeOrderClosed, "Este pedido já foi entregue ou cancelado.")
+	case errors.Is(err, order.ErrInvalidItemMove):
+		return refuse(CodeInvalidItemMove, "Este item não pode ir para esta situação.")
+	case errors.Is(err, order.ErrNoBackupSupplier):
+		return refuse(CodeNoBackupSupplier, "Este item não tem fornecedor reserva ou já foi comprado.")
+	}
+	return Problem{}, false
+}
+
+// errItemUnavailable marks an archived item or kit met while pricing an
+// order: the same refusal as item_archived in the catalog, but with the
+// code of an order route.
+var errItemUnavailable = errors.New("an item or kit of the order is archived")
+
+// ItemUnavailable returns err marked so that an archived item or kit
+// (catalog.ErrItemArchived) is answered item_unavailable instead of
+// item_archived, which stays the catalog's code. Order handlers apply it to
+// every error they answer; any other error comes back unchanged.
+func ItemUnavailable(err error) error {
+	if !errors.Is(err, catalog.ErrItemArchived) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errItemUnavailable, err)
 }
 
 // conflictFor maps an error matching shared.ErrConflict. Titles use the
@@ -237,9 +313,22 @@ func conflictFor(err error) Problem {
 	case errors.Is(err, catalog.ErrItemInKit):
 		p.Code, p.Title = CodeItemInKit, "Este item está em kits. Tire o item dos kits antes de arquivá-lo."
 		p.References = referencesOf(err)
+	case errors.Is(err, errItemUnavailable):
+		p.Code, p.Title = CodeItemUnavailable, "Um item ou kit do pedido está arquivado. Troque ou restaure o item."
+		p.References = referencesOf(err)
 	case errors.Is(err, catalog.ErrItemArchived):
 		p.Code, p.Title = CodeItemArchived, "Há itens arquivados no kit. Troque ou restaure os itens."
 		p.References = referencesOf(err)
+	case errors.Is(err, order.ErrInvalidTransition):
+		p.Code, p.Title = CodeInvalidTransition, "Este pedido não pode ir para este status."
+	case errors.Is(err, appshared.ErrIdempotencyKeyReused):
+		// 422, not 409: the request is understood but this key belongs to
+		// another one (ADR 0030). It comes before any generic conflict.
+		p.Status, p.Code, p.Title = http.StatusUnprocessableEntity, CodeIdempotencyKeyReused, "Esta chave já foi usada em outro pedido."
+	case errors.Is(err, appshared.ErrIdempotencyKeyInFlight):
+		p.Title = "Esta ação ainda está sendo feita. Tente de novo em instantes."
+	case errors.Is(err, appcustomer.ErrPhoneTaken):
+		p.Code, p.Title = CodePhoneTaken, "Já existe um cliente com este WhatsApp."
 	case errors.Is(err, identity.ErrEmailTaken):
 		p.Code, p.Title = CodeEmailTaken, "Já existe uma conta com este e-mail."
 	case errors.Is(err, tenancy.ErrSlugTaken):
@@ -281,6 +370,9 @@ func invalidFor(err error) Problem {
 			Title: "A foto não foi enviada. Tente de novo.",
 		}
 	}
+	if p, ok := orderInvalidFor(err); ok {
+		return p
+	}
 	if errors.Is(err, identity.ErrInvalidCode) {
 		return Problem{
 			Status: http.StatusBadRequest, Code: CodeInvalidCode,
@@ -295,4 +387,21 @@ func invalidFor(err error) Problem {
 		}
 	}
 	return p
+}
+
+// orderInvalidFor maps the 400 refusals of orders that have a code of their
+// own. The second result is false for any other error.
+func orderInvalidFor(err error) (Problem, bool) {
+	refuse := func(code, title string) (Problem, bool) {
+		return Problem{Status: http.StatusBadRequest, Code: code, Title: title}, true
+	}
+	switch {
+	case errors.Is(err, order.ErrApprovalRequired):
+		return refuse(CodeApprovalRequired, "Confirme que o cliente aprovou a mudança.")
+	case errors.Is(err, order.ErrPaymentExceedsDue):
+		return refuse(CodePaymentExceedsDue, "O valor passa do que falta pagar.")
+	case errors.Is(err, apporder.ErrIdempotencyKeyRequired):
+		return refuse(CodeIdempotencyKeyMissing, "Falta o cabeçalho Idempotency-Key.")
+	}
+	return Problem{}, false
 }

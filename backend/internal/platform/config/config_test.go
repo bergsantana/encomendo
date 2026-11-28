@@ -12,17 +12,18 @@ func env(values map[string]string) func(string) string {
 
 func minimalEnv() map[string]string {
 	return map[string]string{
-		"DATABASE_URL":        "postgres://encomendo_app@localhost:5432/encomendo",
-		"REDIS_URL":           "redis://localhost:6379/0",
-		"AUTH_SIGNING_SEED":   "a-seed-adapter-auth-parses",
-		"AUTH_RESET_CODE_KEY": DevResetCodeKey,
-		"ADMIN_ORIGIN":        "http://admin.localhost:8080",
-		"SMTP_ADDR":           "mailpit:1025",
-		"SMTP_FROM":           "nao-responda@encomendo.com.br",
-		"STORAGE_ENDPOINT":    "minio:9000",
-		"STORAGE_BUCKET":      "encomendo-photos",
-		"STORAGE_ACCESS_KEY":  "encomendo",
-		"STORAGE_SECRET_KEY":  "a-local-secret",
+		"DATABASE_URL":          "postgres://encomendo_app@localhost:5432/encomendo",
+		"REDIS_URL":             "redis://localhost:6379/0",
+		"AUTH_SIGNING_SEED":     "a-seed-adapter-auth-parses",
+		"AUTH_RESET_CODE_KEY":   DevResetCodeKey,
+		"ADMIN_ORIGIN":          "http://admin.localhost:8080",
+		"STORE_ORIGIN_TEMPLATE": "http://{slug}.localhost:8080",
+		"SMTP_ADDR":             "mailpit:1025",
+		"SMTP_FROM":             "nao-responda@encomendo.com.br",
+		"STORAGE_ENDPOINT":      "minio:9000",
+		"STORAGE_BUCKET":        "encomendo-photos",
+		"STORAGE_ACCESS_KEY":    "encomendo",
+		"STORAGE_SECRET_KEY":    "a-local-secret",
 	}
 }
 
@@ -33,6 +34,7 @@ func productionEnv() map[string]string {
 	e["AUTH_ISSUER"] = "https://api.encomendo.com.br"
 	e["AUTH_RESET_CODE_KEY"] = "q0Fcl2nSQ0n6X3zW1T8Vq0Fcl2nSQ0n6X3zW1T8Vq0E="
 	e["ADMIN_ORIGIN"] = "https://admin.encomendo.com.br"
+	e["STORE_ORIGIN_TEMPLATE"] = "https://{slug}.encomendo.com.br"
 	e["API_HOST"] = "api.encomendo.com.br"
 	e["TRUSTED_PROXIES"] = "172.30.0.10,172.30.0.11"
 	e["STORAGE_ENDPOINT"] = "0123abcd.r2.cloudflarestorage.com"
@@ -75,13 +77,16 @@ func TestLoad_ProductionRefusesLocalSettings(t *testing.T) {
 		"a proxy that is no addr": {"TRUSTED_PROXIES", "caddy", "not an address"},
 		// base64 ignores unused trailing bits: the same bytes, spelled
 		// otherwise, must not pass.
-		"the dev key respelled":   {"AUTH_RESET_CODE_KEY", strings.TrimSuffix(DevResetCodeKey, "k=") + "l=", "AUTH_RESET_CODE_KEY"},
-		"the dev key split":       {"AUTH_RESET_CODE_KEY", DevResetCodeKey[:20] + "\n" + DevResetCodeKey[20:], "AUTH_RESET_CODE_KEY"},
-		"an ftp admin origin":     {"ADMIN_ORIGIN", "ftp://admin.encomendo.com.br", "ADMIN_ORIGIN"},
-		"a proxy range":           {"TRUSTED_PROXIES", "172.30.0.0/24", "is a range"},
-		"every address":           {"TRUSTED_PROXIES", "0.0.0.0/0", "is a range"},
-		"a proxy with host bits":  {"TRUSTED_PROXIES", "172.30.0.10/24", "host bits"},
-		"storage over plain HTTP": {"STORAGE_USE_SSL", "false", "STORAGE_USE_SSL"},
+		"the dev key respelled":    {"AUTH_RESET_CODE_KEY", strings.TrimSuffix(DevResetCodeKey, "k=") + "l=", "AUTH_RESET_CODE_KEY"},
+		"the dev key split":        {"AUTH_RESET_CODE_KEY", DevResetCodeKey[:20] + "\n" + DevResetCodeKey[20:], "AUTH_RESET_CODE_KEY"},
+		"an ftp admin origin":      {"ADMIN_ORIGIN", "ftp://admin.encomendo.com.br", "ADMIN_ORIGIN"},
+		"an http store template":   {"STORE_ORIGIN_TEMPLATE", "http://{slug}.encomendo.com.br", "STORE_ORIGIN_TEMPLATE must be https"},
+		"a store template no slug": {"STORE_ORIGIN_TEMPLATE", "https://loja.encomendo.com.br", "must contain {slug}"},
+		"no store template":        {"STORE_ORIGIN_TEMPLATE", "", "STORE_ORIGIN_TEMPLATE is required"},
+		"a proxy range":            {"TRUSTED_PROXIES", "172.30.0.0/24", "is a range"},
+		"every address":            {"TRUSTED_PROXIES", "0.0.0.0/0", "is a range"},
+		"a proxy with host bits":   {"TRUSTED_PROXIES", "172.30.0.10/24", "host bits"},
+		"storage over plain HTTP":  {"STORAGE_USE_SSL", "false", "STORAGE_USE_SSL"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -108,6 +113,39 @@ func TestLoad_LocalDefaults(t *testing.T) {
 	}
 	if len(cfg.TrustedProxies) != len(DefaultTrustedProxies()) || cfg.Auth.Issuer == "" || cfg.SMTP.FromName != "Encomendo" {
 		t.Errorf("local defaults = %v %q %q", cfg.TrustedProxies, cfg.Auth.Issuer, cfg.SMTP.FromName)
+	}
+}
+
+func TestLoad_StoreOriginTemplate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		env     map[string]string
+		value   string
+		wantErr string
+	}{
+		"https in production":    {productionEnv(), "https://{slug}.encomendo.com.br", ""},
+		"http in development":    {minimalEnv(), "http://{slug}.localhost:8080", ""},
+		"two slugs":              {minimalEnv(), "http://{slug}.{slug}.localhost", "must contain {slug} once"},
+		"no slug in development": {minimalEnv(), "http://localhost:8080", "must contain {slug} once"},
+		"http in production":     {productionEnv(), "http://{slug}.encomendo.com.br", "must be https"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tt.env["STORE_ORIGIN_TEMPLATE"] = tt.value
+			cfg, err := Load(env(tt.env))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Load error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || cfg.Origins.StoreTemplate != tt.value {
+				t.Errorf("Load = %q, %v; want the template kept", cfg.Origins.StoreTemplate, err)
+			}
+		})
 	}
 }
 
