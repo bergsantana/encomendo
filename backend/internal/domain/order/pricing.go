@@ -96,16 +96,23 @@ func (o *Order) RefundDue() shared.Money {
 	return mustMoney(max(o.Paid().Cents()-o.total().Cents(), 0), o.currency())
 }
 
-// Cost returns the sum of every item's unit cost times its quantity, at
-// order time, and false when any item's cost is unknown. Only the owner
-// sees it (identity.SeesCosts, ADR 0025).
+// Cost returns the sum of every item's unit cost times its quantity, and
+// false when any item's cost is unknown. A unit cost is the price actually
+// paid when purchasing recorded one (Sourcing.PaidCost), and the cost at
+// order time otherwise (ADR 0031), so a quote counts the order-time cost and
+// a bought order its real one. Only the owner sees it (identity.SeesCosts,
+// ADR 0025).
 func (o *Order) Cost() (shared.Money, bool) {
 	var cents int64
 	for _, i := range o.Items() {
-		if i.sourcing.Cost == nil {
+		unit := i.sourcing.PaidCost
+		if unit == nil {
+			unit = i.sourcing.Cost
+		}
+		if unit == nil {
 			return shared.Money{}, false
 		}
-		part, ok := times(i.sourcing.Cost.Cents(), i.snapshot.Quantity)
+		part, ok := times(unit.Cents(), i.snapshot.Quantity)
 		if !ok {
 			return shared.Money{}, false
 		}

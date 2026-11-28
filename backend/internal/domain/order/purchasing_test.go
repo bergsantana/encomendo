@@ -384,3 +384,20 @@ func TestNextMoves_BoughtOnlyInstalled(t *testing.T) {
 		t.Errorf("in-house planned: next moves = %v, want in_production", got)
 	}
 }
+
+func TestCost_PrefersThePricePaid(t *testing.T) {
+	t.Parallel()
+
+	cost := int64(40_000)
+	o := testkit.NewOrder().WithItem(testkit.ItemOpts{LeadDays: 10, Cost: &cost}).Build(t)
+	before, ok := o.Cost()
+	if !ok || before.Cents() != 40_000 {
+		t.Fatalf("cost = %v %v, want the order-time R$ 400,00", before, ok)
+	}
+	if err := o.RecordPaidCost(o.Items()[0].ID(), brl(t, 45_000)); err != nil {
+		t.Fatal(err)
+	}
+	if after, ok := o.Cost(); !ok || after.Cents() != 45_000 {
+		t.Errorf("cost = %v %v, want the price paid R$ 450,00", after, ok)
+	}
+}
