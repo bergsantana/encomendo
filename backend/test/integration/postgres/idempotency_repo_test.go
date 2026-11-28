@@ -92,3 +92,18 @@ func TestIdempotency_ExpiredKeysAreReplaced(t *testing.T) {
 		t.Errorf("replacing an expired key: %v", err)
 	}
 }
+
+// A scope with no store cannot store a key: the row would have no tenant
+// (security review of 4.12).
+func TestIdempotency_NoStoreNoKey(t *testing.T) {
+	db := openApp(t)
+	tx := postgres.NewTxManager(db)
+	keys := postgres.NewIdempotency()
+	ctx := appshared.WithScope(context.Background(), appshared.Scope{})
+	err := tx.WithinTx(ctx, func(ctx context.Context) error {
+		return keys.Remember(ctx, appshared.IdempotencyKey{Key: "sem-loja", RequestHash: [32]byte{1}}, pgtest.NewID().String(), time.Hour)
+	})
+	if err == nil {
+		t.Error("a key was stored with no store in the scope")
+	}
+}

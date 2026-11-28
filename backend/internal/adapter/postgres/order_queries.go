@@ -76,6 +76,8 @@ func loadRecords(ctx context.Context, db *gorm.DB, tenant shared.TenantID, heads
 	for _, r := range rows {
 		rec, err := r.ToRecord()
 		if err != nil {
+			// %s, not %w: a broken stored row is a bug (500), and the decode
+			// errors match shared.ErrInvalid, which would answer it as bad input.
 			return nil, fmt.Errorf("stored order %s is invalid: %s", r.Order.ID, err.Error())
 		}
 		out = append(out, rec)
@@ -339,7 +341,8 @@ func (*Orders) History(ctx context.Context, tenant shared.TenantID, id shared.Or
 	for _, r := range rows {
 		e, err := r.ToEntry()
 		if err != nil {
-			return shared.Page[apporder.HistoryRow]{}, err
+			// %s, not %w: see loadRecords.
+			return shared.Page[apporder.HistoryRow]{}, fmt.Errorf("stored history entry is invalid: %s", err.Error())
 		}
 		row := apporder.HistoryRow{Entry: e}
 		if r.ByName != nil {
@@ -377,11 +380,11 @@ func (*Orders) Payments(ctx context.Context, tenant shared.TenantID, from, to ti
 	for _, r := range rows {
 		oid, err := shared.ParseOrderID(r.OrderID)
 		if err != nil {
-			return nil, fmt.Errorf("stored payment order id: %w", err)
+			return nil, fmt.Errorf("stored payment order id is invalid: %s", err.Error()) // a bug, never bad input
 		}
 		amount, err := shared.NewMoney(r.AmountCents, r.Currency)
 		if err != nil {
-			return nil, fmt.Errorf("stored payment amount: %w", err)
+			return nil, fmt.Errorf("stored payment amount is invalid: %s", err.Error()) // a bug, never bad input
 		}
 		out = append(out, apporder.PaymentRow{
 			Order: oid, Kind: order.PaymentKind(r.Kind), Method: order.PaymentMethod(r.Method),

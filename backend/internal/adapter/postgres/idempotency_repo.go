@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	appshared "github.com/bergsantana/encomendo/backend/internal/app/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
 )
 
 // Idempotency implements appshared.Idempotency on idempotency_keys
@@ -58,6 +59,9 @@ func (*Idempotency) Recall(ctx context.Context, k appshared.IdempotencyKey) (str
 // commits), is ErrIdempotencyKeyInFlight: this transaction then rolls back
 // and the retry replays the winner's resource.
 func (*Idempotency) Remember(ctx context.Context, k appshared.IdempotencyKey, resource string, ttl time.Duration) error {
+	if ttl <= 0 {
+		return fmt.Errorf("remember idempotency key for %s: %w", ttl, shared.ErrInvalid)
+	}
 	db, err := conn(ctx)
 	if err != nil {
 		return err

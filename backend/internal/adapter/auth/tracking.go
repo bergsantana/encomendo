@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
+	"github.com/bergsantana/encomendo/backend/internal/domain/tenancy"
 )
 
 // ErrInvalidTrackingTemplate means the store origin template is not a URL
@@ -47,26 +48,13 @@ func NewTrackingURLs(template string) (*TrackingURLs, error) {
 // shared.ErrInvalid for a slug that is not one (the store's slug rules) or
 // a zero token, which would make a guessable link.
 func (t *TrackingURLs) URL(slug string, token shared.Secret) (string, error) {
-	if !validSlug(slug) {
+	// The store's own slug rule, checked again because the slug becomes
+	// part of a host name.
+	if _, err := tenancy.RestoreSlug(slug); err != nil {
 		return "", fmt.Errorf("tracking url: slug %q: %w", slug, shared.ErrInvalid)
 	}
 	if token == (shared.Secret{}) {
 		return "", fmt.Errorf("tracking url: zero token: %w", shared.ErrInvalid)
 	}
 	return strings.Replace(t.template, "{slug}", slug, 1) + "/p/" + token.Reveal(), nil
-}
-
-// validSlug is the store slug's shape (tenancy's rule: lower-case letters,
-// digits and single hyphens, 3 to 40), checked again here because the slug
-// becomes part of a host name.
-func validSlug(s string) bool {
-	if len(s) < 3 || len(s) > 40 || s[0] == '-' || s[len(s)-1] == '-' || strings.Contains(s, "--") {
-		return false
-	}
-	for _, r := range s {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
-			return false
-		}
-	}
-	return true
 }

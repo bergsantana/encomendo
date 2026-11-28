@@ -3,6 +3,7 @@ package notify
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/bergsantana/encomendo/backend/internal/domain/shared"
@@ -23,7 +24,7 @@ type WhatsAppLinks struct{}
 func NewWhatsAppLinks() WhatsAppLinks { return WhatsAppLinks{} }
 
 // Link returns https://wa.me/{phone}?text={text}, the text percent-encoded
-// (accents, line breaks and "&" included). It returns shared.ErrInvalid
+// (accents, line breaks, "&" and "+" included; spaces as %20). It returns shared.ErrInvalid
 // unless phone is 55 + DDD + 8 or 9 digits, digits only, and the text has
 // 1 to 2000 characters of valid UTF-8.
 func (WhatsAppLinks) Link(phone, text string) (string, error) {
@@ -34,5 +35,8 @@ func (WhatsAppLinks) Link(phone, text string) (string, error) {
 	if n == 0 || n > maxMessageRunes || !utf8.ValidString(text) {
 		return "", fmt.Errorf("wa.me link: text of %d characters: %w", n, shared.ErrInvalid)
 	}
-	return "https://wa.me/" + phone + "?text=" + url.QueryEscape(text), nil
+	// QueryEscape writes a space as "+", which some WhatsApp clients show
+	// as a literal plus; "%20" is read the same everywhere. A "+" in the
+	// text is already "%2B", so the swap cannot change it.
+	return "https://wa.me/" + phone + "?text=" + strings.ReplaceAll(url.QueryEscape(text), "+", "%20"), nil
 }

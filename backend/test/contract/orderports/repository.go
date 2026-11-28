@@ -39,6 +39,7 @@ func RunRepositoryContract(t *testing.T, newHarness func(t *testing.T) Harness) 
 		{"payments", paymentCases},
 		{"handed over", handedOverCases},
 		{"messages and transactions", messageCases},
+		{"isolation", isolationCases},
 	}
 	for _, g := range groups {
 		t.Run(g.name, func(t *testing.T) {

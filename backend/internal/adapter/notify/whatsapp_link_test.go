@@ -12,7 +12,7 @@ import (
 
 func TestWhatsAppLinks_EncodesTheTextWholly(t *testing.T) {
 	t.Parallel()
-	text := "Olá, João! A entrega mudou de 21/12 para 05/01.\nMotivo: chuva & estrada fechada. 100% certo?"
+	text := "Olá, João! A entrega mudou de 21/12 para 05/01.\nMotivo: chuva & estrada fechada. 100% certo? 1+1"
 	link, err := notify.NewWhatsAppLinks().Link("5592981234567", text)
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestWhatsAppLinks_EncodesTheTextWholly(t *testing.T) {
 	if got := u.Query().Get("text"); got != text {
 		t.Errorf("text = %q, want it back unchanged", got)
 	}
-	if strings.ContainsAny(u.RawQuery[len("text="):], "&\n ") {
+	if strings.ContainsAny(u.RawQuery[len("text="):], "&\n +") {
 		t.Errorf("raw query %q holds an unescaped &, line break or space", u.RawQuery)
 	}
 }

@@ -17,6 +17,59 @@ var updateCases = []contractCase{
 	{"an order the store lacks is not found", updateMissingOrder},
 	{"lines and items are replaced as sets by id", updateReplacesLinesAndItems},
 	{"a payment is stored once and a void is recorded", updateVoidsPayment},
+	{"an item's move is stored", updateStoresItemMove},
+	{"a switch to the backup supplier is stored", updateStoresBackupSwitch},
+}
+
+// updateStoresItemMove: an item received with its check reads back with its
+// status, check and arrival day (go-reviewer on 4.12).
+func updateStoresItemMove(t *testing.T, h Harness) {
+	s := h.newStore(t)
+	o := h.insert(t, s, rich())
+	loaded := h.load(t, s, o.ID())
+	ok := order.CheckOK
+	var moved bool
+	for _, it := range loaded.Items() {
+		if it.Status() == order.ItemToBuy {
+			if err := loaded.MoveItem(it.ID(), order.ItemReceived, &ok, today(epoch), epoch, s.principal(t)); err != nil {
+				t.Fatal(err)
+			}
+			moved = true
+			break
+		}
+	}
+	if !moved {
+		t.Fatal("the rich order has no item to buy")
+	}
+	h.mustUpdate(t, s, loaded)
+	want := loaded.Record()
+	want.Version = 2
+	sameRecord(t, h.record(t, s, o.ID()), want)
+}
+
+// updateStoresBackupSwitch: the item's supplier, lead days and cost become
+// the backup's, and the backup columns go empty (go-reviewer on 4.12).
+func updateStoresBackupSwitch(t *testing.T, h Harness) {
+	s := h.newStore(t)
+	o := h.insert(t, s, rich())
+	loaded := h.load(t, s, o.ID())
+	var switched bool
+	for _, it := range loaded.Items() {
+		if it.Sourcing().Backup != nil && it.Status() == order.ItemToBuy {
+			if err := loaded.UseBackupSupplier(it.ID(), today(epoch), epoch, s.principal(t)); err != nil {
+				t.Fatal(err)
+			}
+			switched = true
+			break
+		}
+	}
+	if !switched {
+		t.Fatal("the rich order has no item with a backup supplier")
+	}
+	h.mustUpdate(t, s, loaded)
+	want := loaded.Record()
+	want.Version = 2
+	sameRecord(t, h.record(t, s, o.ID()), want)
 }
 
 func updateStoresNextVersion(t *testing.T, h Harness) {

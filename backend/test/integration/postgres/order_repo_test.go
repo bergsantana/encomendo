@@ -209,7 +209,7 @@ func TestOrdersRepository_ScopesWithoutStaffReadNoSourcing(t *testing.T) {
 	t.Run("those scopes write nothing through the repository", func(t *testing.T) {
 		loaded := e.reload(o.ID())
 		loaded.RotateTracking(shared.SecretHash(pgtest.RandomHash()), mustPrincipal(t, e), epochNow())
-		for name, scope := range map[string]appshared.Scope{"a store page": e.storePage()} {
+		for name, scope := range map[string]appshared.Scope{"a store page": e.storePage(), "a client account": {ClientAccountID: account}} {
 			if err := e.run(scope, func(ctx context.Context) error { return e.repo.Update(ctx, loaded) }); err == nil {
 				t.Errorf("%s: Update succeeded", name)
 			}

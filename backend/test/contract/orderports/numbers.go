@@ -3,6 +3,7 @@ package orderports
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
@@ -61,6 +62,12 @@ func numbersConcurrent(t *testing.T, h Harness) {
 	var wg sync.WaitGroup
 	numbers := make([]order.Number, creators)
 	errs := make([]error, creators)
+	// Built here, on the test goroutine (newOrder may call t.Fatal), one per
+	// number the creators can draw.
+	built := map[order.Number]*order.Order{}
+	for n := range order.Number(creators) {
+		built[n+1] = h.newOrder(t, s, n+1)
+	}
 	for i := range creators {
 		wg.Go(func() {
 			errs[i] = h.try(s.scope(), func(ctx context.Context) error {
@@ -69,7 +76,11 @@ func numbersConcurrent(t *testing.T, h Harness) {
 					return err
 				}
 				numbers[i] = n
-				return h.Orders.Insert(ctx, h.newOrder(t, s, n))
+				o, ok := built[n]
+				if !ok {
+					return fmt.Errorf("drew number %d, beyond the %d creators", n, creators)
+				}
+				return h.Orders.Insert(ctx, o)
 			})
 		})
 	}
