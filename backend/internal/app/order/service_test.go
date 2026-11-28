@@ -586,9 +586,20 @@ func TestMovesAndCancel_PermissionsEventsAndVersion(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	v := h.create(h.staff(t), t, nil).Order
-	moved, err := h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[0].ID, To: order.ItemSentToSupplier, Version: v.Version})
-	if err != nil || moved.Items[0].Status != order.ItemSentToSupplier {
+	// A bought item moves through purchasing, never by hand (ADR 0031).
+	if _, err := h.svc.MoveItem(h.staff(t), apporder.MoveItemInput{Order: v.ID, Item: v.Items[0].ID, To: order.ItemSentToSupplier, Version: v.Version}); !errors.Is(err, order.ErrItemMovedByPurchasing) {
+		t.Errorf("move by hand: err = %v, want ErrItemMovedByPurchasing", err)
+	}
+	sent := []apporder.PurchaseMoveInput{{Order: v.ID, Move: order.PurchaseMove{Item: v.Items[0].ID, To: order.ItemSentToSupplier, Ref: "C-0001"}}}
+	if err := h.svc.MovePurchased(h.staff(t), sent); !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("staff send: err = %v, want ErrForbidden (purchase:write)", err)
+	}
+	if err := h.svc.MovePurchased(h.admin(t), sent); err != nil {
 		t.Fatalf("move: %v", err)
+	}
+	moved, err := h.svc.Get(h.staff(t), v.ID)
+	if err != nil || moved.Items[0].Status != order.ItemSentToSupplier {
+		t.Fatalf("moved = %+v, %v", moved.Items, err)
 	}
 	if _, err := h.svc.UseBackupSupplier(h.staff(t), apporder.ItemVersionInput{Order: v.ID, Item: v.Items[0].ID, Version: moved.Version}); !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("staff backup switch: err = %v", err)

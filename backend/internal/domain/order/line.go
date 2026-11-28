@@ -198,6 +198,7 @@ func cloneSnapshot(s ItemSnapshot) ItemSnapshot {
 
 func cloneSourcing(s Sourcing) Sourcing {
 	s.Cost = clonePtr(s.Cost)
+	s.PaidCost = clonePtr(s.PaidCost)
 	if s.Backup != nil {
 		b := *s.Backup
 		b.Cost = clonePtr(b.Cost)

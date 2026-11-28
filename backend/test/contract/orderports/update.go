@@ -31,7 +31,8 @@ func updateStoresItemMove(t *testing.T, h Harness) {
 	var moved bool
 	for _, it := range loaded.Items() {
 		if it.Status() == order.ItemToBuy {
-			if err := loaded.MoveItem(it.ID(), order.ItemReceived, &ok, today(epoch), epoch, s.principal(t)); err != nil {
+			// Bought items move through purchasing's path (ADR 0031).
+			if err := loaded.MovePurchased(order.PurchaseMove{Item: it.ID(), To: order.ItemReceived, Check: &ok}, today(epoch), epoch, s.principal(t)); err != nil {
 				t.Fatal(err)
 			}
 			moved = true

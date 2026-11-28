@@ -144,45 +144,72 @@ func contains(ps []workflow.Phase, p workflow.Phase) bool {
 	return false
 }
 
-// MoveItem moves one item along its sourcing mode's lifecycle, on behalf of
-// by: received and ready take a check, and a defective item goes back to be
-// bought or made again, expected again from today. The promise never moves;
-// alerts follow the item's new state (ADR 0030). It returns ErrOrderClosed,
-// ErrItemNotFound and ErrInvalidItemMove.
+// MoveItem moves one item by hand, on behalf of by. In-house items follow
+// their lifecycle until milestone 6's production board. A bought item may
+// only go from received to installed by hand: purchasing moves it the rest
+// of the way (MovePurchased), so the order and its purchase lines never
+// disagree (ADR 0031). It returns ErrOrderClosed, ErrItemNotFound,
+// ErrItemMovedByPurchasing for any other move of a bought item, and
+// ErrInvalidItemMove for a move the lifecycle lacks or a wrong check.
 func (o *Order) MoveItem(id shared.OrderItemID, to ItemStatus, check *Check, today shared.CivilDate, now time.Time, by shared.Principal) error {
+	it, err := o.movable(id, today)
+	if err != nil {
+		return err
+	}
+	if isBought(it.snapshot.SourcingMode) && to != ItemInstalled {
+		return ErrItemMovedByPurchasing
+	}
+	if err := CanMoveItem(it.snapshot.SourcingMode, it.status, to, check); err != nil {
+		return err
+	}
+	o.applyMove(it, to, check, today, HistoryEntry{By: by.UserID(), At: now})
+	return nil
+}
+
+// movable returns the item id of an open order, for a move made today.
+func (o *Order) movable(id shared.OrderItemID, today shared.CivilDate) (*Item, error) {
 	if today.IsZero() {
-		return errMissingToday
+		return nil, errMissingToday
 	}
 	if o.Closed() {
-		return ErrOrderClosed
+		return nil, ErrOrderClosed
 	}
 	it := o.item(id)
 	if it == nil {
-		return ErrItemNotFound
+		return nil, ErrItemNotFound
 	}
+	return it, nil
+}
+
+// applyMove moves it to to with check, already allowed, and records entry
+// (who, when and any ref or note) as an item move. A defect lands the item
+// back where it is bought or made again; landing on to_buy drops the
+// supplier's promised date, since a new purchase gets a new one. An item
+// that leaves its arrival, or lands somewhere other than asked, is
+// expected again from today.
+func (o *Order) applyMove(it *Item, to ItemStatus, check *Check, today shared.CivilDate, entry HistoryEntry) {
 	mode := it.snapshot.SourcingMode
-	if err := CanMoveItem(mode, it.status, to, check); err != nil {
-		return err
-	}
 	from := it.status
 	it.status = landing(mode, to, check)
 	if check != nil {
 		c := *check
 		it.check = &c
 	}
+	if it.status == ItemToBuy {
+		it.promised = shared.CivilDate{}
+	}
 	switch {
 	case arrived(it.status) && it.arrivedOn.IsZero():
 		it.arrivedOn = today
-	case it.status != to:
+	case it.status != to || it.status == ItemToBuy:
 		it.arrivedOn = shared.CivilDate{}
 		it.expected = schedule.ExpectedDate(timing(*it), today)
 	}
-	entry := HistoryEntry{Kind: HistoryItem, By: by.UserID(), At: now, Item: id, ItemFrom: from, ItemTo: it.status}
+	entry.Kind, entry.Item, entry.ItemFrom, entry.ItemTo = HistoryItem, it.id, from, it.status
 	if check != nil {
 		entry.Check = *check
 	}
 	o.addHistory(entry)
-	return nil
 }
 
 // UseBackupSupplier switches a bought item still to be bought to the backup

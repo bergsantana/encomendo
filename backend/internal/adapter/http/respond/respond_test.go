@@ -416,7 +416,7 @@ func TestCodes_AreInTheContract(t *testing.T) {
 		CodeNameTaken, CodeCategoryInUse, CodeItemInKit, CodeItemArchived, CodePhotoLimit, CodePhotoInvalid, CodePhotoNotUploaded,
 		CodeInvalidTransition, CodeGuardFailed, CodeOrderNotEditable, CodeOrderClosed, CodeApprovalRequired, CodePaymentExceedsDue,
 		CodeInvalidItemMove, CodeNoBackupSupplier, CodeItemUnavailable, CodePhoneTaken, CodeWorkflowNotFound,
-		CodeIdempotencyKeyMissing, CodeIdempotencyKeyReused,
+		CodeIdempotencyKeyMissing, CodeIdempotencyKeyReused, CodeItemMovedByPurchasing,
 	}
 	for _, code := range codes {
 		if !listed[code] {
