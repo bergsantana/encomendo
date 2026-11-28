@@ -138,3 +138,7 @@ Two new permissions join `order:read` and `order:write`, so the apps can hide th
 
 - **Staff add a customer's address from an order.** Anyone with `order:write` may add an address to a customer from "Novo pedido" and "Alterar pedido" ("Novo endereço", `terms.newAddress`), in the order's own transaction, because the design document puts it there. They can never edit or remove an address; that stays `customer:write`, as in Clientes. A quote checks the address and does not save it.
 
+
+### 2026-11-27, from the closing review (step 4.23)
+
+- **The idempotency hash covers the caller too.** It is the SHA-256 of the user id, the method, the path and the body (`handler/idempotency.go`), so two staff members of one store who send the same key and body never replay each other's order or payment. The text above, written before the review of 4.12, names only the method, path and body.
