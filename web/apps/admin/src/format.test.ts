@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { centsToText, formatCivilDate, formatDate, formatDays, formatMargin, formatMoney, parseCents } from './format'
+import { centsToText, formatCivilDate, formatDate, formatDays, formatLongDay, formatMargin, formatMoney, parseCents, storeDay } from './format'
 
 describe('formatDate', () => {
   it('shows a day the Brazilian way, in the given time zone', () => {
@@ -17,6 +17,13 @@ describe('formatCivilDate', () => {
   it("shows the day as written, whatever the viewer's time zone", () => {
     expect(formatCivilDate('2026-12-12')).toBe('12/12/2026')
     expect(formatCivilDate('2026-01-01')).toBe('01/01/2026')
+  })
+})
+
+describe('formatLongDay', () => {
+  it("shows the weekday, the day and the month, whatever the viewer's zone", () => {
+    expect(formatLongDay('2026-11-27')).toBe('sexta-feira, 27 de novembro')
+    expect(formatLongDay('2026-12-01')).toBe('terça-feira, 1 de dezembro')
   })
 })
 
@@ -56,5 +63,20 @@ describe('money', () => {
     expect(centsToText(12990)).toBe('129,90')
     expect(centsToText(5)).toBe('0,05')
     expect(parseCents(centsToText(123456))).toBe(123456)
+  })
+})
+
+describe('storeDay', () => {
+  it('gives the day it is in the store\'s zone, not in UTC', () => {
+    const instant = new Date('2026-12-01T03:30:00Z')
+    expect(storeDay('America/Manaus', instant)).toBe('2026-11-30')
+    expect(storeDay('America/Sao_Paulo', instant)).toBe('2026-12-01')
+  })
+
+  it('falls back to the viewer\'s zone for no zone or a zone the browser does not know', () => {
+    const instant = new Date('2026-11-27T15:00:00Z')
+    expect(storeDay(undefined, instant)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(() => storeDay('Not/AZone', instant)).not.toThrow()
+    expect(storeDay('Not/AZone', instant)).toBe(storeDay(undefined, instant))
   })
 })

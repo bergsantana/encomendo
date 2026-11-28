@@ -35,8 +35,10 @@ interface MenuItem {
 
 const items: MenuItem[] = [
   { label: 'Hoje', to: { name: 'hoje' } },
+  { label: 'Pedidos', to: { name: 'orders' }, alsoOn: ['order', 'new-order', 'change-order'], permission: 'order:read' },
   { label: 'Catálogo', to: { name: 'catalog' }, permission: 'catalog:read' },
   { label: 'Clientes', to: { name: 'customers' }, alsoOn: ['customer'], permission: 'order:read' },
+  { label: 'Financeiro', to: { name: 'finance' }, permission: 'finance:read' },
   { label: 'Equipe', to: { name: 'members' }, permission: 'members:manage' },
   { label: 'Configurações', to: { name: 'settings' }, permission: 'settings:write' },
 ]

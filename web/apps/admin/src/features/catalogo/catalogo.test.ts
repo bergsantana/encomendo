@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadPage } from '../../pageLoad'
 import { closeApps, link, openApp } from '../../testing/app'
 import { authSession, gate } from '../../testing/fixtures'
+import { todayHandler } from '../../testing/today'
 import {
   bancoId,
   bancos,
@@ -54,7 +55,7 @@ interface Backend {
 /** serve answers the reads every open of the screen makes. */
 function serve(backend: Backend = {}) {
   server.use(
-    http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })),
+    todayHandler(),
     http.get('*/api/v1/admin/catalog/items', () => HttpResponse.json({ items: backend.items ?? [summary()] })),
     http.get('*/api/v1/admin/catalog/categories', () => HttpResponse.json({ items: backend.categories ?? [bancos, guidoes] })),
     http.get('*/api/v1/admin/catalog/attributes', () => HttpResponse.json({ items: backend.attributes ?? [serveEm] })),

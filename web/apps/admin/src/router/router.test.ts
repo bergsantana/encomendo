@@ -7,9 +7,10 @@ import { createMemoryHistory } from 'vue-router'
 
 import App from '../App.vue'
 import { authSession, problem } from '../testing/fixtures'
+import { todayHandler } from '../testing/today'
 import { createAppRouter } from '.'
 
-const server = setupServer(http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })))
+const server = setupServer(todayHandler())
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())

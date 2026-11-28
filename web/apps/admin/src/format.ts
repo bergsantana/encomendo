@@ -16,6 +16,15 @@ export function formatCivilDate(day: string): string {
   return formatDate(`${day}T12:00:00Z`, 'UTC')
 }
 
+/**
+ * formatLongDay shows a calendar day from the API as the title of Hoje does,
+ * "sexta-feira, 27 de novembro". Like `formatCivilDate` it never moves the day
+ * by the viewer's zone.
+ */
+export function formatLongDay(day: string): string {
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`))
+}
+
 /** formatMoney shows integer cents as currency, such as "R$ 129,90". The amount is never turned into a float for arithmetic. */
 export function formatMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(cents / 100)
@@ -51,4 +60,22 @@ export function parseCents(text: string): number | null {
 /** centsToText fills a money field with integer cents, as "129,90". */
 export function centsToText(cents: number): string {
   return `${Math.trunc(cents / 100)},${String(cents % 100).padStart(2, '0')}`
+}
+
+/**
+ * storeDay is the calendar day it is now in the store's time zone, as
+ * "YYYY-MM-DD". The client may read its own clock for this in two places
+ * only: to place "Hoje" on the order's timeline, and to choose the bounds of
+ * Financeiro's presets. Deadlines, alerts and every date of an order are the
+ * API's, never worked out from this. A zone the browser does not know, or no
+ * zone, falls back to the viewer's own.
+ */
+export function storeDay(timeZone?: string, now: Date = new Date()): string {
+  const format = (zone: string | undefined) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  try {
+    return format(timeZone)
+  } catch (failure) {
+    if (!(failure instanceof RangeError)) throw failure
+    return format(undefined)
+  }
 }

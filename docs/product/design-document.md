@@ -460,7 +460,7 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 
 ### Pedidos
 
-- Title "Pedidos". Tabs: "Ativos", then one per status of the store's current list, then "Entregues" and "Cancelados". Search "Buscar por número ou cliente". Filter "Só com alerta". Button "Novo pedido".
+- Title "Pedidos". Tabs: "Ativos", then one per status of the store's current list, then "Entregues" and "Cancelados". Search "Buscar por número ou cliente". Filter "Só com alerta". Button "Novo pedido". A link from Hoje may preset a phase: the list then shows a chip with the word of that phase in the store's own list and a ×, such as "Aguardando sinal ×", which takes the filter off. With no result: "Nenhum pedido encontrado." (never "Nenhum pedido ainda." while a filter is on).
 - Table "Pedido", "Cliente", "Status", "Itens prontos", "Entrega prevista", "Total". "Pedido" shows the number in mono (P-0231). "Itens prontos" is "{a} de {b}". An alert sits on top of the status: "Pode atrasar" or "Atrasada", with its icon.
 - While loading: "Carregando os pedidos…". Empty: "Nenhum pedido ainda." with "Novo pedido". No results: "Nenhum pedido encontrado." "Carregar mais".
 - On the phone each order is a card: number and status, then "Cliente", "Itens prontos", "Entrega prevista", "Total".
@@ -468,48 +468,51 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
 ### Novo pedido and Alterar pedido
 
 - Title "Novo pedido" or "Alterar pedido P-0231".
-- **Cliente:** "Buscar cliente" (name or WhatsApp), or "Novo cliente" with "Nome" and "WhatsApp". "Informe o cliente do pedido."
+- **Cliente:** "Buscar cliente" (name or WhatsApp), or "Novo cliente" with "Nome" and "WhatsApp" and the button "Criar cliente" (which only takes the two fields: the customer is made, or found by its WhatsApp, when the order is saved). "Informe o cliente do pedido." Once chosen: the name and WhatsApp, with "Trocar cliente" (not when changing an order). A search with nothing: "Nenhum cliente encontrado."
 - **Itens:** "Adicionar kit" and "Adicionar item".
   - A kit shows its items; a swappable one has "Trocar" with the kit's alternatives. A swap shows "{item} no lugar de {item}".
   - Each item has "Quantidade" (1 to 99); a kit line is one kit (add the kit again for another). Each item or kit has its client options ("Escolha uma opção" for a required one: "Escolha {opção}."), and "Remover".
-  - "Adicione ao menos um item ou kit." "{item} está arquivado e não pode entrar no pedido."
-- **Entrega:** a choice of "Retirada na loja" and "Entrega". "Entrega" shows "Endereço" (the customer's, or "Novo endereço") and "Frete". "Escolha o endereço de entrega."
+  - "Adicione ao menos um item ou kit." "{item} está arquivado e não pode entrar no pedido." "Use uma quantidade de 1 a 99."
+  - "Adicionar kit" and "Adicionar item" open a list with "Buscar kit" or "Buscar item", the price of each, "Nenhum kit encontrado." or "Nenhum item encontrado.", and "Fechar". A line shows what the quote said of it: its price and "{item}: previsto para {data}".
+- **Entrega:** a choice of "Retirada na loja" and "Entrega". "Entrega" shows "Endereço" (the customer's, or "Novo endereço") and "Frete". "Escolha o endereço de entrega." "Novo endereço" shows the address fields of Clientes; the address is saved on the customer with the order (anyone who can make orders; ADR 0030, Amendments).
 - **Valores** (Dono and Admin only change these): "Desconto", "Sinal (%)" with the hint "Padrão da loja: {n}%", "Dias de {Montagem}" and "Margem de segurança (dias)", each "Padrão da loja: {n} dias".
-  - "O desconto não pode passar do valor dos itens."
-- **Resumo**, always from the API ("Calculando…" while it waits): "Itens: {valor}", "Frete: {valor}", "Desconto: −{valor}", "Total: {valor}", "Sinal ({n}%): {valor}", "Entrega prevista: {data}" ("{n} dias depois do sinal"), and for the Dono "Custo: {valor}" and "Margem: {valor} ({n}%)".
+  - "O desconto não pode passar do valor dos itens." "Use um sinal de 0 a 100%." "Use de 0 a 60 dias." "Confira o valor." (a discount or freight that is not an amount).
+- **Resumo**, always from the API ("Calculando…" while it waits; "Os valores aparecem quando o pedido tiver itens." before that): "Itens: {valor}", "Frete: {valor}", "Desconto: −{valor}", "Total: {valor}", "Sinal ({n}%): {valor}", "Entrega prevista: {data}" ("{n} dias depois do sinal"), and for the Dono "Custo: {valor}" and "Margem: {valor} ({n}%)" ("—" when the order has no cost to give). The other roles never see the last two.
 - Buttons: "Salvar rascunho", "Salvar e enviar ao cliente" (moves the order to the next status and opens WhatsApp with the tracking link), "Cancelar". When changing: "Salvar alterações".
 - **Changing a paid order** (Dono and Admin, before {Montagem}):
   - a notice "Este pedido já tem pagamento. Combine a mudança com o cliente antes de salvar.";
   - box "O cliente aprovou a mudança", required: "Confirme que o cliente aprovou a mudança.";
-  - before saving, what changes: "Total: {antes} → {depois}", "Entrega prevista: {antes} → {depois}", and "Valor a devolver: {valor}" when it applies;
-  - after saving: "Pedido alterado." and the button "Avisar o cliente pelo WhatsApp".
+  - before saving, under "O que muda": "Total: {antes} → {depois}", "Entrega prevista: {antes} → {depois}" and, when the new total is below what was paid, "Valor a devolver: {valor}" (from the quote; it shows again after saving);
+  - after saving: "Pedido alterado." and, only when the API sends the message, the button "Avisar o cliente pelo WhatsApp", which opens the link when tapped; and "Abrir pedido".
   - Past {Montagem}: "Este pedido já está em {Montagem} e não pode mais ser alterado."
-- After creating: "Pedido P-0231 criado." with "Link de acompanhamento: {link}" and "Enviar pelo WhatsApp". Leaving with edits: "Descartar as alterações?" as in Catálogo.
+- After creating: "Pedido P-0231 criado." with "Link de acompanhamento: {link}" and "Enviar pelo WhatsApp" (for a draft, which has no message yet, it asks for a new link first, so the link shown is the new one), "Abrir pedido" and "Voltar para Pedidos". "Salvar e enviar ao cliente" also opens WhatsApp at once; the button stays for a browser that blocks it. The link opened by "Salvar e enviar ao cliente" stays as that button, so a browser that blocks the automatic opening still lets the person tap it. Leaving with edits: "Descartar as alterações?" as in Catálogo.
 
 ### Pedido (the order screen)
 
-- **Header:** "Pedido P-0231", the status badge, the customer's name with "Abrir conversa no WhatsApp", "Criado em {data}".
+- **Header:** "Pedido P-0231", the status badge, the customer's name and WhatsApp with the button "Abrir conversa no WhatsApp" (it opens the link the API sends with the order), "Criado em {data}". While loading: "Carregando o pedido…"; an order that is not there: "Pedido não encontrado." with "Tentar de novo" and "Voltar para Pedidos". The header holds "Alterar pedido" (opens Alterar pedido; not for staff once the order has a discount or a payment), "Cancelar pedido" and "Enviar link de acompanhamento".
 - **Entrega:** "Entrega prevista: {data}", "Precisa chegar até: {data}", "{Retirada na loja | Entrega em {endereço}}". Button "Alterar data" (Dono, Admin).
 - **Delay banner,** when an item has an alert: "{n} item pode atrasar a entrega" / "{n} itens podem atrasar a entrega" or "{n} item atrasado" / "{n} itens atrasados", then per item "{item}: previsto para {data}, precisa chegar até {data}." Ways to fix, as buttons: "Usar o fornecedor reserva ({fornecedor}, {n} dias)" (Dono and Admin, while the item is still "A comprar" and has a backup supplier), and "Alterar a data de entrega". After the switch: "{item} agora vem de {fornecedor}. Previsto: {data}." "Falar com o fornecedor" comes with Compras (M5).
-- **Linha do tempo:** one row per item, on a band from today to the delivery date, marked "Hoje", "Precisa chegar até", "{Montagem}" and "Entrega". Each item shows its expected date ("Previsto: {data}") or "Recebido em {data}".
+- **Linha do tempo:** under the title, the marks as text ("Hoje: {data}", "Precisa chegar até: {data}", "{Montagem}: {data} a {data}", "Entrega: {data}"). One row per item, on a band from today to the delivery date, marked "Hoje", "Precisa chegar até", "{Montagem}" and "Entrega". Each item shows its expected date ("Previsto: {data}") or "Recebido em {data}".
 - **Itens:** table "Item", "Origem", "Situação", "Previsto", "Ações". "Situação" names:
   - Sob encomenda (and Estoque until M6): "A comprar", "Enviada ao fornecedor", "Em trânsito", "Recebida", "Instalada";
   - Produção própria: "Planejado", "Em produção", "Pronto", "Instalado".
   - Actions, one step at a time: "Marcar como enviada ao fornecedor", "Marcar como em trânsito", "Marcar como recebida", "Marcar como instalada"; "Iniciar produção", "Marcar como pronto"; on receiving, "Tudo certo" or "Com defeito". A defective item goes back: "{item} voltou para A comprar." / "{item} voltou para Em produção."
 - **Pagamentos:** "Total {valor}", "Sinal {valor} ({n}%)", "Pago {valor}", "Saldo {valor}", and "Valor a devolver {valor}" when it applies. List "Data", "Tipo" ("Sinal", "Saldo"), "Forma", "Valor", "Registrado por", with "Anulado" on a voided one.
-  - "Registrar pagamento": "Tipo", "Valor" (filled with what is due), "Forma" ("Pix", "Dinheiro", "Cartão de crédito", "Cartão de débito", "Transferência", "Outro"), "Registrar". "O valor passa do que falta pagar ({valor})." "Informe um valor maior que zero."
-  - "Anular" (Dono): "Anular o pagamento de {valor}?" with "Motivo" and "Anular pagamento". "Informe o motivo."
-  - "Liberar sem sinal" (Dono, while waiting for the deposit): "Liberar o pedido sem o sinal? As compras e a produção podem começar antes do pagamento.", "Liberar pedido".
+  - "Registrar pagamento": "Tipo", "Valor" (filled with what is still owed: of the deposit for "Sinal", the balance for "Saldo"), "Forma" ("Pix", "Dinheiro", "Cartão de crédito", "Cartão de débito", "Transferência", "Outro"), "Registrar". "O valor passa do que falta pagar ({valor})." "Informe um valor maior que zero."
+  - After it: "Pagamento registrado." Every dialog has "Voltar" or "Cancelar" next to its button.
+  - "Anular" (Dono): "Anular o pagamento de {valor}?" with "Motivo" and "Anular pagamento". "Informe o motivo." After it: "Pagamento anulado."
+  - "Liberar sem sinal" (Dono, while waiting for the deposit): "Liberar o pedido sem o sinal? As compras e a produção podem começar antes do pagamento.", "Liberar pedido" (the dialog is titled "Liberar o pedido sem o sinal?"). After it: "Pedido liberado."
 - **Next status:** one button per status the order can move to, as "Mover para {status}". Refusals:
   - "O sinal ainda não foi pago. Registre o sinal ou libere o pedido sem ele.";
   - "Nem todos os itens chegaram e foram conferidos.";
   - "Falta receber o saldo de {valor}.";
   - "Este pedido não pode ir para {status}."
   - Moving to the handover status asks "Como o pedido foi entregue?" with "Entrega" and "Retirada na loja".
-- **Alterar data** (Dono, Admin): "Nova data de entrega", "Motivo" (optional), "Salvar e avisar o cliente", which opens WhatsApp. "Escolha uma data a partir de hoje." After it: "Data alterada. Envie a mensagem para avisar o cliente."
-- **Link de acompanhamento:** "Enviar link de acompanhamento", which opens WhatsApp; the hint "Cada envio cria um link novo. O link anterior deixa de funcionar."
+- **Alterar data** (Dono, Admin): "Nova data de entrega", "Motivo" (with the hint "Opcional."), "Salvar e avisar o cliente", which opens WhatsApp. "Escolha uma data a partir de hoje." After it: "Data alterada. Envie a mensagem para avisar o cliente." with the button "Abrir o WhatsApp", which stays until the next action, in case the browser blocked the automatic opening.
+- **Alterar pedido by someone who may not:** "Só o Dono ou um Admin altera um pedido com pagamento ou desconto." Once the order is delivered or cancelled: "Este pedido já foi entregue ou cancelado."
+- **Link de acompanhamento:** "Enviar link de acompanhamento", which opens WhatsApp; the hint "Cada envio cria um link novo. O link anterior deixa de funcionar." After it: "Link de acompanhamento criado." with the button "Abrir o WhatsApp", which stays until the next action.
 - **Cancelar pedido** (Dono, Admin, before handover): "Cancelar o pedido P-0231?" with "Motivo" and "Cancelar pedido". "Informe o motivo." If paid: "Os pagamentos registrados continuam no pedido. A devolução é feita fora do Encomendo." After it: "Pedido cancelado."
-- **Histórico:** "{quem} {o quê}" with date and time, such as "Ana moveu para Em montagem", "Ana registrou o sinal de R$ 300,00 (Pix)", "Ana alterou a entrega de {data} para {data}", "Ana alterou o pedido (cliente aprovou)", "Ana enviou o link de acompanhamento", "Ana cancelou: {motivo}".
+- **Histórico:** "{quem} {o quê}" with date and time ("O sistema" when nobody did it), such as "Ana criou o pedido", "Ana marcou {item} como recebida (com defeito)", "Ana anulou o pagamento de {valor}: {motivo}", "Ana liberou o pedido sem o sinal", "Ana usou o fornecedor reserva em {item}", "Ana alterou a entrega de {data} para {data}" (with ". Motivo: {motivo}" when there is one), "Ana moveu para Em montagem", "Ana registrou o sinal de R$ 300,00 (Pix)", "Ana alterou o pedido (cliente aprovou)", "Ana enviou o link de acompanhamento", "Ana cancelou: {motivo}".
 - "Outra pessoa alterou este pedido. Recarregue para ver a versão atual.", with "Recarregar".
 
 ### Hoje
@@ -523,16 +526,20 @@ Hoje · Pedidos · Catálogo · Clientes · Financeiro · Equipe · Configuraç�
   - "Pronto há {n} dias e ainda não entregue." (after 2 days)
   - "Valor a devolver: {valor}."
   - Nothing: "Nada precisa de você agora."
-- **"Próximas entregas":** the active orders by delivery date: number, customer, status, "Itens prontos {a} de {b}", "Entrega {data}". "Ver todos os pedidos".
+- **"Próximas entregas":** the active orders by delivery date: number, customer, status, "Itens prontos {a} de {b}", "Entrega {data}". "Ver todos os pedidos". Nothing coming: "Nenhuma entrega prevista."
+- While loading: "Carregando o resumo de hoje…". With more active orders than Hoje reads: "Mostrando só os 500 pedidos ativos com entrega mais próxima. Os números e os avisos desta tela cobrem só esses pedidos."
+- "Entregas nos próximos 7 dias" opens the plain order list until the list can filter by delivery window.
 
 ### Financeiro
 
 - Title "Financeiro", Dono only. Period: "Este mês", "Mês passado", "Últimos 30 dias", "Escolher período" (from, to).
 - **Recebido no período:** total, then by type ("Sinal", "Saldo") and by form (Pix, Dinheiro …). Voided payments don't count.
-- **A receber:** the sum of the balances of active orders, then the list "Pedido", "Cliente", "Saldo", "Entrega prevista".
-- **A devolver:** orders with "Valor a devolver", when there are any.
-- **Margem dos pedidos entregues:** "Pedido", "Entregue em", "Total", "Custo", "Margem" ("{valor} ({n}%)", or "—" without a cost), and the period's total.
+- **A receber:** the sum of the balances of active orders, then "{n} pedidos com saldo" ("1 pedido com saldo") and the list "Pedido", "Cliente", "Saldo", "Entrega prevista".
+- **A devolver:** orders with "Valor a devolver", when there are any: "Pedido", "Cliente", "Status", "Valor a devolver".
+- **Margem dos pedidos entregues:** "Pedido", "Entregue em", "Total", "Custo", "Margem" ("{valor} ({n}%)", or "—" without a cost), and the period's total as "Total do período", with the hint "Custo e margem somam só os pedidos com todos os custos informados." No order handed over in the period: "Nenhum pedido entregue neste período."
 - Empty period: "Nenhum pagamento neste período."
+- The choice is "Período". "Escolher período" shows "De" and "Até" (days); the period is read when either day changes and both are filled in. A period the API refuses: "Confira o período: o início não pode passar do fim, e o período tem no máximo 366 dias."
+- While loading: "Carregando o financeiro…". With more orders than Financeiro reads: "A loja tem mais pedidos do que o Financeiro lê de uma vez. "A receber", "A devolver" e as margens cobrem só parte dos pedidos."
 
 ### WhatsApp messages
 

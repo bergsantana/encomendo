@@ -18,6 +18,15 @@ import { createStore, latestEmail, logOut, mailpitUrl, password, signUp, unique 
 // fail on purpose rather than skip.
 const realStack = process.env.E2E_BASE_URL !== undefined && process.env.E2E_BASE_URL !== ''
 
+// emptyToday is GET /today for a store with nothing active.
+const emptyToday = {
+  today: '2026-11-27',
+  counts: { active: 0, awaitingDeposit: 0, withAlert: 0, dueIn7Days: 0 },
+  needsYou: [],
+  upcoming: [],
+  truncated: false,
+}
+
 test.describe('without an API', () => {
   test.skip(realStack, 'runs only against `vite preview`, which has no API')
 
@@ -68,6 +77,8 @@ test.describe('without an API', () => {
       }),
     )
 
+    await page.route('**/api/v1/admin/today', (route) => route.fulfill({ json: emptyToday }))
+
     await page.goto('/')
     await page.getByLabel('E-mail').fill('ana@altarpm.com.br')
     await page.getByLabel('Senha').fill('segredo-forte')
@@ -78,7 +89,7 @@ test.describe('without an API', () => {
     const menu = page.getByRole('navigation', { name: 'Menu principal' })
     await expect(menu).toContainText('Hoje')
     await expect(menu).toContainText('Ana Souza')
-    await expect(page.getByRole('status')).toBeVisible()
+    await expect(page.getByText('Nenhuma entrega prevista.')).toBeVisible()
   })
 })
 

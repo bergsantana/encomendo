@@ -7,6 +7,7 @@
  */
 import type { OrderSummary } from '@encomendo/api'
 import { StatusBadge } from '@encomendo/ui'
+import { RouterLink } from 'vue-router'
 
 import { formatCivilDate } from '../../../format'
 
@@ -54,7 +55,12 @@ defineProps<{
         :key="order.id"
         class="order"
       >
-        <span class="number">{{ order.number }}</span>
+        <RouterLink
+          class="number"
+          :to="{ name: 'order', params: { orderId: order.id } }"
+        >
+          {{ order.number }}
+        </RouterLink>
         <StatusBadge
           :label="order.status.label"
           :phase="order.status.phase"
@@ -107,6 +113,10 @@ h2 {
   border-bottom: 1px solid var(--enc-hairline);
 }
 .number {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--enc-control-height);
+  color: var(--enc-ink);
   font-family: var(--enc-font-mono);
   font-weight: 600;
 }

@@ -11,7 +11,7 @@ const props = withDefaults(
   defineProps<{
     /** pt-BR label, always visible. */
     label: string
-    type?: 'text' | 'email' | 'password'
+    type?: 'text' | 'email' | 'password' | 'date'
     /** Browser autofill hint, e.g. "username" or "current-password". */
     autocomplete?: string
     /** pt-BR message for a field the user must fix; marks the field invalid. */

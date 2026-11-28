@@ -1,29 +1,38 @@
-import { ApiError, getReadiness } from '@encomendo/api'
+import { ApiError, getToday, type Today } from '@encomendo/api'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 
 import { api } from '../../api'
-
-/** How the backend looked on the last check. */
-export type ApiStatus = 'checking' | 'ok' | 'unavailable'
+import { errorMessage } from '../../errorMessage'
 
 /**
- * useHojeStore backs the Hoje screen. For now it only checks that the API is
- * reachable; the summary cards and "Precisa de você" land in milestone 4.
+ * useHojeStore backs Hoje: the answer of GET /today as the server built it
+ * (counts, "Precisa de você" and "Próximas entregas", for the store's day).
+ * Nothing is counted or sorted here, so the screen can never disagree with
+ * the server or with the Android shell.
  */
 export const useHojeStore = defineStore('hoje', () => {
-  const apiStatus = ref<ApiStatus>('checking')
+  const today = shallowRef<Today | null>(null)
+  const loading = ref(false)
+  /** loadError is why the last read failed; the screen then offers "Tentar de novo". */
+  const loadError = ref<string | null>(null)
+  let read = 0
 
-  async function checkApi(): Promise<void> {
-    apiStatus.value = 'checking'
+  /** open reads Hoje again. A slower, older read never replaces a newer one. */
+  async function open(): Promise<void> {
+    const mine = ++read
+    loading.value = true
+    loadError.value = null
     try {
-      await getReadiness(api)
-      apiStatus.value = 'ok'
-    } catch (error) {
-      if (!(error instanceof ApiError)) throw error
-      apiStatus.value = 'unavailable'
+      const answer = await getToday(api)
+      if (mine === read) today.value = answer
+    } catch (failure) {
+      if (!(failure instanceof ApiError)) throw failure
+      if (mine === read) loadError.value = errorMessage(failure)
+    } finally {
+      if (mine === read) loading.value = false
     }
   }
 
-  return { apiStatus, checkApi }
+  return { today, loading, loadError, open }
 })

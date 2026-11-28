@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadPage } from '../../pageLoad'
 import { button, closeApps, field, link, openApp, submitForm } from '../../testing/app'
 import { altaRpm, authSession, problem } from '../../testing/fixtures'
+import { todayHandler } from '../../testing/today'
 
 // A full page load cannot happen in jsdom; the tests check where it would go.
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
@@ -35,7 +36,7 @@ const cookieHolds = (session: ReturnType<typeof authSession> | null) =>
     ),
   )
 
-beforeEach(() => server.use(http.get('*/readyz', () => HttpResponse.json({ status: 'ok' }))))
+beforeEach(() => server.use(todayHandler()))
 
 describe('sign-up', () => {
   beforeEach(() => cookieHolds(null))

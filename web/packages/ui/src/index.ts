@@ -12,3 +12,5 @@ export type { Phase, StatusTone } from './phase'
 
 // Tabler outline icons, re-exported so apps use the one icon set without depending on it directly.
 export { IconArchive, IconArrowDown, IconArrowUp, IconMenu2, IconX } from '@tabler/icons-vue'
+// Alert icons for "Pode atrasar" and "Atrasada" (AlertBadge in the admin's Pedidos).
+export { IconAlertTriangle, IconClockExclamation } from '@tabler/icons-vue'

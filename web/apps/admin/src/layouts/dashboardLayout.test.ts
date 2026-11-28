@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { button, closeApps, link, openApp } from '../testing/app'
 import { altaRpm, authSession } from '../testing/fixtures'
+import { todayHandler } from '../testing/today'
 
 // The phone layout itself is CSS; these tests cover what only script does for
 // the menu drawer: where focus goes, what Tab and Escape do, what closes it.
@@ -19,7 +20,7 @@ const otherStore = { id: '0190f3c4-5e1a-7b2c-8d3e-4f5a6b7c8d01', name: 'Outra Lo
 
 beforeEach(() =>
   server.use(
-    http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })),
+    todayHandler(),
     http.post('*/auth/refresh', () =>
       HttpResponse.json(
         authSession({
