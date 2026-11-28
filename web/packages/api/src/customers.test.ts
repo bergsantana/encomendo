@@ -5,6 +5,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createCustomer, getCustomer, listCustomers, updateCustomer } from './customers'
 import { ApiError, createHttpClient } from './http'
 
+/** at reads a recorded call, failing the test with a clear message when it never happened. */
+function at<T>(list: readonly T[], index = 0): T {
+  const found = list[index]
+  if (found === undefined) throw new Error(`call ${index} never happened`)
+  return found
+}
+
 const base = 'http://api.test'
 const server = setupServer()
 
@@ -34,8 +41,8 @@ describe('customers', () => {
     await expect(listCustomers(client, { q: 'joão', cursor: 'c1', limit: 50 })).resolves.toMatchObject({ nextCursor: 'c2' })
     await listCustomers(client)
 
-    expect(Object.fromEntries(seen[0]!.searchParams)).toEqual({ q: 'joão', cursor: 'c1', limit: '50' })
-    expect(seen[1]!.search).toBe('')
+    expect(Object.fromEntries(at(seen).searchParams)).toEqual({ q: 'joão', cursor: 'c1', limit: '50' })
+    expect(at(seen, 1).search).toBe('')
   })
 
   it('gets one customer', async () => {

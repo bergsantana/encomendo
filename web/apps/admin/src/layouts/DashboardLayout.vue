@@ -34,6 +34,7 @@ const items: MenuItem[] = [
   { label: 'Hoje', to: { name: 'hoje' } },
   { label: 'Catálogo', to: { name: 'catalog' }, permission: 'catalog:read' },
   { label: 'Equipe', to: { name: 'members' }, permission: 'members:manage' },
+  { label: 'Configurações', to: { name: 'settings' }, permission: 'settings:write' },
 ]
 
 const session = useSessionStore()

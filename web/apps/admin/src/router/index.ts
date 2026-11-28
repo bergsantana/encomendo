@@ -59,6 +59,12 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('../features/members/views/MembersView.vue'),
         meta: { permission: 'members:manage' },
       },
+      {
+        path: 'configuracoes',
+        name: 'settings',
+        component: () => import('../features/settings/views/SettingsView.vue'),
+        meta: { permission: 'settings:write' },
+      },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: { name: 'hoje' } },

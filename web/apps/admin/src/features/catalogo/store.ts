@@ -24,7 +24,7 @@ import { useSessionStore } from '../../stores/session'
 import { formField, type ItemDraft, itemChecks, toItemInput } from './itemForm'
 import { useKits } from './kits'
 import { usePhotos } from './photos'
-import { isSupplierPhone, supplierPhone } from './phone'
+import { isWhatsappNumber, whatsappDigits } from '../../phone'
 import { useStoreSettings } from './storeSettings'
 import { useTaxonomy } from './taxonomy'
 
@@ -311,11 +311,11 @@ export const useCatalogStore = defineStore('catalog', () => {
       [
         ['name', name.trim(), 'Informe o nome do fornecedor.'],
         ['whatsappPhone', whatsapp.trim(), 'Informe o WhatsApp do fornecedor.'],
-        ['whatsappPhone', isSupplierPhone(whatsapp) || whatsapp.trim() === '' ? 'ok' : '', 'Confira o número: use DDD e 8 ou 9 dígitos.'],
+        ['whatsappPhone', isWhatsappNumber(whatsapp) || whatsapp.trim() === '' ? 'ok' : '', 'Confira o número: use DDD e 8 ou 9 dígitos.'],
       ],
       { byCode: { invalid: fixTheFields } },
       async () => {
-        created = await createSupplier(api, { name: name.trim(), whatsappPhone: supplierPhone(whatsapp) })
+        created = await createSupplier(api, { name: name.trim(), whatsappPhone: whatsappDigits(whatsapp) })
         suppliers.value = [...suppliers.value, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
       },
     )

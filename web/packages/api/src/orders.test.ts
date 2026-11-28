@@ -24,6 +24,13 @@ import {
   voidPayment,
 } from './orders'
 
+/** at reads a recorded call, failing the test with a clear message when it never happened. */
+function at<T>(list: readonly T[], index = 0): T {
+  const found = list[index]
+  if (found === undefined) throw new Error(`call ${index} never happened`)
+  return found
+}
+
 const base = 'http://api.test'
 const admin = `${base}/api/v1/admin`
 const server = setupServer()
@@ -140,7 +147,7 @@ describe('listOrders', () => {
     await listOrders(client, { alert: false })
     await listOrders(client)
 
-    expect(Object.fromEntries(seen[0]!.url.searchParams)).toEqual({
+    expect(Object.fromEntries(at(seen).url.searchParams)).toEqual({
       customerId,
       scope: 'all',
       status: 'em_montagem',
@@ -150,8 +157,8 @@ describe('listOrders', () => {
       cursor: 'c1',
       limit: '20',
     })
-    expect(seen[1]!.url.search).toBe('')
-    expect(seen[2]!.url.search).toBe('')
+    expect(at(seen, 1).url.search).toBe('')
+    expect(at(seen, 2).url.search).toBe('')
   })
 })
 
@@ -168,7 +175,7 @@ describe('one order', () => {
     const body = { lines, terms, customerApproved: true, version: 2 }
 
     await expect(changeOrder(client, orderId, body)).resolves.toEqual(answer)
-    expect(seen[0]!.body).toEqual(body)
+    expect(at(seen).body).toEqual(body)
   })
 
   it('passes the wa.me link through as the API wrote it', async () => {
@@ -186,8 +193,8 @@ describe('one order', () => {
     await expect(orderHistory(client, orderId, { cursor: 'h1', limit: 10 })).resolves.toEqual({ items: [], nextCursor: 'h2' })
     await orderHistory(client, orderId)
 
-    expect(Object.fromEntries(seen[0]!.url.searchParams)).toEqual({ cursor: 'h1', limit: '10' })
-    expect(seen[1]!.url.search).toBe('')
+    expect(Object.fromEntries(at(seen).url.searchParams)).toEqual({ cursor: 'h1', limit: '10' })
+    expect(at(seen, 1).url.search).toBe('')
   })
 
   it('issues a tracking link', async () => {
@@ -195,7 +202,7 @@ describe('one order', () => {
     const seen = record('post', `/orders/${orderId}/tracking-link`, link)
 
     await expect(sendTrackingLink(client, orderId)).resolves.toEqual(link)
-    expect(seen[0]!.body).toBeUndefined()
+    expect(at(seen).body).toBeUndefined()
   })
 
   it('moves, releases, cancels and switches supplier with the version read', async () => {
@@ -211,11 +218,11 @@ describe('one order', () => {
     await moveOrderItem(client, orderId, itemId, { to: 'received', check: 'ok', version: 2 })
     await useBackupSupplier(client, orderId, itemId, { version: 2 })
 
-    expect(advance[0]!.body).toEqual({ to: 'entregue', handover: 'delivery', version: 2 })
-    expect(release[0]!.body).toEqual({ version: 2 })
-    expect(cancel[0]!.body).toEqual({ reason: 'Desistiu', version: 2 })
-    expect(move[0]!.body).toEqual({ to: 'received', check: 'ok', version: 2 })
-    expect(backup[0]!.body).toEqual({ version: 2 })
+    expect(at(advance).body).toEqual({ to: 'entregue', handover: 'delivery', version: 2 })
+    expect(at(release).body).toEqual({ version: 2 })
+    expect(at(cancel).body).toEqual({ reason: 'Desistiu', version: 2 })
+    expect(at(move).body).toEqual({ to: 'received', check: 'ok', version: 2 })
+    expect(at(backup).body).toEqual({ version: 2 })
   })
 
   it('voids a payment with the reason', async () => {
@@ -223,7 +230,7 @@ describe('one order', () => {
 
     await voidPayment(client, orderId, paymentId, { reason: 'Valor errado', version: 3 })
 
-    expect(seen[0]!.body).toEqual({ reason: 'Valor errado', version: 3 })
+    expect(at(seen).body).toEqual({ reason: 'Valor errado', version: 3 })
   })
 
   it.each([
@@ -321,7 +328,7 @@ describe('Hoje and Financeiro', () => {
 
     await getFinanceSummary(client, { from: '2026-11-01', to: '2026-11-30' })
 
-    expect(Object.fromEntries(seen[0]!.url.searchParams)).toEqual({ from: '2026-11-01', to: '2026-11-30' })
+    expect(Object.fromEntries(at(seen).url.searchParams)).toEqual({ from: '2026-11-01', to: '2026-11-30' })
   })
 
   it('maps a period that is too long and a role without finance access', async () => {
