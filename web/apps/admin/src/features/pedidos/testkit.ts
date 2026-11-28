@@ -1,8 +1,8 @@
-import type { Item, ItemSummary, Kit, KitSummary, Quote } from '@encomendo/api'
+import type { HistoryEntry, Item, ItemSummary, Kit, KitSummary, Order, Quote } from '@encomendo/api'
 import { http, HttpResponse } from 'msw'
 import type { SetupServer } from 'msw/node'
 
-import { brl, orderProblem } from '../../testing/orders'
+import { brl, encomendaMontagem, orderProblem, settingsUsing } from '../../testing/orders'
 
 // Fixtures and handlers the Pedidos tests share: a small catalog (a kit with
 // a swappable item, loose items, a required option) and a quote whose figures
@@ -144,5 +144,58 @@ export function serveCatalog(server: SetupServer): void {
       const found = catalogItems.find((candidate) => candidate.id === params.id)
       return found === undefined ? orderProblem('not_found') : HttpResponse.json(found)
     }),
+  )
+}
+
+/** Call is one request the order screen made: what it sent. */
+export interface Call {
+  body: Record<string, unknown>
+  key: string | null
+}
+
+/** OrderState is what the order handlers answer, and what they recorded. */
+export interface OrderState {
+  order: Order
+  history: HistoryEntry[]
+  /** answers override what a write answers, by name: advance, release, move, backup, payment, void, date, tracking, cancel, change. */
+  answers: Partial<Record<string, () => Response | Promise<Response>>>
+  calls: Record<string, Call[]>
+  /** timeZone is the store's. */
+  timeZone: 'America/Sao_Paulo' | 'America/Manaus'
+}
+
+/** newOrderState starts the handlers of one order. */
+export function newOrderState(order: Order): OrderState {
+  return { order, history: [], answers: {}, calls: {}, timeZone: 'America/Sao_Paulo' }
+}
+
+/**
+ * serveOrder answers the order screen's calls: the order, the settings, the
+ * history, and each write with the order as it stands (or with an override of
+ * `state.answers`). Every write is recorded in `state.calls`, with its body
+ * and Idempotency-Key.
+ */
+export function serveOrder(server: SetupServer, state: OrderState): void {
+  async function write(name: string, request: Request, fallback: () => Response): Promise<Response> {
+    const text = await request.text()
+    const body = text === '' ? {} : (JSON.parse(text) as Record<string, unknown>)
+    ;(state.calls[name] ??= []).push({ body, key: request.headers.get('Idempotency-Key') })
+    return (await state.answers[name]?.()) ?? fallback()
+  }
+  const current = () => HttpResponse.json(state.order)
+  server.use(
+    http.get('*/readyz', () => HttpResponse.json({ status: 'ok' })),
+    http.get('*/api/v1/admin/settings', () => HttpResponse.json(settingsUsing(encomendaMontagem, { timeZone: state.timeZone }))),
+    http.get('*/api/v1/admin/orders/:id', () => HttpResponse.json(state.order)),
+    http.get('*/api/v1/admin/orders/:id/history', () => HttpResponse.json({ items: state.history })),
+    http.post('*/api/v1/admin/orders/:id/advance', ({ request }) => write('advance', request, current)),
+    http.post('*/api/v1/admin/orders/:id/release', ({ request }) => write('release', request, current)),
+    http.post('*/api/v1/admin/orders/:id/items/:itemId/move', ({ request }) => write('move', request, current)),
+    http.post('*/api/v1/admin/orders/:id/items/:itemId/use-backup-supplier', ({ request }) => write('backup', request, current)),
+    http.post('*/api/v1/admin/orders/:id/payments', ({ request }) => write('payment', request, () => HttpResponse.json(state.order, { status: 201 }))),
+    http.post('*/api/v1/admin/orders/:id/payments/:paymentId/void', ({ request }) => write('void', request, current)),
+    http.put('*/api/v1/admin/orders/:id/delivery-date', ({ request }) => write('date', request, () => HttpResponse.json({ order: state.order, whatsappUrl: 'https://wa.me/5592991234567?text=data' }))),
+    http.post('*/api/v1/admin/orders/:id/tracking-link', ({ request }) => write('tracking', request, () => HttpResponse.json({ trackingUrl: 'https://altarpm.encomendo.com.br/p/novo', whatsappUrl: 'https://wa.me/5592991234567?text=link' }))),
+    http.post('*/api/v1/admin/orders/:id/cancel', ({ request }) => write('cancel', request, current)),
   )
 }
