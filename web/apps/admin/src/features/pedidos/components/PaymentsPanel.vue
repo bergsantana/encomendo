@@ -69,16 +69,16 @@ const money = (value: { cents: number; currency: string }) => formatMoney(value.
           {{ money(order.refundDue) }}
         </dd>
       </div>
-      <div v-if="order.cost">
+      <div v-if="order.cost !== undefined">
         <dt>Custo</dt>
         <dd class="enc-number">
-          {{ money(order.cost) }}
+          {{ order.cost === null ? '—' : money(order.cost) }}
         </dd>
       </div>
-      <div v-if="order.margin">
+      <div v-if="order.margin !== undefined">
         <dt>Margem</dt>
         <dd class="enc-number">
-          {{ formatMargin(order.margin, order.total.currency) }}
+          {{ order.margin === null ? '—' : formatMargin(order.margin, order.total.currency) }}
         </dd>
       </div>
     </dl>

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadPage } from '../../pageLoad'
 import { button, closeApps, field, link, openApp } from '../../testing/app'
 import { authSession, gate } from '../../testing/fixtures'
-import { encomendaMontagem, joao, maria, orderAsOwner, orderProblem, settingsUsing, summaryOf } from '../../testing/orders'
+import { brl, encomendaMontagem, joao, maria, orderAsOwner, orderProblem, settingsUsing, summaryOf } from '../../testing/orders'
 import { bancoId, corOption, farolId, guidaoAltoId, guidaoId, kit, kitId, quoteFor, serveCatalog } from './testkit'
 
 vi.mock('../../pageLoad', () => ({ loadPage: vi.fn() }))
@@ -173,7 +173,7 @@ describe('the customer', () => {
     expect(field(wrapper, 'Buscar cliente').element).toBeTruthy()
   })
 
-  it('creates "Novo cliente" with Nome and WhatsApp, and uses it for the order', async () => {
+  it('takes "Novo cliente" with Nome and WhatsApp for the order, without making it first', async () => {
     const calls = serve()
     const { wrapper } = await openForm()
 
@@ -183,13 +183,67 @@ describe('the customer', () => {
     await button(wrapper, 'Criar cliente').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Trocar cliente'))
 
-    expect(calls.customerPosts).toEqual([{ name: 'Carla Dias', phone: '5592981112222', email: null, notes: '', addresses: [] }])
     expect(wrapper.get('.chosen').text()).toContain('Carla Dias')
+    expect(plain(wrapper.get('.chosen').text())).toContain('(92) 98111-2222')
+    expect(calls.customerPosts).toEqual([])
   })
 
-  it('asks for what is missing in "Novo cliente", and says when the WhatsApp is taken', async () => {
+  it('sends the new customer with the order, in place of a customer id', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await button(wrapper, 'Novo cliente').trigger('click')
+    await field(wrapper, 'Nome').setValue('Carla Dias')
+    await field(wrapper, 'WhatsApp').setValue('(92) 98111-2222')
+    await button(wrapper, 'Criar cliente').trigger('click')
+    await addItem(wrapper)
+
+    await button(wrapper, 'Salvar rascunho').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Pedido P-0231 criado.'))
+
+    expect(calls.creates[0]?.body).toEqual({
+      newCustomer: { name: 'Carla Dias', phone: '5592981112222' },
+      lines: [{ itemId: farolId, quantity: 1 }],
+      terms: { handover: 'pickup' },
+      sendToCustomer: false,
+    })
+    expect(calls.customerPosts).toEqual([])
+  })
+
+  it('changes from a customer found to a new one, and back', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await chooseCustomer(wrapper)
+    await button(wrapper, 'Trocar cliente').trigger('click')
+    await button(wrapper, 'Novo cliente').trigger('click')
+    await field(wrapper, 'Nome').setValue('Carla Dias')
+    await field(wrapper, 'WhatsApp').setValue('(92) 98111-2222')
+    await button(wrapper, 'Criar cliente').trigger('click')
+    await addItem(wrapper)
+    await button(wrapper, 'Salvar rascunho').trigger('click')
+    await vi.waitFor(() => expect(calls.creates).toHaveLength(1))
+
+    expect(calls.creates[0]?.body.customerId).toBeUndefined()
+    expect(calls.creates[0]?.body.newCustomer).toBeDefined()
+  })
+
+  it('starts the customer over with the search box when "Trocar cliente" is pressed after a new one', async () => {
     serve()
-    server.use(http.post('*/api/v1/admin/customers', () => orderProblem('phone_taken')))
+    const { wrapper } = await openForm()
+    await button(wrapper, 'Novo cliente').trigger('click')
+    await field(wrapper, 'Nome').setValue('Carla Dias')
+    await field(wrapper, 'WhatsApp').setValue('(92) 98111-2222')
+    await button(wrapper, 'Criar cliente').trigger('click')
+
+    await button(wrapper, 'Trocar cliente').trigger('click')
+
+    expect(field(wrapper, 'Buscar cliente').element).toBeTruthy()
+    await button(wrapper, 'Novo cliente').trigger('click')
+    expect((field(wrapper, 'Nome').element as HTMLInputElement).value).toBe('')
+    expect((field(wrapper, 'WhatsApp').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('asks for what is missing in "Novo cliente"', async () => {
+    serve()
     const { wrapper } = await openForm()
     await button(wrapper, 'Novo cliente').trigger('click')
 
@@ -199,10 +253,11 @@ describe('the customer', () => {
     expect(wrapper.text()).toContain('Informe o WhatsApp do cliente.')
 
     await field(wrapper, 'Nome').setValue('Carla Dias')
-    await field(wrapper, 'WhatsApp').setValue('(92) 99123-4567')
+    await field(wrapper, 'WhatsApp').setValue('123')
     await wrapper.get('form.fresh').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('Já existe um cliente com este WhatsApp.')
+    expect(wrapper.text()).toContain('Confira o número: use DDD e 8 ou 9 dígitos.')
+    expect(wrapper.find('.chosen').exists()).toBe(false)
   })
 
   it('asks "Informe o cliente do pedido." when saving without one', async () => {
@@ -246,7 +301,6 @@ describe('the lines', () => {
     expect(lastQuote(calls)?.lines).toEqual([
       {
         kitId,
-        quantity: 1,
         swaps: [{ itemId: guidaoId, withItemId: guidaoAltoId }],
         options: [{ itemId: bancoId, optionId: corOption.id, choiceId: corOption.choices[0]?.id }],
       },
@@ -263,7 +317,7 @@ describe('the lines', () => {
     await field(wrapper, 'Trocar Guidão baixo').setValue(guidaoId)
 
     expect(wrapper.text()).not.toContain('no lugar de')
-    await vi.waitFor(() => expect(lastQuote(calls)?.lines).toEqual([{ kitId, quantity: 1, options: [{ itemId: bancoId, optionId: corOption.id, choiceId: corOption.choices[0]?.id }] }]))
+    await vi.waitFor(() => expect(lastQuote(calls)?.lines).toEqual([{ kitId, options: [{ itemId: bancoId, optionId: corOption.id, choiceId: corOption.choices[0]?.id }] }]))
   })
 
   it('offers the options of an item, extra price and days included, and needs a required one', async () => {
@@ -308,7 +362,7 @@ describe('the lines', () => {
     expect(wrapper.find('.line').exists()).toBe(false)
   })
 
-  it('refuses a quantity that is not 1 to 999 and asks for at least one line', async () => {
+  it('refuses a quantity that is not 1 to 99 and asks for at least one line', async () => {
     const calls = serve()
     const { wrapper } = await openForm()
     await chooseCustomer(wrapper)
@@ -318,11 +372,40 @@ describe('the lines', () => {
     expect(wrapper.text()).toContain('Adicione ao menos um item ou kit.')
 
     await addItem(wrapper)
-    await field(wrapper, 'Quantidade').setValue('0')
-    await button(wrapper, 'Salvar rascunho').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('Use uma quantidade de 1 a 999.')
+    for (const typed of ['0', '100', 'x']) {
+      await field(wrapper, 'Quantidade').setValue(typed)
+      await button(wrapper, 'Salvar rascunho').trigger('click')
+      await flushPromises()
+      expect(wrapper.text(), typed).toContain('Use uma quantidade de 1 a 99.')
+    }
     expect(calls.creates).toEqual([])
+    await field(wrapper, 'Quantidade').setValue('99')
+    await vi.waitFor(() => expect(lastQuote(calls)?.lines).toEqual([{ itemId: farolId, quantity: 99 }]))
+  })
+
+  it('has no quantity on a kit line, and sends none: a kit line is one kit', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await addKit(wrapper)
+    await field(wrapper, 'Cor').setValue(corOption.choices[0]?.id ?? '')
+
+    expect(wrapper.findAll('label').map((label) => label.text())).not.toContain('Quantidade')
+    await vi.waitFor(() => expect(lastQuote(calls)).toBeDefined())
+    expect(lastQuote(calls)?.lines).toEqual([{ kitId, options: [{ itemId: bancoId, optionId: corOption.id, choiceId: corOption.choices[0]?.id }] }])
+  })
+
+  it('adds the same kit twice as two lines', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await addKit(wrapper)
+    await addKit(wrapper)
+    for (const cor of wrapper.findAll('select').filter((select) => select.findAll('option').some((option) => option.text() === 'Preto'))) {
+      await cor.setValue(corOption.choices[0]?.id ?? '')
+    }
+
+    expect(wrapper.findAll('.line')).toHaveLength(2)
+    await vi.waitFor(() => expect(lastQuote(calls)?.lines).toHaveLength(2))
+    expect((lastQuote(calls)?.lines as { kitId: string }[]).map((line) => line.kitId)).toEqual([kitId, kitId])
   })
 
   it('finds kits and items by name in the picker, and says when there are none', async () => {
@@ -533,52 +616,158 @@ describe('delivery and pickup', () => {
     await vi.waitFor(() => expect(lastQuote(calls)?.terms).toEqual({ handover: 'pickup' }))
   })
 
-  it('saves a new address on the customer and chooses it', async () => {
+  async function typeNewAddress(wrapper: VueWrapper) {
+    await field(wrapper, 'Entrega').setValue(true)
+    await field(wrapper, 'Endereço').setValue('new')
+    await field(wrapper, 'Nome do endereço').setValue('Loja')
+    await field(wrapper, 'CEP').setValue('69057-000')
+    await field(wrapper, 'Rua').setValue('Av. Djalma Batista')
+    await field(wrapper, 'Cidade').setValue('Manaus')
+    await field(wrapper, 'UF').setValue('AM')
+  }
+
+  const newAddress = { label: 'Loja', cep: '69057000', street: 'Av. Djalma Batista', number: '', complement: '', district: '', city: 'Manaus', state: 'AM' }
+
+  it('sends the new address with the quote and the order, never with an address id, and saves nothing else', async () => {
     const calls = serve()
     const { wrapper } = await openForm()
     await chooseCustomer(wrapper)
+    await addItem(wrapper)
+    await typeNewAddress(wrapper)
+
+    await vi.waitFor(() => expect(lastQuote(calls)?.terms).toEqual({ handover: 'delivery', newAddress }))
+    await button(wrapper, 'Salvar rascunho').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Pedido P-0231 criado.'))
+
+    expect(calls.creates[0]?.body.terms).toEqual({ handover: 'delivery', newAddress })
+    expect(calls.customerPuts).toEqual([])
+    expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Salvar endereço')
+  })
+
+  it('does not price the order before the new address is complete', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await chooseCustomer(wrapper)
+    await addItem(wrapper)
     await field(wrapper, 'Entrega').setValue(true)
     await field(wrapper, 'Endereço').setValue('new')
+
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(calls.quotes).toEqual([])
 
     await field(wrapper, 'Nome do endereço').setValue('Loja')
     await field(wrapper, 'CEP').setValue('69057-000')
     await field(wrapper, 'Rua').setValue('Av. Djalma Batista')
     await field(wrapper, 'Cidade').setValue('Manaus')
     await field(wrapper, 'UF').setValue('AM')
-    await button(wrapper, 'Salvar endereço').trigger('click')
-    await flushPromises()
-
-    expect(calls.customerPuts).toHaveLength(1)
-    const sent = calls.customerPuts[0] as { addresses: Record<string, unknown>[]; version: number }
-    expect(sent.version).toBe(joao.version)
-    expect(sent.addresses).toHaveLength(2)
-    expect(sent.addresses[1]).toMatchObject({ label: 'Loja', cep: '69057000', street: 'Av. Djalma Batista', city: 'Manaus', state: 'AM' })
-    expect((field(wrapper, 'Endereço').element as HTMLSelectElement).value).toBe('0190f3c4-5e1a-7b2c-8d3e-000000000199')
+    await vi.waitFor(() => expect(calls.quotes).toHaveLength(1))
   })
 
-  it('says what is wrong with a new address before saving it', async () => {
+  it('says what is wrong with a new address when saving, and sends nothing', async () => {
     const calls = serve()
     const { wrapper } = await openForm()
     await chooseCustomer(wrapper)
+    await addItem(wrapper)
     await field(wrapper, 'Entrega').setValue(true)
     await field(wrapper, 'Endereço').setValue('new')
 
-    await button(wrapper, 'Salvar endereço').trigger('click')
+    await button(wrapper, 'Salvar rascunho').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Informe o nome do endereço.')
     expect(wrapper.text()).toContain('Confira o CEP: use 8 dígitos.')
-    expect(calls.customerPuts).toEqual([])
+    expect(calls.creates).toEqual([])
   })
 
-  it('does not offer "Novo endereço" to a role that cannot write customers', async () => {
+  it('offers "Novo endereço" to staff too, and to a customer made with the order, which has no address', async () => {
     signedInAs('staff', staff)
     serve()
     const { wrapper } = await openForm()
-    await chooseCustomer(wrapper)
+    await button(wrapper, 'Novo cliente').trigger('click')
+    await field(wrapper, 'Nome').setValue('Carla Dias')
+    await field(wrapper, 'WhatsApp').setValue('(92) 98111-2222')
+    await button(wrapper, 'Criar cliente').trigger('click')
     await field(wrapper, 'Entrega').setValue(true)
 
-    expect(field(wrapper, 'Endereço').findAll('option').map((option) => option.text())).not.toContain('Novo endereço')
+    expect(field(wrapper, 'Endereço').findAll('option').map((option) => option.text())).toEqual(['Escolha o endereço', 'Novo endereço'])
+  })
+
+  it('shows what the API refused in the new address next to its fields', async () => {
+    serve({
+      quoteAnswer: () =>
+        orderProblem('invalid', {
+          errors: [
+            { field: 'terms.newAddress.cep', message: 'Confira o CEP: use 8 dígitos.' },
+            { field: 'terms.newAddress', message: 'Use até 10 endereços.' },
+          ],
+        }),
+    })
+    const { wrapper } = await openForm()
+    await chooseCustomer(wrapper)
+    await addItem(wrapper)
+    await typeNewAddress(wrapper)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Use até 10 endereços.'))
+
+    expect(wrapper.text()).toContain('Confira o CEP: use 8 dígitos.')
+    expect(wrapper.get('.new-address').text()).toContain('Confira o CEP: use 8 dígitos.')
+  })
+
+  it('goes back to no new address when the delivery is changed to a pickup', async () => {
+    const calls = serve()
+    const { wrapper } = await openForm()
+    await chooseCustomer(wrapper)
+    await addItem(wrapper)
+    await typeNewAddress(wrapper)
+    await vi.waitFor(() => expect(lastQuote(calls)?.terms).toMatchObject({ newAddress }))
+
+    await field(wrapper, 'Retirada na loja').setValue(true)
+
+    await vi.waitFor(() => expect(lastQuote(calls)?.terms).toEqual({ handover: 'pickup' }))
+  })
+})
+
+describe('"Resumo" extras', () => {
+  it('says how many days after the deposit the delivery is', async () => {
+    serve({ quoteAnswer: () => HttpResponse.json(quoteFor({ daysAfterDeposit: 1 })) })
+    const { wrapper } = await openForm()
+    await addItem(wrapper)
+
+    await vi.waitFor(() => expect(plain(wrapper.get('.summary').text())).toContain('Entrega prevista20/12/2026 (1 dia depois do sinal)'))
+  })
+
+  it('shows cost and margin when the API sent them (the owner), as the API sent them', async () => {
+    serve({ quoteAnswer: () => HttpResponse.json(quoteFor({ cost: brl(80000), margin: { cents: 43400, basisPoints: 3517 } })) })
+    const { wrapper } = await openForm()
+    await addItem(wrapper)
+
+    await vi.waitFor(() => expect(wrapper.get('.summary').text()).toContain('Custo'))
+
+    const summary = plain(wrapper.get('.summary').text())
+    expect(summary).toContain('CustoR$ 800,00')
+    expect(summary).toContain('MargemR$ 434,00 (35,17%)')
+  })
+
+  it('shows "—" for a cost the order has none of', async () => {
+    serve({ quoteAnswer: () => HttpResponse.json(quoteFor({ cost: null, margin: null })) })
+    const { wrapper } = await openForm()
+    await addItem(wrapper)
+
+    await vi.waitFor(() => expect(wrapper.get('.summary').text()).toContain('Custo'))
+
+    expect(plain(wrapper.get('.summary').text())).toContain('Custo—')
+    expect(plain(wrapper.get('.summary').text())).toContain('Margem—')
+  })
+
+  it('shows neither for an admin, whose quote has neither', async () => {
+    signedInAs('admin', manager)
+    serve()
+    const { wrapper } = await openForm()
+    await addItem(wrapper)
+
+    await vi.waitFor(() => expect(wrapper.get('.summary').text()).toContain('Total'))
+
+    expect(wrapper.get('.summary').text()).not.toMatch(/Custo|Margem/)
   })
 })
 

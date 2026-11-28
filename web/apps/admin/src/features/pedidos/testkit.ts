@@ -118,11 +118,13 @@ export function quoteFor(overrides: Partial<Quote> = {}): Quote {
     freight: brl(2200),
     discount: brl(300),
     total: brl(123400),
+    refundDue: brl(0),
     depositPercent: 40,
     depositDue: brl(55500),
     assemblyDays: 3,
     safetyMarginDays: 2,
     deliveryDate: '2026-12-20',
+    daysAfterDeposit: 8,
     arrivalLimit: '2026-12-17',
     ...overrides,
   }

@@ -2,17 +2,19 @@
 /**
  * CustomerPicker is "Cliente" on the order form: "Buscar cliente" (a name or
  * a WhatsApp number) with the matches to choose from, or "Novo cliente" with
- * "Nome" and "WhatsApp". Once chosen it shows the customer and "Trocar
+ * "Nome" and "WhatsApp" (made with the order, so "Criar cliente" only takes
+ * the two fields for it). Once chosen it shows the customer and "Trocar
  * cliente". On a change the customer is fixed and only shown.
  */
-import type { Customer, CustomerSummary } from '@encomendo/api'
+import type { CustomerSummary } from '@encomendo/api'
 import { BaseButton, BaseInput } from '@encomendo/ui'
 import { onBeforeUnmount, reactive, ref, useId } from 'vue'
 
 import { formatWhatsapp } from '../../../phone'
 
 defineProps<{
-  customer: Customer | null
+  /** chosen is the customer on the order (found, or typed under "Novo cliente"), or null. */
+  chosen: { name: string; phone: string } | null
   /** locked is true on "Alterar pedido": the order keeps its customer. */
   locked: boolean
   results: readonly CustomerSummary[]
@@ -20,7 +22,6 @@ defineProps<{
   /** error is the message above the picker; `fieldErrors` the ones next to Nome and WhatsApp. */
   error: string | null
   fieldErrors: Readonly<Record<string, string>>
-  creating: boolean
   /** orderError is "Informe o cliente do pedido." */
   orderError: string | null
 }>()
@@ -45,6 +46,15 @@ function onSearch(event: Event): void {
   timer = setTimeout(() => emit('search', typed.value), 300)
 }
 
+/** startOver takes the customer off and leaves the form as new: the search box, with no Nome or WhatsApp left over. */
+function startOver(): void {
+  adding.value = false
+  fresh.name = ''
+  fresh.phone = ''
+  typed.value = ''
+  emit('clear')
+}
+
 function searchNow(): void {
   clearTimeout(timer)
   emit('search', typed.value)
@@ -63,16 +73,16 @@ onBeforeUnmount(() => clearTimeout(timer))
     </h2>
 
     <div
-      v-if="customer !== null"
+      v-if="chosen !== null"
       class="chosen"
     >
       <p>
-        <strong>{{ customer.name }}</strong>
-        <span class="muted">{{ formatWhatsapp(customer.phone) }}</span>
+        <strong>{{ chosen.name }}</strong>
+        <span class="muted">{{ formatWhatsapp(chosen.phone) }}</span>
       </p>
       <BaseButton
         v-if="!locked"
-        @click="emit('clear')"
+        @click="startOver"
       >
         Trocar cliente
       </BaseButton>
@@ -150,10 +160,7 @@ onBeforeUnmount(() => clearTimeout(timer))
           :error="fieldErrors.phone ?? null"
         />
         <div class="buttons">
-          <BaseButton
-            type="submit"
-            :disabled="creating"
-          >
+          <BaseButton type="submit">
             Criar cliente
           </BaseButton>
           <BaseButton @click="adding = false">

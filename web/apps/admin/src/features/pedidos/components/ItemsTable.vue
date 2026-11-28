@@ -23,7 +23,7 @@ const emit = defineEmits<{
   move: [itemId: string, to: ItemStatus, check?: ItemCheck]
 }>()
 
-const showCost = computed(() => props.items.some((item) => item.cost !== undefined && item.cost !== null))
+const showCost = computed(() => props.items.some((item) => item.cost !== undefined))
 </script>
 
 <template>

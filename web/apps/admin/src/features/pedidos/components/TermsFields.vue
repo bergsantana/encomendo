@@ -2,40 +2,31 @@
 /**
  * TermsFields are "Entrega" and "Valores" of the order form. "Entrega" is
  * "Retirada na loja" or "Entrega"; a delivery shows "Endereço" (the
- * customer's, or "Novo endereço", which is saved on the customer) and
+ * customer's, or "Novo endereço", which is saved on the customer with the
+ * order) and
  * "Frete". "Valores" (discount, deposit percent, days) is only for roles with
  * `order:manage`; the store's defaults are the hints, and an empty field
  * means "use the default".
  */
-import type { Customer } from '@encomendo/api'
-import { BaseButton, BaseInput, BaseSelect } from '@encomendo/ui'
-import { computed, ref } from 'vue'
+import type { Address } from '@encomendo/api'
+import { BaseInput, BaseSelect } from '@encomendo/ui'
+import { computed } from 'vue'
 
-import { emptyAddress, type AddressDraft } from '../../clientes/customerForm'
 import AddressFields from '../../clientes/components/AddressFields.vue'
 import { niche } from '../../../niche'
 import { newAddressChoice, type TermsDraft } from '../orderForm'
 
 const props = defineProps<{
-  customer: Customer | null
+  /** addresses are the customer's own, to choose from; a customer made with the order has none. */
+  addresses: readonly Address[]
   canManage: boolean
-  /** canAddAddress is `customer:write`: the roles that may save an address on the customer. */
-  canAddAddress: boolean
   /** defaults are the store's deposit percent and days, for the hints. */
   defaults: { depositPercent: number; assemblyDays: number; safetyMarginDays: number } | null
+  /** errors are the messages by field; the new address's are `addresses[0].…`, and `addresses` is the limit of 10. */
   errors: Readonly<Record<string, string>>
-  addressError: string | null
-  addressErrors: Readonly<Record<string, string>>
-  addressSaving: boolean
 }>()
 
 const terms = defineModel<TermsDraft>({ required: true })
-
-const emit = defineEmits<{
-  saveAddress: [address: AddressDraft]
-}>()
-
-const fresh = ref<AddressDraft>(emptyAddress())
 
 function set<K extends keyof TermsDraft>(field: K, value: TermsDraft[K]): void {
   terms.value = { ...terms.value, [field]: value }
@@ -43,8 +34,8 @@ function set<K extends keyof TermsDraft>(field: K, value: TermsDraft[K]): void {
 
 const addressOptions = computed(() => [
   { value: '', label: 'Escolha o endereço' },
-  ...(props.customer?.addresses ?? []).map((address) => ({ value: address.id, label: `${address.label}: ${address.street}, ${address.number}` })),
-  ...(props.canAddAddress && props.customer !== null ? [{ value: newAddressChoice, label: 'Novo endereço' }] : []),
+  ...props.addresses.map((address) => ({ value: address.id, label: `${address.label}: ${address.street}, ${address.number}` })),
+  { value: newAddressChoice, label: 'Novo endereço' },
 ])
 
 function hintDays(days: number | undefined): string | null {
@@ -90,26 +81,19 @@ function hintDays(days: number | undefined): string | null {
           class="new-address"
         >
           <p
-            v-if="addressError"
+            v-if="errors.addresses"
             role="alert"
             class="error"
           >
-            {{ addressError }}
+            {{ errors.addresses }}
           </p>
           <AddressFields
-            v-model="fresh"
+            :model-value="terms.newAddress"
             :index="0"
-            :errors="addressErrors"
+            :errors="errors"
+            @update:model-value="set('newAddress', $event)"
             @remove="set('addressId', '')"
           />
-          <div>
-            <BaseButton
-              :disabled="addressSaving"
-              @click="emit('saveAddress', fresh)"
-            >
-              Salvar endereço
-            </BaseButton>
-          </div>
         </div>
         <BaseInput
           :model-value="terms.freight"

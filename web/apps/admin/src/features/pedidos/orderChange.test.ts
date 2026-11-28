@@ -134,17 +134,16 @@ describe('"Alterar pedido"', () => {
     })
   })
 
-  it('rebuilds a kit line with its swap, its options and its quantity', async () => {
+  it('rebuilds a kit line with its swap and its options: a kit line is one kit, with no quantity', async () => {
     const { wrapper, calls } = await openChange(newOrderState(kitOrder()))
     await vi.waitFor(() => expect(calls.quotes).toHaveLength(1))
 
     expect(wrapper.get('.line h3').text()).toBe('Kit Scrambler')
     expect(wrapper.text()).toContain('Guidão alto no lugar de Guidão baixo')
-    expect((field(wrapper, 'Quantidade').element as HTMLInputElement).value).toBe('2')
+    expect(wrapper.findAll('label').map((label) => label.text())).not.toContain('Quantidade')
     expect(calls.quotes[0]?.lines).toEqual([
       {
         kitId,
-        quantity: 2,
         swaps: [{ itemId: guidaoId, withItemId: guidaoAltoId }],
         options: [{ itemId: bancoId, optionId: corOption.id, choiceId: preto?.id }],
       },
@@ -184,6 +183,26 @@ describe('"Alterar pedido"', () => {
     expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Avisar o cliente pelo WhatsApp')
   })
 
+  it('sends a new address with the change, never with an address id', async () => {
+    const { wrapper, calls } = await openChange(newOrderState(looseOrder()), 'staff')
+    await vi.waitFor(() => expect(calls.quotes).toHaveLength(1))
+
+    await field(wrapper, 'Entrega').setValue(true)
+    await field(wrapper, 'Endereço').setValue('new')
+    await field(wrapper, 'Nome do endereço').setValue('Loja')
+    await field(wrapper, 'CEP').setValue('69057-000')
+    await field(wrapper, 'Rua').setValue('Av. Djalma Batista')
+    await field(wrapper, 'Cidade').setValue('Manaus')
+    await field(wrapper, 'UF').setValue('AM')
+    await vi.waitFor(() => expect(calls.quotes.at(-1)?.terms).toMatchObject({ handover: 'delivery', newAddress: { label: 'Loja', cep: '69057000' } }))
+    await button(wrapper, 'Salvar alterações').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Pedido alterado.'))
+
+    const terms = calls.changes[0]?.terms as Record<string, unknown>
+    expect(terms.newAddress).toMatchObject({ label: 'Loja', state: 'AM' })
+    expect(terms.addressId).toBeUndefined()
+  })
+
   it('does not ask for the customer\'s approval before any payment', async () => {
     const { wrapper } = await openChange(newOrderState(looseOrder()))
 
@@ -205,6 +224,24 @@ describe('changing a paid order', () => {
 
     expect(wrapper.get('.notice').text()).toBe('Este pedido já tem pagamento. Combine a mudança com o cliente antes de salvar.')
     expect(field(wrapper, 'O cliente aprovou a mudança').element).toBeTruthy()
+  })
+
+  it('shows "Valor a devolver" from the quote before saving, only when there is one', async () => {
+    const state = newOrderState(paid())
+    const { wrapper, calls } = await openChange(state)
+    await vi.waitFor(() => expect(wrapper.find('.change').exists()).toBe(true))
+    expect(wrapper.get('.change').text()).not.toContain('Valor a devolver')
+
+    server.use(
+      http.post('*/api/v1/admin/orders/quote', async ({ request }) => {
+        calls.quotes.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(quoteFor({ total: brl(50000), refundDue: brl(14995) }))
+      }),
+    )
+    await field(wrapper, 'Quantidade').setValue('2')
+    await vi.waitFor(() => expect(plain(wrapper.get('.change').text())).toContain('Valor a devolverR$ 149,95'))
+
+    expect(plain(wrapper.get('.change').text())).toContain('TotalR$ 1.299,90 → R$ 500,00')
   })
 
   it('asks for the confirmation when saving without it, and sends nothing', async () => {

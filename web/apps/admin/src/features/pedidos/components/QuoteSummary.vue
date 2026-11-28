@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
  * QuoteSummary is "Resumo": Itens, Frete, Desconto, Total, Sinal and
- * "Entrega prevista", exactly as `POST /orders/quote` answered. It adds
+ * "Entrega prevista" (with its days after the deposit), then "Custo" and "Margem" when the API
+ * sent them (the owner only; "—" when it has no cost to give), exactly as `POST /orders/quote` answered. It adds
  * nothing up and shows "Calculando…" while the next answer is awaited. A
  * refusal of the quote (an invalid field, an archived item) shows its message
  * in place of the figures.
  */
 import type { Quote } from '@encomendo/api'
 
-import { formatCivilDate, formatMoney } from '../../../format'
+import { formatCivilDate, formatDays, formatMargin, formatMoney } from '../../../format'
 
 defineProps<{
   quote: Quote | null
@@ -72,7 +73,19 @@ defineProps<{
       <div>
         <dt>Entrega prevista</dt>
         <dd class="enc-number">
-          {{ formatCivilDate(quote.deliveryDate) }}
+          {{ formatCivilDate(quote.deliveryDate) }} ({{ formatDays(quote.daysAfterDeposit) }} depois do sinal)
+        </dd>
+      </div>
+      <div v-if="quote.cost !== undefined">
+        <dt>Custo</dt>
+        <dd class="enc-number">
+          {{ quote.cost === null ? '—' : formatMoney(quote.cost.cents, quote.cost.currency) }}
+        </dd>
+      </div>
+      <div v-if="quote.margin !== undefined">
+        <dt>Margem</dt>
+        <dd class="enc-number">
+          {{ quote.margin === null ? '—' : formatMargin(quote.margin, quote.total.currency) }}
         </dd>
       </div>
     </dl>

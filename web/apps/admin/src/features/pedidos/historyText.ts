@@ -24,7 +24,7 @@ export function historyText(entry: HistoryEntry, items: Order['items']): string 
     case 'backup_supplier':
       return `${who} usou o fornecedor reserva em ${entry.itemName ?? 'um item'}`
     case 'payment':
-      return `${who} registrou ${entry.paymentKind === 'deposit' ? 'o sinal' : 'o saldo'} de ${money} (${entry.paymentMethod === undefined ? '' : paymentMethodLabel(entry.paymentMethod)})`
+      return `${who} registrou ${entry.paymentKind === 'deposit' ? 'o sinal' : 'o saldo'} de ${money}${entry.paymentMethod === undefined ? '' : ` (${paymentMethodLabel(entry.paymentMethod)})`}`
     case 'payment_voided':
       return `${who} anulou o pagamento de ${money}${entry.reason ? `: ${entry.reason}` : ''}`
     case 'released':

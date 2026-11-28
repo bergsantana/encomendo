@@ -2,14 +2,15 @@ import type { Item, Kit, LineRequest, Order, TermsInput } from '@encomendo/api'
 
 import type { FieldCheck } from '../../composables/useForm'
 import { centsToText, parseCents } from '../../format'
+import { type AddressDraft, customerChecks, emptyAddress, emptyDraft, toAddressInput } from '../clientes/customerForm'
 import type { Handover } from './labels'
 
 /** CatalogOption is one customization option of a catalog item, as the picker shows it. */
 export type CatalogOption = Item['options'][number]
 
 /**
- * LineDraft is one line of the form: a kit or a loose item, its quantity as
- * typed, the swaps chosen on a kit and the choices made on the client's
+ * LineDraft is one line of the form: a kit (always one kit; add it again for
+ * another) or a loose item with its quantity as typed, the swaps chosen on a kit and the choices made on the client's
  * options. It holds no price: the quote prices the line.
  */
 export interface LineDraft {
@@ -19,7 +20,7 @@ export interface LineDraft {
   /** catalogId is the kit's or the item's id. */
   catalogId: string
   name: string
-  /** quantity is typed text, a whole number from 1 to 999 once checked. */
+  /** quantity is typed text, a whole number from 1 to 99 once checked. Only a loose item has one: a kit line is one kit. */
   quantity: string
   /** swaps maps a kit's item id to the alternative chosen in its place; a missing key means not swapped. */
   swaps: Record<string, string>
@@ -32,6 +33,8 @@ export interface TermsDraft {
   handover: Handover
   /** addressId is '' until one is chosen; it only counts for a delivery. */
   addressId: string
+  /** newAddress is the address typed under "Novo endereço", used while `addressId` is `newAddressChoice`. */
+  newAddress: AddressDraft
   freight: string
   discount: string
   depositPercent: string
@@ -50,12 +53,12 @@ export interface OrderDraft {
 /** newAddressChoice is the value of "Novo endereço" in the address choice, before that address is saved on the customer. */
 export const newAddressChoice = 'new'
 
-/** maxQuantity is the largest quantity a line takes. */
-export const maxQuantity = 999
+/** maxQuantity is the largest quantity a loose item takes. */
+export const maxQuantity = 99
 
 /** emptyTerms is the terms of a new order: pickup, and every value left to the store's default. */
 export function emptyTerms(): TermsDraft {
-  return { handover: 'pickup', addressId: '', freight: '', discount: '', depositPercent: '', assemblyDays: '', safetyMarginDays: '' }
+  return { handover: 'pickup', addressId: '', newAddress: emptyAddress(), freight: '', discount: '', depositPercent: '', assemblyDays: '', safetyMarginDays: '' }
 }
 
 /** emptyOrderDraft is the form of "Novo pedido". */
@@ -68,7 +71,7 @@ export function optionKey(itemId: string, optionId: string): string {
   return `${itemId}:${optionId}`
 }
 
-/** wholeQuantity reads a quantity typed as digits, or null when it is not 1 to 999. */
+/** wholeQuantity reads a quantity typed as digits, or null when it is not 1 to 99. */
 export function wholeQuantity(text: string): number | null {
   if (!/^\d{1,4}$/.test(text.trim())) return null
   const value = Number(text.trim())
@@ -91,8 +94,8 @@ export function toLineRequest(line: LineDraft): LineRequest {
     const [itemId = '', optionId = ''] = key.split(':')
     return { itemId, optionId, choiceId }
   })
-  const base: LineRequest = { quantity: wholeQuantity(line.quantity) ?? 1, ...(options.length > 0 ? { options } : {}) }
-  if (line.kind === 'item') return { ...base, itemId: line.catalogId }
+  const base: LineRequest = options.length > 0 ? { options } : {}
+  if (line.kind === 'item') return { ...base, itemId: line.catalogId, quantity: wholeQuantity(line.quantity) ?? 1 }
   const swaps = Object.entries(line.swaps).map(([itemId, withItemId]) => ({ itemId, withItemId }))
   return { ...base, kitId: line.catalogId, ...(swaps.length > 0 ? { swaps } : {}) }
 }
@@ -112,7 +115,8 @@ export interface TermsAccess {
 export function toTerms(terms: TermsDraft, access: TermsAccess): TermsInput {
   const delivery = terms.handover === 'delivery'
   const request: TermsInput = { handover: terms.handover }
-  if (delivery && terms.addressId !== '' && terms.addressId !== newAddressChoice) request.addressId = terms.addressId
+  if (delivery && terms.addressId === newAddressChoice) request.newAddress = toAddressInput(terms.newAddress)
+  else if (delivery && terms.addressId !== '') request.addressId = terms.addressId
   const freight = delivery ? parseCents(terms.freight) : null
   if (freight !== null) request.freightCents = freight
   if (!access.canManage) return request
@@ -125,12 +129,22 @@ export function toTerms(terms: TermsDraft, access: TermsAccess): TermsInput {
 }
 
 /**
+ * newAddressChecks are the checks on the address of "Novo endereço", with the
+ * fields named `addresses[0].…` as the address fields of Clientes read them.
+ * They only apply to a delivery to a new address.
+ */
+export function newAddressChecks(terms: TermsDraft): FieldCheck[] {
+  if (terms.handover !== 'delivery' || terms.addressId !== newAddressChoice) return []
+  return customerChecks({ ...emptyDraft(), addresses: [terms.newAddress] }).filter(([field]) => field.startsWith('addresses['))
+}
+
+/**
  * termsChecks are the checks on the typed values, run before a quote or a
  * save; the API checks the same limits again. Empty means "use the default".
  */
 export function termsChecks(terms: TermsDraft, access: TermsAccess): FieldCheck[] {
   const money = (text: string) => text.trim() === '' || parseCents(text) !== null
-  const checks: FieldCheck[] = [['freight', terms.freight, 'Confira o valor.', money]]
+  const checks: FieldCheck[] = [['freight', terms.freight, 'Confira o valor.', money], ...newAddressChecks(terms)]
   if (!access.canManage) return checks
   return [
     ...checks,
@@ -146,6 +160,7 @@ export function termsFromOrder(order: Order): TermsDraft {
   return {
     handover: order.handover,
     addressId: order.address?.id ?? '',
+    newAddress: emptyAddress(),
     freight: order.freight.cents === 0 ? '' : centsToText(order.freight.cents),
     discount: order.discount.cents === 0 ? '' : centsToText(order.discount.cents),
     depositPercent: String(order.depositPercent),

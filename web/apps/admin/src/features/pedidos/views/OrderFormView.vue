@@ -29,6 +29,7 @@ const {
   loadError,
   settings,
   customer,
+  newCustomer,
   draft,
   kits,
   items,
@@ -38,7 +39,6 @@ const {
   archivedNames,
   needsApproval,
   canManage,
-  canWriteCustomer,
   saving,
   formError,
   fieldErrors,
@@ -51,10 +51,6 @@ const {
   customerSearching,
   customerError,
   customerFieldErrors,
-  customerSaving,
-  addressError,
-  addressFieldErrors,
-  addressSaving,
   catalogResults,
   catalogSearching,
   catalogError,
@@ -129,7 +125,6 @@ function quotedLine(index: number) {
   return quote.value?.lines[index]
 }
 
-const defaults = computed(() => (settings.value === null ? null : settings.value))
 </script>
 
 <template>
@@ -284,18 +279,17 @@ const defaults = computed(() => (settings.value === null ? null : settings.value
       </div>
 
       <CustomerPicker
-        :customer="customer"
+        :chosen="customer ?? newCustomer"
         :locked="changing"
         :results="customerResults"
         :searching="customerSearching"
         :error="customerError"
         :field-errors="customerFieldErrors"
-        :creating="customerSaving"
         :order-error="fieldErrors.customer ?? null"
         @search="store.searchCustomers($event)"
         @choose="store.chooseCustomer($event)"
         @clear="store.clearCustomer()"
-        @create="store.createCustomerInline"
+        @create="(name, phone) => store.useNewCustomer(name, phone)"
       />
 
       <section
@@ -342,15 +336,10 @@ const defaults = computed(() => (settings.value === null ? null : settings.value
 
       <TermsFields
         v-model="draft.terms"
-        :customer="customer"
+        :addresses="customer?.addresses ?? []"
         :can-manage="canManage"
-        :can-add-address="canWriteCustomer"
-        :defaults="defaults"
+        :defaults="settings"
         :errors="fieldErrors"
-        :address-error="addressError"
-        :address-errors="addressFieldErrors"
-        :address-saving="addressSaving"
-        @save-address="store.saveAddress"
       />
 
       <QuoteSummary
@@ -372,11 +361,15 @@ const defaults = computed(() => (settings.value === null ? null : settings.value
         <input
           v-model="draft.customerApproved"
           type="checkbox"
+          :aria-invalid="fieldErrors.approval ? 'true' : undefined"
+          :aria-describedby="fieldErrors.approval ? 'approval-error' : undefined"
         >
         O cliente aprovou a mudança
       </label>
       <p
         v-if="fieldErrors.approval"
+        id="approval-error"
+        role="alert"
         class="error"
       >
         {{ fieldErrors.approval }}

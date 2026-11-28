@@ -30,7 +30,8 @@ const method = ref<PaymentMethod>('pix')
 const amountError = ref<string | null>(null)
 
 function due(chosen: PaymentKind): string {
-  const value = chosen === 'deposit' ? props.order.depositDue : props.order.balanceDue
+  // What is still owed of the deposit, not the whole deposit: part of it may be paid.
+  const value = chosen === 'deposit' ? props.order.depositOwed : props.order.balanceDue
   return centsToText(value.cents)
 }
 

@@ -2,7 +2,6 @@ import {
   ApiError,
   changeOrder,
   type ChangedOrder,
-  createCustomer,
   createOrder,
   type CreatedOrder,
   type Customer,
@@ -25,7 +24,6 @@ import {
   quoteOrder,
   sendTrackingLink,
   type TenantSettings,
-  updateCustomer,
 } from '@encomendo/api'
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
@@ -34,15 +32,15 @@ import { api } from '../../api'
 import { type FieldCheck, useForm } from '../../composables/useForm'
 import { errorMessage, issuesByField } from '../../errorMessage'
 import { useSessionStore } from '../../stores/session'
-import { type AddressDraft, customerChecks, draftFromCustomer, emptyDraft, toCustomerInput } from '../clientes/customerForm'
+import { customerChecks, emptyDraft } from '../clientes/customerForm'
 import { searchTerm } from '../clientes/store'
+import { whatsappDigits } from '../../phone'
 import { openWhatsapp } from './openLink'
 import {
   type CatalogOption,
   effectiveItems,
   emptyOrderDraft,
   type LineDraft,
-  newAddressChoice,
   optionKey,
   type OrderDraft,
   termsChecks,
@@ -55,7 +53,6 @@ import {
 const quoteDelayMs = 300
 const searchSize = 20
 const conflictMessage = 'Outra pessoa alterou este pedido. Recarregue para ver a versão atual.'
-const fixTheFields = 'Confira os campos destacados.'
 
 /** termsFieldOf maps the field of an API error to the form field it is about, or null for one the form has no place for. */
 function termsFieldOf(apiField: string): string | null {
@@ -69,6 +66,18 @@ function termsFieldOf(apiField: string): string | null {
     ['safety', 'safetyMarginDays'],
   ]
   return known.find(([part]) => name.includes(part))?.[1] ?? null
+}
+
+/**
+ * addressFieldOf maps the field of an API error about the new address,
+ * `terms.newAddress.cep`, to the field the address fields of Clientes read,
+ * `addresses[0].cep`; `terms.newAddress` (the limit of 10 addresses) is
+ * `addresses`. It is null for any other field.
+ */
+function addressFieldOf(apiField: string): string | null {
+  if (apiField === 'terms.newAddress') return 'addresses'
+  const match = /^terms\.newAddress\.(\w+)$/.exec(apiField)
+  return match === null ? null : `addresses[0].${match[1]}`
 }
 
 /** MissingOption is a required option of a line that has no choice yet. */
@@ -93,6 +102,8 @@ export const useOrderFormStore = defineStore('orderForm', () => {
   const loadError = ref<string | null>(null)
   const settings = shallowRef<TenantSettings | null>(null)
   const customer = shallowRef<Customer | null>(null)
+  /** newCustomer is the "Novo cliente" typed for this order: the API makes it (or finds it by WhatsApp) with the order. */
+  const newCustomer = shallowRef<{ name: string; phone: string } | null>(null)
   const draft = reactive<OrderDraft>(emptyOrderDraft())
   const kits = shallowRef<Record<string, Kit>>({})
   const items = shallowRef<Record<string, Item>>({})
@@ -113,7 +124,6 @@ export const useOrderFormStore = defineStore('orderForm', () => {
   const customerResults = shallowRef<CustomerSummary[]>([])
   const customerSearching = ref(false)
   const customerForm = useForm()
-  const addressForm = useForm()
 
   const catalogResults = shallowRef<{ kits: KitSummary[]; items: ItemSummary[] }>({ kits: [], items: [] })
   const catalogSearching = ref(false)
@@ -130,7 +140,6 @@ export const useOrderFormStore = defineStore('orderForm', () => {
 
   const mode = computed<'new' | 'change'>(() => (order.value === null ? 'new' : 'change'))
   const canManage = computed(() => session.can('order:manage'))
-  const canWriteCustomer = computed(() => session.can('customer:write'))
 
   /** needsApproval is true while the order being changed was paid: the seller confirms the customer agreed. */
   const needsApproval = computed(() => order.value?.editable === 'approval')
@@ -159,12 +168,14 @@ export const useOrderFormStore = defineStore('orderForm', () => {
    * or "Valores" (the API names them `terms.discountCents` and the like).
    */
   const fieldErrors = computed<Record<string, string>>(() => {
-    const fromQuote: Record<string, string> = {}
-    for (const [apiField, message] of Object.entries(quoteIssues.value)) {
-      const field = termsFieldOf(apiField)
-      if (field !== null) fromQuote[field] ??= message
+    const fromApi: Record<string, string> = {}
+    const refused = { ...quoteIssues.value, ...Object.fromEntries(Object.entries(form.fieldErrors.value).filter(([field]) => field.startsWith('terms.'))) }
+    for (const [apiField, message] of Object.entries(refused)) {
+      const field = addressFieldOf(apiField) ?? termsFieldOf(apiField)
+      if (field !== null) fromApi[field] ??= message
     }
-    return { ...fromQuote, ...form.fieldErrors.value }
+    const own = Object.entries(form.fieldErrors.value).filter(([field]) => !field.startsWith('terms.'))
+    return { ...fromApi, ...Object.fromEntries(own) }
   })
 
   /**
@@ -174,7 +185,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
    */
   const quoteBody = computed(() => {
     if (draft.lines.length === 0) return null
-    if (draft.lines.some((line) => wholeQuantity(line.quantity) === null || missingOptions(line).length > 0)) return null
+    if (draft.lines.some((line) => (line.kind === 'item' && wholeQuantity(line.quantity) === null) || missingOptions(line).length > 0)) return null
     if (draft.lines.some((line) => line.kind === 'kit' && kits.value[line.catalogId] === undefined)) return null
     if (termsChecks(draft.terms, access.value).some(([, value, , isValid = (text: string) => text !== '']) => !isValid(value))) return null
     return {
@@ -335,6 +346,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
 
   function useCustomer(chosen: Customer): void {
     customer.value = chosen
+    newCustomer.value = null
     draft.terms.addressId = ''
     customerResults.value = []
     customerForm.clear()
@@ -353,47 +365,30 @@ export const useOrderFormStore = defineStore('orderForm', () => {
   /** clearCustomer takes the customer off the order to choose another. */
   function clearCustomer(): void {
     customer.value = null
+    newCustomer.value = null
     draft.terms.addressId = ''
   }
 
   /**
-   * createCustomerInline makes the customer of "Novo cliente" (Nome and
-   * WhatsApp) with the Clientes call, so the order can name an address of its
-   * own customer. `order:write` is enough for it; a number another customer
-   * has is `phone_taken`.
+   * useNewCustomer takes the "Novo cliente" (Nome and WhatsApp) for the order
+   * after checking them. Nothing is saved yet: the order's save makes the
+   * customer, or finds the one that has this WhatsApp, in the same
+   * transaction (`newCustomer`).
    */
-  async function createCustomerInline(name: string, phone: string): Promise<boolean> {
+  function useNewCustomer(name: string, phone: string): boolean {
     const typed = { ...emptyDraft(), name, phone }
-    return customerForm.attempt(
-      customerChecks(typed),
-      { byCode: { phone_taken: fixTheFields, invalid: fixTheFields }, fieldByCode: { phone_taken: ['phone', 'Já existe um cliente com este WhatsApp.'] } },
-      async () => useCustomer(await createCustomer(api, toCustomerInput(typed))),
-    )
-  }
-
-  /**
-   * saveAddress saves a new address on the order's customer (a delivery needs
-   * one of the customer's addresses) and chooses it. The API has no address
-   * in an order, so this is the customer's own update, which needs
-   * `customer:write`.
-   */
-  async function saveAddress(address: AddressDraft): Promise<boolean> {
-    const current = customer.value
-    if (current === null) return false
-    const typed = draftFromCustomer(current)
-    typed.addresses.push(address)
-    return addressForm.attempt(
-      // Checked on its own, so its fields are `addresses[0].…` as AddressFields reads them.
-      customerChecks({ ...emptyDraft(), addresses: [address] }).filter(([field]) => field.startsWith('addresses[')),
-      { byCode: { version_conflict: 'Outra pessoa alterou este cliente. Recarregue para ver a versão atual.' } },
-      async () => {
-        const saved = await updateCustomer(api, current.id, { ...toCustomerInput(typed), version: current.version })
-        const known = new Set(current.addresses.map((existing) => existing.id))
-        const made = saved.addresses.find((existing) => !known.has(existing.id))
-        customer.value = saved
-        draft.terms.addressId = made?.id ?? ''
-      },
-    )
+    const wrong = customerChecks(typed).filter(([field, value, , isValid = (text: string) => text !== '']) => ['name', 'phone'].includes(field) && !isValid(value))
+    customerForm.clear()
+    if (wrong.length > 0) {
+      customerForm.fieldErrors.value = Object.fromEntries(wrong.map(([field, , message]) => [field, message]))
+      customerForm.error.value = 'Confira os campos destacados.'
+      return false
+    }
+    customer.value = null
+    newCustomer.value = { name: name.trim(), phone: whatsappDigits(phone) }
+    draft.terms.addressId = ''
+    customerResults.value = []
+    return true
   }
 
   // ---- Starting ----
@@ -404,6 +399,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
     controller?.abort()
     order.value = null
     customer.value = null
+    newCustomer.value = null
     Object.assign(draft, emptyOrderDraft())
     quote.value = null
     quoting.value = false
@@ -412,7 +408,6 @@ export const useOrderFormStore = defineStore('orderForm', () => {
     archivedNames.value = []
     form.clear()
     customerForm.clear()
-    addressForm.clear()
     conflict.value = false
     created.value = null
     changed.value = null
@@ -434,7 +429,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
   }
 
   function snapshot(): string {
-    return JSON.stringify({ customer: customer.value?.id ?? null, lines: draft.lines.map((line) => [line.kind, line.catalogId, line.quantity, line.swaps, line.choices]), terms: draft.terms, approved: draft.customerApproved })
+    return JSON.stringify({ customer: customer.value?.id ?? null, newCustomer: newCustomer.value, lines: draft.lines.map((line) => [line.kind, line.catalogId, line.quantity, line.swaps, line.choices]), terms: draft.terms, approved: draft.customerApproved })
   }
 
   /** stop cancels the quote still waiting or in flight, for when the form is left. */
@@ -454,7 +449,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
 
   /**
    * lineFromOrder rebuilds a line of the order for the form: the kit with its
-   * swaps and quantity, or the loose item, with the options the client chose.
+   * swaps (a kit line is one kit), or the loose item, with the options the client chose.
    */
   function lineFromOrder(source: Order, index: number): LineDraft | null {
     const line = source.lines[index]
@@ -470,21 +465,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
       return { key: nextKey(), kind: 'item', catalogId: only.catalogItemId, name: only.name, quantity: String(only.quantity), swaps: {}, choices }
     }
     const swaps = Object.fromEntries(line.kit.swaps.map((swapped) => [swapped.removedItemId, swapped.addedItemId]))
-    return { key: nextKey(), kind: 'kit', catalogId: line.kit.id, name: line.kit.name, quantity: String(kitQuantity(lineItems, kits.value[line.kit.id], swaps)), swaps, choices }
-  }
-
-  /**
-   * kitQuantity is how many kits a line holds, from its first item: the
-   * order item's quantity is the kit's quantity of it times the line's. The
-   * order does not store the line's quantity, and sending 1 for a line of two
-   * would reprice the order.
-   */
-  function kitQuantity(lineItems: Order['items'], kit: Kit | undefined, swaps: Record<string, string>): number {
-    const first = kit?.items[0]
-    if (first === undefined) return 1
-    const held = lineItems.find((item) => item.catalogItemId === (swaps[first.itemId] ?? first.itemId))
-    if (held === undefined || first.quantity < 1 || held.quantity % first.quantity !== 0) return 1
-    return held.quantity / first.quantity
+    return { key: nextKey(), kind: 'kit', catalogId: line.kit.id, name: line.kit.name, quantity: '1', swaps, choices }
   }
 
   /** startChange reads the order and fills the form with it ("Alterar pedido"). */
@@ -523,13 +504,12 @@ export const useOrderFormStore = defineStore('orderForm', () => {
 
   function saveChecks(): FieldCheck[] {
     const checks: FieldCheck[] = [['lines', String(draft.lines.length), 'Adicione ao menos um item ou kit.', (count) => count !== '0']]
-    if (order.value === null) checks.unshift(['customer', customer.value?.id ?? '', 'Informe o cliente do pedido.'])
+    if (order.value === null) checks.unshift(['customer', customer.value?.id ?? newCustomer.value?.phone ?? '', 'Informe o cliente do pedido.'])
     for (const line of draft.lines) {
-      checks.push([`quantity.${line.key}`, line.quantity, 'Use uma quantidade de 1 a 999.', (text) => wholeQuantity(text) !== null])
+      if (line.kind === 'item') checks.push([`quantity.${line.key}`, line.quantity, 'Use uma quantidade de 1 a 99.', (text) => wholeQuantity(text) !== null])
       for (const missing of missingOptions(line)) checks.push([missing.field, '', `Escolha ${missing.name}.`])
     }
-    const address = draft.terms.handover === 'delivery' && draft.terms.addressId === newAddressChoice ? '' : draft.terms.addressId
-    checks.push(['address', draft.terms.handover === 'delivery' ? address : 'pickup', 'Escolha o endereço de entrega.'])
+    checks.push(['address', draft.terms.handover === 'delivery' ? draft.terms.addressId : 'pickup', 'Escolha o endereço de entrega.'])
     if (needsApproval.value) checks.push(['approval', draft.customerApproved ? 'yes' : '', 'Confirme que o cliente aprovou a mudança.'])
     return [...checks, ...termsChecks(draft.terms, access.value)]
   }
@@ -552,7 +532,8 @@ export const useOrderFormStore = defineStore('orderForm', () => {
       changed.value = await changeOrder(api, current.id, { lines, terms, customerApproved: draft.customerApproved, version: current.version })
       return
     }
-    const body = { customerId: customer.value?.id, lines, terms, sendToCustomer }
+    const who = customer.value === null ? { newCustomer: newCustomer.value ?? undefined } : { customerId: customer.value.id }
+    const body = { ...who, lines, terms, sendToCustomer }
     created.value = await createOrder(api, body, keyFor(body))
     saveKey = null
   }
@@ -641,7 +622,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
     archivedNames,
     needsApproval,
     canManage,
-    canWriteCustomer,
+    newCustomer,
     saving: form.submitting,
     formError: form.error,
     fieldErrors,
@@ -654,10 +635,6 @@ export const useOrderFormStore = defineStore('orderForm', () => {
     customerSearching,
     customerError: customerForm.error,
     customerFieldErrors: customerForm.fieldErrors,
-    customerSaving: customerForm.submitting,
-    addressError: addressForm.error,
-    addressFieldErrors: addressForm.fieldErrors,
-    addressSaving: addressForm.submitting,
     catalogResults,
     catalogSearching,
     catalogError,
@@ -675,8 +652,7 @@ export const useOrderFormStore = defineStore('orderForm', () => {
     searchCustomers,
     chooseCustomer,
     clearCustomer,
-    createCustomerInline,
-    saveAddress,
+    useNewCustomer,
     save,
     sendTracking,
     openChangeMessage,

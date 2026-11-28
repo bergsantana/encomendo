@@ -5,7 +5,7 @@
  * number, and "Criado em {data}". Its slot holds the order's actions.
  */
 import type { Order } from '@encomendo/api'
-import { StatusBadge } from '@encomendo/ui'
+import { BaseButton, StatusBadge } from '@encomendo/ui'
 
 import { formatDate } from '../../../format'
 import { formatWhatsapp } from '../../../phone'
@@ -14,6 +14,11 @@ defineProps<{
   order: Order
   /** timeZone is the store's, so "Criado em" shows the day the store lived it. */
   timeZone?: string
+}>()
+
+const emit = defineEmits<{
+  /** chat asks to open the customer's chat, with the link the API sent. */
+  chat: []
 }>()
 </script>
 
@@ -29,6 +34,9 @@ defineProps<{
     <p class="customer">
       <strong>{{ order.customer.name }}</strong>
       <span class="muted">{{ formatWhatsapp(order.customer.phone) }}</span>
+      <BaseButton @click="emit('chat')">
+        Abrir conversa no WhatsApp
+      </BaseButton>
     </p>
     <p class="muted">
       Criado em {{ formatDate(order.createdAt, timeZone) }}

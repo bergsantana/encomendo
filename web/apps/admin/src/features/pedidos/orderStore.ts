@@ -53,6 +53,13 @@ export const useOrderStore = defineStore('order', () => {
   const busy = ref(false)
   /** notice is what the last action did, such as "Pedido cancelado." */
   const notice = ref<string | null>(null)
+  /**
+   * whatsappUrl is the wa.me link the last action's answer carried. The
+   * action opens it at once, but a browser may refuse that once the click's
+   * user activation is gone (iOS Safari), so the screen also shows it as
+   * "Abrir o WhatsApp" until the next action.
+   */
+  const whatsappUrl = ref<string | null>(null)
   /** error is the refusal of an action done from the page; `dialogError` is that of an action done in a dialog. */
   const error = ref<string | null>(null)
   const dialogError = ref<string | null>(null)
@@ -100,6 +107,7 @@ export const useOrderStore = defineStore('order', () => {
     order.value = null
     loadError.value = null
     notice.value = null
+    whatsappUrl.value = null
     error.value = null
     dialogError.value = null
     guardMessage.value = null
@@ -156,6 +164,7 @@ export const useOrderStore = defineStore('order', () => {
   async function act<T>(write: () => Promise<T>, take: (answer: T) => Order, options: { inDialog?: boolean; own?: Partial<Record<string, string>> } = {}): Promise<boolean> {
     busy.value = true
     error.value = null
+    whatsappUrl.value = null
     dialogError.value = null
     guardMessage.value = null
     conflict.value = false
@@ -196,6 +205,7 @@ export const useOrderStore = defineStore('order', () => {
     const status = current.moves.find((move) => move.key === to)
     busy.value = true
     error.value = null
+    whatsappUrl.value = null
     dialogError.value = null
     guardMessage.value = null
     conflict.value = false
@@ -310,6 +320,7 @@ export const useOrderStore = defineStore('order', () => {
       () => changeDeliveryDate(api, current.id, { date, version: current.version, ...(text === '' ? {} : { reason: text }) }),
       (answer) => {
         openWhatsapp(answer.whatsappUrl)
+        whatsappUrl.value = answer.whatsappUrl
         return answer.order
       },
       { inDialog: true, own: { invalid: 'Escolha uma data a partir de hoje.' } },
@@ -324,9 +335,12 @@ export const useOrderStore = defineStore('order', () => {
     notice.value = null
     busy.value = true
     error.value = null
+    whatsappUrl.value = null
     try {
       const link = await sendTrackingLink(api, current.id)
       openWhatsapp(link.whatsappUrl)
+      whatsappUrl.value = link.whatsappUrl
+      notice.value = 'Link de acompanhamento criado.'
       void readHistory(undefined)
       return true
     } catch (failure) {
@@ -350,6 +364,16 @@ export const useOrderStore = defineStore('order', () => {
     return done
   }
 
+  /** openWhatsappLink opens the wa.me link of the last action again, for the "Abrir o WhatsApp" button. */
+  function openWhatsappLink(): void {
+    if (whatsappUrl.value !== null) openWhatsapp(whatsappUrl.value)
+  }
+
+  /** openChat opens the customer's chat with the link the API sent on the order. */
+  function openChat(): void {
+    if (order.value !== null) openWhatsapp(order.value.customer.whatsappUrl)
+  }
+
   /** clearDialogError forgets the refusal shown in a dialog, when it is opened or closed. */
   function clearDialogError(): void {
     dialogError.value = null
@@ -362,6 +386,7 @@ export const useOrderStore = defineStore('order', () => {
     timeZone,
     busy,
     notice,
+    whatsappUrl,
     error,
     dialogError,
     guardMessage,
@@ -382,6 +407,8 @@ export const useOrderStore = defineStore('order', () => {
     changeDate,
     sendTracking,
     cancel,
+    openWhatsappLink,
+    openChat,
     clearDialogError,
   }
 })

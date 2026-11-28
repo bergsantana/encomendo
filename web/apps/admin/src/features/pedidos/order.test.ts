@@ -288,6 +288,18 @@ describe('the timeline', () => {
   })
 })
 
+describe('"Abrir conversa no WhatsApp"', () => {
+  it('opens the chat link the API sent with the order, not one made here', async () => {
+    const state = asAdmin('aguardando_sinal', { customer: { ...orderAsAdmin().customer, whatsappUrl: 'https://wa.me/5592991234567' } })
+    const { wrapper } = await openOrder(state, 'viewer')
+
+    await button(wrapper.get('.order .header'), 'Abrir conversa no WhatsApp').trigger('click')
+
+    expect(window.open).toHaveBeenCalledOnce()
+    expect(window.open).toHaveBeenCalledWith('https://wa.me/5592991234567', '_blank', 'noopener')
+  })
+})
+
 describe('"Itens"', () => {
   it('lists item, origin, situation and expected date', async () => {
     const { wrapper } = await openOrder(asAdmin())
@@ -396,11 +408,22 @@ describe('"Itens"', () => {
     const { wrapper } = await openOrder(state)
 
     await button(wrapper, 'Marcar como pronto').trigger('click')
-    expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button').map((b) => b.text())).toEqual(['Tudo certo', 'Com defeito'])
+    expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button').map((b) => b.text())).toEqual(['Tudo certo', 'Com defeito', 'Voltar'])
     await button(wrapper, 'Tudo certo').trigger('click')
     await flushPromises()
 
     expect(state.calls.move?.[0]?.body).toEqual({ to: 'ready', check: 'ok', version: 1 })
+  })
+
+  it('goes back from "Tudo certo" and "Com defeito" to "Marcar como pronto", moving nothing', async () => {
+    const state = newOrderState(withItems(orderAsAdmin(), [item({ sourcingMode: 'in_house', status: 'in_production', nextMoves: ['ready'] })]))
+    const { wrapper } = await openOrder(state)
+    await button(wrapper, 'Marcar como pronto').trigger('click')
+
+    await button(wrapper, 'Voltar').trigger('click')
+
+    expect(wrapper.get('.items tbody td.enc-cards__actions').findAll('button').map((b) => b.text())).toEqual(['Marcar como pronto'])
+    expect(state.calls.move).toBeUndefined()
   })
 
   it('shows the refusal of a move', async () => {
@@ -606,6 +629,17 @@ describe('"Pagamentos"', () => {
     expect(admin.wrapper.get('.payments dl').text()).not.toContain('Margem')
   })
 
+  it('shows "—" for the owner when the order has no cost to give', async () => {
+    const state = asOwner()
+    state.order = { ...state.order, cost: null, margin: null, items: state.order.items.map((entry) => ({ ...entry, cost: null })) }
+    const { wrapper } = await openOrder(state, 'owner')
+
+    expect(plain(wrapper.get('.payments dl').text())).toContain('Custo—')
+    expect(plain(wrapper.get('.payments dl').text())).toContain('Margem—')
+    expect(wrapper.findAll('.items thead th').map((th) => th.text())).toContain('Custo')
+    expect(wrapper.get('.items tbody tr').text()).toContain('—')
+  })
+
   it('hides cost and margin from an admin even when only the owner copy is open before', async () => {
     const { wrapper } = await openOrder(asAdmin(), 'admin')
 
@@ -629,6 +663,18 @@ describe('"Pagamentos"', () => {
     expect(state.calls.payment?.[0]?.key).toMatch(/^[0-9a-f-]{36}$/)
     expect(wrapper.find('[role=dialog]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Pagamento registrado.')
+  })
+
+  it('fills Sinal with what is still owed of the deposit, not the whole deposit', async () => {
+    // Half of the deposit was paid: depositDue is the whole deposit, depositOwed what is left.
+    const { wrapper } = await openOrder(asAdmin('aguardando_sinal', { depositDue: brl(64995), depositOwed: brl(30000), paid: brl(34995), balanceDue: brl(95000) }))
+
+    await button(wrapper, 'Registrar pagamento').trigger('click')
+
+    expect((field(wrapper, 'Tipo').element as HTMLSelectElement).value).toBe('deposit')
+    expect((field(wrapper, 'Valor').element as HTMLInputElement).value).toBe('300,00')
+    await field(wrapper, 'Tipo').setValue('balance')
+    expect((field(wrapper, 'Valor').element as HTMLInputElement).value).toBe('950,00')
   })
 
   it('fills the balance when the type is Saldo', async () => {
@@ -828,6 +874,34 @@ describe('"Alterar data"', () => {
     expect(wrapper.find('[role=dialog]').exists()).toBe(false)
   })
 
+  it('keeps "Abrir o WhatsApp" with the notice, for a browser that blocked the automatic opening', async () => {
+    const state = asAdmin()
+    const { wrapper } = await openOrder(state, 'admin')
+    await button(wrapper, 'Alterar data').trigger('click')
+    await button(wrapper, 'Salvar e avisar o cliente').trigger('click')
+    await flushPromises()
+    vi.mocked(window.open).mockClear()
+
+    await button(wrapper.get('.notice'), 'Abrir o WhatsApp').trigger('click')
+
+    expect(window.open).toHaveBeenCalledOnce()
+    expect(window.open).toHaveBeenCalledWith(whatsapp, '_blank', 'noopener')
+  })
+
+  it('takes the button away with the next action', async () => {
+    const state = asAdmin()
+    const { wrapper } = await openOrder(state, 'admin')
+    await button(wrapper, 'Alterar data').trigger('click')
+    await button(wrapper, 'Salvar e avisar o cliente').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('button').map((b) => b.text())).toContain('Abrir o WhatsApp')
+
+    await button(wrapper, 'Mover para Confirmado').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Abrir o WhatsApp')
+  })
+
   it('leaves the reason out when it is empty', async () => {
     const state = asAdmin()
     const { wrapper } = await openOrder(state, 'admin')
@@ -872,6 +946,18 @@ describe('"Enviar link de acompanhamento"', () => {
 
     expect(state.calls.tracking).toHaveLength(1)
     expect(wrapper.text()).toContain('Cada envio cria um link novo. O link anterior deixa de funcionar.')
+  })
+
+  it('says the link was made and keeps "Abrir o WhatsApp" with the new link', async () => {
+    const state = asAdmin()
+    const { wrapper } = await openOrder(state, 'staff')
+    await button(wrapper, 'Enviar link de acompanhamento').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('.notice').text()).toContain('Link de acompanhamento criado.'))
+    vi.mocked(window.open).mockClear()
+
+    await button(wrapper.get('.notice'), 'Abrir o WhatsApp').trigger('click')
+
+    expect(window.open).toHaveBeenCalledWith('https://wa.me/5592991234567?text=link', '_blank', 'noopener')
   })
 
   it('shows a refusal and opens nothing', async () => {

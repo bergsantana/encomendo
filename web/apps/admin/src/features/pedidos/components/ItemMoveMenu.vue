@@ -4,7 +4,7 @@
  * the moves the API allows now ("Marcar como enviada ao fornecedor", "Marcar
  * como em trânsito", "Iniciar produção", "Marcar como instalada"…). On
  * receiving, "Tudo certo" or "Com defeito" (a defective item goes back);
- * "Marcar como pronto" for an in-house item asks the same. Words follow the
+ * "Marcar como pronto" for an in-house item asks the same, with "Voltar". Words follow the
  * item's sourcing mode.
  */
 import { BaseButton } from '@encomendo/ui'
@@ -62,6 +62,13 @@ function move(to: ItemStatus, check?: ItemCheck): void {
           @click="move(to, 'defective')"
         >
           Com defeito
+        </BaseButton>
+        <BaseButton
+          v-if="to === 'ready'"
+          :aria-label="`Voltar: ${item.name}`"
+          @click="checking = false"
+        >
+          Voltar
         </BaseButton>
       </template>
       <BaseButton

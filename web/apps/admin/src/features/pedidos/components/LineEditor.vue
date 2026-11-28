@@ -2,8 +2,8 @@
 /**
  * LineEditor is one line of the order form: a kit with its items (a
  * swappable one offers "Trocar" with the kit's alternatives, and a swap reads
- * "{item} no lugar de {item}") or a loose item. Each line has "Quantidade",
- * the client's options and "Remover". The line's price and its items' dates
+ * "{item} no lugar de {item}") or a loose item. A loose item has "Quantidade" (a kit line is one kit: add
+ * it again for another). Each line has the client's options and "Remover". The line's price and its items' dates
  * are what the quote answered; nothing is added up here.
  */
 import type { Item, Kit, Quote } from '@encomendo/api'
@@ -79,7 +79,10 @@ const refused = (): boolean => props.archivedNames.includes(props.line.name)
       {{ line.name }} está arquivado e não pode entrar no pedido.
     </p>
 
-    <div class="quantity">
+    <div
+      v-if="line.kind === 'item'"
+      class="quantity"
+    >
       <BaseInput
         :model-value="line.quantity"
         label="Quantidade"

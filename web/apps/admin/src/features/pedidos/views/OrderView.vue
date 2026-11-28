@@ -36,7 +36,7 @@ import { useOrderStore } from '../orderStore'
 import { civilToday } from '../timeline'
 
 const store = useOrderStore()
-const { order, loading, loadError, timeZone, busy, notice, error, dialogError, guardMessage, conflict, history, hasMoreHistory, historyLoading, historyError } =
+const { order, loading, loadError, timeZone, busy, notice, whatsappUrl, error, dialogError, guardMessage, conflict, history, hasMoreHistory, historyLoading, historyError } =
   storeToRefs(store)
 const canWrite = usePermission('order:write')
 const canManage = usePermission('order:manage')
@@ -144,6 +144,7 @@ const money = (value: { cents: number; currency: string }) => formatMoney(value.
       <OrderHeader
         :order="order"
         :time-zone="timeZone"
+        @chat="store.openChat()"
       >
         <RouterLink
           v-if="canChange"
@@ -165,13 +166,20 @@ const money = (value: { cents: number; currency: string }) => formatMoney(value.
         />
       </OrderHeader>
 
-      <p
+      <div
         v-if="notice"
-        role="status"
         class="notice"
       >
-        {{ notice }}
-      </p>
+        <p role="status">
+          {{ notice }}
+        </p>
+        <BaseButton
+          v-if="whatsappUrl"
+          @click="store.openWhatsappLink()"
+        >
+          Abrir o WhatsApp
+        </BaseButton>
+      </div>
       <div
         v-if="error"
         class="alert"
@@ -316,6 +324,10 @@ p {
   font-weight: 600;
 }
 .notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   font-weight: 600;
 }
 .alert {

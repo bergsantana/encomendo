@@ -63,6 +63,12 @@ const change = computed(() => props.changed?.change ?? null)
           {{ formatCivilDate(order.deliveryDate) }} → {{ formatCivilDate(quote.deliveryDate) }}
         </dd>
       </div>
+      <div v-if="quote.refundDue.cents > 0">
+        <dt>Valor a devolver</dt>
+        <dd class="enc-number">
+          {{ formatMoney(quote.refundDue.cents, quote.refundDue.currency) }}
+        </dd>
+      </div>
     </dl>
   </section>
 </template>

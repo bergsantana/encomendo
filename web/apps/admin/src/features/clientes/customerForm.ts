@@ -122,7 +122,8 @@ export function customerChecks(draft: CustomerDraft): FieldCheck[] {
   ]
 }
 
-function toAddressInput(address: AddressDraft): AddressInput {
+/** toAddressInput builds the API's address from the form's, with the CEP as digits; the checks must have passed, so a state is chosen. */
+export function toAddressInput(address: AddressDraft): AddressInput {
   if (address.state === '') throw new Error('an address without a state passed its checks')
   return {
     ...(address.id === undefined ? {} : { id: address.id }),
