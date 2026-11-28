@@ -48,6 +48,31 @@ export const routes: RouteRecordRaw[] = [
       { path: '', redirect: { name: 'hoje' } },
       { path: 'hoje', name: 'hoje', component: () => import('../features/hoje/views/HojeView.vue') },
       {
+        path: 'pedidos',
+        name: 'orders',
+        component: () => import('../features/pedidos/views/PedidosView.vue'),
+        meta: { permission: 'order:read' },
+      },
+      {
+        path: 'pedidos/novo',
+        name: 'new-order',
+        component: () => import('../features/pedidos/views/OrderFormView.vue'),
+        meta: { permission: 'order:write' },
+      },
+      {
+        path: 'pedidos/:orderId',
+        name: 'order',
+        component: () => import('../features/pedidos/views/OrderView.vue'),
+        meta: { permission: 'order:read' },
+      },
+      {
+        // The view asks for `order:manage` when the order is paid or discounted.
+        path: 'pedidos/:orderId/alterar',
+        name: 'change-order',
+        component: () => import('../features/pedidos/views/OrderFormView.vue'),
+        meta: { permission: 'order:write' },
+      },
+      {
         path: 'catalogo',
         name: 'catalog',
         component: () => import('../features/catalogo/views/CatalogoView.vue'),
